@@ -1,0 +1,23 @@
+{
+  "font_family": "Microsoft YaHei UI",
+  "font_size": 13,
+  "wc_font_path": "",
+  "theme": "dark",
+  "ctx_len": 40,
+  "cross_line": false,
+  "pos_idx": 0,
+  "window_width": 1150,
+  "window_height": 680,
+  "search_col_widths": [110, 170, 78, 260, 90],
+  "yomitan_zh_dict": "",
+  "anki_dialog": {
+    "deck": "JPOP Corpus",
+    "fetch_def": true,
+    "def_lang": "中文",
+    "clip_audio": false,
+    "max_examples": 2,
+    "jp_only": true,
+    "skip_single_kana": true,
+    "auto_uncheck_studied": true
+  }
+}

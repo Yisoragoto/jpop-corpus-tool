@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local app data
+settings.json
+corpus.db
+corpus.db-*
+backups/*
+!backups/.gitkeep
+output/*
+!output/.gitkeep
+
+# User-provided corpus data. Do not commit copyrighted lyrics or audio.
+raw/audio/*
+!raw/audio/.gitkeep
+raw/lyrics_lrc/*
+!raw/lyrics_lrc/.gitkeep
+metadata/songs.csv
+processed/utterances.jsonl
+
+# Local tools and generated packages
+ffmpeg.exe
+*.zip
+*.apkg
+*.anki2
+*.colpkg
+*.lrc
+.env
+.env.*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
