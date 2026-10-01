@@ -89,10 +89,16 @@
 数据目录（`corpus.db`、`raw/audio`、`raw/lyrics_lrc`、`raw/covers`、`dictionaries.db`）的查找顺序：
 
 1. 环境变量 `JPOP_CORPUS_HOME` 指向的目录；
-2. 从可执行文件往上找，第一个含 `corpus.db` 的目录；
-3. 当前工作目录。
+2. 设置页里选过的目录（记在 `%LOCALAPPDATA%\JPOP Corpus Tool\settings.json`）；
+3. 从可执行文件往上找，第一个**建好表**的库；
+4. 当前工作目录；
+5. 都没有就用 `%LOCALAPPDATA%\JPOP Corpus Tool`，**并在那里新建一个空库**。
 
-> **实时分词需要 Sudachi 词典。** 分词器从项目目录下的 `venv/Lib/site-packages/sudachipy`、`sudachidict_core` 读取，这是和 0.1.x 共用的那一份。没有它时查词、播放、检索、制卡照常，只有振假名和导入时的分词不可用——按 `requirements.txt` 建一个 venv 即可。
+所以新装的程序双击就能开，第一次进去是一个空库，从「导入」开始加歌即可。
+**已经有库的人**（比如 0.1.x 用过来的）去「设置 → 关于 → 语料库 → 切换目录…」选那个目录，重启就接上了——
+数据目录不放在安装目录下，卸载不会把你的歌和语料一起删掉。
+
+> **实时分词需要 Sudachi 词典。** 分词器从**语料库目录**下的 `venv/Lib/site-packages/sudachipy`、`sudachidict_core` 读取，这是和 0.1.x 共用的那一份。没有它时查词、播放、检索、制卡照常，只有振假名和导入时的分词不可用——按 `requirements.txt` 在语料库目录里建一个 venv 即可。
 
 ## 第一次使用
 

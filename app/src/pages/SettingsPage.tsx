@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
-import { api, type AnkiStatus, type HealthReport } from "../api";
+import { api, type AnkiStatus, type HealthReport, type LibraryRootInfo } from "../api";
 import { CommandButton } from "../components/CommandButton";
 import { SettingCard, SettingGroup, SettingNote, SettingSelect, SettingSlider, Switch } from "../components/SettingCard";
 import { setDictionariesCollapsed, useCollapsedDictionaries } from "../dict/collapse";
@@ -121,18 +121,42 @@ const Icons = {
   ),
 };
 
+/** 语料库是怎么找到的，如实说 */
+const ROOT_SOURCE_LABELS: Record<LibraryRootInfo["source"], string> = {
+  env: "来自 JPOP_CORPUS_HOME",
+  settings: "在设置里选的",
+  nextToExe: "在程序旁边找到的",
+  workingDir: "当前工作目录",
+  default: "默认数据目录",
+};
+
 export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) {
   const settings = useAppSettings();
   const display = useLyricsDisplay();
   const fonts = useFontOptions(true, onError);
   const [anki, setAnki] = useState<AnkiStatus | null>(null);
+  const [root, setRoot] = useState<LibraryRootInfo | null>(null);
+  const [rootNote, setRootNote] = useState("");
   const collapsedDicts = useCollapsedDictionaries();
   const [busy, setBusy] = useState<null | "covers" | "durations">(null);
   const [note, setNote] = useState("");
 
   useEffect(() => {
     void api.ankiStatus().then(setAnki).catch(() => undefined);
+    void api.libraryRoot().then(setRoot).catch(() => undefined);
   }, []);
+
+  /** 换语料库目录。**只写设置**，要重启才生效——连接和放行范围都是启动时定下的 */
+  const pickLibraryRoot = useCallback(async () => {
+    try {
+      const picked = await openDialog({ directory: true, title: "选择语料库目录（含 corpus.db）" });
+      if (typeof picked !== "string") return;
+      setRootNote(await api.setLibraryRoot(picked));
+      setRoot(await api.libraryRoot());
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    }
+  }, [onError]);
 
   const importFonts = useCallback(async () => {
     try {
@@ -346,9 +370,37 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
       </SettingGroup>
 
       <SettingGroup title="关于">
-        <SettingCard icon={Icons.db} title="语料库" description={health?.dbPath ?? "—"}>
+        <SettingCard
+          icon={Icons.db}
+          title="语料库"
+          description={
+            <>
+              {health?.dbPath ?? "—"}
+              {root !== null && <>（{ROOT_SOURCE_LABELS[root.source]}）</>}
+            </>
+          }
+        >
           <span className="muted small">{health === null ? "" : `${health.tracks} 首 · ${health.lyricLines} 行`}</span>
+          <CommandButton icon="folder" label="切换目录…" onClick={() => void pickLibraryRoot()} />
         </SettingCard>
+        {rootNote !== "" && <SettingNote>{rootNote}，重启后生效。</SettingNote>}
+        {root !== null && root.remembered !== "" && (
+          <SettingNote>
+            设置里记着的是 {root.remembered}。
+            <button
+              className="link-btn"
+              onClick={() => {
+                void api
+                  .setLibraryRoot(null)
+                  .then(setRootNote)
+                  .then(() => api.libraryRoot().then(setRoot))
+                  .catch((err: unknown) => onError(String((err as { message?: string })?.message ?? err)));
+              }}
+            >
+              清除
+            </button>
+          </SettingNote>
+        )}
         <SettingCard title="运行状态" description="分词器、音频设备、变调支持">
           <span className="muted small">
             {health === null

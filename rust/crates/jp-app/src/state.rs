@@ -70,6 +70,8 @@ impl AppState {
         let dictionaries_path = project_root.join("dictionaries.db");
         let corpus = Corpus::open_writable(&db_path)
             .with_context(|| format!("打不开 {}", db_path.display()))?;
+        // 新装的程序第一次启动时这里还是个空文件，先把表建齐；已有的库是空操作
+        corpus.ensure_schema()?;
         corpus.check_schema()?;
 
         let analyzer = jp_tokenizer::locate_sudachipy(project_root)

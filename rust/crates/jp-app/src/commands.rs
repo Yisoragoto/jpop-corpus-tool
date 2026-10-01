@@ -549,6 +549,67 @@ pub fn home_summary(state: State<'_, AppState>) -> CmdResult<HomeSummary> {
     })
 }
 
+/// 现在用的是哪个语料库目录，以及是怎么找到的。设置页要如实显示
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryRootInfo {
+    pub path: String,
+    pub source: crate::library_root::RootSource,
+    /// 设置里记着的那个目录（没设过就是空串）
+    pub remembered: String,
+    /// 这个目录里现在是不是一个建好表的库
+    pub ready: bool,
+}
+
+/// 语料库目录的现状。
+#[tauri::command]
+pub fn library_root(state: State<'_, AppState>) -> CmdResult<LibraryRootInfo> {
+    let (path, source) = crate::library_root::locate();
+    Ok(LibraryRootInfo {
+        path: state
+            .db_path
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| path.display().to_string()),
+        source,
+        remembered: crate::library_root::remembered()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
+        ready: true,
+    })
+}
+
+/// 换一个语料库目录。传空串表示清掉、回到自动查找。
+///
+/// **只写设置，不动这次运行**：数据库连接和 asset 放行范围都是启动时定下的，
+/// 半路换等于整个 AppState 重建。所以这里返回一句提示，由界面告诉用户重启。
+#[tauri::command]
+pub fn set_library_root(path: Option<String>) -> CmdResult<String> {
+    let Some(path) = path.filter(|p| !p.trim().is_empty()) else {
+        crate::library_root::remember(None)?;
+        return Ok("已清除，下次启动按默认顺序查找".into());
+    };
+    let dir = std::path::PathBuf::from(path.trim());
+    if !dir.is_dir() {
+        return Err(anyhow::anyhow!("{} 不是一个目录", dir.display()).into());
+    }
+    let has_db = dir.join("corpus.db").is_file();
+    if has_db && !crate::library_root::looks_like_library(&dir) {
+        // 这里多半是上一版留下的空壳文件；直接用会在启动时缺表退出
+        return Err(anyhow::anyhow!(
+            "{} 里的 corpus.db 不是一个建好表的语料库。换一个目录，或者把那个文件删掉再选这里（会新建一个空库）。",
+            dir.display()
+        )
+        .into());
+    }
+    crate::library_root::remember(Some(&dir))?;
+    Ok(if has_db {
+        format!("下次启动用 {}", dir.display())
+    } else {
+        format!("下次启动会在 {} 新建一个空库", dir.display())
+    })
+}
+
 // ────────────────────────────── 全局搜索 ──────────────────────────────
 
 /// Cmd+K 的全局搜索。跨曲目 / 专辑 / 人物 / 词汇 / 歌词，分组返回。

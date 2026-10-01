@@ -1,6 +1,6 @@
 [package]
 name = "jp-app"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -52,8 +52,12 @@ jp-tokenizer = { path = "../jp-tokenizer" }
 
 [target.'cfg(windows)'.dependencies]
 # 列本机字体用 DirectWrite：WebView2 就是用它按名字找字体的，列出来的名字 CSS 一定认。
-# windows 已经在依赖树里（cpal、tao 在用），这里只多开 DirectWrite 这一个特性。
-windows = { version = "0.61", features = ["Win32_Graphics_DirectWrite"] }
+# WindowsAndMessaging 是启动失败时弹 MessageBox 用的——GUI 程序没有控制台，
+# 不弹就是「双击没反应」。windows 已经在依赖树里（cpal、tao 在用），只是多开两个特性。
+windows = { version = "0.61", features = [
+    "Win32_Graphics_DirectWrite",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [dev-dependencies]
 # test 特性提供 mock runtime，让 command 能在没有窗口的环境下被真实调用。

@@ -309,6 +309,16 @@ export interface PlayedTrack {
   totalListenedSec: number;
 }
 
+/** 现在用的是哪个语料库目录，以及是怎么找到的 */
+export interface LibraryRootInfo {
+  path: string;
+  /** env：环境变量；settings：设置里选的；nextToExe / workingDir：自动找到的；default：默认数据目录 */
+  source: "env" | "settings" | "nextToExe" | "workingDir" | "default";
+  /** 设置里记着的目录，没设过是空串 */
+  remembered: string;
+  ready: boolean;
+}
+
 export interface HealthReport {
   dbPath: string;
   tracks: number;
@@ -419,6 +429,10 @@ export async function call<T>(cmd: string, args?: Record<string, unknown>): Prom
 
 export const api = {
   health: () => call<HealthReport>("health"),
+  /** 语料库目录的现状（设置页显示用） */
+  libraryRoot: () => call<LibraryRootInfo>("library_root"),
+  /** 换一个语料库目录；传 null 清掉。返回一句给用户看的提示，**要重启才生效** */
+  setLibraryRoot: (path: string | null) => call<string>("set_library_root", { path }),
 
   // 曲库
   listTracks: (limit?: number) => call<Track[]>("list_tracks", { limit }),

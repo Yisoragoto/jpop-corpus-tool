@@ -95,6 +95,18 @@ impl Corpus {
         &mut self.conn
     }
 
+    /// 把表建齐。**空库用得上**：新装的程序第一次启动时，数据目录里还什么都没有，
+    /// `Connection::open` 只会生成一个 0 表的空文件，接着 [`Corpus::check_schema`] 就会失败。
+    ///
+    /// `schema.sql` 是从迁移完成的真实库里导出来的（事实来源是库本身，不是手写的副本），
+    /// 全是 `IF NOT EXISTS`，对已有的库重复跑不会动任何数据。
+    pub fn ensure_schema(&self) -> Result<()> {
+        self.conn
+            .execute_batch(include_str!("../schema.sql"))
+            .context("建表失败")?;
+        Ok(())
+    }
+
     /// 这个库是不是已经跑过迁移。缺表时要给出可操作的提示，
     /// 而不是让调用方撞上一个 "no such table"。
     pub fn check_schema(&self) -> Result<()> {
@@ -281,5 +293,23 @@ impl Corpus {
 
     pub fn decades(&self, limit: i64) -> Result<Vec<FacetCount>> {
         library::decades(&self.conn, limit)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 新装的程序第一次启动：数据目录里只有一个 0 表的空库。
+    /// 建表之后应当能直接用，而不是报「数据库缺少表 songs」。
+    #[test]
+    fn a_brand_new_database_gets_its_tables() {
+        let corpus = Corpus::open_in_memory().unwrap();
+        assert!(corpus.check_schema().is_err(), "空库本来就该是缺表的");
+        corpus.ensure_schema().unwrap();
+        corpus.check_schema().unwrap();
+        assert!(corpus.tracks(10).unwrap().is_empty());
+        assert_eq!(corpus.overview().unwrap().tracks, 0);
+        corpus.ensure_schema().unwrap();
     }
 }

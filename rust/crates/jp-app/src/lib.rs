@@ -19,33 +19,10 @@ pub mod scrape;
 pub mod state;
 pub mod tracker;
 
-use std::path::PathBuf;
 
 use state::AppState;
 
-/// 找到装着 `corpus.db` 的项目根目录。
-///
-/// 开发时可执行文件在 `rust/target/{debug,release}/`，打包后在安装目录，
-/// 两种情况都要能找到库。顺序：
-/// 1. `JPOP_CORPUS_HOME` 环境变量（和 Python 侧的 `project_paths.py` 一致）
-/// 2. 从可执行文件往上找，直到看见 `corpus.db`
-/// 3. 当前工作目录
-fn locate_project_root() -> PathBuf {
-    if let Some(home) = std::env::var_os("JPOP_CORPUS_HOME") {
-        let path = PathBuf::from(home);
-        if path.join("corpus.db").is_file() {
-            return path;
-        }
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        for dir in exe.ancestors().skip(1).take(6) {
-            if dir.join("corpus.db").is_file() {
-                return dir.to_path_buf();
-            }
-        }
-    }
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-}
+pub mod library_root;
 
 /// 注册全部 command。
 ///
@@ -56,6 +33,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::health,
+            commands::library_root,
+            commands::set_library_root,
             // 曲库
             commands::list_tracks,
             commands::get_track,
@@ -167,19 +146,19 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
 }
 
 pub fn run() {
-    let root = locate_project_root();
+    let (root, source) = library_root::locate();
+    eprintln!("[info] 语料库目录：{}（来自 {source:?}）", root.display());
     let state = match AppState::new(&root) {
         Ok(state) => state,
         Err(err) => {
-            // 数据库打不开就没有任何功能可谈。与其开一个空窗口让用户
-            // 一个个点着报错，不如直接说清楚缺什么。
-            eprintln!(
-                "启动失败：{err:?}\n\
-                 在 {} 下找不到可用的 corpus.db。\n\
-                 先跑：python scripts/migrate_db.py && python scripts/backfill_library.py\n\
-                 或用 JPOP_CORPUS_HOME 指定项目目录。",
+            // 数据库打不开就没有任何功能可谈。但**不能默不作声地退出**：
+            // 双击桌面图标的人看不到 stderr，表现就是「点了没反应」。
+            let message = format!(
+                "启动失败：{err:#}\n\n数据目录：{}\n\n                 已有的语料库可以用环境变量 JPOP_CORPUS_HOME 指过去（指向含 corpus.db 的目录）。",
                 root.display()
             );
+            eprintln!("{message}");
+            show_fatal_error(&message);
             std::process::exit(1);
         }
     };
@@ -203,6 +182,30 @@ pub fn run() {
         }
     });
 }
+
+/// 启动失败时弹一个系统对话框。
+///
+/// GUI 程序没有控制台，`eprintln!` 等于什么都没说——用户看到的是「双击没反应」。
+#[cfg(windows)]
+fn show_fatal_error(message: &str) {
+    use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+    use windows::core::PCWSTR;
+    let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let text = wide(message);
+    let title = wide("JPOP Corpus Tool");
+    // SAFETY: 两个指针都指向以 0 结尾的 UTF-16 缓冲，活到调用结束
+    unsafe {
+        MessageBoxW(
+            None,
+            PCWSTR(text.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn show_fatal_error(_message: &str) {}
 
 /// 界面要直接显示的本地图片目录：刮削下来的曲目封面和歌手照片。
 ///
@@ -234,14 +237,13 @@ pub fn allow_media_dirs<R: tauri::Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
 
     use super::*;
 
     #[test]
     fn locate_project_root_returns_something() {
         // 找不到时也要给出一个可用的路径，不能 panic
-        let root: &Path = &locate_project_root();
+        let (root, _source) = library_root::locate();
         assert!(!root.as_os_str().is_empty());
     }
 
@@ -250,7 +252,7 @@ mod tests {
         // 指到一个没有 corpus.db 的目录时应当忽略它，退到后面的策略
         let tmp = std::env::temp_dir();
         unsafe { std::env::set_var("JPOP_CORPUS_HOME", &tmp) };
-        let root = locate_project_root();
+        let (root, _source) = library_root::locate();
         unsafe { std::env::remove_var("JPOP_CORPUS_HOME") };
         assert_ne!(root, tmp, "指到没有 corpus.db 的目录时不该采纳");
     }
