@@ -1,0 +1,736 @@
+# Tauri 壳
+
+迁移的第三步：Rust core 骨架 + Tauri commands + React 竖切。
+分词器基准（`docs/tokenizer.md`）通过之后才做这一步。
+
+## 目录
+
+```
+app/                              前端（React 19 + TS strict + Vite 7）
+  src/App.tsx                     外壳：导航 + 页面切换 + 常驻播放条
+  src/api.ts                      command 的类型化封装
+  src/useLibrary.ts               曲目/歌词/语料的共享状态（跨页跳转靠它）
+  src/usePlayback.ts              状态订阅 + 当前行推导 + 单句循环
+  src/components/Player.tsx       播放条 + 频谱（Spotify 三栏 + 进度条整宽一行）
+  src/components/NavIcons.tsx     左侧导航的图标
+  src/components/CommandButton.tsx  命令栏按钮（图标 + 文字）
+  src/components/Flyout.tsx       弹出面板（速度、调）
+  src/coverColor.ts               从封面取主色，给全屏歌词做底色
+  src/useHotkeys.ts               全局键盘交互
+  src/virtual.ts                  定高虚拟化的窗口计算（18 个单测）
+  src/components/VirtualList.tsx  定高虚拟列表
+  src/components/CommandPalette.tsx  Cmd+K 搜索 / Cmd+P 命令
+  src/pages/HomePage.tsx          语料概览 · 收听记录 · 收藏 · 分面
+  src/pages/KwicPage.tsx          KWIC 语境检索 + 歌词全文
+  src/pages/LibraryPage.tsx       曲库 → 歌词 → 语料 三栏
+  src/pages/ExplorerPage.tsx      人物维度（演唱/作曲/作词/编曲 + 合作图谱）
+  src/pages/AnalyticsPage.tsx     总览 + 时间线 + 词频统计 + 语料报告
+  src/pages/SettingsPage.tsx      设置（外观 / 歌词 / 词典 / 制卡 / 曲库维护 / 关于）
+  src/components/SettingCard.tsx  设置行：图标 + 标题说明 + 右侧控件、On/Off 开关
+  src/components/Section.tsx      区块与封面架（Section / Shelf）——页面的基本版面单位
+  src/components/Avatar.tsx       人的头像；没照片就画名字的第一个字
+  src/dict/DictionaryManager.tsx  词典管理（导入 / 启用 / 拖动排序 / 删除），住在设置页
+  src/settings.ts                 应用级偏好（全屏背景、歌手墙），存 localStorage
+  src/components/PerformerPicker.tsx  演唱者多选（检索页、分析页共用）
+  src/pyFormat.ts                 按 Python 的规则写数字和 CSV（导出要和 PyQt 版逐字节一样）
+  src/styles.css
+rust/
+  Cargo.toml                      workspace
+  crates/
+    jp-tokenizer/                 分词 + UPOS 映射（已验收 1.0000）
+    jp-corpus/                    数据层：SQL 全在这里
+    jp-audio/                     播放引擎：WSOLA 变速 + 采样 tap + 频谱
+    jp-app/                       Tauri 壳
+      src/lib.rs                  register() + run()
+      src/commands.rs             38 个 command，每个都是薄封装
+      src/tracker.rs              收听会话统计（纯逻辑，14 个单测）
+      src/maintenance.rs          时长回填等一次性数据修补
+      src/state.rs                Mutex<Corpus> + 可选 Analyzer / AudioEngine
+      tauri.conf.json
+      tests/commands.rs           走真实 IPC 通道的集成测试
+```
+
+前端和后端分处两个目录，是因为 Rust 侧是一个 workspace（`jp-app` 要按路径
+依赖 `jp-corpus` / `jp-tokenizer`），塞进 `src-tauri/` 会让 workspace 结构变别扭。
+`tauri.conf.json` 里用相对路径把两边接起来。
+
+## 跑起来
+
+```bash
+# 一次性：装前端依赖
+cd app && npm install
+
+# 开发（前端热更新 + Rust 自动重编）
+npm run app:dev          # 或双击 开发.bat
+
+# 打包（产出可独立运行的 exe）
+npm run app:build        # 之后双击 启动-新版.bat
+
+# 前端类型检查与测试
+npm run typecheck
+npm test
+```
+
+后端单独跑：
+
+```bash
+cd rust
+cargo test          # 167 个测试
+cargo clippy --all-targets
+```
+
+## 分层
+
+```
+React (api.ts)
+   │  invoke("get_track", { songId })
+   ▼
+commands.rs        ← 薄封装，取状态 → 调一次 → 返回
+   │
+   ▼
+jp-corpus          ← 所有 SQL 和业务逻辑在这里，能离线测试
+jp-tokenizer       ← 分词，能离线测试
+   │
+   ▼
+SQLite (corpus.db) + Sudachi 词典
+```
+
+**能测的东西不放进测不了的层。** command 层需要 Tauri 运行时才能测，
+所以它只做转发；真正的逻辑在下面三层（corpus / tokenizer / audio），
+用真库和真实音频文件跑 84 个测试。
+
+## `cargo build` 出来的 exe 不能独立运行
+
+直接跑 `rust/target/debug/jp-app.exe` 会看到
+**「localhost 拒绝连接 ERR_CONNECTION_REFUSED」**。
+
+原因是 Tauri 用 cargo 特性（不是 `debug_assertions`）区分开发和打包：
+
+```rust
+pub const fn is_dev() -> bool {
+  !cfg!(feature = "custom-protocol")
+}
+```
+
+没有 `custom-protocol` 时，二进制会去加载 `tauri.conf.json` 里的 `devUrl`
+（vite dev server），而不是编译进来的前端资源。`tauri build` 会自动带上
+这个特性，`cargo build` 不会。
+
+所以：
+
+| 想干什么 | 用什么 |
+|---|---|
+| 开发（热更新） | `npm run app:dev` / `开发.bat` |
+| 独立运行的 exe | `npm run app:build`，或 `cargo build -p jp-app --release --features custom-protocol` |
+| 跑测试 | `cargo test`（不受影响） |
+
+`启动-新版.bat` 只认 release 产物，找不到时会打印上面这条构建命令，
+而不是启动一个连不上 dev server 的窗口。
+
+## .bat 文件必须是纯 ASCII
+
+cmd.exe 用 OEM 代码页（简中系统是 GBK）读 .bat，写 UTF-8 中文进去会变成乱码。
+两个启动脚本里都留了注释说明这一点。
+
+（另外：**从 Git Bash 里调 `cmd.exe` 跑中文名的 .bat 会失败**，
+因为文件名的 UTF-8 字节被按 GBK 解释了。资源管理器双击没这个问题。）
+
+## 几个踩过的坑
+
+**`crate-type` 不要写 `["staticlib", "cdylib", "rlib"]`。** 那是移动端才需要的。
+桌面上加了它们，集成测试会去链接生成的 DLL，加载时
+`STATUS_ENTRYPOINT_NOT_FOUND`。只留 `rlib`。
+
+**`common-controls-v6` 要关掉。** 它要求可执行文件的清单里声明 ComCtl32 v6
+程序集。主 exe 由 `tauri-build` 嵌入了清单，集成测试的 exe 没有，于是同样
+加载失败。我们没有原生菜单/托盘，关掉零损失。
+
+注意**依赖和 dev-dependency 两处都要关** —— Cargo 的特性在整个依赖图里合并，
+只关一处等于没关。
+
+**参数名是 camelCase。** Tauri 的默认是 `ArgumentCase::Camel`：Rust 形参
+`song_id`，前端要传 `songId`。这条有测试钉着
+（`camel_case_arguments_reach_snake_case_parameters`），
+而且反向验证了 `song_id` 传不进去。
+
+**状态是 `Mutex<Corpus>`。** `rusqlite::Connection` 是 `Send` 不是 `Sync`
+（内部有语句缓存的 `RefCell`），而 Tauri 的 managed state 要求 `Send + Sync`。
+代价是查询串行化；实测单条 0.3~3.5ms，桌面端够用。真要并发时换连接池，
+command 层签名不用动。
+
+**复制数据库要连 `-wal` / `-shm` 一起复制。** 库是 WAL 模式，最近的提交可能还只在 wal 文件里。
+只复制 `corpus.db` 会拿到一个「旧了一截」的副本，不报错、只是数据对不上——
+测试用的副本（`scratch_app`）和手工建的隔离实例都踩过：界面上 209 首都有封面，副本里只有 200 首。
+
+**测试不要把「用户库现在长什么样」当前提。** `filling_album_artwork_is_idempotent`
+原来依赖「真库里 `albums.artwork_path` 全是空的」，用户在界面上点一次「填专辑封面」它就红了，
+而代码没有任何问题。现在测试自己先把副本里的清空，再验填充和幂等。
+
+## 集成测试测什么
+
+`tests/commands.rs` 用 `tauri::test::mock_builder()` 装配**同一份
+`register()`**（不是另抄一份 command 清单），走真实 IPC 通道：
+
+| 测的东西 | 为什么只能在这一层测 |
+|---|---|
+| command 有没有注册上 | 名字写错编译期不报错，运行时才 404 |
+| camelCase → snake_case | 序列化层的行为，静态类型看不出来 |
+| 返回值形状 | `rename_all` 漏了会让 TS 接口变成假的 |
+| 竖切回路 | 曲库→歌词→点词→语料→跳转，任一环断了就不闭合 |
+
+库不存在时整组跳过并提示先跑迁移脚本——克隆仓库的人不该因为缺一个
+991MB 的数据库看到一片红。
+
+## 五个页面
+
+| 页面 | 内容 |
+|---|---|
+| **首页**（默认） | 语料概览 · 高频词入口 · 收听记录 · 收藏 · 年代/流派 · 专辑 |
+| **检索** | KWIC 关键词居中对齐 + 歌词全文（FTS5）。表层/词元、词性、歌手、跨行、去重、仅日文，导出 CSV |
+| **曲库** | 曲目 → 歌词（跟随播放、实词可点）→ 该词在全语料的样子 |
+| **人物** | 按演唱/作曲/作词/编曲看作品与合作图谱 |
+| **分析** | Corpus Overview + 年份时间线 + 词频统计（JLPT 列）+ 语料报告（导出 TXT） |
+
+**Corpus First 体现在首页的版面顺序上**：先语料概览、再高频词入口，
+收听记录排在后面。打开软件第一眼看到的是「这个库里有什么」，
+不是「你最近在听什么」。首页每个板块都是入口，不是仪表盘。
+
+### 跨页连续性
+
+要求书第十八条那句「不应该感觉自己在几个独立的软件之间切换」，
+靠的是架构而不是 UI 技巧：
+
+* **播放状态在 Rust 引擎里**，切页不会中断播放，播放条常驻
+* **曲目/歌词/语料状态提到 `useLibrary`**，检索页点一条命中能跳到曲库页
+  的那一行并定位到时间点；分析页点一个词能跳到曲库页看它的例句
+* 有测试钉着这条链路（`cross_page_navigation_targets_resolve`）：
+  KWIC 命中的 `songId` 能被 `get_track` 解析，`utteranceId` 真的在那首歌的歌词里
+
+### 图表不引库
+
+三种图（年份柱、词频条、频谱）都用内联 CSS 画。为它们引一个图表库
+不划算，也违反要求书第十五条第 3 点。
+
+分析页也**不是孤立的 dashboard**（第十五条第 8 点）：词频表每个词都能点开
+跳到曲库页看例句。数据是入口，不是终点。
+
+## 分析页：词频统计与语料报告
+
+对应 PyQt 版的「统计」「报告」两页，合到分析页里，**共用一组筛选**（歌手多选、仅日文），
+筛选一改两边都重算。计算在 `jp-corpus/src/stats.rs`，command 是 `stats_frequency`、`stats_report`，
+都放进阻塞线程池（报告要扫整张 tokens 表，一两百毫秒，同步 command 会卡住主线程）。
+
+**词频统计**：词元 × 词性按出现次数排前 300，不含标点和符号，列出出现曲数、前 5 个表层形和 JLPT。
+JLPT 只查本地的 `jlpt_cache`（10,090 个词元）；Python 查不到的会去网上抓，这里不抓。
+点词元看例句（曲库页），点「检索」带着词元跳到检索页。
+
+**语料报告**：TTR、STTR、Hapax、平均每曲词汇量、平均每行 token、词性分布、Top-N 覆盖率、高频词元 Top 20。
+「导出 TXT」写的内容由后端和报告一起生成，所以导出的就是界面上看到的那份。
+
+和 Python 对账（`jp-corpus/examples/stats_report.rs` 和 gui.py 里原样抽出来的 worker，真实 corpus.db）：
+
+| 项 | 结果 |
+|---|---|
+| 报告（不筛选） | 所有数字相同；导出的 TXT 和 `_export_report_txt` 写出的**逐字节相同**（2,542 字节） |
+| 报告（按ヨルシカ） | 数字相同；TXT 只有「フィルター」一行不同，见下 |
+| 词频表 | 完整的频次档内逐条相同（最后一档被 300 截断，先后不定） |
+| 仅日文 | **有意不同**，见下 |
+
+有意不同的两处：
+
+- **Python 导出的 TXT 永远写「全歌手 / 日本語のみ：なし」**：报告字典里根本没有 `artist_filter` / `jp_only`。这里写实际的筛选。
+- **仅日文**：Python 报告只过滤了词种，词次、词性分布、覆盖率的分母还是全部词次；词频表是先取前 300 再过滤，常常不到 300 条。
+  这里在词次这一层就过滤，词频表先过滤再取前 300。
+
+数字的写法照 Python：千分位，小数**正好一半时取偶**（`f"{0.125:.2f}"` 是 0.12，JS 的 `toFixed` 是 0.13）。
+后端用 Rust 的 `{:.N}`——拿 42.2 万个值（含整半的）和 Python 的 `:.Nf` 比过，0 处不同；
+前端显示用 `pyFormat.ts` 的 `pyFixed`，`testdata/python_formats.json` 是 Python 真实输出的 2,175 条。
+
+### 检索页的补充
+
+- **仅日文**：只留关键词含假名或汉字的命中（Python `_JP_RE.search(match)`）。要看切出来的关键词才知道，
+  所以 SQL 里不截断，建好命中再筛、再截到 5000。四组检索和 Python `SearchWorker` 条数、集合、顺序全部相同。
+- **按歌手**：`personIds`，和分析页同一个多选组件。
+- **多个关键词**：空格分隔，也认 PyQt 版的 `A|B`、`(A|B)` 写法。
+- **导出 CSV**：列和编码照 `export_csv`——utf-8-sig（开头一个 BOM）、CRLF、`csv.writer` 的最少引号、
+  时刻按 Python `str(float)` 写（`60.0` 不是 `60`）。`pyFormat.test.ts` 拿 `csv.writer` 真实写出的内容逐字符比。
+  左右语境和界面一致，**保留原句里的空格**（Python 是把 token 拼起来，空格丢了；见 `jp-corpus/src/search.rs`）。
+
+## 外观：Windows 11 的质感
+
+2026-09-20 按用户要求整体向 Spotify + Apple Music 的版面、Windows 11 的质感靠拢。
+
+**窗口是真的云母（Mica），不是 CSS 模拟。** `tauri.conf.json` 的窗口加了
+`"transparent": true` 和 `"windowEffects": { "effects": ["mica"], "state": "active" }`。
+验证方式是查窗口属性而不是看截图——CDP 截图只拍网页内容，拍不到系统的背景：
+
+```powershell
+# class 为 Tauri Window 的那个窗口，DWMWA_SYSTEMBACKDROP_TYPE(38) == 2 就是 Mica
+[Dwm]::DwmGetWindowAttribute($hwnd, 38, [ref]$backdrop, 4)
+```
+
+**外壳半透明、内容不透明。** 导航栏、页头、播放条用 `--shell`（55% 暗色 + `backdrop-filter`），
+桌面的颜色透得上来；内容区 `--content` 是 72%，保证文字可读。强调色是 Windows 深色主题的浅蓝 `#4cc2ff`。
+
+**两个踩过的坑**（都是把 `--bg` 改成透明之后才暴露的）：
+
+- **浮层必须自己有不透明背景**。`--panel` 这些是半透明的层填充，给浮层用就会透。
+  全屏歌词原来写的是 `background: var(--bg)`，`--bg` 一透明整层跟着透，底下的页面全透上来；
+  歌词的「显示」面板、命令面板、歌手多选也一样透了。现在浮层统一用 `--surface-pop`（97% 不透明 + 模糊）。
+- **有最大高度的竖向 flex 面板，子项要写 `flex: 0 0 auto`**。默认会收缩：「显示」面板里的字体预览框被压扁，
+  里面的字直接画到下面的滑块上。
+- **别用全局已有的类名当表格列样式**。`.center` 是启动页用的（`height: 100vh`），
+  词频表的 JLPT 列用了同一个名字，每行被撑成一屏高；DOM 里看不出来，只有截图能看出。
+
+### 版面
+
+| 位置 | 做法 |
+|---|---|
+| 外壳 | 左侧导航（WinUI 的 NavigationView：图标 + 文字，可收起成图标条，选中项左侧一条强调色）+ 页头（标题、一句说明、语料数字） |
+| 播放条 | 进度条单独一行贯穿整宽（拖动面积大），下面一行左是这首歌、中间走带（±5 秒、播放、单句循环）、右边速度 / 调 / 音量；**整条是单色玻璃**，盖在全屏歌词上面，底下那张虚化封面透上来 |
+| 速度、调 | `Flyout` 弹出面板，不用原生 `<select>`：系统下拉在窗口最底下会往屏幕外弹，样式也和这套控件对不上 |
+| 曲库 | 列表视图按歌手分组、标题可收起（记在 localStorage）；封面网格**先是一墙歌手头像**，点进去才是他的歌（设置里可关），网格时左栏加宽到 420px |
+| 各页操作 | `CommandButton`：图标 + 文字，主操作填强调色 |
+| 全屏歌词 | 照 Spotify：**背景是整张封面虚化铺满**（设置里可换回取色纯色，强度可调）、歌词左对齐大字、当前行纯白，右边常驻一栏放封面和这首歌的信息（查词时换成查词结果） |
+
+**封面取色**在 `coverColor.ts`：封面缩到 24×24，挑饱和度最高的像素做主色，再压到能当背景的亮度；
+纯黑边、白边不参与，整张灰的退回平均色，取不到就返回 null 用中性深色（4 个单测）。不引取色库。
+
+> **取色曾经在打包后的程序里一直是失灵的。** 它用 `fetch` 取图（要 CORS 头，
+> 否则 canvas 被污染读不出像素），而 CSP 的 `connect-src` 里没有 asset 协议——
+> **图照常显示**（那走的是 `img-src`），只有取色静默失败，底色一直是那个中性深灰。
+> 开发时 vite 不加 CSP，所以只在打包后出现。现在 `connect-src` 也放行 asset，
+> 并有测试钉着三个 directive（`the_csp_lets_the_front_end_fetch_assets_not_just_display_them`）。
+
+### 右栏：词典 / 例句两页，记住你看的是哪一页
+
+点歌词里的词，右栏原来是「统计 → 词典 → 例句」一路堆下来。词典的释义可以很长，
+想看例句每次都得滚到底。现在词头（词、出现次数、词性）下面是一个两页的切换栏：
+
+- **词典**：这次查到的释义（长按住的还是 `LookupResults` 那一份，曲库右栏和全屏查词栏共用）；
+- **例句**：这个词在全语料里的句子，点一条跳到那首歌的那一行。
+
+**选了哪一页记住**（`jp.library.corpusTab`）：下次查词直接停在你上次看的那一页。
+原来那个「折叠词典」的开关没有了——切换栏已经把「现在不想看词典」这件事表达清楚了。
+
+歌词上那个查词记号也改了：**只变色，不铺底色**。原来是 `rgba(76,194,255,.18)` 的蓝块压在字上，
+盖住歌词还很显眼。另外**关掉全屏的查词栏时会把记号一起清掉**——面板都关了，
+记号留在歌词上没有意义（`onCloseSide` 里连 `lookup` 和 `activeLemma` 一起清）。
+
+### 版面规则：区块，不是方框
+
+2026-09-23 用户的话是「你这个 UI 很多页面都是一个个长短不一的方块组成」。
+确实是：每一块都套一个带边框的圆角盒子，而且几个工具页的容器用了 `.maintenance`
+（`align-items: flex-start`），块宽还跟着内容走，于是一页下来十几个长短不一的方块。
+
+现在全项目一套规则：
+
+| 规则 | 做法 |
+|---|---|
+| 一块 = 一行标题 + 内容 | `components/Section.tsx`；`.card` 也改成了同样的样子（只剩间距），真要圈起来的加 `.boxed` |
+| 块宽一致 | 内容页 `.page` 限宽 1180px；工具页的容器类从 `.maintenance` 换成 `.tools`（后者不改布局，只管按钮样式） |
+| 页名不重复 | 命令栏已经有「标题 + 一句说明」，页面里不再写一遍 `<h1>`，只留 `.page-lead` 那一句 |
+| 一排封面 | `Shelf`：`grid-auto-flow: column`，放不下横向滚 |
+| 空状态给入口 | `.empty-state`：图标 + 一句话 + 主操作。词典页一本都没有时给的是「导入 .zip」，检索页没查过时给几个高频词 |
+| 没照片的人画首字 | `components/Avatar.tsx`。一列灰圆看着像坏了，而作词作曲本来就没有照片（刮削只查演唱者） |
+
+**首页重做了。** 原来是七个方框（概览、高频词、最近播放、听得最多、收藏、年代、流派、专辑），
+而且专辑那一格点不动——「点不进去就是摆设」。现在是：一行概览数字 → 继续听 → 专辑 → 收藏 →
+从这些词开始 → 听得最多，**每一块都能点进去**（点专辑把曲库限定到这张专辑，正好补上
+Artist → Album → Track 的中间一级）。年代 / 流派这两块没有去处，移回分析页。
+
+### 设置页
+
+2026-09-21 加的，钉在左下角（和 Windows 11 设置、Niratan 一样不排进导航列表）。
+版面是 WinUI 的 SettingsCard：一组一组的行，左图标、中文字、右控件，**改了立刻生效、自动记住，没有「确定」**。
+
+**这一页不自己存状态。** 每一行读写的都是原来那处的存储，所以在歌词右上角的「显示」面板里改字号，
+设置页跟着变，反过来也一样：
+
+| 组 | 内容 | 存在哪 |
+|---|---|---|
+| 外观 | 全屏背景用封面虚化 + 强度、曲库网格先显示歌手 | `settings.ts` |
+| 歌词 | 振假名默认开关、注音方式、主/备用字体、导入字体、字号、振假名字号、行距、字距 | `lyricsDisplay.ts` |
+| 词典 | **完整的词典管理**：导入、从旧版迁移、启用 / 停用、拖动排序、删除 | `dictionaries.db` |
+| 查词 | 清空「折叠记忆」 | `dict/collapse.ts` |
+| 制卡 | 牌组、按歌手放子牌组、笔记类型、首选释义、卡片类型 | `dict/mine.ts` |
+| 曲库维护 | 补齐缺失封面、回填时长、去刮削页 | 后端命令 |
+| 关于 | 库路径与条数、分词器 / 音频 / 变调状态 | `health` |
+
+制卡那一组是 `dict/MineSettingsCard.tsx`，Anki 页用的是同一个组件（那边多给一个组标题），
+所以两处永远一致。`components/SettingCard.tsx` 里是 `SettingGroup` / `SettingCard` / `Switch` /
+`SettingSlider` / `SettingSelect`，词典页的「已安装」列表也用它们。
+
+**播放条为什么盖在全屏歌词上面。** 原来全屏那一层的下边界停在播放条上沿（`bottom: playerHeight`），
+于是上面是封面、下面是一条独立的深色板，两块明显不是一个东西。现在全屏铺到窗口底边、
+播放条 `z-index: 60` 盖在它（50）上面：播放条是 55% 半透明 + `backdrop-filter`，
+背后正是那张虚化封面，颜色透上来，两块就是一个面了。歌词内容按 `--player-h`（实测的播放条高度）让开，
+不会被压在条底下。
+
+**播放条里不用强调色。** 频谱、进度、音量、播放键原来都是浅蓝，盖在封面上很跳；
+现在全是白色半透明，靠亮度分主次——播放键是亮一档的毛玻璃圆钮，不是一个蓝圈。
+强调色留给导航选中、开关这些「状态」。
+
+**词典管理搬到了设置页。** 原来占着词典页右边那一栏——查词的时候没人在管词典，
+管词典的时候也不是在查词，两件事挤在一屏里只会互相打扰。现在词典页整页就是查词（居中一栏），
+**一本都没有时**给的是导入入口而不是一个空输入框。排序可以直接拖（`dict-row` 上的 HTML5 拖放，
+落点画一条线），也能用键盘：抓手上按 ↑ / ↓。拖完立刻写库，没有「保存」。
+
+**歌手墙**（曲库的封面网格）：头像来自 `artists.image_path`，和人物页共用 `PerformerPicker` 里那份缓存，
+不为了头像再查一遍库。名字**精确匹配**、别名不猜；合作署名（`A/B`）退到第一位演唱者——
+信用表本来就是按 `/` 拆的，第一位是主唱。点进去是这位歌手的歌（封面卡片），左上角返回；
+点开哪位只活在这次会话里，下次打开还是从歌手墙开始。
+
+## 曲库歌词：振假名、字体、显示设置、全屏
+
+歌词区右上角「振假名」开关、「显示」面板、「全屏」按钮。「显示」面板：主字体、备用字体、导入字体、预览句，
+字号 12–30、振假名字号 6–18、行距 0–36、字距 0–12、只注汉字 / 整词注音。
+范围照 Python 版 `_song_display_settings`，默认值是新版原来的样子（字体默认是界面字体），改了立刻生效、存 localStorage。
+
+### 字体
+
+对应 Python 版的 `_font_options` / `_import_font`。可选字体三类，下拉框里按这个顺序排：
+
+1. **字体文件**：项目自带的 `assets/fonts`（Klee One、霞鹜文楷）和用户导入的 ttf/otf/ttc。没装进系统，
+   界面用 `FontFace` 按文件加载；`fonts_catalog` 命令把这些文件**逐个**放行进 asset 协议，CSP 加了 `font-src asset:`。
+   导入只记文件位置（localStorage），不复制；文件没了会提示「清除 N 个读不到的」。一个文件只列一项。
+   族名自己读 name 表（`jp-app/src/fonts.rs`，不引入字体库依赖，只读表目录和 name 表）。
+2. Python 版排在前面的常用字体（装了才列）；
+3. **本机全部字体**：问 **DirectWrite**（`windows` crate 早在依赖树里，只多开 `Win32_Graphics_DirectWrite` 特性）。
+   WebView2 按名字找字体走的就是它。字体族名 + 每个字重的 GDI 兼容名（「Yu Gothic UI Semibold」，挑它等于挑字重），
+   中日文名作为别名显示在选项里。
+
+对账过程（都在 Edge 里用 canvas 量宽度判断名字是否真的用上了字体）：
+
+| 做法 | 列出 | Edge 认 | 漏掉 Qt 列表里 Edge 认的 |
+|---|---|---|---|
+| 自己读 name 表，只取 nameID 16 | 236 | 205 | 117 |
+| 读 name 表，nameID 16 + 1 | 273 | 233 | 89（可变字体具名实例、DirectWrite 归并名、中文名） |
+| DirectWrite 族名 + GDI 兼容名 | 348 | 295 | 只剩 `Courier`、`MS Sans Serif`、`MS Serif` 三个点阵字体 |
+
+DirectWrite 列出、Edge 不认的 53 个是图标字体（Marlett、Segoe MDL2 Assets…）和「Yu Gothic UI Semilight」这类
+Chromium 匹配不上的字重名，选了也不生效，所以前端**进下拉框前在 WebView2 里再量一次**，只留能用的（`fonts.ts` 的 `createFontProbe`）。
+真实应用里实测：299 个选项；Klee One（自带）、DejaVu Sans（导入，在 assets 外）都按文件加载成功。
+
+### 全屏歌词
+
+对应 Python 版的展开歌词播放器（`LyricsPlayerView`）。`components/LyricsStage.tsx`：
+
+- 盖住整个窗口，只留底部播放条——倍速、音调、进度都在那里，不再做一份（Python 版把倍速、音调挪到了顶部）；
+- 当前行放大加粗、停在可视高度 45% 处，换行时平滑滚过去；滚轮可以自己翻，下一次换行回到当前行（和 Python 一样）；
+- 点一行跳到那一句；点词在右侧查词，内容就是曲库页右栏那一份（语料统计、词典、制卡、例句）；
+- 顶部同样有振假名开关、「显示」面板；Esc 退出（「显示」面板开着时先收面板）。
+
+行的内容由曲库页的 `renderLineText` 渲染后传进去，和普通视图同一份代码。第一版滚动区上下用 45vh 的 padding 留空，
+padding 压不扁，把滚动区撑到 810px、超出容器 732px，最后一行压到了播放条上——改成 `::before`/`::after` 占位，
+真实应用里复测滚动区底边正好停在播放条上沿。
+
+振假名照 Python 版 `_furigana_tokens` / `_kanji_only_furigana` 逐行移植到 `jp-tokenizer/src/furigana.rs`，
+命令 `lyrics_furigana` 现场用 Sudachi（SplitMode C）分词取读音，不入库。**全部 8443 行、两种模式逐段和 Python 一致**
+（`jp-app/examples/dump_furigana.rs` 对 venv 里用 `ast` 抽出来的原函数），一行约 0.02 ms。
+
+注音套在可点的词里面（`lyricSegments.ts`）：实测库里的分词全部能对齐回原文、21000 段注音没有一段横跨两个词，
+所以每个词按钮里直接放 `<ruby>`，点词查词照旧。对不上时那一行不注音、不猜位置。顺带把词与词之间原文里的空格也显示回来了
+（原来按词拼接会丢掉）。
+
+## 音频引擎（jp-audio）
+
+**位置是「歌里的秒数」，自己数，不用 rodio 的 `get_pos`。** 用户报「改了倍速歌词对不上」：
+rodio 数的是送进声卡的样本（墙上时间），而 WSOLA 是时间伸缩——1.5 倍速放 3 秒，歌里过去的是 4.5 秒。
+实测旧实现在 0.75× / 1× / 1.5× 下位置都按 1.0 倍往前走（位置增量 ÷ 墙上秒数 = 1.00 / 1.00 / 1.00），
+歌词自然越走越偏。现在 `RateControlled` 每吐一个样本按当时的倍速往前记一点，记的是歌里的秒数；
+修完实测同样三档是 **1.00 / 1.50 / 0.75**。
+
+**跳转的参数也是歌里的时刻。** `rodio_wsola::Wsola::try_seek` 把传进来的时刻当「输出时间」、
+会自己乘一次倍速，所以我们先除回去——不除的话 1.5 倍速拖到 3:20 会去找 5:00，
+超过结尾直接报 `Symphonia decoder returned an error`，播放停在原地不动，
+用户看到的就是**「拖一下卡住」**。
+
+**结尾坏掉的文件要兜住。** 库里有一批 FLAC 结尾是坏的（ffmpeg 报 `invalid residual`，
+见 [[project-audio-pitch-furigana]] 里那 179 个），实测那首 254 秒的歌**倒数 2 秒内怎么跳都失败**，
+退到倒数 5 秒就正常。所以跳转失败时依次往回退 0.5 / 2 / 5 秒再试（`seek_candidates`），
+退完还不行**而且目标就在结尾那 10 秒里**，就当这首放完了（清空队列、位置摆到结尾），不弹报错；
+中间位置跳不动才是真有问题，照常报错。修完实测：拖到最末尾（甚至超过时长）落在 250 秒继续放，不再报错。
+
+**`audio_seek` 改成异步命令**（`spawn_blocking`）：`try_seek` 要等音频线程真的跳完才返回，
+同步命令跑在主线程上，拖进度条时整个界面跟着顿。
+
+
+**放完之后还能拖回去重播。** rodio 的队列播完就空了，`play` / `seek` 作用在空队列上什么都不会发生
+（`try_seek` 还会报「跳转失败」）。引擎记着当前这首的文件和 id，队列空时按原文件重新装一次、跳到目标位置接着放；
+`stop()` 之后不会自己复活。界面那边进度条原来只在鼠标松开时**恰好还在滑块上**才提交，拖出去松手就白拖了，
+看着像拖不动——改成监听窗口级的 `pointerup`。
+
+```
+Decoder ─→ RateControlled(WSOLA) ─→ Tapped ─→ 换算成声卡格式 ─→ Player ─→ 声卡
+                  ↑                    │
+             倍速（原子变量）        采样副本 → FFT → 频谱
+```
+
+**每首歌进 Player 之前先换算成声卡的采样率和声道数。** 这是修过的 bug（2026-09-17，用户报告「有些歌没动就升调或降调了」）：
+Player 是一条一直开着的队列，rodio 只在「段」（span）的边界重新读当前歌的采样率，而 WSOLA 报的是「没有分段」，
+于是本次启动第一首歌的采样率被一直用下去。曲库里 44.1 kHz（143 首）和 48 kHz（65 首）混着，
+后面采样率不同的歌整首变调变速约 1.5 个半音、8.8%——先放哪首决定之后哪些歌出错，所以「有些歌」。
+
+- 复现：`engine::tests::songs_with_different_sample_rates_keep_their_pitch`，不开声卡，Player 接 48 kHz 的 mixer 手动拉样本，
+  440 Hz 的测试音修之前第二首量出来 404.0 Hz（正好是 440 × 44.1/48）；
+- 真实文件对账：`real_songs_in_a_row_play_at_the_right_speed`（`JP_AUDIO_PAIR` 指两首采样率不同的歌，ignored），
+  后播那首单独播和接在后面播，对齐后比波形：旧链路相关系数 0.02–0.10，新链路 1.0000。
+
+**变速不变调。** rodio 自带的 `set_speed` 实现是「提高采样率」，
+也就是重采样——0.75 倍速会连音高一起降下去。对语言学习工具这是致命的：
+慢放是为了听清词，不是为了把人变成低音炮。所以走 `rodio-wsola` 做时间伸缩，
+和 Python 版 `QMediaPlayer.setPlaybackRate()` 的行为对齐。
+
+选型时试过 `signalsmith-stretch`（质量更好，还能实时变调），
+但它是 C++ 封装、需要 libclang（bindgen），对开源项目的贡献者是额外门槛。
+纯 Rust 的 WSOLA 对语音够用。
+
+**变调**照 Python 版：ffmpeg 的 `rubberband` 滤镜把整首离线渲染成 FLAC，缓存到 `output/pitch_cache/`，再播缓存文件
+（`jp-audio/src/pitch.rs` 渲染和缓存，`jp-app/src/pitch.rs` 决定什么时候渲染、换哪个文件）。
+
+- −6…+6 半音，全局生效，播放条上的选择框一直显示当前调（不是原调时高亮）；不跨重启保存，和倍速一样；
+- 缓存文件名和 Python 版逐字相同（`<文件名>_<±n>_<sha1("绝对路径|mtime_ns|字节数|n") 前 16 位>.flac`），两边互用；
+  原曲一改缓存自动失效。SHA-1 手写，标准测试向量钉住；真实文件的名字和 venv 里 CPython 算的对过；
+- 打开一首歌时没有这个调的缓存：先停、渲染好再开播（不先用原调放一段）；等待期间按的播放/暂停/拖动记下来，渲染好才生效，
+  所以 `audio_load` 一次带上起点和 `autoplay`；
+- 正在放时换调：原来的继续放，渲染好后接着**当时**的位置和播放状态换过去，单句循环保留（Python 版是跳回点击时的位置）；
+- 渲染失败（没有 ffmpeg、报错、超时 180 秒）退回原调，原因放在 `pitchError`，前端只提示一次；
+- 先写 `.part` 再改名（Python 版直接写目标文件，中途打断会留下半截文件被当成缓存）。
+
+实测（release，真实曲库）：一首 4–5 分钟的歌渲染 7–9 秒；变调后时长和时间轴不变（合成信号上三处静音标记前后差 3 ms 以内），歌词跟随照用。
+
+顺带查出：**曲库里 179 个 FLAC 结尾是截断的**。ffmpeg 和 symphonia 两个解码器都在同一处报错停下（中位数少 1.15 秒，最多 7.7 秒，
+全库合计 5.2 分钟），解出的 PCM MD5 两边一致、和 STREAMINFO 里的 MD5 对不上；这 179 个文件的大小全是 4096 字节的整数倍
+（103 个是 65536 的整数倍），是获取文件时被截在缓冲区边界的特征。导入用的是 `shutil.copy2`，不是导入弄坏的。
+原调和变调版都在同一处结束，播放不受额外影响。
+
+**分层**：只有 `engine` 碰音频设备，`state` / `tap` / `spectrum` 是纯逻辑，
+无声卡环境也能完整测试。
+
+| 模块 | 测试 |
+|---|---|
+| `state` `tap` `spectrum` | 29 个，纯逻辑 |
+| `engine` | 无声卡自动跳过；采样率那条不需要声卡 |
+| `pitch` `sha1` | 缓存名、参数、真 ffmpeg 渲染（没有 ffmpeg 跳过） |
+| `tests/playback.rs` | 10 个，拿真实音频文件跑完整链路 |
+
+播放测试期间音量置 0，不会真的出声——tap 挂在 Player 的音量控制**之前**，
+所以静音不影响采样流。
+
+### 几个实现决定
+
+**循环看门狗是独立线程，不是塞进 Source。** 在 `next()` 里做 seek 会打断
+WSOLA 的重叠窗，产生咔哒声。轮询间隔 20ms。
+
+注意 rodio 会预缓冲，回跳时已进入输出缓冲的那一小段仍会播出来，
+所以听感上的循环点比设定值略晚。这个限制 Python 版（150ms QTimer）也有，
+而且更明显。
+
+**tap 写入用 `try_lock`，拿不到就丢。** 频谱掉一帧没人看得出来，
+音频卡一下所有人都听得出来。
+
+**倍速每 512 个样本才读一次原子变量。** 每样本都读会让原子操作成为热点，
+而倍速是人手操作，毫秒级延迟感知不到。
+
+## 当前行为什么在前端算
+
+`PlaybackState` 里**没有** `currentLine`。需求书第十四条列了它，
+但那是「位置 + 歌词时间轴」推导出来的——放进引擎会让音频层依赖歌词层，
+正是要拆开的耦合。
+
+推导在 `app/src/usePlayback.ts` 的 `useCurrentLine`，用二分查找
+（歌词行数上千时线性扫描在 10Hz 轮询下是可观开销）。
+
+## 状态订阅为什么是轮询
+
+Tauri 的事件通道适合偶发事件；用它每秒推 10 次状态会在 IPC 上产生大量
+小消息。轮询一个廉价 command（读几个原子变量）反而更省，
+也不用管订阅生命周期。状态 10Hz，频谱 20Hz。
+
+## 时长回填
+
+`songs.duration_sec` 原来全库为空，导致进度条只能靠解码器给的时长、
+分析页的总时长显示不出来、刮削也没法用时长区分原版 / TV size。
+
+探测放在 `jp-audio::probe`，**和播放共用同一套解码器**——
+两边读出来的时长必然一致，不会出现「进度条和库里对不上」。
+
+**交叉校验**：光验证「读到了一个数」挡不住量纲错误（把采样数当毫秒照样
+是个数）。所以拿 mutagen 的结果做基准逐条比对，容差 0.2 秒
+（不同库对最后一个不完整帧的处理不同，FLAC 一帧 ≈ 93ms @ 44.1kHz）。
+
+```bash
+python scripts/export_durations.py          # 生成基准
+cd rust && cargo test -p jp-audio --test duration
+```
+
+实测 **209/209 与 mutagen 一致，零偏差**，总时长 14.66 小时。
+
+回填三种入口，共用 `maintenance::backfill_durations`（不依赖 Tauri，可离线测）：
+
+```bash
+cargo run -p jp-app --example backfill_durations   # 命令行
+```
+
+分析页的「回填时长」按钮，或 `backfill_durations` command。
+**幂等**：只填为空的行，重跑扫描 0 条。
+
+报告里**每种失败单独计数**（文件缺失 / 无时长 / 解码失败）——
+笼统的「成功 N 个」用户无从判断该修什么。
+
+## 收听统计
+
+`play_history` 表和 `recently_played` / `most_played` 查询一直都在，
+但**从来没有人往表里写**——首页要的数据链路缺的就是这一环。
+
+判断「用户是否真的听了」是业务逻辑，所以放进可测的层：
+`tracker::PlayTracker` 是纯逻辑（喂状态快照，吐该落库的事件），
+不碰数据库、不碰 Tauri、不开线程，14 个单测。
+
+### 「听了多久」按墙上时钟算，不按播放位置算
+
+两者在三种情况下会分道扬镳：
+
+| 情况 | 位置差 | 墙钟 | 哪个对 |
+|---|---|---|---|
+| 单句循环 | 原地打转，≈0 | 正常累加 | **墙钟** —— 人确实在反复听 |
+| 2 倍速 | 2 秒 | 1 秒 | **墙钟** —— 注意力只花了 1 秒 |
+| 拖进度条 | 瞬间跳几分钟 | ≈0 | **墙钟** —— 没人听那几分钟 |
+
+墙钟衡量的是「花了多少注意力」，这正是收听统计想回答的问题。
+另外采样间隔超过 2 秒不计入——系统休眠时把整段空档算成「在听」会严重虚高。
+
+### 阈值
+
+* 听满 **5 秒**才记一条。点开就切走不该淹没「最近播放」。
+* 播到 **95%** 算听完。要求 100% 的话，结尾有淡出的歌几乎没有一首算得上。
+* 用**见过的最大位置**判断有没有播到结尾，不是当前位置——
+  播到尾又拖回去仍然算听完。
+
+### 谁来驱动
+
+前端本来就在 10Hz 轮询播放状态，那就是应用的心跳。轮询改调 `audio_tick`：
+
+```
+audio_state   无副作用的状态读取
+audio_tick    状态读取 + 走一拍收听统计   ← 轮询用这个
+```
+
+**名字里带 tick 是因为它有副作用。** 让 `audio_state` 偷偷写库是不诚实的，
+将来有人只想读一下状态就会莫名其妙多出记录。
+
+墙钟间隔在 Rust 侧算，不信任前端报的数——窗口最小化时浏览器会节流定时器。
+
+退出时通过 `RunEvent::Exit` 冲刷最后一段，否则关窗口那首歌就白听了。
+
+端到端验证（跨引擎 → tracker → 库三层，单测各测各的，只有真跑才知道接没接上）：
+
+```bash
+cargo run -p jp-app --example verify_history
+# 播放：サカナクション - さよならはエモーション
+# ✓ 记录成功：さよならはエモーション 播放 1 次，累计 5.9s
+```
+
+## 全局搜索与命令面板
+
+要求书第十四条的键盘交互：
+
+| 键 | 行为 |
+|---|---|
+| Space | 播放 / 暂停 |
+| ← → | 后退 / 前进 5 秒 |
+| ↑ ↓ | 音量 ±5% |
+| Ctrl/Cmd+K | 全局搜索 |
+| Ctrl/Cmd+P | 命令面板 |
+
+**输入框里一律不抢键**（空格是打字、方向键是移光标），
+但 Cmd+K/P 例外——正在搜索时想切命令模式是合理的。
+
+### 一个组件，两个入口
+
+搜索和命令的交互完全一样（浮层 + 输入 + 键盘选择），差别只在候选来自哪里，
+所以共用一个组件。输入开头打 `>` 在两种模式间切换，和多数编辑器一致。
+
+搜索是**远端**的（跨全库五种实体），所以防抖 140ms 并丢弃过期响应——
+慢的那次请求后到会覆盖新结果。命令是**本地**固定列表，即时过滤。
+
+### 分组返回，不混排
+
+`quick_search` 跨曲目 / 专辑 / 人物 / 词汇 / 歌词，**按类型分组返回**。
+
+混排需要一个全局相关性排序，但跨类型的分数没有可比性：曲名的 LIKE 匹配
+和歌词的 bm25（SQLite 里是负数，越小越相关）不是一个量纲。
+硬凑出来的顺序是假的。分组让用户按类型自己找，也让前端能按类型
+决定点击行为。
+
+### 搜索不是死胡同
+
+每种结果都有落点：曲目/歌词 → 曲库页并定位到那一行，词 → 语料面板，
+人物 → 人物页。有测试钉着（`quick_search_targets_are_reachable`）：
+每条结果的 id 都要真的能打开，歌词结果的 `utteranceId` 要真的在那首歌里。
+
+人名和专辑名走 `normalized_*` 列匹配，所以「yoasobi」能搜到「ＹＯＡＳＯＢＩ」、
+「山口一郎」能搜到「山口　一郎」——这些列正是当初建 people/albums 实体时存下的。
+
+## 虚拟化列表
+
+KWIC 检索一个常见词能命中上千行，全部渲染成 DOM 会让滚动明显卡顿。
+上限因此从 500 提到 5000。
+
+**没引第三方库**：行高是固定的（单行、超出省略），这种情况下的窗口计算
+就是几行除法。`react-window` / `@tanstack/react-virtual` 是为了处理动态高度、
+水平滚动、粘性表头这些用不到的场景。
+
+计算在 `src/virtual.ts`，纯函数，**18 个单测**——虚拟化算错的表现是
+「滚动时内容跳动」或「底部有一截空白」，靠肉眼很容易漏。测了这些边界：
+
+* 负的滚动位置（macOS 橡皮筋）、滚过头
+* 行高为 0 或负数（不能除以零）
+* 视口高度为 0（首帧拿不到容器高度是常态，这时不该渲染成空白）
+* 撑开的高度 + 渲染行数 == 总高（滚动条长度才正确）
+
+**约束**：每行必须是固定高度且和 `itemHeight` 一致。CSS 里改了行高
+就要同步 `KWIC_ROW_HEIGHT` / `TEXT_ROW_HEIGHT`，两处都有注释互指。
+
+顺带给前端补了 vitest（之前是 0 测试）。只测纯逻辑，不引 jsdom——
+组件测试是另一笔投入，现在的价值在于把「算错了没人会发现」的那部分钉住。
+
+## 命令面板的定位
+
+面板里点一条结果要能**落到具体的东西上**，不能只是「带你到那一页」。
+
+**人物**：`person_by_id` 按 id 取人，并给出他作品最多的那个角色。
+前端切到该角色（左侧列表才会包含他）再选中。
+不去左侧列表里找——搜到的人可能根本不在当前角色的列表里
+（按「作曲」列着，搜到的却是个只演唱过的人）。
+
+有测试钉着：`person_by_id` 返回的主角色，必须真的能在
+`people_by_role` 的结果里找到这个人——否则切过去会看到空列表。
+
+**专辑**：没有独立页面，改成把曲库列表**限定到这张专辑**，
+顶部显示一个可清除的专辑条。这也正好补上了 Artist → Album → Track
+的中间一级（要求书第四条）。
+
+**导入**：选目录 → 扫描 → 复核 → 确认。扫描只读，写库要再点一次。
+计划里每一条都能说出理由（「已经是库里的 001」「曲名歌手对上了 016，
+不会导入」）。管线本身在 `jp-import`，见 [import.md](import.md)。
+
+**刮削**：识别曲目、补齐 metadata、下载封面。复核队列并排给出「本地写的
+是什么」和候选，附打分解释；失败按原因分类并给出该怎么办；批量走后台
+线程、可中断。管线在 `jp-scraper`，见 [scraper-rust.md](scraper-rust.md)。
+
+选目录用 `tauri-plugin-dialog`。它经 `rfd` 打开了 `common-controls-v6`，
+链进来的代码要求进程加载 ComCtl32 v6——真应用有 tauri-build 生成的清单，
+但 `cargo test` 产出的 exe 没有，一启动就 `STATUS_ENTRYPOINT_NOT_FOUND`。
+Cargo 的 feature 是并集关不掉，所以在 `build.rs` 里给测试 exe 补了
+`/MANIFESTDEPENDENCY`。
+
+## 还没做的
+
+* 曲库列表本身还没虚拟化（209 首不需要；导入上千首时要）
+* 词云（PyQt 版统计页有「词云图」按钮）
+* 浅色主题（现在只有深色；云母在浅色下也有对应档位）
+* 组件级测试（需要 jsdom + testing-library）
+* Deezer 的艺人照片没接进 UI（provider 实现在，缺入口）
+* 刮削没有并发，一次一首（MusicBrainz 本来就限每秒一次）

@@ -1,0 +1,21 @@
+[package]
+name = "jp-anki"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Anki card export and learning-state sync for JPOP Corpus Tool"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+regex = "1"
+# storeMediaFile 要 base64。依赖树里已有，不引入新下载。
+base64 = "0.22"
+rusqlite = { version = "0.40", features = ["bundled", "collation"] }
+# AnkiConnect 走的是同一套 HTTP 抽象：可注入传输层、分类过的错误、
+# 统一的重试与超时。没必要为一个 localhost 接口再写一份。
+jp-scraper = { path = "../jp-scraper" }
+# 一键制卡：查词结果和 Yomitan 格式的卡片字段
+jp-dict = { path = "../jp-dict" }

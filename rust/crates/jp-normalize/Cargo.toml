@@ -1,0 +1,15 @@
+[package]
+name = "jp-normalize"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Text normalization shared by import and scraper"
+
+[dependencies]
+serde.workspace = true
+regex = "1"
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+serde_json.workspace = true

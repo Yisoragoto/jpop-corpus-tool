@@ -1,0 +1,70 @@
+/* ---------- Lyrics：封面旁边的歌曲信息 ---------- */
+.lyrics .dh-song {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 540px;
+}
+
+.lyrics .dh-song .image {
+  flex: none;
+}
+
+.lyrics .dh-song .image img {
+  max-width: 240px;
+  max-height: 240px;
+}
+
+.lyrics .song-info {
+  font-family: var(--font-sans);
+  font-size: var(--info-font-size);
+  line-height: 1.35;
+  text-align: right;
+  min-width: 0;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
+
+.lyrics .dh-song-text .song-info {
+  text-align: left;
+}
+
+.lyrics .song-title {
+  font-weight: 600;
+}
+
+.lyrics .song-artist {
+  margin-top: 6px;
+  opacity: 0.85;
+}
+
+.lyrics .song-album {
+  margin-top: 6px;
+  font-size: 0.8em;
+  opacity: 0.6;
+}
+
+/* 手机上横向放不下：信息放到封面下面 */
+.mobile .lyrics .dh-song {
+  flex-direction: column-reverse;
+  gap: 6px;
+}
+
+.mobile .lyrics .dh-song .image img {
+  max-width: 40vw;
+}
+
+.mobile .lyrics .song-info {
+  text-align: center;
+  max-width: 40vw;
+  font-size: 0.8em;
+}
+
+/* 图放左边时，信息也跟着换到封面右侧 */
+#lapis.lyrics[data-main-picture-position="left"] .dh-song {
+  flex-direction: row-reverse;
+}
+
+#lapis.lyrics[data-main-picture-position="left"] .song-info {
+  text-align: left;
+}

@@ -1,0 +1,33 @@
+{
+  "name": "jpop-corpus-tool-ui",
+  "private": true,
+  "version": "0.2.0",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "app:dev": "cd ../rust/crates/jp-app && tauri dev",
+    "app:build": "npm run build && cd ../rust/crates/jp-app && tauri build",
+    "app:info": "cd ../rust/crates/jp-app && tauri info",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "typescript": "^5",
+    "vite": "^7",
+    "vitest": "^3.2.7"
+  }
+}

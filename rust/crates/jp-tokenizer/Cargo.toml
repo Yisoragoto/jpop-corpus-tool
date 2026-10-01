@@ -1,0 +1,15 @@
+[package]
+name = "jp-tokenizer"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Japanese tokenization and UniDic POS to UPOS mapping for JPOP Corpus Tool"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# sudachi.rs 官方没有发布到 crates.io，crates.io 上那个 suiko-sudachi 是
+# 非官方转发。开源项目还是直接依赖官方仓库更稳妥。
+sudachi = { git = "https://github.com/WorksApplications/sudachi.rs", tag = "v0.6.11" }

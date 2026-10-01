@@ -43,3 +43,9 @@ ffmpeg.exe
 Thumbs.db
 .idea/
 .vscode/
+
+# Rust / Node 构建产物
+rust/target/
+app/node_modules/
+app/dist/
+app/coverage/

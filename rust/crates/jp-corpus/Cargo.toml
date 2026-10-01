@@ -1,0 +1,18 @@
+[package]
+name = "jp-corpus"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Corpus and music-library data layer for JPOP Corpus Tool"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# bundled：自带 SQLite，不依赖系统库，且编入了 FTS5。
+# 现有库里 utterances_fts 已经建好但从没被查询过，这一层要把它接上。
+rusqlite = { version = "0.40", features = ["bundled"] }
+# 分词校正恢复时的 NFKC 兜底匹配，要和 Python 的 unicodedata.normalize("NFKC") 一致。
+# 工作区里的 crate，不引入新下载。
+jp-normalize = { path = "../jp-normalize" }

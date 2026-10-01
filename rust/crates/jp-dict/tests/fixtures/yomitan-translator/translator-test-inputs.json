@@ -1,0 +1,563 @@
+{
+    "optionsPresets": {
+        "kanji": {
+            "type": "kanji",
+            "enabledDictionaryMap": [
+                [
+                    "${title}",
+                    {
+                        "index": 0,
+                        "alias": "kanjiDictAlias"
+                    }
+                ]
+            ],
+            "removeNonJapaneseCharacters": false
+        },
+        "default": {
+            "type": "terms",
+            "matchType": "exact",
+            "deinflect": true,
+            "mainDictionary": "${title}",
+            "sortFrequencyDictionary": null,
+            "sortFrequencyDictionaryOrder": "descending",
+            "removeNonJapaneseCharacters": true,
+            "language": "ja",
+            "textReplacements": [
+                null
+            ],
+            "enabledDictionaryMap": [
+                [
+                    "${title}",
+                    {
+                        "index": 0,
+                        "alias": "termsDictAlias",
+                        "allowSecondarySearches": false,
+                        "partsOfSpeechFilter": true,
+                        "useDeinflections": true
+                    }
+                ]
+            ]
+        }
+    },
+    "tests": [
+        {
+            "name": "Basic kanji test 1",
+            "func": "findKanji",
+            "text": "打",
+            "options": "kanji"
+        },
+        {
+            "name": "Basic kanji test 2",
+            "func": "findKanji",
+            "text": "込",
+            "options": "kanji"
+        },
+        {
+            "name": "Missing kanji test",
+            "func": "findKanji",
+            "text": "画",
+            "options": "kanji"
+        },
+        {
+            "name": "Find term using expression text 1",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "打",
+            "options": "default"
+        },
+        {
+            "name": "Find term using expression text 2",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "打つ",
+            "options": "default"
+        },
+        {
+            "name": "Find term using expression text 3",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "打ち込む",
+            "options": "default"
+        },
+        {
+            "name": "Find term using expression text 4",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "画像",
+            "options": "default"
+        },
+        {
+            "name": "Find term using reading 1",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "だ",
+            "options": "default"
+        },
+        {
+            "name": "Find term using reading 2",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "ダース",
+            "options": "default"
+        },
+        {
+            "name": "Find term using reading 3",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "うつ",
+            "options": "default"
+        },
+        {
+            "name": "Find term using reading 4",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "ぶつ",
+            "options": "default"
+        },
+        {
+            "name": "Find term using reading 5",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "うちこむ",
+            "options": "default"
+        },
+        {
+            "name": "Find term using reading 6",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "ぶちこむ",
+            "options": "default"
+        },
+        {
+            "name": "Find term using reading 7",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "がぞう",
+            "options": "default"
+        },
+        {
+            "name": "Missing term 1",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "為る",
+            "options": "default"
+        },
+        {
+            "name": "Missing term ２",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "する",
+            "options": "default"
+        },
+        {
+            "name": "Search using different modes - simple",
+            "func": "findTerms",
+            "mode": "simple",
+            "text": "打ち込む",
+            "options": "default"
+        },
+        {
+            "name": "Search using different modes - group",
+            "func": "findTerms",
+            "mode": "group",
+            "text": "打ち込む",
+            "options": "default"
+        },
+        {
+            "name": "Search using different modes - merge",
+            "func": "findTerms",
+            "mode": "merge",
+            "text": "打ち込む",
+            "options": "default"
+        },
+        {
+            "name": "Search using different modes - term",
+            "func": "findTerms",
+            "mode": "term",
+            "text": "打ち込む",
+            "options": "default"
+        },
+        {
+            "name": "Search inflected term",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "打ち込んでいませんでした",
+            "options": "default"
+        },
+        {
+            "name": "Ignore text inside parentheses",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "打(う)ち込(こ)む",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "removeNonJapaneseCharacters": false,
+                    "textReplacements": [
+                        null,
+                        [
+                            {
+                                "pattern": "\\(([^)]*)(?:\\))",
+                                "flags": "g",
+                                "replacement": ""
+                            }
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Remove parentheses around text",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "(打)(ち)(込)(む)",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "removeNonJapaneseCharacters": false,
+                    "textReplacements": [
+                        null,
+                        [
+                            {
+                                "pattern": "\\(([^)]*)(?:\\))",
+                                "flags": "g",
+                                "replacement": "$1"
+                            }
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Test non-empty replacement",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "test",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "removeNonJapaneseCharacters": false,
+                    "textReplacements": [
+                        null,
+                        [
+                            {
+                                "pattern": "test",
+                                "flags": "g",
+                                "replacement": "よみ"
+                            }
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Test non-empty replacement at end",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "つtest",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "removeNonJapaneseCharacters": false,
+                    "textReplacements": [
+                        null,
+                        [
+                            {
+                                "pattern": "test",
+                                "flags": "g",
+                                "replacement": "よみ"
+                            }
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Test non-empty replacement at start",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "testました",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "removeNonJapaneseCharacters": false,
+                    "textReplacements": [
+                        null,
+                        [
+                            {
+                                "pattern": "test",
+                                "flags": "g",
+                                "replacement": "よみ"
+                            }
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Search merged mode with non-primary definitions",
+            "func": "findTerms",
+            "mode": "merge",
+            "text": "うちこむ",
+            "options": "default"
+        },
+        {
+            "name": "Test pronunciations 1",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "お手前",
+            "options": "default"
+        },
+        {
+            "name": "Test pronunciations 2",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "番号",
+            "options": "default"
+        },
+        {
+            "name": "Test pronunciations 3",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "中腰",
+            "options": "default"
+        },
+        {
+            "name": "Test pronunciations 4",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "所業",
+            "options": "default"
+        },
+        {
+            "name": "Test pronunciations 5",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "土木工事",
+            "options": "default"
+        },
+        {
+            "name": "Test pronunciations 6 - phonetic transcriptions",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "好き",
+            "options": "default"
+        },
+        {
+            "name": "Structured content test",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "構造",
+            "options": "default"
+        },
+        {
+            "name": "Test dictionary deinflection",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "のたもうた",
+            "options": "default"
+        },
+        {
+            "name": "Test text preprocessors - convertNumericCharacters",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "39",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "removeNonJapaneseCharacters": false
+                }
+            ]
+        },
+        {
+            "name": "Test text preprocessors - alphabeticWidthVariants 1",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "Ｅｎｇｌｉｓｈ",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "removeNonJapaneseCharacters": false
+                }
+            ]
+        },
+        {
+            "name": "Test text preprocessors - alphabeticWidthVariants 2",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "USB",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "removeNonJapaneseCharacters": false
+                }
+            ]
+        },
+        {
+            "name": "Test text preprocessors - alphabeticToHiragana",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "utsu",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "removeNonJapaneseCharacters": false
+                }
+            ]
+        },
+        {
+            "name": "Test text preprocessors - convertKatakanaToHiragana",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "ウツ",
+            "options": [
+                "default",
+                {
+                    "type": "terms"
+                }
+            ]
+        },
+        {
+            "name": "Test text preprocessors - convertHiraganaToKatakana",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "てきすと",
+            "options": [
+                "default",
+                {
+                    "type": "terms"
+                }
+            ]
+        },
+        {
+            "name": "Test text preprocessors - convertHalfWidthCharacters, convertKatakanaToHiragana",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "ｳﾂ",
+            "options": [
+                "default",
+                {
+                    "type": "terms"
+                }
+            ]
+        },
+        {
+            "name": "Test text preprocessors - collapseEmphaticSequences",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "すっっごーーい",
+            "options": [
+                "default",
+                {
+                    "type": "terms"
+                }
+            ]
+        },
+        {
+            "name": "Test text preprocessors - capitalizeFirstLetter",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "english",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "language": "en",
+                    "removeNonJapaneseCharacters": false
+                }
+            ]
+        },
+        {
+            "name": "Test text preprocessors - decapitalize",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "LANGUAGE",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "language": "en",
+                    "removeNonJapaneseCharacters": false
+                }
+            ]
+        },
+        {
+            "name": "Test text postprocessing",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "마시거나",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "language": "ko",
+                    "removeNonJapaneseCharacters": false
+                }
+            ]
+        },
+        {
+            "name": "Test search resolution - word",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "english example",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "language": "en",
+                    "removeNonJapaneseCharacters": false,
+                    "searchResolution": "word"
+                }
+            ]
+        },
+        {
+            "name": "Find terms using primary reading 1",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "自重",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "primaryReading": "じちょう"
+                }
+            ]
+        },
+        {
+            "name": "Find terms using primary reading 2",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "自重",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "primaryReading": "じじゅう"
+                }
+            ]
+        },
+        {
+            "name": "Longer match first (PR#1075)",
+            "func": "findTerms",
+            "mode": "split",
+            "text": "oppidorum",
+            "options": [
+                "default",
+                {
+                    "type": "terms",
+                    "language": "la",
+                    "removeNonJapaneseCharacters": false
+                }
+            ]
+        }
+    ]
+}

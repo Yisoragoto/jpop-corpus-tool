@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JPOP 语料库挖词报告</title>
+<style>{{css}}</style>
+</head>
+<body>
+<div class="wrap">
+
+  <section class="hero">
+    <h1>🎵 JPOP 语料库挖词报告</h1>
+    <p>统计从 Anki 牌组中已挖出的 JPOP 词汇及学习进度。
+    右侧数值显示为 已学/已挖（百分比）。</p>
+    <div class="chips">
+      <span class="chip">笔记类型：{{note_types}}</span>
+      <span class="chip">来源：{{source}}</span>
+      <span class="chip">生成时间：{{now}}</span>
+    </div>
+  </section>
+
+  <section class="summary">{{summary}}</section>
+
+  <section class="grid">
+
+    <article class="panel">
+      <div class="ptitle">歌手 / 作品进度</div>
+      <div class="pintro">各歌手的已挖词数，深色为已学，浅色为未学。</div>
+      {{artist_bars}}
+    </article>
+
+    <article class="panel">
+      <div class="ptitle">歌曲进度</div>
+      <div class="pintro">各歌曲的已挖词数及学习进度。</div>
+      {{song_bars}}
+    </article>
+
+    <article class="panel full">
+      <div class="ptitle">JLPT 分布</div>
+      <div class="pintro">
+        已挖词汇的 JLPT 级别分布及各级别学习进度。
+        深色为已学，浅色为未学。
+      </div>
+      {{jlpt}}
+    </article>
+
+  </section>
+
+  <section class="panel tpanel">
+    <div class="ptitle">词汇列表（共 {{word_count}} 词）</div>
+    <div class="pintro">
+      ✅ = 已学（复习次数 &gt; 0），⬜ = 未学。点击列标题排序，输入框搜索过滤。
+    </div>
+    <input id="ts" class="tsearch" type="text"
+           placeholder="搜索词汇、JLPT、歌手…">
+    <table id="wt">
+      <thead>
+        <tr>
+          <th>词汇</th><th>状态</th><th>JLPT</th>
+          <th>词频</th><th>歌手</th><th>歌曲</th><th>牌组</th>
+        </tr>
+      </thead>
+      <tbody id="tb">{{rows}}</tbody>
+    </table>
+  </section>
+
+</div>
+<script>{{js}}</script>
+</body>
+</html>

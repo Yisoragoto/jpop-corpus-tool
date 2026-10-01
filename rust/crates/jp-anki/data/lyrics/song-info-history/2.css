@@ -1,0 +1,90 @@
+/* ---------- Lyrics：封面右边竖排歌名、歌手、专辑 ---------- */
+/* 用 grid 而不是 flex：Lapis 的脚本会把封面高度调成和左边词条框一样高，
+   grid 会按封面的实际高度重新排竖排的列，flex 算宽度时拿不到这个高度 */
+.lyrics .dh-song {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: start;
+  column-gap: 12px;
+  max-width: 540px;
+}
+
+.lyrics .dh-song .image {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.lyrics .dh-song .image img {
+  display: block;
+  max-width: 240px;
+}
+
+/* 竖排从右往左依次是歌名、歌手、专辑；高度等于封面，长了自动换列 */
+.lyrics .song-info {
+  grid-column: 2;
+  grid-row: 1;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  height: 0;
+  min-height: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--info-font-size);
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+/* 没有封面时没有高度可跟，给个上限 */
+.lyrics .dh-song-text .song-info {
+  grid-column: 1;
+  height: auto;
+  min-height: 0;
+  max-height: 200px;
+}
+
+.lyrics .song-title {
+  font-weight: 600;
+}
+
+.lyrics .song-artist {
+  margin-block-start: 0.3em;
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+
+.lyrics .song-album {
+  margin-block-start: 0.3em;
+  font-size: 0.7em;
+  opacity: 0.6;
+}
+
+/* 手机上放不下几列竖排：横排放到封面下面 */
+.mobile .lyrics .dh-song {
+  grid-template-columns: auto;
+  justify-items: center;
+  row-gap: 6px;
+}
+
+.mobile .lyrics .dh-song .image img {
+  max-width: 40vw;
+}
+
+.mobile .lyrics .song-info {
+  grid-column: 1;
+  grid-row: 2;
+  writing-mode: horizontal-tb;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  max-width: 40vw;
+  text-align: center;
+  /* 外层 .dh-image 的字号是 0，这里不能用 em */
+  font-size: calc(var(--info-font-size) * 0.85);
+  letter-spacing: normal;
+}
+
+.mobile .lyrics .song-artist,
+.mobile .lyrics .song-album {
+  margin-block-start: 2px;
+}
+/* ---------- Lyrics 结束 ---------- */

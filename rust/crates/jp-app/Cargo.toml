@@ -1,0 +1,64 @@
+[package]
+name = "jp-app"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tauri shell for JPOP Corpus Tool"
+
+[lib]
+name = "jp_app_lib"
+# 只要 rlib。移动端才需要 staticlib/cdylib，而在桌面上加了它们，
+# 集成测试会去链接生成的 DLL 并以 STATUS_ENTRYPOINT_NOT_FOUND 崩掉。
+# 将来真做移动端时再按 target 条件加回来。
+crate-type = ["rlib"]
+
+[features]
+# Tauri 用这个特性区分「开发」和「打包」：
+#   tauri::is_dev() == !cfg!(feature = "custom-protocol")
+# 没有它，二进制会去连 tauri.conf.json 里的 devUrl（vite dev server），
+# 而不是加载编译进来的前端资源——直接 cargo build 跑出来就是
+# 「localhost 拒绝连接」。`tauri build` 会自动带上它。
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# 复刻 tauri 的默认特性，但去掉 common-controls-v6。
+# 它要求可执行文件的清单里声明 ComCtl32 v6 程序集；主 exe 由 tauri-build
+# 嵌入了清单，集成测试的 exe 没有，于是加载时 STATUS_ENTRYPOINT_NOT_FOUND。
+# 我们没有原生菜单/托盘，用不上 v6 视觉样式，去掉零损失。
+# protocol-asset：让 webview 能通过 asset: 协议读磁盘上的封面图。
+# 放行范围在 lib.rs 里运行时限定到 raw/covers 一个目录。
+tauri = { version = "2", default-features = false, features = [
+    "wry", "compression", "dynamic-acl", "x11", "dbus", "protocol-asset",
+] }
+# 选目录用。第一方插件，离线，没有网络行为。
+tauri-plugin-dialog = "2"
+jp-audio = { path = "../jp-audio" }
+jp-corpus = { path = "../jp-corpus" }
+jp-import = { path = "../jp-import" }
+jp-anki = { path = "../jp-anki" }
+jp-dict = { path = "../jp-dict" }
+jp-scraper = { path = "../jp-scraper" }
+jp-normalize = { path = "../jp-normalize" }
+# 刮削作业要自己开一条连接，不能占着 UI 那条
+rusqlite = { version = "0.40", features = ["bundled"] }
+jp-tokenizer = { path = "../jp-tokenizer" }
+
+[target.'cfg(windows)'.dependencies]
+# 列本机字体用 DirectWrite：WebView2 就是用它按名字找字体的，列出来的名字 CSS 一定认。
+# windows 已经在依赖树里（cpal、tao 在用），这里只多开 DirectWrite 这一个特性。
+windows = { version = "0.61", features = ["Win32_Graphics_DirectWrite"] }
+
+[dev-dependencies]
+# test 特性提供 mock runtime，让 command 能在没有窗口的环境下被真实调用。
+# 特性会在整个依赖图里合并，所以这里也必须关掉默认特性——
+# 否则 common-controls-v6 又被拉回来，测试 exe 照样加载失败。
+tauri = { version = "2", default-features = false, features = [
+    "test", "wry", "compression", "dynamic-acl", "x11", "dbus", "protocol-asset",
+] }

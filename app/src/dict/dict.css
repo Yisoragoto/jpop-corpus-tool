@@ -1,0 +1,368 @@
+/*
+ * 词典显示。
+ * 结构化内容、图片、音高部分移植自 Yomitan ext/css/structured-content.css 与
+ * ext/css/display-pronunciation.css（Copyright (C) 2023-2026 Yomitan Authors，GPL-3.0-or-later），
+ * 类名保持一致（词典自带样式依赖它们），颜色变量换成本应用的深色配色，去掉紧凑布局模式。
+ */
+
+/*
+ * 词典自带的样式大多按 Yomitan 的主题变量写，比如明鏡的粉框
+ * `var(--meikyo-pink, var(--danger-color-lightest, #FFCCCC))`。Yomitan 暗色主题定义了这些变量；
+ * 没定义就退回写死的浅色，深色界面上一片刺眼的粉底、看不清的浅字。
+ * 这里照 Yomitan 暗色主题（ext/css/material.css、display.css 的 :root[data-theme=dark]）补齐，
+ * 文字、强调、背景几项换成本应用的配色。
+ */
+.dict-results,
+.dict-entry {
+  --font-size-no-units: 14;
+  --line-height: 1.6;
+  --list-padding1: 1.2em;
+  --list-padding2: 1.6em;
+
+  /* material.css 暗色 */
+  --text-color: var(--fg);
+  --text-color-light1: #aaaaaa;
+  --text-color-light2: #999999;
+  --text-color-light3: var(--muted);
+  --text-color-light4: #777777;
+  --background-color: var(--panel);
+  --background-color-light: var(--bg);
+  --background-color-dark1: #2a2a34;
+  --shadow-color: rgba(105, 105, 105, 0.185);
+  --shadow-color-light: rgba(255, 255, 255, 0.085);
+  --accent-color: var(--accent);
+  --accent-color-dark: #9bb8f9;
+  --accent-color-light: #1a73e8;
+  --accent-color-lighter: #135dbe;
+  --accent-color-lightest: #0e4690;
+  --danger-color: var(--danger);
+  --danger-color-light: #c83c28;
+  --danger-color-lighter: #9e301f;
+  --danger-color-lightest: #732317;
+  --success-color: #75cf54;
+  --disabled-color: #444444;
+  --disabled-color-light: #585858;
+  --disabled-color-lighter: #777777;
+  --button-default-icon-color: #cccccc;
+  --button-default-icon-color-light: #999999;
+  --advanced-color: #6640be;
+  --advanced-color-lighter: hsl(258, 50%, 75%);
+
+  /* display.css 暗色 */
+  --link-color: var(--accent-color);
+  --reason-text-color: var(--text-color-light3);
+  --headword-text-color: var(--text-color);
+  --headword-reading-text-color: var(--text-color);
+  --light-border-color: #2f2f2f;
+  --medium-border-color: #3f3f3f;
+  --dark-border-color: #888888;
+  --tag-text-color: #f1f1f1;
+  --tag-border-color: transparent;
+  --tag-default-background-color: #69696e;
+  --tag-name-background-color: #992a67;
+  --tag-expression-background-color: #b07f39;
+  --tag-popular-background-color: #025caa;
+  --tag-frequent-background-color: #4490a7;
+  --tag-archaism-background-color: #b04340;
+  --tag-dictionary-background-color: #9057ad;
+  --tag-frequency-background-color: #489148;
+  --tag-part-of-speech-background-color: #565656;
+  --tag-search-background-color: #69696e;
+  --tag-pronunciation-dictionary-background-color: #6640be;
+  --sidebar-button-danger-background-color: transparent;
+  --sidebar-button-danger-background-color-hover: #dd2222;
+  --sidebar-button-danger-background-color-active: #bb2222;
+  --sidebar-button-icon-color: #cccccc;
+  --scrollbar-thumb-color: #444444;
+  --scrollbar-track-color: #2f2f2f;
+  --scrollbar-inverse-thumb-color: #c1c1c1;
+  /* 和 Yomitan 不同：要垫底色的栅格插图多是透明底黑线，浅色底才看得清（Yomitan 暗色用 #2f2f2f） */
+  --gloss-image-background-color: #ececf1;
+  --pronunciation-annotation-color: var(--fg);
+
+  /*
+   * 小学館例解学習国語的几种浅色底框，回退链落到 --tag-text-color（暗色下是浅色），
+   * 在 Yomitan 暗色主题里一样刺眼。作者留了 --rgko12-* 这组变量给使用者覆盖，这里给深色调。
+   */
+  --rgko12-cream: #3a3522;
+  --rgko12-spring: #1f3a2c;
+  --rgko12-summer: #1f3340;
+  --rgko12-autumn: #40301f;
+  --rgko12-winter: #2a3140;
+  --rgko12-travel: #2c3a22;
+  --rgko12-romance: #402533;
+  --rgko12-other: #33333b;
+  --rgko12-light-light-brown: #3a3026;
+  --rgko12-light-light-blue: #1f2d3d;
+  --rgko12-light-light-purple: #2f2640;
+  --bg-color: var(--panel-2);
+  --gaiji-border: #4a4a58;
+}
+
+/* ── 页面：整页就是查词，管理在设置页 ── */
+.dict-page { display: block; }
+.dict-search { min-width: 0; max-width: 900px; margin: 0 auto; }
+.dict-query { width: 100%; margin: 0; font-size: 16px; padding: 10px 14px; }
+.dict-subbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 2px 12px; }
+
+/* ── 设置页里的词典管理 ── */
+/* 词典名可能很长（「小学館 例解学習国語辞典 第十二版」），让它折行而不是把开关挤出去 */
+.setting-card .setting-title { overflow-wrap: anywhere; }
+.dict-row { position: relative; }
+.dict-row.dragging { opacity: .4; }
+/* 落点提示：拖到谁身上，线就画在那一侧 */
+.dict-row.drop-before::before, .dict-row.drop-after::after {
+  content: ""; position: absolute; left: 6px; right: 6px; height: 2px;
+  background: var(--accent); border-radius: 1px;
+}
+.dict-row.drop-before::before { top: -2px; }
+.dict-row.drop-after::after { bottom: -2px; }
+.dict-grip {
+  display: grid; place-items: center; width: 22px; height: 24px; border-radius: 4px;
+  color: var(--muted); cursor: grab;
+}
+.dict-grip:hover:not(:disabled) { background: var(--panel-2); color: var(--fg); }
+.dict-grip:active { cursor: grabbing; }
+.dict-grip:disabled { opacity: .3; cursor: default; }
+.dict-delete { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 5px; color: var(--muted); }
+.dict-delete:hover:not(:disabled) { background: var(--panel-2); color: var(--danger); }
+.dict-delete:disabled { opacity: .3; cursor: default; }
+.dict-legacy { margin-bottom: 24px; }
+.dict-manager .toolbar { flex-wrap: wrap; }
+.dict-progress { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.dict-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.dict-item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px;
+  padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+}
+.dict-item.off { opacity: .55; }
+.dict-item .check { color: var(--fg); }
+.dict-item .check b { font-weight: 500; overflow-wrap: anywhere; }
+.dict-item-info { grid-column: 1; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.dict-item-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 2px; align-items: center; }
+.dict-item-actions button { padding: 2px 6px; border-radius: 4px; color: var(--muted); }
+.dict-item-actions button:hover:not(:disabled) { background: var(--panel-2); color: var(--fg); }
+.dict-item-actions button.danger { color: var(--danger); }
+.dict-item-actions button:disabled { opacity: .3; cursor: default; }
+.dict-report { font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.dict-report ul { margin: 4px 0 0; padding-left: 1.2em; }
+.dict-report .failed { color: var(--danger); }
+
+/* ── 曲库页右栏「词典」那一页：上面的标签页负责切换，这里只说查的是哪几个字 ── */
+.corpus-dict { margin: 0 0 18px; }
+.corpus-dict-head { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 13px; }
+.corpus-dict-head .matched {
+  min-width: 0; color: var(--accent); font-size: 15px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.corpus-dict-close { margin-left: auto; color: var(--muted); }
+.corpus-dict-close:hover { color: var(--fg); }
+
+/* ── 折叠 ── */
+.dict-results-toolbar { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.dict-results-toolbar button { color: var(--muted); padding: 1px 6px; border-radius: 4px; }
+.dict-results-toolbar button:hover { color: var(--fg); background: var(--panel-2); }
+.dict-more { align-self: flex-start; font-size: 12px; color: var(--accent); padding: 2px 0; }
+.dict-more:hover { text-decoration: underline; }
+.dict-chevron { display: inline-block; width: 1.1em; text-align: center; opacity: .75; }
+.dict-dictionary[data-collapsed=true] { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.dict-dictionary-preview {
+  flex: 1; min-width: 0; text-align: left; font-size: 12px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dict-dictionary-preview:hover { color: var(--fg); }
+.dict-clamp[data-clamped=true] .dict-clamp-body {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+.dict-clamp-toggle { margin-top: 2px; font-size: 12px; color: var(--accent); }
+.dict-clamp-toggle:hover { text-decoration: underline; }
+.corpus .dict-results, .stage-side .dict-results { gap: 8px; font-size: 13px; }
+.corpus .dict-entry, .stage-side .dict-entry { padding: 8px 10px 10px; }
+.corpus .dict-headword, .stage-side .dict-headword { font-size: 20px; }
+.token-lookup { cursor: pointer; border-radius: 2px; }
+.token-lookup:hover { background: rgba(122,162,247,.1); }
+
+/* ── 词条 ── */
+.dict-results { display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.6; }
+.dict-results[data-loading=true] { opacity: .6; }
+.dict-empty { padding: 12px 0; margin: 0; }
+.dict-entry { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 14px 12px; }
+.dict-entry-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.dict-headwords { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.dict-headword { font-size: 24px; line-height: 1.9; }
+.dict-headword rt { font-size: 11px; color: var(--muted); }
+.dict-inflections { font-size: 12px; color: var(--muted); }
+.dict-inflection-chain + .dict-inflection-chain::before { content: " / "; }
+.dict-inflection::before { content: "« "; opacity: .7; }
+.dict-inflection + .dict-inflection { margin-left: 4px; }
+.dict-inflection-chain[data-source=dictionary]::after,
+.dict-inflection-chain[data-source=both]::after { content: "（词典）"; opacity: .7; }
+
+.dict-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; vertical-align: baseline; }
+.dict-tag { padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 1.7; background: var(--panel-2); color: var(--muted); cursor: default; }
+.dict-tag[data-category=partOfSpeech] { color: #9ece6a; background: rgba(158,206,106,.1); }
+.dict-tag[data-category=popular],
+.dict-tag[data-category=frequent] { color: var(--warn); background: rgba(224,175,104,.12); }
+.dict-tag[data-category=archaism] { color: var(--danger); background: rgba(247,118,142,.1); }
+.dict-tag[data-category=name] { color: #bb9af7; background: rgba(187,154,247,.1); }
+
+.dict-frequencies,
+.dict-pronunciations { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 12px; }
+.dict-frequency-group { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.dict-frequency-dictionary { padding: 0 6px; background: var(--panel-2); color: var(--muted); }
+.dict-frequency-values { padding: 0 6px; font-variant-numeric: tabular-nums; }
+.dict-frequency-value + .dict-frequency-value::before { content: "、"; color: var(--muted); }
+.dict-frequency-headword { color: var(--muted); }
+.dict-pronunciation-group { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.dict-pronunciation-dictionary { padding: 0 6px; border-radius: 3px; background: var(--panel-2); color: var(--muted); }
+.dict-pronunciation { display: inline-flex; align-items: baseline; gap: 4px; font-size: 14px; }
+.dict-pronunciation-headword { font-size: 12px; color: var(--muted); }
+
+.dict-definitions { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.dict-dictionary-name {
+  display: inline-flex; align-items: baseline; flex: none; margin-bottom: 2px; padding: 0 6px 0 2px;
+  border-radius: 3px; font-size: 11px; line-height: 1.8; color: var(--accent);
+  background: rgba(122,162,247,.12); cursor: pointer;
+}
+.dict-dictionary-name:hover { background: rgba(122,162,247,.22); }
+.dict-definition-list { margin: 0; padding-left: 1.6em; }
+.dict-definition-list:has(> li:only-child) { list-style: none; padding-left: 0; }
+.dict-definition { margin: 2px 0; }
+.dict-definition-meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 2px; }
+.dict-definition-only { font-size: 11px; color: var(--muted); }
+.gloss-list { margin: 0; padding-left: 0; list-style: none; }
+.gloss-item + .gloss-item { margin-top: 2px; }
+.gloss-text { white-space: pre-line; }
+
+/* ── Yomitan structured-content.css ── */
+.gloss-image-container {
+  display: inline-block; white-space: nowrap; max-width: 100%; max-height: 100vh;
+  position: relative; vertical-align: top; line-height: 0;
+  font-size: calc(1em / var(--font-size-no-units)); overflow: hidden;
+}
+.gloss-image-link[data-background=true] > .gloss-image-container { background-color: var(--gloss-image-background-color); }
+.gloss-image-link { cursor: inherit; color: var(--accent-color); display: inline-block; position: relative; line-height: 1; max-width: 100%; }
+.gloss-image-link:hover { color: var(--accent-color-dark); }
+.gloss-image-container-overlay {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+  font-size: calc(1em * var(--font-size-no-units)); line-height: var(--line-height);
+  display: table; table-layout: fixed; white-space: normal; color: var(--text-color-light3);
+}
+.gloss-image-link[data-image-load-state=load-error] .gloss-image-container-overlay::after {
+  content: "图片加载失败"; display: table-cell; width: 100%; height: 100%;
+  vertical-align: middle; text-align: center; padding: .25em;
+}
+.gloss-image-background {
+  --image: none;
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+  background-color: var(--text-color);
+  -webkit-mask-repeat: no-repeat; -webkit-mask-position: center center; -webkit-mask-mode: alpha;
+  -webkit-mask-size: contain; -webkit-mask-image: var(--image);
+  mask-repeat: no-repeat; mask-position: center center; mask-mode: alpha; mask-size: contain; mask-image: var(--image);
+  display: none;
+}
+.gloss-image { display: inline-block; vertical-align: top; object-fit: contain; border: none; outline: none; }
+.gloss-image-link[data-has-aspect-ratio=true] .gloss-image { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.gloss-image-link[data-image-rendering=pixelated] .gloss-image,
+.gloss-image-link[data-image-rendering=pixelated] .gloss-image-background { image-rendering: pixelated; }
+.gloss-image-link[data-image-rendering=crisp-edges] .gloss-image,
+.gloss-image-link[data-image-rendering=crisp-edges] .gloss-image-background { image-rendering: crisp-edges; }
+.gloss-image-link[data-has-aspect-ratio=true] .gloss-image-sizer { display: inline-block; width: 0; vertical-align: top; font-size: 0; }
+.gloss-image-link-text { display: none; line-height: var(--line-height); }
+.gloss-image-link-text::before { content: "["; }
+.gloss-image-link-text::after { content: "]"; }
+.gloss-image-description { display: block; white-space: pre-line; }
+.gloss-image-link[data-appearance=monochrome] .gloss-image {
+  --shadow-settings: 0 0 0.01px var(--text-color);
+  filter: grayscale(1) opacity(0.5) drop-shadow(var(--shadow-settings)) drop-shadow(var(--shadow-settings)) saturate(1000%) brightness(1000%);
+}
+.gloss-image-link[data-appearance=monochrome][data-background=true] > .gloss-image-container { background-color: transparent; }
+/*
+ * 深色主题下的矢量图：明鏡、三省堂的外字、符号、音调图大多是黑线透明底（appearance 为 auto、不垫底色），
+ * 直接放在深色背景上几乎看不见。反色再把色相转回来：黑线变白线，红、蓝这些颜色大体保留。
+ * 标了 monochrome 的上面已经按文字颜色重新着色；栅格插图（照片、笔顺图）保持原样。
+ */
+.gloss-image-link[data-vector=true][data-appearance=auto][data-background=false] .gloss-image {
+  filter: invert(1) hue-rotate(180deg);
+}
+.gloss-image-link[data-size-units=em] .gloss-image-container { font-size: 1em; }
+.gloss-image-link[data-vertical-align=baseline] { vertical-align: baseline; }
+.gloss-image-link[data-vertical-align=sub] { vertical-align: sub; }
+.gloss-image-link[data-vertical-align=super] { vertical-align: super; }
+.gloss-image-link[data-vertical-align=text-top] { vertical-align: top; }
+.gloss-image-link[data-vertical-align=text-bottom] { vertical-align: bottom; }
+.gloss-image-link[data-vertical-align=middle] { vertical-align: middle; }
+.gloss-image-link[data-vertical-align=top] { vertical-align: top; }
+.gloss-image-link[data-vertical-align=bottom] { vertical-align: bottom; }
+.gloss-image-link[data-collapsed=true] { vertical-align: baseline; }
+.gloss-image-link[data-collapsed=true] .gloss-image-container { display: none; position: absolute; left: 0; top: 100%; z-index: 1; }
+.gloss-image-link[data-collapsed=true]:hover .gloss-image-container,
+.gloss-image-link[data-collapsed=true]:focus .gloss-image-container { display: block; }
+.gloss-image-link[data-collapsed=true] .gloss-image-link-text { display: inline; }
+.gloss-image-link[data-collapsed=true] ~ .gloss-image-description { display: inline; }
+
+.gloss-link { color: var(--link-color); text-decoration: none; cursor: pointer; }
+.gloss-link[data-external=true] { cursor: default; }
+.gloss-link-text { vertical-align: baseline; }
+.gloss-link-external-icon::before { content: "↗"; margin-left: .15em; font-size: .8em; opacity: .7; }
+
+.gloss-sc-table-container { display: block; overflow-x: auto; }
+.gloss-sc-table { table-layout: auto; border-collapse: collapse; }
+.gloss-sc-thead, .gloss-sc-tfoot, .gloss-sc-th { font-weight: bold; background-color: var(--background-color-dark1); }
+.gloss-sc-th, .gloss-sc-td {
+  border-width: calc(1em / var(--font-size-no-units)); border-style: solid;
+  border-color: var(--text-color-light2); padding: .25em; vertical-align: top;
+}
+.gloss-sc-ol, .gloss-sc-ul { padding-left: var(--list-padding2); margin: 0; }
+.gloss-sc-details { padding-left: var(--list-padding1); }
+.gloss-sc-summary { list-style-position: outside; cursor: pointer; }
+
+/* ── Yomitan display-pronunciation.css ── */
+.pronunciation-downstep-notation { display: inline; color: var(--muted); font-size: 12px; }
+.pronunciation-text { display: inline; }
+.pronunciation-mora { display: inline-block; position: relative; }
+.pronunciation-mora-line { border-color: var(--pronunciation-annotation-color); }
+.pronunciation-mora[data-pitch=high] > .pronunciation-mora-line {
+  display: block; user-select: none; pointer-events: none; position: absolute;
+  top: .1em; left: 0; right: 0; height: 0; border-top-width: .1em; border-top-style: solid;
+}
+.pronunciation-mora[data-pitch=high][data-pitch-next=low] > .pronunciation-mora-line {
+  right: -.1em; height: .4em; border-right-width: .1em; border-right-style: solid;
+}
+.pronunciation-mora[data-pitch=high][data-pitch-next=low] { padding-right: .1em; margin-right: .1em; }
+.pronunciation-devoice-indicator {
+  display: block; position: absolute; left: 50%; top: 50%; width: 1.125em; height: 1.125em;
+  border: calc(1.5em / var(--font-size-no-units)) dotted var(--danger-color); border-radius: 50%;
+  box-sizing: border-box; z-index: 1; transform: translate(-50%, -50%);
+}
+.pronunciation-nasal-indicator {
+  display: block; position: absolute; right: -.125em; top: .125em; width: .375em; height: .375em;
+  border: calc(1.5em / var(--font-size-no-units)) solid var(--danger-color); border-radius: 50%;
+  box-sizing: border-box; z-index: 1;
+}
+.pronunciation-nasal-diacritic { position: absolute; width: 0; height: 0; opacity: 0; }
+.pronunciation-character { display: inline; }
+.pronunciation-character-group { display: inline-block; position: relative; }
+.pronunciation-graph { display: inline-block; vertical-align: middle; height: 1.5em; }
+.pronunciation-graph-line, .pronunciation-graph-line-tail { fill: none; stroke: var(--pronunciation-annotation-color); stroke-width: 5; }
+.pronunciation-graph-line-tail { stroke-dasharray: 5 5; }
+.pronunciation-graph-dot { fill: var(--pronunciation-annotation-color); stroke: var(--pronunciation-annotation-color); stroke-width: 5; }
+.pronunciation-graph-dot-downstep1 { fill: none; stroke: var(--pronunciation-annotation-color); stroke-width: 5; }
+.pronunciation-graph-dot-downstep2 { fill: var(--pronunciation-annotation-color); }
+.pronunciation-graph-triangle { fill: none; stroke: var(--pronunciation-annotation-color); stroke-width: 5; }
+
+/* ── 制卡按钮 ── */
+.dict-entry-actions { margin-left: auto; align-self: center; display: flex; gap: 6px; }
+.mine-btn {
+  padding: 2px 9px; border: 1px solid rgba(122,162,247,.4); border-radius: 5px;
+  font-size: 12px; line-height: 1.6; color: var(--accent); white-space: nowrap;
+}
+.mine-btn:hover:not(:disabled) { background: rgba(122,162,247,.14); }
+.mine-btn:disabled { opacity: .45; cursor: default; }
+.mine-btn.done { border-color: rgba(158,206,106,.45); color: #9ece6a; }
+.mine-btn.done.partial { border-color: rgba(224,175,104,.5); color: var(--warn); }
+.mine-btn.existing { border-color: var(--line); color: var(--muted); }
+.mine-btn.existing:hover { color: var(--fg); }
+.mine-btn.failed { border-color: rgba(247,118,142,.5); color: var(--danger); }

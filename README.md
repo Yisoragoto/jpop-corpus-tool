@@ -1,104 +1,122 @@
 # JPOP Corpus Tool
 
-一个面向日语学习者的本地 J-pop 语料库工具。把自己拥有的歌曲和 LRC 歌词导入后，可以检索真实歌词语境、逐行播放音频、查词并制作 Anki 卡片。
+一个面向日语学习者的本地 J-pop 语料库工具。把自己拥有的歌曲和 LRC 歌词导入后，可以检索真实歌词语境、跟着音频逐行读歌词、点词查释义，并把真实例句做成 Anki 卡片。
 
 > 本仓库只提供程序源码和构建工具，不包含商业歌曲、歌词、第三方词典、Anki 牌组或预生成语料数据库。
 
+**0.2.0 起，桌面端换成了 Tauri 2 + React + Rust**（0.1.x 是 PyQt6）。界面、播放、查词、刮削、制卡全部重写为原生实现，启动和检索都快了一个量级；旧版 Python 代码仍留在仓库里（见[目录说明](#目录说明)），数据库 `corpus.db` 两版通用。
+
 ## 核心功能
 
-### 语料搜索
+### 曲库与播放
 
-- 使用 SQLite FTS5 搜索歌词中的表面形或词元。
-- 按歌手、词性、上下文长度和日文内容筛选。
-- 以 KWIC 形式查看关键词左右语境，并从命中时间直接播放音频。
-- 生成词频、词性分布和词汇覆盖率报告。
+- 曲库按歌手分组，支持列表和封面网格两种视图；网格先显示歌手墙，点进去是他的歌。
+- 歌词跟随播放逐行高亮，点一行跳到那一句，可以对单句循环。
+- 倍速走 WSOLA 时间伸缩（**变速不变调**），变调另走 FFmpeg 渲染并缓存。
+- 全屏歌词：背景是整张封面虚化铺满，播放条是盖在上面的毛玻璃。
+- 振假名支持「只注汉字」和「整词注音」，字体、字号、行距、字距都可调。
+
+### 查词
+
+- 导入 Yomitan 格式的词典 zip（词条、词频、音调），查词结果包含结构化释义、音高、按读音区分的词频。
+- 活用形、片假名、罗马字都能查；从点的词一直到行尾做最长匹配，所以「打ち込んでいませんでした」点第一个词就能还原到「打ち込む」。
+- 曲库里点歌词上的词，右栏并列「词典」和「例句」两页，例句来自全语料。
+
+### 检索与分析
+
+- KWIC 语境检索：关键词居中对齐，可按歌手、词性、是否跨行、是否仅日文筛选，结果可导出 CSV。
+- 词频统计（词元 × 词性，带 JLPT 等级）、时间线、语料报告 TXT 导出。
+- 人物维度：演唱 / 作曲 / 作词 / 编曲，以及合作者图谱。
 
 ### Anki 制卡
 
-- 通过 AnkiConnect 把选中的单词和真实歌词例句发送到 Anki。
-- 可选择目标牌组、释义、例句数量和音频片段。
-- 支持读取 Anki 学习状态、排除已学习词和更新已有卡片。
-- 可导入 Yomitan 格式词典，为卡片提供释义、词频和声调信息。
+- 通过 AnkiConnect 把词和真实歌词例句发到 Anki，自带「Lyrics」笔记类型（照 Lapis 做的，背面有封面和歌名歌手专辑）。
+- 例句是点的那一行，这首歌里其他含这个词的句子接在后面，每句都从歌里切一段音频。
+- 可选按歌手放进「牌组::歌手」子牌组；能读 Anki 的学习状态，排除已学过的词。
+- 挖词报告（HTML）按 JLPT 分级列出语料里还没做成卡片的词。
 
-### 歌曲播放器
+### 刮削与导入
 
-- 曲库按歌手折叠，支持搜索歌曲和查看同步歌词。
-- 点击歌词跳转播放，支持倍速、升降调和单行循环。
-- 支持仅汉字振假名、全振假名以及自定义歌词字体、字号、行距和字间距。
-- 在歌词中右键查词，可查看词典释义和全语料出现位置，并直接加入指定 Anki 牌组。
+- 导入：扫描目录、复核计划、写入语料；**不覆盖本地文件里的原始 metadata**。
+- 刮削：iTunes → MusicBrainz 识别曲目，封面取 Cover Art Archive，歌手照片取 Deezer；置信度不够的停在「需确认」等人工看一眼。
+- 「补齐缺失封面」只补空的，用刮削时存下的候选，不重新搜索。
 
 ## 下载与安装
 
-普通用户不需要安装 Python、PyQt6、GiNZA 或 FFmpeg。请打开仓库右侧的 **Releases**，下载最新版本：
+打开仓库右侧的 **Releases**，下载最新版本的 `JPOP.Corpus.Tool_x.y.z_x64-setup.exe`（或 `.msi`）。Windows 10/11 需要 **WebView2 运行时**，系统一般已自带，安装程序也会按需引导安装。
 
-- `JpopCorpusTool-x.y.z-windows-setup.exe`：推荐，标准 Windows 安装程序。
-- `JpopCorpusTool-x.y.z-windows-portable.zip`：便携版，解压后运行 `JpopCorpusTool.exe`。
+数据目录（`corpus.db`、`raw/audio`、`raw/lyrics_lrc`、`raw/covers`、`dictionaries.db`）的查找顺序：
 
-程序数据默认保存在：
+1. 环境变量 `JPOP_CORPUS_HOME` 指向的目录；
+2. 从可执行文件往上找，第一个含 `corpus.db` 的目录；
+3. 当前工作目录。
 
-```text
-%LOCALAPPDATA%\JpopCorpusTool
-```
-
-安装升级不会覆盖这里的歌曲、歌词、设置和数据库。也可以通过环境变量 `JPOP_CORPUS_HOME` 指定其他数据目录。
+> **实时分词需要 Sudachi 词典。** 分词器从项目目录下的 `venv/Lib/site-packages/sudachipy`、`sudachidict_core` 读取，这是和 0.1.x 共用的那一份。没有它时查词、播放、检索、制卡照常，只有振假名和导入时的分词不可用——按 `requirements.txt` 建一个 venv 即可。
 
 ## 第一次使用
 
-1. 启动软件并进入“导入”。
-2. 选择自己合法拥有的本地歌曲文件；同目录下同名的 `.lrc` 歌词会自动匹配。
-3. 等待分词和数据库写入完成。
-4. 在“搜索”中检索单词，或进入“曲库”播放歌曲和查看歌词。
-5. 需要制卡时启动 Anki，并安装 AnkiConnect 插件。
-
-当前支持的具体音频格式取决于 Windows 媒体后端；发布包内置 FFmpeg，用于音频裁剪、变速和变调。
+1. 启动软件，进入「导入」，选一个装着自己合法拥有的音频的目录；同目录下同名的 `.lrc` 会自动匹配。
+2. 看过扫描计划再决定导不导；写库完成后曲库就有歌了。
+3. 想要封面和 metadata，去「刮削」页跑一遍。
+4. 想查词，去「词典」页导入 Yomitan 格式的 zip（也可以从 0.1.x 登记过的词典包一键迁移）。
+5. 要制卡就启动 Anki 并装上 AnkiConnect。
 
 ## 配置 Anki
 
 1. 安装并启动 [Anki](https://apps.ankiweb.net/)。
 2. 安装 [AnkiConnect（插件代码 2055492159）](https://ankiweb.net/shared/info/2055492159)。
-3. 在软件的 Anki 页面刷新连接状态。
-4. 选择目标牌组后即可发送或更新卡片。
+3. 在软件的 Anki 页面刷新连接状态，选好牌组和笔记类型。
 
 AnkiConnect 默认只监听本机地址，本工具不会上传你的语料或 Anki 数据。
 
 ## 从源码运行
 
-开发环境推荐使用 64 位 Python 3.12 和 Windows 10/11。
+需要 [Node.js](https://nodejs.org/) 20+、[Rust](https://rustup.rs/) stable 和 Windows 10/11 的 WebView2 运行时。
 
 ```powershell
 git clone https://github.com/Yisoragoto/jpop-corpus-tool.git
-cd jpop-corpus-tool
-.\setup_windows.bat
-.\run_gui.bat
+cd jpop-corpus-tool\app
+npm install
+npm run app:dev      # 开发模式，带热更新
+npm run app:build    # 出安装包，产物在 rust/target/release/bundle/
 ```
 
-手动安装方式：
+只跑检查：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe gui.py
+cd app
+npm run typecheck
+npm test
+cd ..\rust
+cargo test --workspace
+cargo clippy --workspace --all-targets
 ```
 
-首次启动会自动创建空数据库。仓库中的 `examples/` 提供数据格式示例，但不包含真实歌曲或歌词。
+首次启动会在数据目录里建空库。仓库中的 `examples/` 提供数据格式示例，不含真实歌曲或歌词。
 
-## 本地构建 Windows 发行版
-
-构建环境需要 Python 3.12、Inno Setup 6，以及可选的 FFmpeg：
-
-```powershell
-.\packaging\build_windows.ps1 -Version 0.1.0 -FfmpegPath "D:\tools\ffmpeg\bin\ffmpeg.exe"
-```
-
-输出：
+## 目录说明
 
 ```text
-dist/JpopCorpusTool-0.1.0-windows-portable.zip
-dist/JpopCorpusTool-0.1.0-windows-setup.exe
+app/           前端（React 19 + TypeScript strict + Vite）
+rust/          Rust workspace
+  jp-app/        Tauri 壳：command、状态、路径授权
+  jp-corpus/     数据层，SQL 全在这里
+  jp-tokenizer/  分词与 UPOS 映射（Sudachi）
+  jp-audio/      播放引擎：WSOLA 变速、频谱、单句循环
+  jp-dict/       Yomitan 式查词与词典导入
+  jp-anki/       Anki 制卡与挖词报告
+  jp-scraper/    曲目识别、封面与歌手照片
+  jp-import/     扫描、计划、写库
+  jp-normalize/  曲名 / 歌手名归一化
+docs/          每个子系统的设计与对账记录
+dialogs/       0.1.x 的 PyQt 界面模块（旧版，保留作参考）
+scripts/       0.1.x 的元数据与建库脚本
+assets/fonts/  随软件分发的 OFL 字体及许可证
+examples/      不含版权内容的数据格式示例
+raw/           本地音频和歌词目录，Git 默认忽略内容
 ```
 
-推送形如 `v0.1.0` 的 Git 标签后，GitHub Actions 会自动构建并把这两个文件发布到 Releases。
+`docs/` 里记的是每个子系统**怎么做的、为什么这么做、和旧版逐项对过哪些数字**——移植时的对账记录都在那里。
 
 ## 版权边界
 
@@ -111,17 +129,8 @@ dist/JpopCorpusTool-0.1.0-windows-setup.exe
 
 本工具用于处理用户自行提供且有权使用的材料。使用者应自行确认所在地区适用的版权和合理使用规则。
 
-## 目录说明
-
-```text
-dialogs/       Anki、词典、曲库等界面模块
-scripts/       元数据、分词和数据库构建脚本
-assets/fonts/  随软件分发的 OFL 字体及许可证
-packaging/     PyInstaller 与 Inno Setup 构建脚本
-examples/      不含版权内容的数据格式示例
-raw/           本地音频和歌词目录，Git 默认忽略内容
-```
-
 ## 许可证
 
-程序源码使用 [MIT License](LICENSE)。内置字体和可选 FFmpeg 适用各自许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+程序源码使用 [GNU General Public License v3.0 或更高版本](LICENSE)（GPL-3.0-or-later）。Copyright (C) 2026 Yisoragoto and JPOP Corpus contributors。
+
+查词部分移植自 [Yomitan](https://github.com/yomidevs/yomitan)（GPL-3.0-or-later），「Lyrics」笔记类型改自 [Lapis](https://github.com/donkuri/lapis)（GPL-3.0）。内置字体、可选 FFmpeg 及其它第三方组件适用各自许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
