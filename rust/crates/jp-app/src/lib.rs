@@ -12,6 +12,7 @@ pub mod commands;
 pub mod dict;
 pub mod fonts;
 pub mod library_admin;
+pub mod lyrics;
 pub mod maintenance;
 pub mod mine;
 pub mod pitch;
@@ -90,10 +91,17 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::is_favorite,
             // 维护
             commands::backfill_durations,
+            commands::lyrics_missing,
+            commands::lyrics_fill_start,
+            commands::lyrics_fill_cancel,
+            commands::lyrics_fill_running,
+            commands::lyrics_fill_one,
+            commands::lyrics_import_file,
             // 分词
             commands::tokenize,
             // 导入：扫描 → 复核 → 确认
             commands::scan_folder,
+            commands::scan_files,
             commands::run_import,
             commands::cancel_import,
             // 刮削：识别 / 补 metadata / 封面

@@ -483,6 +483,95 @@ pub fn backfill_durations(
     Ok(crate::maintenance::backfill_durations(&mut state.corpus())?)
 }
 
+// ──────────────────────────── 补齐歌词 ────────────────────────────
+
+/// 库里还没有歌词的歌。音频旁边就有 .lrc 的会在 `siblingLrc` 里标出来。
+#[tauri::command]
+pub fn lyrics_missing(state: State<'_, AppState>) -> CmdResult<Vec<crate::lyrics::MissingLyrics>> {
+    Ok(crate::lyrics::missing(state.corpus().connection())?)
+}
+
+/// 批量补齐，后台跑。进度走 `lyrics://progress` 事件。
+///
+/// `songIds` 省略就是「全库缺歌词的都补」。
+#[tauri::command]
+pub fn lyrics_fill_start<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+    song_ids: Option<Vec<String>>,
+) -> CmdResult<()> {
+    crate::lyrics::spawn_fill(
+        app,
+        state.lyrics_job(),
+        state.db_path.clone(),
+        state.lyrics_dir.clone(),
+        song_ids,
+    )?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn lyrics_fill_cancel(state: State<'_, AppState>) -> CmdResult<()> {
+    state.lyrics_job().request_cancel();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn lyrics_fill_running(state: State<'_, AppState>) -> CmdResult<bool> {
+    Ok(state.lyrics_job().is_running())
+}
+
+/// 单首：先看音频旁边有没有 .lrc，没有再上网搜。挑不出来返回 null。
+///
+/// 异步 + `spawn_blocking`：联网那一步可能要几秒，占着主线程的话整个界面会卡住。
+#[tauri::command]
+pub async fn lyrics_fill_one<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+) -> CmdResult<Option<crate::lyrics::Attached>> {
+    blocking(app, move |state| {
+        let targets = crate::lyrics::missing(state.corpus().connection())?;
+        let Some(target) = targets.into_iter().find(|t| t.song_id == song_id) else {
+            anyhow::bail!("{song_id} 已经有歌词了，先清掉再补，或者直接导入一份文件覆盖");
+        };
+        let provider = crate::lyrics::provider();
+        let lyrics_dir = state.lyrics_dir.clone();
+        let mut corpus = state.corpus();
+        crate::lyrics::fill_one(
+            corpus.connection_mut(),
+            &lyrics_dir,
+            &provider,
+            &target,
+            state.analyzer(),
+        )
+    })
+    .await
+}
+
+/// 用户自己选的一份歌词文件（.lrc / .txt）挂到这首歌上。
+///
+/// **替换**：这首歌已有的歌词行、分词、全文索引先清掉再挂新的，
+/// 不会出现两份歌词。用户校正过的分词会按原文套回去，不会丢。
+#[tauri::command]
+pub async fn lyrics_import_file<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+    path: String,
+) -> CmdResult<crate::lyrics::Attached> {
+    blocking(app, move |state| {
+        let lyrics_dir = state.lyrics_dir.clone();
+        let mut corpus = state.corpus();
+        crate::lyrics::attach_from_file(
+            corpus.connection_mut(),
+            &lyrics_dir,
+            &song_id,
+            std::path::Path::new(&path),
+            state.analyzer(),
+        )
+    })
+    .await
+}
+
 /// 播放状态 + 走一拍收听统计。**前端的轮询应当调这个，不是 `audio_state`。**
 ///
 /// 名字里带 tick 是因为它**有副作用**：会把收听时长累加进会话，
@@ -660,9 +749,15 @@ pub struct ScanResult {
     /// 分词器可不可用。不可用时导入仍能进行，只是不写 tokens——
     /// UI 要在按下「导入」之前就把这件事说清楚。
     pub tokenizer_ready: bool,
+    /// 选中但不是音频、因此没进计划的文件名。
+    ///
+    /// 单曲导入时用户可能顺手选中了 .lrc 或封面图。默不作声地丢掉
+    /// 会让人以为「选了 5 个却只导了 3 个」是 bug，所以原样报出来。
+    #[serde(default)]
+    pub ignored: Vec<String>,
 }
 
-/// 扫描一个目录，和现有曲库比对，返回一份计划供复核。
+/// 扫描一个目录（或单个音频文件），和现有曲库比对，返回一份计划供复核。
 ///
 /// **只读，什么都不写。** 真正写库要再调一次 `run_import`。
 #[tauri::command]
@@ -673,9 +768,69 @@ pub fn scan_folder(
 ) -> CmdResult<ScanResult> {
     let root = std::path::Path::new(&path);
     if !root.exists() {
-        return Err(anyhow::anyhow!("目录不存在：{path}").into());
+        return Err(anyhow::anyhow!("路径不存在：{path}").into());
     }
-    let tracks = jp_import::scan_dir(root, max_depth.unwrap_or(8));
+    Ok(plan_targets(&state, &[path], max_depth)?)
+}
+
+/// 扫描一批**具体的文件**（也允许夹着目录），同上只读。
+///
+/// 为什么需要它：以前只能选整个文件夹，而「音乐 App 下载目录里新增的那一首」
+/// 没法单独导——用户得么把文件挪进一个临时目录，要么扫整个目录再在几百条
+/// 计划里找那一条。`scan_dir` 本来就认单个文件，缺的只是一个入口。
+#[tauri::command]
+pub fn scan_files(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    max_depth: Option<usize>,
+) -> CmdResult<ScanResult> {
+    if paths.is_empty() {
+        return Err(anyhow::anyhow!("一个文件都没选").into());
+    }
+    for path in &paths {
+        if !std::path::Path::new(path).exists() {
+            return Err(anyhow::anyhow!("路径不存在：{path}").into());
+        }
+    }
+    Ok(plan_targets(&state, &paths, max_depth)?)
+}
+
+/// 扫 + 比对 + 记下待确认的结果。`scan_folder` 和 `scan_files` 的共同实现。
+///
+/// 同一个文件被选中两次（选了文件又选了它所在的目录）只算一次：
+/// 按路径去重在这里做，不然计划里会出现两条一模一样的、还互相判成「本批重复」。
+fn plan_targets(
+    state: &AppState,
+    paths: &[String],
+    max_depth: Option<usize>,
+) -> anyhow::Result<ScanResult> {
+    let depth = max_depth.unwrap_or(8);
+    let mut tracks: Vec<jp_import::ScannedTrack> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut ignored: Vec<String> = Vec::new();
+
+    for path in paths {
+        let target = std::path::Path::new(path);
+        let found = jp_import::scan_dir(target, depth);
+        if found.is_empty() && target.is_file() {
+            // 不是音频（.lrc、封面图、歌单文件……）。扫目录时这种文件本来就不计数，
+            // 但用户明确选中它的时候要说一声。
+            ignored.push(
+                target
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.clone()),
+            );
+            continue;
+        }
+        for track in found {
+            if seen.insert(track.path.clone()) {
+                tracks.push(track);
+            }
+        }
+    }
+    tracks.sort_by(|a, b| a.path.cmp(&b.path));
+
     let index = jp_import::LibraryIndex::from_corpus(&state.corpus())?;
     let plan = jp_import::plan(&tracks, &index);
 
@@ -704,12 +859,10 @@ pub fn scan_folder(
         summary,
         items,
         tokenizer_ready: state.analyzer().is_some(),
+        ignored,
     })
 }
 
-/// 执行上一次扫描的结果。
-///
-/// `tokenize` 默认开。关掉能快一大截，适合先把歌导进来、之后再补分词。
 #[tauri::command]
 pub fn run_import(
     state: State<'_, AppState>,

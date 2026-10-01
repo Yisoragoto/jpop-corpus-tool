@@ -26,6 +26,8 @@ pub struct AppState {
     pub covers_dir: PathBuf,
     /// 歌手照片目录，对应 project_paths.ARTISTS_DIR
     pub artists_dir: PathBuf,
+    /// 歌词落盘目录，和 0.1.x 的 project_paths.LYRICS_DIR 同一个（`{song_id}.lrc`）
+    pub lyrics_dir: PathBuf,
     /// 批量刮削作业的运行/取消标志
     scrape_job: std::sync::Arc<crate::scrape::ScrapeJob>,
     /// Anki 导出作业。**和刮削分开**——刮削排的是外部服务的限流队列，
@@ -60,6 +62,8 @@ pub struct AppState {
     translator: jp_dict::translator::Translator,
     /// 词典导入作业。和 Anki、刮削各自独立。
     dict_job: std::sync::Arc<crate::dict::ImportJob>,
+    /// 补齐歌词作业。同上，各自独立：补歌词排的是网易云的队，和别的互不相干。
+    lyrics_job: std::sync::Arc<crate::lyrics::LyricsJob>,
 }
 
 impl AppState {
@@ -67,6 +71,7 @@ impl AppState {
         let db_path = project_root.join("corpus.db");
         let covers_dir = project_root.join("raw").join("covers");
         let artists_dir = project_root.join("raw").join("artists");
+        let lyrics_dir = project_root.join("raw").join("lyrics_lrc");
         let dictionaries_path = project_root.join("dictionaries.db");
         let corpus = Corpus::open_writable(&db_path)
             .with_context(|| format!("打不开 {}", db_path.display()))?;
@@ -92,6 +97,7 @@ impl AppState {
             db_path,
             covers_dir,
             artists_dir,
+            lyrics_dir,
             scrape_job: std::sync::Arc::new(crate::scrape::ScrapeJob::default()),
             anki_job: std::sync::Arc::new(crate::anki::ExportJob::default()),
             corpus: Mutex::new(corpus),
@@ -116,6 +122,7 @@ impl AppState {
             dictionaries: Mutex::new(None),
             translator: jp_dict::translator::Translator::new(),
             dict_job: std::sync::Arc::new(crate::dict::ImportJob::default()),
+            lyrics_job: std::sync::Arc::new(crate::lyrics::LyricsJob::default()),
         })
     }
 
@@ -139,6 +146,10 @@ impl AppState {
 
     pub fn dict_job(&self) -> std::sync::Arc<crate::dict::ImportJob> {
         self.dict_job.clone()
+    }
+
+    pub fn lyrics_job(&self) -> std::sync::Arc<crate::lyrics::LyricsJob> {
+        self.lyrics_job.clone()
     }
 
     pub fn dictionaries_path(&self) -> &std::path::Path {

@@ -1622,6 +1622,297 @@ fn scan_folder_accepts_the_camel_case_depth_argument() {
     ok(&w, "cancel_import", json!({}));
 }
 
+/// 单曲导入：选中具体的文件，而不是整个目录。
+///
+/// 跑在真库上，所以挑的是**已经导入过的**两首歌——计划必然全是
+/// alreadyImported，一行都不会写。要验的是「按文件选也能扫、也能对上」。
+#[test]
+fn scanning_two_files_plans_exactly_those_two() {
+    let w = app_or_skip!();
+    let audio = project_root().join("raw/audio");
+    if !audio.is_dir() {
+        eprintln!("跳过：找不到 {}", audio.display());
+        return;
+    }
+    let mut files: Vec<String> = Vec::new();
+    for entry in walkdir(&audio).into_iter() {
+        if jp_import::is_audio_file(&entry) {
+            files.push(entry.display().to_string());
+        }
+        if files.len() == 2 {
+            break;
+        }
+    }
+    if files.len() < 2 {
+        eprintln!("跳过：raw/audio 里音频不足两个");
+        return;
+    }
+
+    let result = ok(&w, "scan_files", json!({ "paths": files.clone() }));
+    assert_eq!(result["summary"]["total"].as_i64(), Some(2));
+    assert_eq!(result["summary"]["alreadyImported"].as_i64(), Some(2));
+    assert_eq!(result["ignored"].as_array().map(|a| a.len()), Some(0));
+
+    // 同一个文件选两次只算一次，否则两条会互相判成「本批重复」
+    let dupes = ok(
+        &w,
+        "scan_files",
+        json!({ "paths": vec![files[0].clone(), files[0].clone()] }),
+    );
+    assert_eq!(dupes["summary"]["total"].as_i64(), Some(1));
+    assert_eq!(dupes["summary"]["duplicatesInBatch"].as_i64(), Some(0));
+
+    ok(&w, "cancel_import", json!({}));
+}
+
+/// 选中的不是音频（.lrc、封面图）时要报出来，不能默不作声地丢掉——
+/// 否则「选了 3 个只导了 2 个」看起来像 bug。
+#[test]
+fn a_chosen_file_that_is_not_audio_is_reported_not_swallowed() {
+    let w = app_or_skip!();
+    let lrc = project_root().join("raw/lyrics_lrc/001.lrc");
+    if !lrc.is_file() {
+        eprintln!("跳过：找不到 {}", lrc.display());
+        return;
+    }
+    let result = ok(
+        &w,
+        "scan_files",
+        json!({ "paths": vec![lrc.display().to_string()] }),
+    );
+    assert_eq!(result["summary"]["total"].as_i64(), Some(0));
+    let ignored = result["ignored"].as_array().expect("ignored 应当是数组");
+    assert_eq!(ignored.len(), 1);
+    assert_eq!(ignored[0].as_str(), Some("001.lrc"));
+    ok(&w, "cancel_import", json!({}));
+}
+
+#[test]
+fn scanning_an_empty_file_list_is_an_error() {
+    let w = app_or_skip!();
+    let err = invoke(&w, "scan_files", json!({ "paths": Vec::<String>::new() }))
+        .expect_err("空列表应当报错");
+    assert!(
+        err["message"].as_str().unwrap_or_default().contains("一个文件都没选"),
+        "错误信息要说清问题：{err}"
+    );
+}
+
+/// 浅遍历，只为在 raw/audio 里找头两个音频文件
+fn walkdir(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut paths: Vec<std::path::PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        paths.sort();
+        for path in paths {
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+// ───────────────────────── 单曲导入 + 补歌词 ─────────────────────────
+
+/// 走完整条链：选一个文件 → 导入 → 给它导一份歌词 → 读回来 → 搜得到。
+///
+/// 全程走真实 IPC，跑在**真库的副本**上。这条链里每一步都是
+/// 「编译通过但一点就报错」的高危处：命令有没有注册、camelCase 参数对不对、
+/// 返回值的形状前端认不认、FTS 有没有跟着同步。
+#[test]
+fn importing_one_file_then_its_lyrics_works_end_to_end() {
+    let Some(scratch) = scratch_app("lyrics-flow") else {
+        return;
+    };
+    let w = scratch.w();
+
+    // 造一个「音乐 App 下载目录」：只有音频，旁边没有 .lrc
+    let drop_dir = scratch.dir().join("downloads");
+    std::fs::create_dir_all(&drop_dir).unwrap();
+    let audio = drop_dir.join("テスト歌手 - テスト曲.flac");
+    std::fs::write(&audio, b"not really audio").unwrap();
+
+    let scan = ok(
+        &w,
+        "scan_files",
+        json!({ "paths": vec![audio.display().to_string()] }),
+    );
+    assert_eq!(scan["summary"]["total"].as_i64(), Some(1));
+    assert_eq!(scan["summary"]["new"].as_i64(), Some(1), "单个文件没被判成新歌：{scan}");
+    assert_eq!(scan["items"][0]["hasLyrics"].as_bool(), Some(false));
+
+    // tokenize=false：副本目录里没有 venv，分词器本来就不可用
+    let report = ok(&w, "run_import", json!({ "tokenize": false }));
+    let tracks = report["tracks"].as_array().expect("tracks 应当是数组");
+    assert_eq!(tracks.len(), 1, "{report}");
+    assert_eq!(tracks[0]["outcome"]["kind"], "imported");
+    assert_eq!(tracks[0]["outcome"]["lyricLines"].as_i64(), Some(0));
+    let song_id = tracks[0]["songId"].as_str().expect("要有 songId").to_string();
+
+    // 刚导进来的歌必然在「缺歌词」名单里
+    let missing = ok(&w, "lyrics_missing", json!({}));
+    let row = missing
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["songId"].as_str() == Some(song_id.as_str()))
+        .unwrap_or_else(|| panic!("缺歌词名单里没有刚导入的那首：{missing}"));
+    assert_eq!(row["title"].as_str(), Some("テスト曲"));
+    assert_eq!(row["siblingLrc"], Value::Null, "旁边没有 .lrc 却说有");
+
+    // 用户自己给一份歌词
+    let lrc = scratch.dir().join("hand.lrc");
+    std::fs::write(
+        &lrc,
+        "作詞 : テスト作詞家\n[00:12.00]ひとつめの行\n[00:20.50]ふたつめの行\n",
+    )
+    .unwrap();
+    let attached = ok(
+        &w,
+        "lyrics_import_file",
+        json!({ "songId": song_id, "path": lrc.display().to_string() }),
+    );
+    assert_eq!(attached["source"], "manual");
+    assert_eq!(attached["lyricLines"].as_i64(), Some(2));
+    assert_eq!(attached["credits"].as_i64(), Some(1), "LRC 里的作词没进署名");
+    // 落盘的那一份要在语料库目录下，文件名是 song_id
+    let on_disk = scratch
+        .dir()
+        .join("raw")
+        .join("lyrics_lrc")
+        .join(format!("{song_id}.lrc"));
+    assert!(on_disk.is_file(), "没落盘：{}", on_disk.display());
+
+    // 读回来
+    let lines = ok(&w, "lyrics", json!({ "songId": song_id }));
+    let lines = lines.as_array().unwrap();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["text"].as_str(), Some("ひとつめの行"));
+    assert!((lines[1]["timeSec"].as_f64().unwrap() - 20.5).abs() < 1e-6);
+
+    // 搜得到——外部内容的 FTS 表没有触发器，漏同步这里就是空
+    let hits = ok(&w, "search_lyrics", json!({ "text": "ふたつめ", "limit": 10 }));
+    assert!(
+        hits.as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["songId"].as_str() == Some(song_id.as_str())),
+        "新挂上的歌词搜不到：{hits}"
+    );
+
+    // 名单里不该还有它
+    let missing = ok(&w, "lyrics_missing", json!({}));
+    assert!(
+        !missing
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["songId"].as_str() == Some(song_id.as_str())),
+        "挂上歌词之后还算缺歌词"
+    );
+
+    // 换一份：不能变成两份，旧的也不能留在全文索引里
+    let lrc2 = scratch.dir().join("hand2.lrc");
+    std::fs::write(&lrc2, "[00:05.00]あたらしい行\n").unwrap();
+    let again = ok(
+        &w,
+        "lyrics_import_file",
+        json!({ "songId": song_id, "path": lrc2.display().to_string() }),
+    );
+    assert_eq!(again["lyricLines"].as_i64(), Some(1));
+    let lines = ok(&w, "lyrics", json!({ "songId": song_id }));
+    assert_eq!(lines.as_array().unwrap().len(), 1, "换歌词变成了两份");
+    let ghosts = ok(&w, "search_lyrics", json!({ "text": "ふたつめ", "limit": 10 }));
+    assert!(
+        !ghosts
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|h| h["songId"].as_str() == Some(song_id.as_str())),
+        "旧歌词还留在全文索引里：{ghosts}"
+    );
+}
+
+/// 音频旁边就有 .lrc 时，「补齐」不该上网——本地那一份必然是对的。
+#[test]
+fn a_sibling_lrc_is_used_without_going_online() {
+    let Some(scratch) = scratch_app("lyrics-sibling") else {
+        return;
+    };
+    let w = scratch.w();
+
+    let drop_dir = scratch.dir().join("downloads");
+    std::fs::create_dir_all(&drop_dir).unwrap();
+    let audio = drop_dir.join("ローカル歌手 - ローカル曲.flac");
+    std::fs::write(&audio, b"not really audio").unwrap();
+
+    let scan = ok(
+        &w,
+        "scan_files",
+        json!({ "paths": vec![audio.display().to_string()] }),
+    );
+    assert_eq!(scan["summary"]["new"].as_i64(), Some(1));
+    let report = ok(&w, "run_import", json!({ "tokenize": false }));
+    let song_id = report["tracks"][0]["songId"].as_str().unwrap().to_string();
+
+    // 导入之后才下的歌词：文件现在才出现在音频旁边
+    std::fs::write(audio.with_extension("lrc"), "[00:01.00]あとから来た歌詞\n").unwrap();
+    let missing = ok(&w, "lyrics_missing", json!({}));
+    let row = missing
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["songId"].as_str() == Some(song_id.as_str()))
+        .expect("应当还在缺歌词名单里");
+    assert!(
+        row["siblingLrc"].as_str().is_some(),
+        "没认出音频旁边的 .lrc：{row}"
+    );
+
+    let attached = ok(&w, "lyrics_fill_one", json!({ "songId": song_id }));
+    assert_eq!(attached["source"], "sibling", "本地有 .lrc 却跑去上网：{attached}");
+    assert_eq!(attached["lyricLines"].as_i64(), Some(1));
+}
+
+/// 已经有歌词的歌不走在线补齐——绝不用网上搜到的悄悄覆盖用户手上那一份。
+#[test]
+fn filling_online_is_refused_for_a_song_that_already_has_lyrics() {
+    let w = app_or_skip!();
+    let tracks = ok(&w, "list_tracks", json!({ "limit": 400 }));
+    let with_lyrics = tracks.as_array().unwrap().iter().find(|t| {
+        let id = t["id"].as_str().unwrap_or_default();
+        !ok(&w, "lyrics", json!({ "songId": id }))
+            .as_array()
+            .unwrap()
+            .is_empty()
+    });
+    let Some(track) = with_lyrics else {
+        eprintln!("跳过：库里没有带歌词的歌");
+        return;
+    };
+    let err = invoke(
+        &w,
+        "lyrics_fill_one",
+        json!({ "songId": track["id"].as_str().unwrap() }),
+    )
+    .expect_err("已经有歌词时应当拒绝");
+    assert!(
+        err["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("已经有歌词"),
+        "错误信息要说清为什么拒绝：{err}"
+    );
+}
+
 // ────────────────────────── 刮削 ──────────────────────────
 //
 // 只读的几条跑在真库上（刮削状态表是空的，读不出东西也是有效结果）。

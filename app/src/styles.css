@@ -1170,6 +1170,22 @@ button.chip:hover { color: var(--fg); }
 .empty-state p { margin: 0; font-size: 13px; line-height: 1.7; }
 .empty-actions { display: flex; gap: 8px; margin-top: 6px; }
 
+/* ── 补歌词 ──
+   两条链接 + 一句结果。放在歌词区的空状态里和操作行里两处，
+   所以不自带边框和背景，跟着所在的容器走。 */
+.lyrics-fill { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.lyrics-fill .muted { flex: 1 1 100%; text-align: left; }
+.empty-state .lyrics-fill { justify-content: center; margin-top: 4px; }
+.empty-state .lyrics-fill .muted { text-align: center; }
+
+/* 单曲导入：选中的文件列表。只显示文件名，完整路径一行塞不下 */
+.chosen-files { padding: 10px 2px 2px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.chosen-files .list.compact {
+  flex: none; overflow: visible; padding: 0; margin: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 2px; max-height: 148px; overflow-y: auto;
+}
+.chosen-files .list.compact li { font-size: 12px; color: var(--fg); padding: 0; }
+
 /* ── 区块：一页由若干「区块」组成，不是若干方框 ──
    只有一行标题，内容直接铺在页底色上。边框留给真正要圈起来的东西
    （表单、警告、需要确认的操作）。 */

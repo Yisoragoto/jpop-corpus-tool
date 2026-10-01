@@ -20,6 +20,7 @@
 //! 归一化在独立的 `jp-normalize` crate 里，和 `jp-import` 共用一份——
 //! 这个键决定「是不是同一首歌」，两处各写一套迟早会分叉。
 
+pub mod lyrics;
 pub mod artwork;
 pub mod error;
 pub mod http;

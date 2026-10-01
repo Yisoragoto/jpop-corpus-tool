@@ -184,12 +184,14 @@ pub fn execute_with_progress(
     Ok(report)
 }
 
-#[derive(Default)]
-struct Stats {
-    lyric_lines: usize,
-    tokens: usize,
-    credits: usize,
-    corrections_restored: usize,
+/// 一次写入的计数。导入和「补齐歌词」报的是同一套数字。
+#[derive(Debug, Default, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stats {
+    pub lyric_lines: usize,
+    pub tokens: usize,
+    pub credits: usize,
+    pub corrections_restored: usize,
 }
 
 fn import_one(
@@ -235,72 +237,112 @@ fn import_one(
 
     // ── 歌词 ──
     if let Some(path) = &track.lyrics_path {
-        let parsed = crate::lrc::parse_file(std::path::Path::new(path))
-            .with_context(|| format!("读歌词失败：{path}"))?;
+        stats += attach_lyrics(
+            tx,
+            song_id,
+            std::path::Path::new(path),
+            analyzer,
+            track.artist(),
+            track.title(),
+        )?;
+    }
 
-        for (line_idx, line) in parsed.lines.iter().enumerate() {
-            tx.execute(
-                "INSERT INTO utterances (song_id, line_idx, time_sec, text) VALUES (?1,?2,?3,?4)",
-                params![song_id, line_idx as i64, line.time_sec, line.text],
-            )?;
-            let utterance_id = tx.last_insert_rowid();
-            stats.lyric_lines += 1;
+    Ok(stats)
+}
 
-            // utterances_fts 是 content=utterances 的外部内容表，**没有触发器**。
-            // 漏掉这一步，歌能存进去但全文检索永远搜不到。
-            tx.execute(
-                "INSERT INTO utterances_fts (rowid, text) VALUES (?1, ?2)",
-                params![utterance_id, line.text],
-            )?;
+impl std::ops::AddAssign for Stats {
+    fn add_assign(&mut self, other: Self) {
+        self.lyric_lines += other.lyric_lines;
+        self.tokens += other.tokens;
+        self.credits += other.credits;
+        self.corrections_restored += other.corrections_restored;
+    }
+}
 
-            if let Some(analyzer) = analyzer {
-                let tokens = analyzer
-                    .analyze(&line.text)
-                    .with_context(|| format!("分词失败：{}", line.text))?;
-                // 空白不入语料。GiNZA 建库时就没收，实测拿 6,427 句
-                // 两边都有的歌词比过：**只**差在空白 token 上，滤掉之后
-                // 逐词一致率 100.00%。不滤的话词频统计里会混进空格。
-                let meaningful = tokens.iter().filter(|t| !t.surface.trim().is_empty());
-                for (token_idx, token) in meaningful.enumerate() {
-                    // pos 列存 UPOS——库里存量就是 NOUN/VERB 这套，
-                    // 写日语词性进去会让整个语料的词性统计对不上。
-                    // dep/head 留空：sudachi.rs 没有依存分析。
-                    tx.execute(
-                        "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) \
-                         VALUES (?1,?2,?3,?4,?5)",
-                        params![
-                            utterance_id,
-                            token_idx as i64,
-                            token.surface,
-                            token.lemma,
-                            token.upos
-                        ],
-                    )?;
-                    stats.tokens += 1;
-                }
-            }
-        }
+/// 把一份 LRC 挂到一首已经在库里的歌上：歌词行、全文索引、分词、作词作曲、分词校正。
+///
+/// 导入时顺手做的就是这一步；「补齐缺失歌词」在线下回 .lrc、以及用户自己
+/// 指定一个 .lrc 之后，也走同一份代码——**两条路写出来的库必须长得一样**，
+/// 所以只能有一份实现。
+///
+/// **调用方负责保证这首歌还没有歌词**（`utterances` 为空，必要时先
+/// `maintain::clear_lyrics`）：这里只插不删，重复调会得到两份歌词行。
+///
+/// 接 `&Connection` 而不是 `&Transaction`：导入这边传事务（解引用就是
+/// `Connection`），补齐歌词那边手上只有一条自己的连接。
+pub fn attach_lyrics(
+    tx: &Connection,
+    song_id: &str,
+    lrc_path: &std::path::Path,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+    artist: &str,
+    title: &str,
+) -> Result<Stats> {
+    let mut stats = Stats::default();
+    let parsed = crate::lrc::parse_file(lrc_path)
+        .with_context(|| format!("读歌词失败：{}", lrc_path.display()))?;
 
-        // ── 分词校正 ──
-        // 这首歌以前被删过、删之前用户校正过分词的话，校正行还留在表里，套回去。
-        // 规则和 Python 导入线程一致，见 `jp_corpus::corrections::restore_for_song`。
-        //
-        // 没分词（analyzer 为 None）时不套：只给个别行写 token 会得到一首「半分词」的歌。
-        // 校正行留在表里不会丢。
-        if analyzer.is_some() {
-            stats.corrections_restored =
-                jp_corpus::corrections::restore_for_song(tx, song_id, track.artist(), track.title())
-                    .context("恢复分词校正失败")?;
-        }
+    for (line_idx, line) in parsed.lines.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO utterances (song_id, line_idx, time_sec, text) VALUES (?1,?2,?3,?4)",
+            params![song_id, line_idx as i64, line.time_sec, line.text],
+        )?;
+        let utterance_id = tx.last_insert_rowid();
+        stats.lyric_lines += 1;
 
-        // ── 作词 / 作曲 / 编曲 ──
-        for (position, credit) in parsed.credits.iter().enumerate() {
-            if let Some(person_id) = get_or_create_person(tx, &credit.name)? {
-                stats.credits += add_credit(tx, song_id, person_id, credit.role, position, "lrc")?;
+        // utterances_fts 是 content=utterances 的外部内容表，**没有触发器**。
+        // 漏掉这一步，歌能存进去但全文检索永远搜不到。
+        tx.execute(
+            "INSERT INTO utterances_fts (rowid, text) VALUES (?1, ?2)",
+            params![utterance_id, line.text],
+        )?;
+
+        if let Some(analyzer) = analyzer {
+            let tokens = analyzer
+                .analyze(&line.text)
+                .with_context(|| format!("分词失败：{}", line.text))?;
+            // 空白不入语料。GiNZA 建库时就没收，实测拿 6,427 句
+            // 两边都有的歌词比过：**只**差在空白 token 上，滤掉之后
+            // 逐词一致率 100.00%。不滤的话词频统计里会混进空格。
+            let meaningful = tokens.iter().filter(|t| !t.surface.trim().is_empty());
+            for (token_idx, token) in meaningful.enumerate() {
+                // pos 列存 UPOS——库里存量就是 NOUN/VERB 这套，
+                // 写日语词性进去会让整个语料的词性统计对不上。
+                // dep/head 留空：sudachi.rs 没有依存分析。
+                tx.execute(
+                    "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) \
+                     VALUES (?1,?2,?3,?4,?5)",
+                    params![
+                        utterance_id,
+                        token_idx as i64,
+                        token.surface,
+                        token.lemma,
+                        token.upos
+                    ],
+                )?;
+                stats.tokens += 1;
             }
         }
     }
 
+    // ── 分词校正 ──
+    // 这首歌以前被删过、删之前用户校正过分词的话，校正行还留在表里，套回去。
+    // 规则和 Python 导入线程一致，见 `jp_corpus::corrections::restore_for_song`。
+    //
+    // 没分词（analyzer 为 None）时不套：只给个别行写 token 会得到一首「半分词」的歌。
+    // 校正行留在表里不会丢。
+    if analyzer.is_some() {
+        stats.corrections_restored =
+            jp_corpus::corrections::restore_for_song(tx, song_id, artist, title)
+                .context("恢复分词校正失败")?;
+    }
+
+    // ── 作词 / 作曲 / 编曲 ──
+    for (position, credit) in parsed.credits.iter().enumerate() {
+        if let Some(person_id) = get_or_create_person(tx, &credit.name)? {
+            stats.credits += add_credit(tx, song_id, person_id, credit.role, position, "lrc")?;
+        }
+    }
     Ok(stats)
 }
 

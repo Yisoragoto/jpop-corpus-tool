@@ -24,6 +24,7 @@ import { AudioRepair } from "../components/AudioRepair";
 import { LyricsStage } from "../components/LyricsStage";
 import { SongEditor } from "../components/SongEditor";
 import { LyricsTools } from "../components/LyricsTools";
+import { LyricsFill } from "../components/LyricsFill";
 import { lyricFontStack, useLyricFontFiles } from "../fonts";
 import { useLyricsDisplay, useSongFurigana } from "../lyricsDisplay";
 import { useAppSettings } from "../settings";
@@ -732,6 +733,14 @@ export function LibraryPage({ library, actions, playback, audioReady, onAudioErr
                   <button className="link-btn" onClick={() => setPanel(panel === "edit" ? null : "edit")}>
                     编辑信息
                   </button>
+                  {lyrics.length > 0 && (
+                    <LyricsFill
+                      songId={selected.id}
+                      hasLyrics
+                      onAttached={() => void actions.reloadLyrics()}
+                      onError={onAudioError}
+                    />
+                  )}
                   {confirmDelete ? (
                     <span className="confirm-delete">
                       删掉《{selected.title}》？歌词和分词一起删，音频文件不动
@@ -778,7 +787,19 @@ export function LibraryPage({ library, actions, playback, audioReady, onAudioErr
 
             {lyricsLoading && <p className="muted pad">加载歌词…</p>}
             {!lyricsLoading && lyrics.length === 0 && (
-              <p className="muted pad">这首歌还没有歌词</p>
+              <div className="empty-state pad">
+                <p>这首歌还没有歌词</p>
+                <p className="muted small">
+                  导入只认音频旁边的同名 .lrc。在线搜一下，或者自己选一份文件——
+                  歌词会存进语料库目录的 raw/lyrics_lrc，和导入进来的一样。
+                </p>
+                <LyricsFill
+                  songId={selected.id}
+                  hasLyrics={false}
+                  onAttached={() => void actions.reloadLyrics()}
+                  onError={onAudioError}
+                />
+              </div>
             )}
 
             {lyrics.map((line, idx) => {

@@ -253,14 +253,78 @@ fn parse_credit(body: &str) -> Option<(&'static str, Vec<String>)> {
 /// 读文件并解析。编码按 UTF-8 → CP932 → GBK 依次尝试。
 pub fn parse_file(path: &std::path::Path) -> anyhow::Result<ParsedLrc> {
     let bytes = std::fs::read(path)?;
-    // 绝大多数是 UTF-8（可能带 BOM）
-    let text = String::from_utf8_lossy(&bytes);
-    Ok(parse(text.trim_start_matches('\u{feff}')))
+    Ok(parse(decode(&bytes).trim_start_matches('\u{feff}')))
+}
+
+/// 字节 → 文本。UTF-8 → CP932 → GBK，第一个**不出错**的解释胜出。
+///
+/// 不能只用 `from_utf8_lossy`：日文站点下回来的 .lrc 有不少是 Shift-JIS，
+/// 整份歌词会变成一串 U+FFFD。那比没有歌词更糟——库里记着「这首有歌词」，
+/// 「补齐缺失歌词」再也不会看它一眼，而检索和制卡拿到的全是问号。
+///
+/// CP932 排在 GBK 前面：两者的双字节区大面积重叠，同一串字节往往两边都能
+/// 解出「字」来，只有一边是对的。这是个日文语料库，所以先假定日文编码；
+/// 真有 GBK 的中文歌词时，它多半含 CP932 解不出的字节（实测
+/// 「风的记忆」的 GBK 编码在 CP932 下第 17 字节就非法），于是会落到 GBK。
+fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    for encoding in [encoding_rs::SHIFT_JIS, encoding_rs::GBK] {
+        let (text, _, had_errors) = encoding.decode(bytes);
+        if !had_errors {
+            return text;
+        }
+    }
+    // 三种都不干净：按 UTF-8 尽力而为，坏字节变 U+FFFD。
+    // 走到这里的文件本身就是坏的，报错反而会让一首歌整个导不进来。
+    String::from_utf8_lossy(bytes)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 日文站点下回来的 .lrc 常是 Shift-JIS。整份当 UTF-8 读会变成一串 U+FFFD，
+    /// 而且因为「有歌词」了，补齐流程再也不会来看它。
+    #[test]
+    fn a_shift_jis_file_is_not_read_as_mojibake() {
+        let dir = std::env::temp_dir().join(format!("jp-lrc-enc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let sjis = dir.join("sjis.lrc");
+        std::fs::write(
+            &sjis,
+            b"\x5b\x30\x30\x3a\x31\x35\x2e\x30\x30\x5d\x8c\x4e\x82\xf0\x91\xd2\x82\xc1\x82\xc4\x82\xa2\x82\xe9\x0a",
+        )
+        .unwrap();
+        let parsed = parse_file(&sjis).unwrap();
+        assert_eq!(parsed.lines.len(), 1);
+        assert_eq!(parsed.lines[0].text, "君を待っている");
+
+        // GBK 的中文歌词：CP932 解到一半就非法，于是落到 GBK
+        let gbk = dir.join("gbk.lrc");
+        std::fs::write(
+            &gbk,
+            b"\x5b\x30\x30\x3a\x32\x30\x2e\x30\x30\x5d\xb7\xe7\xb5\xc4\xbc\xc7\xd2\xe4\x0a",
+        )
+        .unwrap();
+        let parsed = parse_file(&gbk).unwrap();
+        assert_eq!(parsed.lines[0].text, "风的记忆");
+    }
+
+    /// 存量的 207 份 .lrc 都是 UTF-8，这条路不能因为加了回退而变样
+    #[test]
+    fn utf8_is_still_read_as_utf8_bom_and_all() {
+        let dir = std::env::temp_dir().join(format!("jp-lrc-enc8-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("utf8.lrc");
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend_from_slice("[00:10.00]夜が明けるまで\n".as_bytes());
+        std::fs::write(&path, &bytes).unwrap();
+        let parsed = parse_file(&path).unwrap();
+        assert_eq!(parsed.lines[0].text, "夜が明けるまで");
+    }
 
     #[test]
     fn parses_timestamps() {

@@ -14,6 +14,8 @@ lofty = "0.25"
 unicode-normalization = "0.1"
 # feat. 片段剥离，和 Python 的 _FEAT_RE 对齐。已在依赖树里。
 regex = "1"
+# .lrc 的编码回退（Shift-JIS / GBK）。已经在依赖树里，不多下一个包。
+encoding_rs = "0.8"
 rusqlite = { version = "0.40", features = ["bundled"] }
 jp-corpus = { path = "../jp-corpus" }
 jp-tokenizer = { path = "../jp-tokenizer" }

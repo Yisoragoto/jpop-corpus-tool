@@ -23,8 +23,8 @@ pub mod scan;
 
 pub use lrc::{ParsedLrc, parse_file as parse_lrc_file};
 pub use import::{
-    ImportReport, ImportedTrack, Outcome, add_credit, execute, execute_with_progress,
-    get_or_create_person,
+    ImportReport, ImportedTrack, Outcome, Stats, add_credit, attach_lyrics, execute,
+    execute_with_progress, get_or_create_person,
 };
 pub use plan::{Action, ImportPlan, LibraryIndex, PlanSummary, PlannedTrack, plan};
 pub use scan::{ScannedTrack, is_audio_file, scan_dir, scan_file};

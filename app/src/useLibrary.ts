@@ -47,6 +47,8 @@ export interface LibraryActions {
   consumeScroll: () => void;
   /** 曲库改了（编辑、删除、找回音频）之后重拉列表；动的是当前这首就一并刷新，删掉了就清空 */
   refreshAfterChange: (songIds: string[], removed: boolean) => Promise<void>;
+  /** 只重拉当前这首的歌词和署名。补歌词、换歌词之后用——列表那一层没变，不必整个重拉。 */
+  reloadLyrics: () => Promise<void>;
 }
 
 export function useLibrary(
@@ -145,6 +147,23 @@ export function useLibrary(
 
   const consumeScroll = useCallback(() => setPendingScroll(null), []);
 
+  const reloadLyrics = useCallback<LibraryActions["reloadLyrics"]>(async () => {
+    if (selected === null) return;
+    setLyricsLoading(true);
+    try {
+      const [lines, creditRows] = await Promise.all([
+        api.lyrics(selected.id),
+        api.trackCredits(selected.id),
+      ]);
+      setLyrics(lines);
+      setCredits(creditRows);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLyricsLoading(false);
+    }
+  }, [selected, onError]);
+
   const refreshAfterChange = useCallback<LibraryActions["refreshAfterChange"]>(
     async (songIds, removed) => {
       try {
@@ -195,6 +214,7 @@ export function useLibrary(
       consumeScroll,
       setAlbumFilter,
       refreshAfterChange,
+      reloadLyrics,
     },
   ];
 }

@@ -528,8 +528,24 @@ export const api = {
   /** 扫描目录并和现有曲库比对。**只读，什么都不写。** */
   scanFolder: (path: string, maxDepth?: number) =>
     call<ScanResult>("scan_folder", { path, maxDepth }),
+  /** 扫描选中的若干**文件**（也能夹着目录）。同样只读。 */
+  scanFiles: (paths: string[], maxDepth?: number) =>
+    call<ScanResult>("scan_files", { paths, maxDepth }),
   /** 执行上一次扫描的结果。写库就在这一步。 */
   runImport: (tokenize?: boolean) => call<ImportReport>("run_import", { tokenize }),
+
+  // 歌词：补齐 / 自己导入
+  /** 库里还没有歌词的歌。 */
+  lyricsMissing: () => call<MissingLyrics[]>("lyrics_missing"),
+  /** 批量补齐，后台跑。进度走 lyrics://progress 事件。 */
+  lyricsFillStart: (songIds?: string[]) => call<void>("lyrics_fill_start", { songIds }),
+  lyricsFillCancel: () => call<void>("lyrics_fill_cancel"),
+  lyricsFillRunning: () => call<boolean>("lyrics_fill_running"),
+  /** 补一首：先看音频旁边有没有 .lrc，没有再上网搜。挑不出来返回 null。 */
+  lyricsFillOne: (songId: string) => call<AttachedLyrics | null>("lyrics_fill_one", { songId }),
+  /** 用自己的一份歌词文件覆盖这首歌的歌词。 */
+  lyricsImportFile: (songId: string, path: string) =>
+    call<AttachedLyrics>("lyrics_import_file", { songId, path }),
   /** 丢弃上一次扫描的结果。 */
   cancelImport: () => call<void>("cancel_import"),
 
@@ -708,7 +724,61 @@ export interface ScanResult {
   items: PlanItem[];
   /** 分词器不可用时导入照常，只是不写 tokens。按下导入前要说清楚。 */
   tokenizerReady: boolean;
+  /** 选中了但不是音频、因此没进计划的文件名（.lrc、封面图这些）。 */
+  ignored: string[];
 }
+
+/** 还没有歌词的一首歌（`lyrics_missing`）。 */
+export interface MissingLyrics {
+  songId: string;
+  title: string;
+  artist: string;
+  durationSec: number | null;
+  audioPath: string;
+  /** 音频旁边就有一份 .lrc——这种不用上网 */
+  siblingLrc: string | null;
+}
+
+/** 歌词是哪来的。 */
+export type LyricsSource = "sibling" | "netease" | "manual";
+
+/** 挂上歌词之后的结果。 */
+export interface AttachedLyrics {
+  songId: string;
+  source: LyricsSource;
+  /** 在线搜到的那条叫什么，本地来源是文件名 */
+  matched: string;
+  lyricLines: number;
+  tokens: number;
+  credits: number;
+  correctionsRestored: number;
+  lrcPath: string;
+}
+
+/** 批量补齐歌词的进度事件（`lyrics://progress`）。 */
+export interface LyricsProgress {
+  done: number;
+  total: number;
+  songId: string;
+  title: string;
+  /** filled / notFound / failed */
+  status: string;
+  source: string;
+  matched: string;
+  lyricLines: number;
+  message: string;
+  filled: number;
+  notFound: number;
+  failed: number;
+  finished: boolean;
+  cancelled: boolean;
+}
+
+export const LYRICS_SOURCE_LABELS: Record<LyricsSource, string> = {
+  sibling: "音频旁边的 .lrc",
+  netease: "在线搜到",
+  manual: "手动导入",
+};
 
 export type ImportOutcome =
   | {

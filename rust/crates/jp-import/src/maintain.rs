@@ -243,6 +243,45 @@ pub fn delete_song(conn: &Connection, song_id: &str) -> Result<DeleteReport> {
     Ok(report)
 }
 
+/// 清掉这首歌现有的歌词：歌词行、全文索引、分词。**分词校正保留**。
+///
+/// 给「换一份歌词」用：`clear_lyrics` 之后 `import::attach_lyrics` 重新挂一份。
+/// 分开两个函数而不是让 attach 自己先删，是因为导入路径上这首歌必然是新的，
+/// 多一次删除只会掩盖「重复挂歌词」这种 bug。
+///
+/// 校正按 `(歌手, 曲名, 原文)` 匹配，`attach_lyrics` 末尾会把它们套回新的行号上
+/// （见 `jp_corpus::corrections::restore_for_song`），所以用户改过的分词不会因为
+/// 换歌词而丢。**在一个事务里调**。
+pub fn clear_lyrics(conn: &Connection, song_id: &str) -> Result<ClearedLyrics> {
+    let lines: Vec<(i64, String)> = {
+        let mut stmt = conn.prepare("SELECT id, text FROM utterances WHERE song_id=?1")?;
+        stmt.query_map(params![song_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?
+    };
+    let mut report = ClearedLyrics {
+        lyric_lines: lines.len(),
+        tokens: 0,
+    };
+    for (id, text) in &lines {
+        // 外部内容的全文索引：先按原文把词条删掉，再删歌词行。
+        // 顺序反了的话 FTS 里会留下搜得到、点不开的幽灵行。
+        conn.execute(
+            "INSERT INTO utterances_fts(utterances_fts, rowid, text) VALUES('delete', ?1, ?2)",
+            params![id, text],
+        )?;
+        report.tokens += conn.execute("DELETE FROM tokens WHERE utterance_id=?1", params![id])?;
+    }
+    conn.execute("DELETE FROM utterances WHERE song_id=?1", params![song_id])?;
+    Ok(report)
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearedLyrics {
+    pub lyric_lines: usize,
+    pub tokens: usize,
+}
+
 /// 把这首歌的音频换成 `new_path`。新路径已经被别的歌用着时拒绝。**在一个事务里调**。返回旧路径
 pub fn relink_audio(conn: &Connection, song_id: &str, new_path: &str) -> Result<String> {
     let new_path = new_path.trim();
@@ -366,6 +405,61 @@ pub fn suggest_relinks(missing: &[MissingAudio], scanned: &[ScannedTrack], in_us
 pub(crate) mod tests {
     use super::*;
     use crate::import::NOW;
+
+    /// 换一份歌词：清掉旧的再挂新的，全文索引必须跟着走。
+    ///
+    /// 外部内容表 `utterances_fts` 没有触发器，删行时漏掉 `'delete'` 那一步的话
+    /// 旧歌词仍然搜得到，点进去是一条已经不存在的行——这个测试就是守那一步。
+    #[test]
+    fn replacing_the_lyrics_leaves_no_ghosts_in_the_full_text_index() {
+        let conn = full_db();
+        conn.execute(
+            "INSERT INTO songs (id, title, artist, corpus_type) VALUES ('001','夜行','ヨルシカ','song')",
+            [],
+        )
+        .unwrap();
+
+        let dir = std::env::temp_dir().join(format!("jp-import-lyr-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("old.lrc");
+        let new = dir.join("new.lrc");
+        std::fs::write(&old, "[00:10.00]夜が明けるまで\n[00:15.00]君を待っている\n").unwrap();
+        std::fs::write(&new, "[00:12.00]月が綺麗ですね\n").unwrap();
+
+        let first =
+            crate::import::attach_lyrics(&conn, "001", &old, None, "ヨルシカ", "夜行").unwrap();
+        assert_eq!(first.lyric_lines, 2);
+        assert_eq!(fts_hits(&conn, "夜が明"), 1);
+
+        let cleared = clear_lyrics(&conn, "001").unwrap();
+        assert_eq!(cleared.lyric_lines, 2);
+        assert_eq!(fts_hits(&conn, "夜が明"), 0, "清掉之后还搜得到旧歌词");
+
+        let second =
+            crate::import::attach_lyrics(&conn, "001", &new, None, "ヨルシカ", "夜行").unwrap();
+        assert_eq!(second.lyric_lines, 1);
+        assert_eq!(fts_hits(&conn, "月が綺"), 1, "新歌词搜不到");
+        assert_eq!(fts_hits(&conn, "夜が明"), 0);
+
+        // 行号从 0 重新排，不是接着旧的往后数
+        let idx: Vec<i64> = conn
+            .prepare("SELECT line_idx FROM utterances WHERE song_id='001' ORDER BY line_idx")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(idx, vec![0]);
+    }
+
+    fn fts_hits(conn: &Connection, needle: &str) -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM utterances_fts WHERE utterances_fts MATCH ?1",
+            params![needle],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
 
     /// 和真库同构的库：导入测试用的那几张表，加上删除要维护的其他表（建表语句抄自真库 sqlite_master）
     pub(crate) fn full_db() -> Connection {

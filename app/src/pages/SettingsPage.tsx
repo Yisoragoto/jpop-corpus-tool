@@ -7,10 +7,17 @@
  * 制卡在 `dict/mine.ts`。所以在歌词右上角的「显示」面板里改，这一页跟着变，反过来也一样。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 
-import { api, type AnkiStatus, type HealthReport, type LibraryRootInfo } from "../api";
+import {
+  api,
+  type AnkiStatus,
+  type HealthReport,
+  type LibraryRootInfo,
+  type LyricsProgress,
+} from "../api";
 import { CommandButton } from "../components/CommandButton";
 import { SettingCard, SettingGroup, SettingNote, SettingSelect, SettingSlider, Switch } from "../components/SettingCard";
 import { setDictionariesCollapsed, useCollapsedDictionaries } from "../dict/collapse";
@@ -119,6 +126,30 @@ const Icons = {
       <path d="M12 7.5V12l3 2" />
     </svg>
   ),
+  lyrics: (
+    <svg {...ICON}>
+      <path d="M4 6h10M4 11h16M4 16h12" />
+      <circle cx="18" cy="6" r="2" />
+    </svg>
+  ),
+};
+
+/** 作业刚开始、第一条进度还没到时显示的占位。总数未知，所以是 0/0。 */
+const EMPTY_PROGRESS: LyricsProgress = {
+  done: 0,
+  total: 0,
+  songId: "",
+  title: "正在准备…",
+  status: "",
+  source: "",
+  matched: "",
+  lyricLines: 0,
+  message: "",
+  filled: 0,
+  notFound: 0,
+  failed: 0,
+  finished: false,
+  cancelled: false,
 };
 
 /** 语料库是怎么找到的，如实说 */
@@ -140,11 +171,53 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
   const collapsedDicts = useCollapsedDictionaries();
   const [busy, setBusy] = useState<null | "covers" | "durations">(null);
   const [note, setNote] = useState("");
+  /** 缺歌词的歌数。null = 还没数过 */
+  const [missingLyrics, setMissingLyrics] = useState<number | null>(null);
+  const [lyricsJob, setLyricsJob] = useState<LyricsProgress | null>(null);
 
   useEffect(() => {
     void api.ankiStatus().then(setAnki).catch(() => undefined);
     void api.libraryRoot().then(setRoot).catch(() => undefined);
   }, []);
+
+  const countMissingLyrics = useCallback(() => {
+    void api
+      .lyricsMissing()
+      .then((rows) => setMissingLyrics(rows.length))
+      .catch(() => setMissingLyrics(null));
+  }, []);
+
+  // 进度事件在**后台线程**里发，设置页可能这会儿没挂着（用户切走了）。
+  // 所以收到 finished 时重新数一遍，而不是依赖界面一直在。
+  const onChangedRef = useRef(onChanged);
+  onChangedRef.current = onChanged;
+  useEffect(() => {
+    countMissingLyrics();
+    void api.lyricsFillRunning().then((running) => {
+      if (running) setLyricsJob({ ...EMPTY_PROGRESS });
+    });
+    const off = listen<LyricsProgress>("lyrics://progress", (event) => {
+      setLyricsJob(event.payload);
+      if (event.payload.finished) {
+        countMissingLyrics();
+        onChangedRef.current();
+      }
+    });
+    return () => {
+      void off.then((f) => f());
+    };
+  }, [countMissingLyrics]);
+
+  const fillLyrics = useCallback(async () => {
+    setNote("");
+    try {
+      setLyricsJob({ ...EMPTY_PROGRESS });
+      await api.lyricsFillStart();
+    } catch (err) {
+      setLyricsJob(null);
+      onError(err instanceof Error ? err.message : String(err));
+    }
+  }, [onError]);
 
   /** 换语料库目录。**只写设置**，要重启才生效——连接和放行范围都是启动时定下的 */
   const pickLibraryRoot = useCallback(async () => {
@@ -205,6 +278,9 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
       setBusy(null);
     }
   }, [onChanged, onError]);
+
+  /** 作业在跑：事件还没报 finished */
+  const lyricsRunning = lyricsJob !== null && !lyricsJob.finished;
 
   const fontOptions = [
     { value: "", label: "默认（界面字体）" },
@@ -348,6 +424,52 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             disabled={busy !== null}
           />
         </SettingCard>
+        <SettingCard
+          icon={Icons.lyrics}
+          title="补齐缺失歌词"
+          description={
+            missingLyrics === null
+              ? "先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空"
+              : missingLyrics === 0
+                ? "每一首都有歌词了"
+                : `${missingLyrics} 首还没有歌词。先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）`
+          }
+        >
+          {lyricsRunning ? (
+            <CommandButton icon="discard" label="停下" onClick={() => void api.lyricsFillCancel()} />
+          ) : (
+            <CommandButton
+              icon="refresh"
+              label="补齐歌词"
+              onClick={() => void fillLyrics()}
+              disabled={busy !== null || missingLyrics === 0}
+            />
+          )}
+        </SettingCard>
+        {lyricsJob !== null && (
+          <SettingNote>
+            {lyricsJob.finished
+              ? `${lyricsJob.cancelled ? "已停下" : "补齐完成"}：补上 ${lyricsJob.filled}，挑不出来 ${lyricsJob.notFound}` +
+                (lyricsJob.failed > 0 ? `，失败 ${lyricsJob.failed}` : "") +
+                // 整批断了（库打不开、线程起不来）要说出来，不能只报一句「完成」
+                (lyricsJob.message !== "" ? `。中断：${lyricsJob.message}` : "")
+              : `${lyricsJob.done}/${lyricsJob.total}　${lyricsJob.title}${
+                  lyricsJob.status === "filled"
+                    ? ` ← ${lyricsJob.matched}（${lyricsJob.lyricLines} 行）`
+                    : lyricsJob.status === "notFound"
+                      ? " 挑不出来"
+                      : lyricsJob.status === "failed"
+                        ? ` 失败：${lyricsJob.message}`
+                        : ""
+                }`}
+            {lyricsJob.finished && lyricsJob.notFound > 0 && (
+              <>
+                {" "}
+                挑不出来的那些，可以在曲库里选中那首歌，自己导入一份歌词文件。
+              </>
+            )}
+          </SettingNote>
+        )}
         <SettingCard icon={Icons.clock} title="回填时长" description="扫一遍音频文件，把缺的 duration_sec 补上">
           <CommandButton
             icon="refresh"
