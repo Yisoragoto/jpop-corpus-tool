@@ -149,7 +149,9 @@ fn upgrade_song_info(css: &str, current: &str, history: &[&str]) -> (SongInfoSty
         return (SongInfoStyle::Customized, None);
     }
     let newline = if css.contains("\r\n") { "\r\n" } else { "\n" };
-    let replacement = current.trim_end().replace('\n', newline);
+    // 先归一到 LF 再换成目标换行符：`current` 是 `include_str!` 进来的，git 按 CRLF
+    // 签出时它本身就是 CRLF，直接 replace 会写出 `\r\r\n`。
+    let replacement = normalized(current).replace('\n', newline);
     let rest = &css[range.end..];
     let rest = if rest.is_empty() { newline } else { rest };
     (SongInfoStyle::Upgraded, Some(format!("{}{replacement}{rest}", &css[..range.start])))
@@ -164,8 +166,12 @@ mod tests {
 
     const LAPIS_CSS: &str = include_str!("../data/lyrics/styling.css");
 
+    /// 转成 CRLF。**先归一到 LF 再转**：源文件被 git 按 CRLF 签出时
+    /// （Windows runner 默认 `autocrlf=true`）直接 replace 会得到 `\r\r\n`，
+    /// 于是「本机全过、CI 挂」——v0.2.2~v0.2.7 的 CI 就是这么一直红的。
+    /// 仓库里另外用 `.gitattributes` 把这些数据文件钉成 LF，这里是第二道。
     fn crlf(text: &str) -> String {
-        text.replace('\n', "\r\n")
+        text.replace("\r\n", "\n").replace('\n', "\r\n")
     }
 
     #[test]

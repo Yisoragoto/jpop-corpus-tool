@@ -25,7 +25,7 @@ pub struct CommandError {
 
 impl From<anyhow::Error> for CommandError {
     fn from(err: anyhow::Error) -> Self {
-        eprintln!("[command error] {err:?}");
+        crate::log::error(format!("command: {err:?}"));
         Self {
             // `{:#}` 把整条 anyhow 链拼出来。只用 `to_string()` 的话界面上只剩最外层
             // 那句——「下载失败：<地址>」，而真正有用的「Peer disconnected」被盖掉了，
@@ -37,7 +37,7 @@ impl From<anyhow::Error> for CommandError {
 
 impl From<rusqlite::Error> for CommandError {
     fn from(err: rusqlite::Error) -> Self {
-        eprintln!("[command error] {err:?}");
+        crate::log::error(format!("command: {err:?}"));
         Self {
             message: err.to_string(),
         }
@@ -754,6 +754,34 @@ pub async fn migrate_run<R: tauri::Runtime>(
         outcome
     })
     .await
+}
+
+// ──────────────────────────── 诊断 ────────────────────────────
+
+/// 一段纯文本：版本、库在哪、库里有多少、能力、最近的日志。
+///
+/// **不联网、不自动上报**——攒出来给用户，发不发、发给谁他自己定。
+#[tauri::command]
+pub fn diagnostics_report<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+) -> CmdResult<String> {
+    let version = app.package_info().version.to_string();
+    Ok(crate::diagnostics::report(&state, &version, 200))
+}
+
+/// 把那段文本存成文件。路径由前端的保存对话框给。
+#[tauri::command]
+pub fn diagnostics_save<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+    path: String,
+) -> CmdResult<String> {
+    let version = app.package_info().version.to_string();
+    let text = crate::diagnostics::report(&state, &version, 200);
+    std::fs::write(&path, text.as_bytes())
+        .map_err(|err| anyhow::anyhow!("写不进 {path}：{err}"))?;
+    Ok(path)
 }
 
 // ──────────────────────────── 分词词典 ────────────────────────────

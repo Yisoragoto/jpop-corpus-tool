@@ -561,6 +561,12 @@ export const api = {
   tokenizerInstall: (path: string) => call<InstalledDict>("tokenizer_install", { path }),
   /** 去网上下一份词典（43MB，解开 207MB）。进度走 tokenizer://progress 事件。 */
   tokenizerDownload: () => call<InstalledDict>("tokenizer_download", {}),
+  // 诊断
+  /** 攒一段诊断文本：版本、库、能力、最近日志。不联网。 */
+  diagnosticsReport: () => call<string>("diagnostics_report", {}),
+  /** 把那段文本存到 path。 */
+  diagnosticsSave: (path: string) => call<string>("diagnostics_save", { path }),
+
   /** 有歌词但没分词的歌。这些歌点词查不了、也没有振假名。 */
   tokenizeMissingList: () => call<UntokenizedSong[]>("tokenize_missing_list", {}),
   /** 给那些歌补上分词。进度走 tokenize://progress 事件。 */

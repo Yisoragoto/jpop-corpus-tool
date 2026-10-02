@@ -1,0 +1,82 @@
+name: Check
+
+# 每次推 main 和每个 PR 都跑：测试、lint、类型检查。**不构建安装包**——
+# 那一步要十几分钟，而它证明的是「能打包」，不是「代码对不对」。
+#
+# 为什么单独一个 workflow：原来只有 release.yml，只在打 v* 标签时跑。
+# 等标签推上去的时候版本已经发出去了，这不是门禁，是事后报告——
+# 实际结果是 v0.2.2~v0.2.7 连着六次 CI 失败而没人看见。
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # 同一个分支连着推几次时，只留最后一次
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+
+      # 音频测试在没有输出设备的机器上会自己跳过（engine_or_skip!），
+      # 要真实语料库的那些标了 #[ignore]。两类都会在日志里说一声。
+      - name: Tests
+        working-directory: rust
+        run: cargo test --workspace
+
+      - name: Clippy
+        working-directory: rust
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install
+        working-directory: app
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: app
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: app
+        run: npm test
+
+  versions:
+    # 三处版本号必须一致。对不上的话构建出来的安装包文件名和 about 页会互相打架，
+    # 而这件事只有发版当天才会被发现。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versions agree
+        run: |
+          tauri=$(grep -oP '"version":\s*"\K[^"]+' rust/crates/jp-app/tauri.conf.json | head -1)
+          cargo=$(grep -oP '^version = "\K[^"]+' rust/crates/jp-app/Cargo.toml | head -1)
+          pkg=$(grep -oP '"version":\s*"\K[^"]+' app/package.json | head -1)
+          echo "tauri.conf.json=$tauri  Cargo.toml=$cargo  package.json=$pkg"
+          test "$tauri" = "$cargo" -a "$cargo" = "$pkg"

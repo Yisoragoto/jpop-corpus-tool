@@ -84,13 +84,13 @@ impl AppState {
 
         let analyzer = load_analyzer(project_root);
         if analyzer.is_none() {
-            eprintln!("[warn] 找不到 Sudachi 词典，实时分词不可用（其余功能正常）");
+            crate::log::warn("找不到 Sudachi 词典，实时分词不可用（其余功能正常）");
         }
 
         let audio = match AudioEngine::new() {
             Ok(engine) => Some(std::sync::Arc::new(engine)),
             Err(err) => {
-                eprintln!("[warn] 音频引擎不可用（{err}），播放功能关闭，其余正常");
+                crate::log::warn(format!("音频引擎不可用（{err}），播放功能关闭，其余正常"));
                 None
             }
         };
@@ -268,7 +268,7 @@ impl AppState {
         if let Some(event) = event {
             // 写历史失败不该影响播放，记一笔日志就够了
             if let Err(err) = self.corpus().record_play(&event) {
-                eprintln!("[warn] 播放历史写入失败: {err}");
+                crate::log::warn(format!("播放历史写入失败: {err}"));
             }
         }
         state
@@ -283,7 +283,7 @@ impl AppState {
         if let Some(event) = event
             && let Err(err) = self.corpus().record_play(&event)
         {
-            eprintln!("[warn] 退出时播放历史写入失败: {err}");
+            crate::log::warn(format!("退出时播放历史写入失败: {err}"));
         }
     }
 }

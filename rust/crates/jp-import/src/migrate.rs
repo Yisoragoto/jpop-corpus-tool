@@ -122,8 +122,13 @@ fn table_exists(conn: &Connection, schema: &str, name: &str) -> Result<bool> {
     Ok(conn.query_row(&sql, params![name], |row| row.get::<_, i64>(0))? > 0)
 }
 
+/// 要搬的一首：`(源库 id, 目标库的新 id, 显示用的「歌手 · 曲名」)`。
+///
+/// 起名字而不是用裸元组：三个 `String` 排在一起，顺序记错了编译器也不会拦。
+type Moving = (String, String, String);
+
 /// 源库的歌，和当前库比对之后分成「要搬的」和「已经有的」。
-fn split_songs(target: &Connection) -> Result<(Vec<(String, String, String)>, usize)> {
+fn split_songs(target: &Connection) -> Result<(Vec<Moving>, usize)> {
     // 当前库的索引：音频路径 + 「歌手 + 曲名」，顺带给出下一个可用 id
     let existing: Vec<ExistingTrack> = {
         let mut stmt = target.prepare("SELECT id, COALESCE(audio_path,''), title, artist FROM main.songs")?;

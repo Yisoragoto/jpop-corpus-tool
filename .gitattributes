@@ -1,0 +1,20 @@
+# 行尾一律 LF，**包括 Windows 上的工作区**。
+#
+# 为什么要钉死：好几处 `include_str!` 把数据文件按字节用（Anki 的 Lyrics 样式块、
+# Sudachi 的配置）。GitHub 的 Windows runner 默认 `core.autocrlf=true`，签出时
+# 把它们换成 CRLF，于是「本机测试全过、CI 挂」——v0.2.2~v0.2.7 的 CI 就是这么
+# 一直红着没人看的。代码本身也已经在比较和拼接时归一化，这里是第一道。
+* text=auto eol=lf
+
+# 第三方解析器按字节读的，别碰
+rust/crates/jp-tokenizer/resources/* -text
+rust/crates/jp-anki/data/** -text
+
+# 二进制
+*.png binary
+*.webp binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.dic binary
+*.xz binary

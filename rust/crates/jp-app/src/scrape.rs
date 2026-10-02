@@ -248,13 +248,13 @@ pub fn download_cover(
     match jp_scraper::save_cover_any(&client, &urls, &dest, false) {
         Ok((index, _)) => {
             if index > 0 {
-                eprintln!("[warn] {song_id} 的封面退到了第 {} 档尺寸", index + 1);
+                crate::log::warn(format!("{song_id} 的封面退到了第 {} 档尺寸", index + 1));
             }
             Some(dest.display().to_string())
         }
         // 封面下不下来不该让整首歌算失败——元数据已经对上了
         Err(err) => {
-            eprintln!("[warn] 封面下载失败 {song_id}: {err}");
+            crate::log::warn(format!("封面下载失败 {song_id}: {err}"));
             None
         }
     }
@@ -292,13 +292,13 @@ fn settle_meta(
     } = job;
     // 查询线程 panic 也不该让整批停下
     let Ok(result) = handle.join() else {
-        eprintln!("[warn] {song_id} 的查询线程异常退出");
+        crate::log::warn(format!("{song_id} 的查询线程异常退出"));
         return (ScrapeStatus::Failed, 0.0, String::new(), false);
     };
     let outcome = match finish(conn, &song_id, &track, result) {
         Ok(v) => v,
         Err(err) => {
-            eprintln!("[warn] 落库 {song_id} 失败: {err:#}");
+            crate::log::warn(format!("落库 {song_id} 失败: {err:#}"));
             return (ScrapeStatus::Failed, 0.0, String::new(), false);
         }
     };
@@ -359,11 +359,11 @@ fn finish_cover(conn: &rusqlite::Connection, handle: CoverHandle) {
     match handle.join() {
         Ok(Some((song_id, path))) => {
             if let Err(err) = record_cover(conn, &song_id, &path) {
-                eprintln!("[warn] 记录封面路径失败 {song_id}: {err:#}");
+                crate::log::warn(format!("记录封面路径失败 {song_id}: {err:#}"));
             }
         }
         Ok(None) => {}
-        Err(_) => eprintln!("[warn] 封面下载线程异常退出"),
+        Err(_) => crate::log::warn("封面下载线程异常退出"),
     }
 }
 
@@ -443,7 +443,7 @@ pub fn spawn_batch<R: Runtime>(
                     };
                     // 登记和置 running 在主线程做，网络那步才并发
                     if let Err(err) = prepare(&conn, &song_id, &track) {
-                        eprintln!("[warn] 登记 {song_id} 失败: {err:#}");
+                        crate::log::warn(format!("登记 {song_id} 失败: {err:#}"));
                         continue;
                     }
                     let resolver = resolver.clone();
@@ -496,7 +496,7 @@ pub fn spawn_batch<R: Runtime>(
         let cancelled = match outcome {
             Ok(cancelled) => cancelled,
             Err(err) => {
-                eprintln!("[error] 刮削作业中断: {err:#}");
+                crate::log::error(format!("刮削作业中断: {err:#}"));
                 false
             }
         };
@@ -555,7 +555,7 @@ pub fn scrape_artist_one(
     let facts = match mb.get_artist(name, &[]) {
         Ok(v) => v,
         Err(err) => {
-            eprintln!("[warn] MusicBrainz 查 {name} 失败: {err}");
+            crate::log::warn(format!("MusicBrainz 查 {name} 失败: {err}"));
             None
         }
     };
@@ -582,11 +582,11 @@ pub fn scrape_artist_one(
             // overwrite=false：已经有图就不重下
             match jp_scraper::save_image(&client, &photo.image_url, &dest, false) {
                 Ok(_) => out.image_path = dest.display().to_string(),
-                Err(err) => eprintln!("[warn] {name} 的照片下载失败: {err}"),
+                Err(err) => crate::log::warn(format!("{name} 的照片下载失败: {err}")),
             }
         }
         Ok(_) => {}
-        Err(err) => eprintln!("[warn] Deezer 查 {name} 失败: {err}"),
+        Err(err) => crate::log::warn(format!("Deezer 查 {name} 失败: {err}")),
     }
 
     out.not_found = facts.is_none() && out.image_path.is_empty();
@@ -676,7 +676,7 @@ pub fn spawn_artist_batch<R: Runtime>(
                     return Ok(true);
                 }
                 let got = scrape_artist_one(&conn, &artists_dir, name).unwrap_or_else(|err| {
-                    eprintln!("[warn] 刮歌手 {name} 失败: {err:#}");
+                    crate::log::warn(format!("刮歌手 {name} 失败: {err:#}"));
                     ArtistOutcome {
                         name: name.clone(),
                         not_found: true,
@@ -711,7 +711,7 @@ pub fn spawn_artist_batch<R: Runtime>(
         })();
 
         let cancelled = outcome.unwrap_or_else(|err| {
-            eprintln!("[error] 歌手刮削作业中断: {err:#}");
+            crate::log::error(format!("歌手刮削作业中断: {err:#}"));
             false
         });
         job.finish();

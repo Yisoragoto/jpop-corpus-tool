@@ -914,6 +914,62 @@ SQLite 自己的 `integrity-check` 通过。
 
 用 `mask` 而不是盖一层渐变：外壳为了云母是半透明的，盖纯色会穿帮。
 
+## 门禁、发版自检、日志
+
+三件一直欠着的工程事，起因是这一轮连着三次「发出去才发现」。
+
+### CI 以前不拦任何东西
+
+仓库里只有 `release.yml`，**只在打 `v*` 标签时跑**。等标签推上去，版本已经发出去了，
+这不是门禁，是事后报告。实际后果：**v0.2.2 到 v0.2.7 连着六次 CI 失败，没人看见**。
+
+查出来是两件真事，不是 CI 环境的毛病：
+
+1. `cargo clippy -D warnings` 本来就挂着（`migrate.rs` 的 `type_complexity`、
+   `apply_lrc_text` 九个参数、`update.rs` 一个多余的 `Ok(..?)`、测试里一串
+   `&w` 多了一层引用）——我从来没在本地跑过 clippy；
+2. `jp-anki` 的样式升级测试**只在 CI 挂**。根因是换行符：GitHub 的 Windows runner
+   默认 `core.autocrlf=true`，`include_str!` 进来的 CSS 变成 CRLF，而
+   `upgrade_song_info` 里 `current.trim_end().replace('
+', newline)` 会把
+   `
+` 变成 `
+`——**这是产品 bug**，不是测试写得娇气：
+   按 CRLF 签出构建出来的包，升级 Lyrics 样式时会往 Anki 里写坏掉的 CSS。
+
+三处一起修：`.gitattributes` 把行尾钉成 LF（Sudachi 的 `*.def` 和 Anki 的数据目录
+标成 `-text`，第三方解析器按字节读，不能碰）、拼接前先归一到 LF、新增
+`check.yml` 在**每次推 main 和每个 PR** 上跑测试 + clippy + tsc + vitest + 版本号一致。
+
+顺带发现：`.gitattributes` 之前，`jp-tokenizer/resources/*.def` 在索引里是被
+改过行尾的——也就是**从仓库克隆出来构建的那一份，和我本机测的不是同一批字节**。
+
+### 发版自检
+
+`scripts/release-check.ps1`。守的是 v0.2.1 那个坑：安装包装好了、双击没反应，
+因为找库的逻辑只在**干净环境**里才会走到那条错路，而开发树里到处都是 `corpus.db`。
+
+做五件事：三处版本号一致 → 安装包在不在（顺带打出 SHA-256，发布说明直接抄）→
+把 `jp-app.exe` 单独放进空目录、清掉 `JPOP_CORPUS_HOME`、假的 `LOCALAPPDATA`、
+独立的 WebView2 配置目录跑起来 → 从真实界面问 `health` 和词典状态 → 收拾干净。
+
+**不测安装程序本身**：静默安装会动注册表和开始菜单，可能踩到本机装着的那一份。
+测的是「这个 exe 在一台没有这个项目的机器上能不能起来」——0.2.1 那个坑正在这儿。
+
+### 日志和诊断信息
+
+GUI 没有控制台，`eprintln!` 等于说给空气听。排查 0.2.6 那条「改名失败」时，
+用户那边只有一行红条，我这边什么都没有，只能猜。
+
+- `jp-app/src/log.rs`：`<语料库目录>/logs/jp-app.log`，追加写，过 2MB 轮一份；
+  写不进去就当没有日志（磁盘满、只读目录）——**日志不能让应用起不来**；
+  时间戳自己算（Howard Hinnant 的 `civil_from_days`），不为一个格式拉一个日期库。
+  原来那些 `eprintln!("[warn] …")` 全部改成走它。
+- `jp-app/src/diagnostics.rs` + 设置 → 系统 → **导出诊断信息**：版本、库在哪、
+  曲目/歌词/词汇、**有歌词没分词几首**、词典/音频/变调/词典库、最近 200 行日志。
+  复制走或者存成 txt。**不联网、不自动上报**；不含歌名歌词，但路径里有用户名，
+  卡片上写明白了。
+
 ## 三栏的宽度可以拖
 
 曲库页、人物页是「左 + 正文 + 右」，全屏歌词是「歌词 + 右栏」，宽度原来都写死在 CSS 里

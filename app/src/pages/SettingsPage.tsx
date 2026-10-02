@@ -26,6 +26,7 @@ import { UpdateCard } from "../components/UpdateCard";
 import { MigrateCard } from "../components/MigrateCard";
 import { SudachiCard } from "../components/SudachiCard";
 import { TokenizeCard } from "../components/TokenizeCard";
+import { DiagnosticsCard } from "../components/DiagnosticsCard";
 import { SettingsToc, type TocItem } from "../components/SettingsToc";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
 import { lyricFontStack, useFontOptions } from "../fonts";
@@ -61,6 +62,12 @@ const ICON = {
 };
 
 const Icons = {
+  report: (
+    <svg {...ICON}>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5M9 13h6M9 17h4" />
+    </svg>
+  ),
   stage: (
     <svg {...ICON}>
       <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -547,6 +554,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
           icons={{ update: Icons.update, clock: Icons.clock, install: Icons.install }}
           onError={onError}
         />
+        <DiagnosticsCard icon={Icons.report} onError={onError} />
       </SettingGroup>
 
       <SettingGroup title="关于" id="settings-about">

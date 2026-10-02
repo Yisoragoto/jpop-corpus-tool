@@ -211,7 +211,7 @@ fn get(url: &str) -> Result<Vec<u8>> {
 /// 最近几次发布。「查看更新日志」用。
 pub fn changelog(limit: usize) -> Result<Vec<ReleaseView>> {
     let body = get(&format!("{API_BASE}?per_page={}", limit.clamp(1, 30)))?;
-    Ok(parse_releases(&body)?)
+    parse_releases(&body)
 }
 
 /// 查一次有没有新版。

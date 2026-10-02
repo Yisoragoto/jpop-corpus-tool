@@ -9,9 +9,11 @@
 pub mod anki;
 pub mod anki_report;
 pub mod commands;
+pub mod diagnostics;
 pub mod dict;
 pub mod fonts;
 pub mod library_admin;
+pub mod log;
 pub mod lyrics;
 pub mod maintenance;
 pub mod migrate;
@@ -97,6 +99,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::backfill_durations,
             commands::migrate_plan,
             commands::migrate_run,
+            commands::diagnostics_report,
+            commands::diagnostics_save,
             commands::tokenizer_status,
             commands::tokenizer_install,
             commands::tokenizer_download,
@@ -171,7 +175,14 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
 
 pub fn run() {
     let (root, source) = library_root::locate();
-    eprintln!("[info] 语料库目录：{}（来自 {source:?}）", root.display());
+    // 日志先开：下面任何一步出事都要留下痕迹，尤其是「启动失败」那一条——
+    // 用户那边只看得到一个对话框，我这边只有这个文件
+    crate::log::init(&root);
+    crate::log::info(format!(
+        "启动 {} · 语料库目录：{}（来自 {source:?}）",
+        env!("CARGO_PKG_VERSION"),
+        root.display()
+    ));
     let state = match AppState::new(&root) {
         Ok(state) => state,
         Err(err) => {
@@ -181,7 +192,7 @@ pub fn run() {
                 "启动失败：{err:#}\n\n数据目录：{}\n\n                 已有的语料库可以用环境变量 JPOP_CORPUS_HOME 指过去（指向含 corpus.db 的目录）。",
                 root.display()
             );
-            eprintln!("{message}");
+            crate::log::error(&message);
             show_fatal_error(&message);
             std::process::exit(1);
         }

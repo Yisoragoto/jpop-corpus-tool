@@ -142,17 +142,27 @@ pub fn sibling_lrc(audio_path: &str) -> Option<PathBuf> {
 ///
 /// 用户校正过的分词不会因为换歌词而丢——校正按「歌手 + 曲名 + 原文」匹配，
 /// `attach_lyrics` 末尾会把它们套回新的行号上。
+/// 这首歌是谁的哪一首。
+///
+/// 三样东西总是一起走：id 决定落盘的文件名，歌手 + 曲名决定分词校正按什么匹配。
+/// 分开当三个 `&str` 传的话，顺序记错了编译器也不会拦（三个都是 `&str`）。
+#[derive(Debug, Clone, Copy)]
+pub struct SongRef<'a> {
+    pub id: &'a str,
+    pub artist: &'a str,
+    pub title: &'a str,
+}
+
 pub fn apply_lrc_text(
     conn: &mut Connection,
     lyrics_dir: &Path,
-    song_id: &str,
-    artist: &str,
-    title: &str,
+    song: SongRef<'_>,
     lrc_text: &str,
     source: LyricsSource,
     matched: &str,
     analyzer: Option<&jp_tokenizer::Analyzer>,
 ) -> Result<Attached> {
+    let SongRef { id: song_id, artist, title } = song;
     if lrc_text.trim().is_empty() {
         bail!("歌词是空的");
     }
@@ -222,9 +232,7 @@ pub fn attach_from_file(
     apply_lrc_text(
         conn,
         lyrics_dir,
-        song_id,
-        &artist,
-        &title,
+        SongRef { id: song_id, artist: &artist, title: &title },
         &text,
         LyricsSource::Manual,
         &name,
@@ -282,9 +290,7 @@ pub fn fill_one(
         return Ok(Some(apply_lrc_text(
             conn,
             lyrics_dir,
-            &target.song_id,
-            &target.artist,
-            &target.title,
+            SongRef { id: &target.song_id, artist: &target.artist, title: &target.title },
             &text,
             LyricsSource::Sibling,
             &name,
@@ -302,9 +308,7 @@ pub fn fill_one(
     Ok(Some(apply_lrc_text(
         conn,
         lyrics_dir,
-        &target.song_id,
-        &target.artist,
-        &target.title,
+        SongRef { id: &target.song_id, artist: &target.artist, title: &target.title },
         &text,
         LyricsSource::Netease,
         &matched,
@@ -407,7 +411,7 @@ pub fn spawn_fill<R: Runtime>(
             let analyzer = jp_tokenizer::locate_sudachipy(&project_root)
                 .and_then(|(res, dict)| jp_tokenizer::Analyzer::from_sudachipy(&res, &dict).ok());
             if analyzer.is_none() {
-                eprintln!("[warn] 补齐歌词：没有分词器，歌词会入库但不分词");
+                crate::log::warn("补齐歌词：没有分词器，歌词会入库但不分词");
             }
             let provider = provider();
 
@@ -471,7 +475,7 @@ pub fn spawn_fill<R: Runtime>(
         let (cancelled, message) = match outcome {
             Ok(cancelled) => (cancelled, String::new()),
             Err(err) => {
-                eprintln!("[error] 补齐歌词作业中断: {err:#}");
+                crate::log::error(format!("补齐歌词作业中断: {err:#}"));
                 // 整批断了要说出来，不能只是悄悄「完成」
                 (false, format!("{err:#}"))
             }
@@ -551,9 +555,7 @@ mod tests {
         let attached = apply_lrc_text(
             &mut conn,
             &dir,
-            "001",
-            "サカナクション",
-            "ネイティブダンサー",
+            SongRef { id: "001", artist: "サカナクション", title: "ネイティブダンサー" },
             "作词 : 山口　一郎\n[00:15.00]踊りませんか\n[00:20.00]夜が終わるまで\n",
             LyricsSource::Netease,
             "ネイティブダンサー — サカナクション",
@@ -590,9 +592,7 @@ mod tests {
             apply_lrc_text(
                 &mut conn,
                 &dir,
-                "001",
-                args.0,
-                args.1,
+                SongRef { id: "001", artist: args.0, title: args.1 },
                 text,
                 LyricsSource::Manual,
                 "x.lrc",
@@ -627,9 +627,7 @@ mod tests {
         let err = apply_lrc_text(
             &mut conn,
             &dir,
-            "001",
-            "サカナクション",
-            "ネイティブダンサー",
+            SongRef { id: "001", artist: "サカナクション", title: "ネイティブダンサー" },
             "[ar:サカナクション]\n[ti:ネイティブダンサー]\n",
             LyricsSource::Manual,
             "tags-only.lrc",

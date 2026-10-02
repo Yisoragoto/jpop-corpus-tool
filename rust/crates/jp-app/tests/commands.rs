@@ -1741,7 +1741,7 @@ fn importing_one_file_then_its_lyrics_works_end_to_end() {
     std::fs::write(&audio, b"not really audio").unwrap();
 
     let scan = ok(
-        &w,
+        w,
         "scan_files",
         json!({ "paths": vec![audio.display().to_string()] }),
     );
@@ -1750,7 +1750,7 @@ fn importing_one_file_then_its_lyrics_works_end_to_end() {
     assert_eq!(scan["items"][0]["hasLyrics"].as_bool(), Some(false));
 
     // tokenize=false：副本目录里没有 venv，分词器本来就不可用
-    let report = ok(&w, "run_import", json!({ "tokenize": false }));
+    let report = ok(w, "run_import", json!({ "tokenize": false }));
     let tracks = report["tracks"].as_array().expect("tracks 应当是数组");
     assert_eq!(tracks.len(), 1, "{report}");
     assert_eq!(tracks[0]["outcome"]["kind"], "imported");
@@ -1758,7 +1758,7 @@ fn importing_one_file_then_its_lyrics_works_end_to_end() {
     let song_id = tracks[0]["songId"].as_str().expect("要有 songId").to_string();
 
     // 刚导进来的歌必然在「缺歌词」名单里
-    let missing = ok(&w, "lyrics_missing", json!({}));
+    let missing = ok(w, "lyrics_missing", json!({}));
     let row = missing
         .as_array()
         .unwrap()
@@ -1776,7 +1776,7 @@ fn importing_one_file_then_its_lyrics_works_end_to_end() {
     )
     .unwrap();
     let attached = ok(
-        &w,
+        w,
         "lyrics_import_file",
         json!({ "songId": song_id, "path": lrc.display().to_string() }),
     );
@@ -1792,14 +1792,14 @@ fn importing_one_file_then_its_lyrics_works_end_to_end() {
     assert!(on_disk.is_file(), "没落盘：{}", on_disk.display());
 
     // 读回来
-    let lines = ok(&w, "lyrics", json!({ "songId": song_id }));
+    let lines = ok(w, "lyrics", json!({ "songId": song_id }));
     let lines = lines.as_array().unwrap();
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[0]["text"].as_str(), Some("ひとつめの行"));
     assert!((lines[1]["timeSec"].as_f64().unwrap() - 20.5).abs() < 1e-6);
 
     // 搜得到——外部内容的 FTS 表没有触发器，漏同步这里就是空
-    let hits = ok(&w, "search_lyrics", json!({ "text": "ふたつめ", "limit": 10 }));
+    let hits = ok(w, "search_lyrics", json!({ "text": "ふたつめ", "limit": 10 }));
     assert!(
         hits.as_array()
             .unwrap()
@@ -1809,7 +1809,7 @@ fn importing_one_file_then_its_lyrics_works_end_to_end() {
     );
 
     // 名单里不该还有它
-    let missing = ok(&w, "lyrics_missing", json!({}));
+    let missing = ok(w, "lyrics_missing", json!({}));
     assert!(
         !missing
             .as_array()
@@ -1823,14 +1823,14 @@ fn importing_one_file_then_its_lyrics_works_end_to_end() {
     let lrc2 = scratch.dir().join("hand2.lrc");
     std::fs::write(&lrc2, "[00:05.00]あたらしい行\n").unwrap();
     let again = ok(
-        &w,
+        w,
         "lyrics_import_file",
         json!({ "songId": song_id, "path": lrc2.display().to_string() }),
     );
     assert_eq!(again["lyricLines"].as_i64(), Some(1));
-    let lines = ok(&w, "lyrics", json!({ "songId": song_id }));
+    let lines = ok(w, "lyrics", json!({ "songId": song_id }));
     assert_eq!(lines.as_array().unwrap().len(), 1, "换歌词变成了两份");
-    let ghosts = ok(&w, "search_lyrics", json!({ "text": "ふたつめ", "limit": 10 }));
+    let ghosts = ok(w, "search_lyrics", json!({ "text": "ふたつめ", "limit": 10 }));
     assert!(
         !ghosts
             .as_array()
@@ -1855,17 +1855,17 @@ fn a_sibling_lrc_is_used_without_going_online() {
     std::fs::write(&audio, b"not really audio").unwrap();
 
     let scan = ok(
-        &w,
+        w,
         "scan_files",
         json!({ "paths": vec![audio.display().to_string()] }),
     );
     assert_eq!(scan["summary"]["new"].as_i64(), Some(1));
-    let report = ok(&w, "run_import", json!({ "tokenize": false }));
+    let report = ok(w, "run_import", json!({ "tokenize": false }));
     let song_id = report["tracks"][0]["songId"].as_str().unwrap().to_string();
 
     // 导入之后才下的歌词：文件现在才出现在音频旁边
     std::fs::write(audio.with_extension("lrc"), "[00:01.00]あとから来た歌詞\n").unwrap();
-    let missing = ok(&w, "lyrics_missing", json!({}));
+    let missing = ok(w, "lyrics_missing", json!({}));
     let row = missing
         .as_array()
         .unwrap()
@@ -1877,7 +1877,7 @@ fn a_sibling_lrc_is_used_without_going_online() {
         "没认出音频旁边的 .lrc：{row}"
     );
 
-    let attached = ok(&w, "lyrics_fill_one", json!({ "songId": song_id }));
+    let attached = ok(w, "lyrics_fill_one", json!({ "songId": song_id }));
     assert_eq!(attached["source"], "sibling", "本地有 .lrc 却跑去上网：{attached}");
     assert_eq!(attached["lyricLines"].as_i64(), Some(1));
 }
@@ -2568,4 +2568,38 @@ fn the_csp_lets_the_front_end_fetch_assets_not_just_display_them() {
             "{name} 要放行 asset 协议，现在是：{value}"
         );
     }
+}
+
+/// 诊断信息要**一次说完排查一个问题要问的那几样**，而且不能带歌名歌词。
+///
+/// 这几个段落标题是契约：用户贴过来的那段文本靠它们定位，少一段就等于
+/// 又要多问一轮。
+#[test]
+fn the_diagnostics_report_answers_the_questions_i_always_have_to_ask() {
+    let w = app_or_skip!();
+    let text = ok(&w, "diagnostics_report", json!({}))
+        .as_str()
+        .expect("诊断信息应该是一段文本")
+        .to_string();
+
+    for marker in [
+        "JPOP Corpus Tool 诊断信息",
+        "── 语料库 ──",
+        "── 能力 ──",
+        "── 日志",
+        "corpus.db",
+        "分词词典",
+        "音频输出",
+        "有歌词没分词",
+    ] {
+        assert!(text.contains(marker), "诊断信息里少了「{marker}」：\n{text}");
+    }
+
+    // 存一份到临时文件，确认写得出来、内容一致
+    let out = std::env::temp_dir().join(format!("jp-diag-{}.txt", std::process::id()));
+    let saved = ok(&w, "diagnostics_save", json!({ "path": out.to_string_lossy() }));
+    assert_eq!(saved.as_str().unwrap(), out.to_string_lossy());
+    let on_disk = std::fs::read_to_string(&out).unwrap();
+    assert!(on_disk.contains("── 能力 ──"), "存出来的文件不对");
+    let _ = std::fs::remove_file(&out);
 }
