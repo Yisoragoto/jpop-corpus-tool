@@ -483,6 +483,43 @@ pub fn backfill_durations(
     Ok(crate::maintenance::backfill_durations(&mut state.corpus())?)
 }
 
+/// 有歌词但一个 token 都没有的歌。
+///
+/// 这些歌是在没有分词词典的时候入库的，表现是**点词查不了、也没有振假名**——
+/// 界面上这两件事都按 token 渲染。
+#[tauri::command]
+pub fn tokenize_missing_list(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<jp_import::maintain::Untokenized>> {
+    Ok(jp_import::maintain::untokenized_songs(state.corpus().connection())?)
+}
+
+/// 给那些歌补上分词。一个事务，中途出错整个回滚。
+///
+/// 几十首歌几千行要分词，走 `spawn_blocking`。
+#[tauri::command]
+pub async fn tokenize_missing_run<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> CmdResult<jp_import::maintain::Tokenized> {
+    let handle = app.clone();
+    blocking(app, move |state| {
+        let analyzer = state
+            .analyzer()
+            .ok_or_else(|| anyhow::anyhow!("没有分词词典，先在「分词词典」那一行下一份"))?;
+        let mut corpus = state.corpus();
+        let tx = corpus.connection_mut().transaction()?;
+        let report = jp_import::maintain::tokenize_missing(&tx, &analyzer, |song| {
+            let _ = handle.emit(
+                "tokenize://progress",
+                format!("{} · {}", song.artist, song.title),
+            );
+        })?;
+        tx.commit()?;
+        Ok(report)
+    })
+    .await
+}
+
 // ──────────────────────────── 补齐歌词 ────────────────────────────
 
 /// 库里还没有歌词的歌。音频旁边就有 .lrc 的会在 `siblingLrc` 里标出来。

@@ -25,6 +25,7 @@ import { DictionaryManager } from "../dict/DictionaryManager";
 import { UpdateCard } from "../components/UpdateCard";
 import { MigrateCard } from "../components/MigrateCard";
 import { SudachiCard } from "../components/SudachiCard";
+import { TokenizeCard } from "../components/TokenizeCard";
 import { SettingsToc, type TocItem } from "../components/SettingsToc";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
 import { lyricFontStack, useFontOptions } from "../fonts";
@@ -526,6 +527,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             disabled={busy !== null}
           />
         </SettingCard>
+        <TokenizeCard icon={Icons.lyrics} onError={onError} onChanged={onChanged} />
         <MigrateCard icon={Icons.db} onError={onError} onChanged={onChanged} />
         <SettingCard
           icon={Icons.card}

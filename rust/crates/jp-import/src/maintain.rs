@@ -406,6 +406,42 @@ pub(crate) mod tests {
     use super::*;
     use crate::import::NOW;
 
+    /// 有歌词没分词的歌找得出来，补完点词和振假名才有东西可依。
+    #[test]
+    fn songs_with_lyrics_but_no_tokens_are_listed_and_can_be_filled_in() {
+        let conn = library();
+        // library() 里 001 有分词、002 只有一行歌词没分词
+        conn.execute("DELETE FROM tokens WHERE utterance_id = 3", []).unwrap();
+
+        let missing = untokenized_songs(&conn).unwrap();
+        assert_eq!(missing.len(), 1, "{missing:?}");
+        assert_eq!(missing[0].song_id, "002");
+        assert_eq!(missing[0].lyric_lines, 1);
+
+        // 真词典在开发树里；没有就只验「找得出来」这一半
+        let Some((resources, dict)) = jp_tokenizer::locate_sudachipy(std::path::Path::new(r"D:\jp_corpus"))
+        else {
+            eprintln!("跳过补分词那一半：本机没有词典");
+            return;
+        };
+        let analyzer = jp_tokenizer::Analyzer::from_sudachipy(&resources, &dict).unwrap();
+        let report = tokenize_missing(&conn, &analyzer, |_| {}).unwrap();
+        assert_eq!(report.songs, 1);
+        assert_eq!(report.lines, 1);
+        assert!(report.tokens >= 3, "朝が来る 至少三个词，实际 {}", report.tokens);
+
+        // 补完就不在名单里了，而且只动了 002
+        assert!(untokenized_songs(&conn).unwrap().is_empty());
+        let on_001: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM tokens t JOIN utterances u ON u.id = t.utterance_id WHERE u.song_id = '001'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(on_001, 3, "没补的那首不该被动");
+    }
+
     /// 换一份歌词：清掉旧的再挂新的，全文索引必须跟着走。
     ///
     /// 外部内容表 `utterances_fts` 没有触发器，删行时漏掉 `'delete'` 那一步的话
@@ -678,4 +714,135 @@ pub(crate) mod tests {
         let got: Vec<(&str, &str)> = suggestions.iter().map(|s| (s.song_id.as_str(), s.path.as_str())).collect();
         assert_eq!(got, [("001", "F:/a/ヨルシカ - 夜.flac"), ("003", "F:/raw/audio/YOASOBI/003.flac")]);
     }
+}
+
+/// 歌词在库里、但一个 token 都没有的歌。
+///
+/// 怎么来的：导入或者补歌词的时候没有分词词典（`analyzer` 是 `None`），
+/// 歌词照常入库，分词那一步跳过了。表现是**点词查不了、也没有振假名**——
+/// 界面上这两件事都是按 token 渲染的。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Untokenized {
+    pub song_id: String,
+    pub artist: String,
+    pub title: String,
+    pub lyric_lines: i64,
+}
+
+pub fn untokenized_songs(conn: &Connection) -> Result<Vec<Untokenized>> {
+    let mut stmt = conn.prepare(
+        "SELECT s.id, s.artist, s.title, COUNT(u.id) \
+         FROM songs s \
+         JOIN utterances u ON u.song_id = s.id \
+         WHERE NOT EXISTS ( \
+             SELECT 1 FROM tokens t JOIN utterances u2 ON u2.id = t.utterance_id \
+             WHERE u2.song_id = s.id \
+         ) \
+         GROUP BY s.id ORDER BY s.id",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Untokenized {
+                song_id: row.get(0)?,
+                artist: row.get(1)?,
+                title: row.get(2)?,
+                lyric_lines: row.get(3)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// 一次补分词的结果
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tokenized {
+    pub songs: usize,
+    pub lines: usize,
+    pub tokens: usize,
+    pub corrections_restored: usize,
+}
+
+/// 给一首已经有歌词、但没有分词的歌补上分词。**在一个事务里调**。
+///
+/// 直接拿库里的 `utterances.text` 分词，不用再找 `.lrc`——歌词已经在库里了，
+/// 再去碰文件只会多一处可能对不上的地方。
+///
+/// 规则和导入那条路完全一致（见 `import::attach_lyrics`）：空白 token 不入库、
+/// `pos` 存 UPOS、最后把这首歌以前的分词校正套回去。
+pub fn tokenize_song(
+    conn: &Connection,
+    song_id: &str,
+    analyzer: &jp_tokenizer::Analyzer,
+) -> Result<Tokenized> {
+    let mut stats = Tokenized::default();
+
+    // 先收下来再写：边遍历边 INSERT 的话语句缓存里会同时有读写两个游标
+    let lines: Vec<(i64, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT id, text FROM utterances WHERE song_id = ?1 ORDER BY line_idx, id")?;
+        stmt.query_map(params![song_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    if lines.is_empty() {
+        return Ok(stats);
+    }
+
+    // 这首歌要是已经有一部分分词，先清掉再重来：半首分词比没有更难查
+    conn.execute(
+        "DELETE FROM tokens WHERE utterance_id IN (SELECT id FROM utterances WHERE song_id = ?1)",
+        params![song_id],
+    )?;
+
+    for (utterance_id, text) in &lines {
+        let tokens = analyzer
+            .analyze(text)
+            .with_context(|| format!("分词失败：{text}"))?;
+        let meaningful = tokens.iter().filter(|t| !t.surface.trim().is_empty());
+        for (token_idx, token) in meaningful.enumerate() {
+            conn.execute(
+                "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) \
+                 VALUES (?1,?2,?3,?4,?5)",
+                params![
+                    utterance_id,
+                    token_idx as i64,
+                    token.surface,
+                    token.lemma,
+                    token.upos
+                ],
+            )?;
+            stats.tokens += 1;
+        }
+        stats.lines += 1;
+    }
+
+    let (artist, title): (String, String) = conn.query_row(
+        "SELECT artist, title FROM songs WHERE id = ?1",
+        params![song_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    stats.corrections_restored =
+        jp_corpus::corrections::restore_for_song(conn, song_id, &artist, &title)
+            .context("恢复分词校正失败")?;
+    stats.songs = 1;
+    Ok(stats)
+}
+
+/// 把库里所有「有歌词没分词」的歌补上。**在一个事务里调**。
+pub fn tokenize_missing(
+    conn: &Connection,
+    analyzer: &jp_tokenizer::Analyzer,
+    mut on_song: impl FnMut(&Untokenized),
+) -> Result<Tokenized> {
+    let mut total = Tokenized::default();
+    for song in untokenized_songs(conn)? {
+        on_song(&song);
+        let one = tokenize_song(conn, &song.song_id, analyzer)?;
+        total.songs += one.songs;
+        total.lines += one.lines;
+        total.tokens += one.tokens;
+        total.corrections_restored += one.corrections_restored;
+    }
+    Ok(total)
 }

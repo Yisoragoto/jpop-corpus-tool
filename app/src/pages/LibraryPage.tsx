@@ -326,6 +326,26 @@ export function LibraryPage({
     lyricsRef.current?.scrollTo({ top: 0 });
   }, [selected?.id]);
 
+  // 上边那道渐隐只在滚起来之后才有：停在顶上时淡的就是曲目标题，那样难看。
+  useEffect(() => {
+    const box = lyricsRef.current;
+    if (box === null) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      box.classList.toggle("scrolled", box.scrollTop > 8);
+    };
+    const onScroll = () => {
+      if (frame === 0) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    box.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      box.removeEventListener("scroll", onScroll);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [selected?.id]);
+
   // 跨页跳转过来时滚到指定行
   useEffect(() => {
     const target = library.pendingScrollUtterance;

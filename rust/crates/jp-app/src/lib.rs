@@ -99,6 +99,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::tokenizer_status,
             commands::tokenizer_install,
             commands::tokenizer_download,
+            commands::tokenize_missing_list,
+            commands::tokenize_missing_run,
             // 检查更新
             commands::update_check,
             commands::update_changelog,
