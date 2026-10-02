@@ -254,49 +254,17 @@ static INSTALL_LAUNCHED: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 
 /// 这个文件是不是已经下好而且校验得过。半截的、损坏的都返回 false。
 fn verified(path: &Path, expected: &str) -> bool {
-    let Ok(mut file) = std::fs::File::open(path) else {
-        return false;
-    };
-    let mut hasher = Sha256::new();
-    if std::io::copy(&mut file, &mut hasher).is_err() {
-        return false;
-    }
-    format!("{:x}", hasher.finalize()).eq_ignore_ascii_case(expected)
+    sha256_of(path).is_ok_and(|got| got.eq_ignore_ascii_case(expected))
 }
 
-/// 把临时文件变成最终文件。
-///
-/// 刚写完的 exe 可能还被杀软扫着，`rename` 会吃一个「拒绝访问」；retry 几次通常就过了。
-/// 真过不去就复制一份——复制开的是新句柄，很多锁得住改名的情况它能过。
-/// **错误里带上操作系统说的那句话**：上一版只写了「改名失败：<路径>」，
-/// 排查时等于什么都没说。
-fn finish(part: &Path, dest: &Path) -> Result<()> {
-    let mut last: Option<std::io::Error> = None;
-    for attempt in 0..10 {
-        match std::fs::rename(part, dest) {
-            Ok(()) => return Ok(()),
-            Err(err) => {
-                last = Some(err);
-                std::thread::sleep(std::time::Duration::from_millis(100 * (attempt + 1)));
-            }
-        }
-    }
-    match std::fs::copy(part, dest) {
-        Ok(_) => {
-            let _ = std::fs::remove_file(part);
-            Ok(())
-        }
-        Err(copy_err) => {
-            let _ = std::fs::remove_file(part);
-            let rename_err = last
-                .map(|e| e.to_string())
-                .unwrap_or_else(|| "（没有记录）".to_string());
-            bail!(
-                "落盘失败：{}\n改名：{rename_err}\n复制：{copy_err}",
-                dest.display()
-            )
-        }
-    }
+/// 整个文件的 SHA-256。流式读，6MB 的安装包和 207MB 的词典都用它。
+pub(crate) fn sha256_of(path: &Path) -> Result<String> {
+    let mut file = std::fs::File::open(path)
+        .with_context(|| format!("打不开 {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)
+        .with_context(|| format!("读不完 {}", path.display()))?;
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// 把安装包下到 `dir`，校验 SHA-256，返回落盘路径。
@@ -327,64 +295,22 @@ pub fn download_installer(
         return Ok(dest);
     }
 
-    // 每次下载各用各的临时文件：同名的话两个下载会写进同一个文件
-    let part = dir.join(format!(
-        "{}.part-{}-{}",
-        asset.name,
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    ));
+    // 断点就是这个 `.part`，所以名字是固定的：换一次名字等于把上次下到的扔了。
+    // 同时下两个由上面那把锁挡着，跨进程撞车由最后的 SHA-256 兜底。
+    let part = dir.join(format!("{}.part", asset.name));
 
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_connect(Some(std::time::Duration::from_secs(10)))
-        // 不设总超时：慢网上 6 MB 可能要几分钟，卡住靠的是「读不到数据就报错」
-        .build()
-        .into();
-    let mut response = agent
-        .get(&asset.url)
-        .header("User-Agent", USER_AGENT)
-        .call()
-        .with_context(|| format!("下载失败：{}", asset.url))?;
+    crate::net::download_resumable(&asset.url, &part, asset.size, &mut on_progress)?;
 
-    let total = response
-        .headers()
-        .get("content-length")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(asset.size);
-
-    {
-        use std::io::{Read, Write};
-        let mut reader = response.body_mut().as_reader();
-        let mut file = std::fs::File::create(&part)
-            .with_context(|| format!("建不出 {}", part.display()))?;
-        let mut hasher = Sha256::new();
-        let mut buffer = vec![0u8; 64 * 1024];
-        let mut received = 0u64;
-        loop {
-            let read = reader.read(&mut buffer).context("下载中断")?;
-            if read == 0 {
-                break;
-            }
-            file.write_all(&buffer[..read]).context("写入失败")?;
-            hasher.update(&buffer[..read]);
-            received += read as u64;
-            on_progress(received, total);
-        }
-        file.flush().ok();
-
-        // 校验在改名之前：对不上的那一份连文件名都不该出现
-        let got = format!("{:x}", hasher.finalize());
-        if !got.eq_ignore_ascii_case(&expected) {
-            let _ = std::fs::remove_file(&part);
-            bail!("下载的文件校验不过（期望 {expected}，实际 {got}），已删掉");
-        }
+    // 校验在改名之前：对不上的那一份连文件名都不该出现。
+    // 续传拼出来的东西对不对，就看这一步——所以这里算的是**盘上的字节**，
+    // 不是下载时顺手攒的哈希（那只算了这一轮收到的那段）。
+    let got = sha256_of(&part)?;
+    if !got.eq_ignore_ascii_case(&expected) {
+        let _ = std::fs::remove_file(&part);
+        bail!("下载的文件校验不过（期望 {expected}，实际 {got}），已删掉；再点一次会重新下");
     }
 
-    finish(&part, &dest)?;
+    crate::net::finish(&part, &dest)?;
     Ok(dest)
 }
 
@@ -554,23 +480,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn finish_moves_the_temp_file_into_place_even_if_the_target_exists() {
-        let dir = std::env::temp_dir().join(format!(
-            "jp-update-finish-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let part = dir.join("x.part-1");
-        let dest = dir.join("x.exe");
-        std::fs::write(&part, b"new").unwrap();
-        std::fs::write(&dest, b"old").unwrap();
-
-        finish(&part, &dest).unwrap();
-        assert_eq!(std::fs::read(&dest).unwrap(), b"new");
-        assert!(!part.exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 }

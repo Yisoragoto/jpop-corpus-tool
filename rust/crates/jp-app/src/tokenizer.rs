@@ -99,115 +99,7 @@ pub struct DownloadProgress {
 /// 同一个进程里只下一份：设置里点一次、歌词那条横幅上再点一次，不能下两遍。
 static DOWNLOADING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-fn sha256_of(path: &Path) -> Result<String> {
-    use sha2::{Digest, Sha256};
-    let mut file = std::fs::File::open(path)
-        .with_context(|| format!("打不开 {}", path.display()))?;
-    let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher).with_context(|| format!("读不完 {}", path.display()))?;
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
-/// 断了接着下，最多接这么多次。
-///
-/// 43MB 在慢网上要二十分钟，中途被掐是常事——实测第一次就在 24MB 处
-/// 「Peer disconnected」。没有续传的话用户得从 0 再来一遍，而下一次多半还是断在半路。
-const RESUME_ATTEMPTS: usize = 12;
-
-/// 下到 `part`，断了用 Range 从断点接着下。
-///
-/// `part` 不删：它就是断点本身。进度报的是**绝对**字节数，所以界面上那根条
-/// 接着往前走，不会回到 0。
-fn fetch_with_resume(part: &Path, on_progress: &mut impl FnMut(DownloadProgress)) -> Result<()> {
-    use std::io::{Read, Write};
-
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_connect(Some(std::time::Duration::from_secs(15)))
-        // 不设总超时：慢网上 43MB 本来就要二十分钟
-        .build()
-        .into();
-
-    let mut received = std::fs::metadata(part).map(|m| m.len()).unwrap_or(0);
-    // 比发布时记下的还长，说明这个 .part 不是这一份，重来
-    if received > DICT_DOWNLOAD_BYTES {
-        let _ = std::fs::remove_file(part);
-        received = 0;
-    }
-    let mut last_error = String::new();
-
-    for attempt in 0..RESUME_ATTEMPTS {
-        if received >= DICT_DOWNLOAD_BYTES {
-            return Ok(());
-        }
-        if attempt > 0 {
-            // 刚断网时立刻重连多半还是断的，等一下再试（1s、2s、3s…最多 8s）
-            std::thread::sleep(std::time::Duration::from_secs((attempt as u64).min(8)));
-        }
-
-        let mut request = agent
-            .get(DICT_URL)
-            .header("User-Agent", crate::update::USER_AGENT);
-        if received > 0 {
-            request = request.header("Range", &format!("bytes={received}-"));
-        }
-        let mut response = match request.call() {
-            Ok(response) => response,
-            Err(err) => {
-                last_error = err.to_string();
-                continue;
-            }
-        };
-
-        // 服务端不认 Range 就会回 200 + 整个文件，这时候只能从头写
-        let resumed = response.status().as_u16() == 206;
-        if received > 0 && !resumed {
-            received = 0;
-        }
-        let mut file = if received > 0 {
-            std::fs::OpenOptions::new()
-                .append(true)
-                .open(part)
-                .with_context(|| format!("打不开 {}", part.display()))?
-        } else {
-            std::fs::File::create(part).with_context(|| format!("建不了 {}", part.display()))?
-        };
-
-        let mut reader = response.body_mut().as_reader();
-        let mut buffer = vec![0u8; 256 * 1024];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(read) => {
-                    file.write_all(&buffer[..read]).context("写入失败")?;
-                    received += read as u64;
-                    on_progress(DownloadProgress {
-                        received,
-                        total: DICT_DOWNLOAD_BYTES,
-                        stage: "downloading",
-                    });
-                }
-                Err(err) => {
-                    // 断在半路：把已经收到的刷到盘上，下一轮从这儿接着下
-                    last_error = err.to_string();
-                    break;
-                }
-            }
-        }
-        file.flush().ok();
-        drop(file);
-        // 真实长度为准：write_all 失败过的话 received 会比盘上的多
-        received = std::fs::metadata(part).map(|m| m.len()).unwrap_or(received);
-    }
-
-    if received >= DICT_DOWNLOAD_BYTES {
-        return Ok(());
-    }
-    anyhow::bail!(
-        "下载中断，续了 {RESUME_ATTEMPTS} 次还是没下完（{} / {} MB）。已经下到的部分留着了，再点一次会从断点接着下。最后一次的报错：{last_error}",
-        received / 1024 / 1024,
-        DICT_DOWNLOAD_BYTES / 1024 / 1024
-    )
-}
+use crate::update::sha256_of;
 
 /// 把词典下到当前语料库目录的 `sudachi/`。
 ///
@@ -227,7 +119,9 @@ pub fn download(root: &Path, mut on_progress: impl FnMut(DownloadProgress)) -> R
     }
 
     let xz = dest.join("system.dic.xz.part");
-    fetch_with_resume(&xz, &mut on_progress)?;
+    crate::net::download_resumable(DICT_URL, &xz, DICT_DOWNLOAD_BYTES, &mut |received, total| {
+        on_progress(DownloadProgress { received, total, stage: "downloading" })
+    })?;
 
     let got = sha256_of(&xz)?;
     if !got.eq_ignore_ascii_case(DICT_XZ_SHA256) {

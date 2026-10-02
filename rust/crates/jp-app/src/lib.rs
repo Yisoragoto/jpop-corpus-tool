@@ -15,6 +15,7 @@ pub mod library_admin;
 pub mod lyrics;
 pub mod maintenance;
 pub mod migrate;
+pub mod net;
 pub mod mine;
 pub mod pitch;
 pub mod scrape;

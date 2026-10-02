@@ -27,7 +27,10 @@ impl From<anyhow::Error> for CommandError {
     fn from(err: anyhow::Error) -> Self {
         eprintln!("[command error] {err:?}");
         Self {
-            message: err.to_string(),
+            // `{:#}` 把整条 anyhow 链拼出来。只用 `to_string()` 的话界面上只剩最外层
+            // 那句——「下载失败：<地址>」，而真正有用的「Peer disconnected」被盖掉了，
+            // 用户和我都只能靠猜。
+            message: format!("{err:#}"),
         }
     }
 }
