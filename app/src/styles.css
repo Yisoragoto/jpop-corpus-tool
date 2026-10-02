@@ -1251,6 +1251,18 @@ button.chip:hover { color: var(--fg); }
 .empty-state p { margin: 0; font-size: 13px; line-height: 1.7; }
 .empty-actions { display: flex; gap: 8px; margin-top: 6px; }
 
+/* ── 「没有词典」那条横幅：报错之外还给一个能当场点的按钮 ── */
+.sudachi-banner { display: flex; align-items: center; gap: 12px; cursor: default; }
+.sudachi-text { flex: 1; min-width: 0; }
+.sudachi-get {
+  flex: 0 0 auto; padding: 4px 12px; border-radius: 6px; font-size: 12px;
+  background: var(--accent); color: #fff; font-weight: 600;
+}
+.sudachi-get:hover:not(:disabled) { filter: brightness(1.1); }
+.sudachi-get:disabled { opacity: .6; }
+.sudachi-close { flex: 0 0 auto; color: inherit; opacity: .7; padding: 0 2px; }
+.sudachi-close:hover { opacity: 1; }
+
 /* ── 数据迁移：预览、两个勾选、一个开始 ── */
 .migrate-panel { display: flex; flex-direction: column; gap: 10px; padding: 4px 4px 10px; }
 .migrate-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

@@ -724,6 +724,24 @@ pub fn tokenizer_status(state: State<'_, AppState>) -> CmdResult<crate::tokenize
     Ok(crate::tokenizer::status(&state.project_root()))
 }
 
+/// 去网上下一份词典，解压进当前语料库目录，并立刻装上。
+///
+/// 43MB 的下载 + 207MB 的解压，几分钟起步，所以进度走 `tokenizer://progress` 事件。
+#[tauri::command]
+pub async fn tokenizer_download<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> CmdResult<crate::tokenizer::Installed> {
+    let handle = app.clone();
+    blocking(app, move |state| {
+        let installed = crate::tokenizer::download(&state.project_root(), |progress| {
+            let _ = handle.emit("tokenizer://progress", progress);
+        })?;
+        anyhow::ensure!(state.reload_analyzer(), "下好了，但词典还是装不上");
+        Ok(installed)
+    })
+    .await
+}
+
 /// 把别处的那一份 Sudachi 词典复制进当前语料库目录，并立刻装上。
 ///
 /// 207MB 的复制，所以走 `spawn_blocking`。

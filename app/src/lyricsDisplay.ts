@@ -141,6 +141,27 @@ export const furiganaApi = {
 /** 记住最近几首歌的振假名，来回切歌、切模式不重算 */
 const FURIGANA_CACHE_SIZE = 30;
 
+/**
+ * 「再算一次振假名」。
+ *
+ * 没有词典时这首歌算失败、什么都没缓存，而 `key` 没变，effect 不会自己重跑——
+ * 词典刚下好的那一刻就得有人推它一把。
+ */
+let retryTick = 0;
+const retryListeners = new Set<() => void>();
+
+export function retryFurigana() {
+  retryTick += 1;
+  for (const listener of retryListeners) listener();
+}
+
+function subscribeRetry(listener: () => void) {
+  retryListeners.add(listener);
+  return () => {
+    retryListeners.delete(listener);
+  };
+}
+
 /** 振假名开着时取这首歌的注音：utteranceId → 注音段。关着、还没取到或出错时是 null */
 export function useSongFurigana(
   songId: string | undefined,
@@ -151,6 +172,7 @@ export function useSongFurigana(
   const cache = useRef(new Map<string, Map<number, Ruby[]>>());
   const [result, setResult] = useState<{ key: string; map: Map<number, Ruby[]> } | null>(null);
   const key = songId !== undefined && enabled ? `${songId}|${mode}` : null;
+  const tick = useSyncExternalStore(subscribeRetry, () => retryTick);
 
   useEffect(() => {
     if (key === null || songId === undefined) return;
@@ -177,9 +199,9 @@ export function useSongFurigana(
     return () => {
       alive = false;
     };
-    // onError 每次渲染都是新函数也没关系：只在 key 变时取
+    // onError 每次渲染都是新函数也没关系：只在 key 变、或者有人喊「再算一次」时取
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, tick]);
 
   return key !== null && result?.key === key ? result.map : null;
 }

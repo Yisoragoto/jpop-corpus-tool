@@ -91,29 +91,68 @@ pub const BUNDLED_DIR: &str = "sudachi";
 /// 资源目录里必须有的那几个文件。只有 `system.dic` 大（207MB），其余都是几 KB。
 pub const RESOURCE_FILES: [&str; 4] = ["sudachi.json", "char.def", "unk.def", "rewrite.def"];
 
-/// 在语料库目录里定位 SudachiPy 的资源目录和词典。
+/// 那四个几 KB 的配置文件**直接编进程序**（一共 15KB）。
+///
+/// 这样「补一份词典」只剩下载 `system.dic` 这一件事：不用打包格式、不用解压目录结构，
+/// 下回来一个文件、把这四个写出去就齐了。
+///
+/// 它们必须和 `system.dic` 配套——`sudachi.json` 里的 `inputTextPlugin`
+/// （尤其是把 `〜` 归一成 `ー` 的那个）会改变分词结果，换一份就对不上账了。
+pub const EMBEDDED_RESOURCES: [(&str, &[u8]); 4] = [
+    ("sudachi.json", include_bytes!("../resources/sudachi.json")),
+    ("char.def", include_bytes!("../resources/char.def")),
+    ("unk.def", include_bytes!("../resources/unk.def")),
+    ("rewrite.def", include_bytes!("../resources/rewrite.def")),
+];
+
+/// 把编进程序的那四个配置文件写进 `dir`。
+pub fn write_embedded_resources(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    for (name, bytes) in EMBEDDED_RESOURCES {
+        std::fs::write(dir.join(name), bytes)?;
+    }
+    Ok(())
+}
+
+/// 一个目录是不是「资源目录 + system.dic 都在这儿」的那种布局。
+fn layout(dir: &Path) -> Option<(PathBuf, PathBuf)> {
+    let dict = dir.join("system.dic");
+    (dir.join("sudachi.json").is_file() && dict.is_file()).then(|| (dir.to_path_buf(), dict))
+}
+
+/// 语料库目录里的那一份（不含程序自带的）。
 ///
 /// 两条路，按顺序试：
 ///
-/// 1. `venv/Lib/site-packages/…`：和 0.1.x 共用同一份词典，省掉「Rust 侧再下一份
-///    207MB 词典」的麻烦，也顺带保证了比对的是同一个数据源；
+/// 1. `venv/Lib/site-packages/…`：和 0.1.x 共用同一份词典，也顺带保证了比对的是
+///    同一个数据源；
 /// 2. `sudachi/`：语料库目录里自带的一份（迁移时搬过来的，或者设置里导入的）。
-///    新装的程序没有 venv，走的是这条。
-pub fn locate_sudachipy(project_root: &Path) -> Option<(PathBuf, PathBuf)> {
+pub fn locate_in_library(project_root: &Path) -> Option<(PathBuf, PathBuf)> {
     let site = project_root.join("venv/Lib/site-packages");
-    let candidates = [
-        (
-            site.join("sudachipy/resources"),
-            site.join("sudachidict_core/resources/system.dic"),
-        ),
-        (
-            project_root.join(BUNDLED_DIR),
-            project_root.join(BUNDLED_DIR).join("system.dic"),
-        ),
-    ];
-    candidates
-        .into_iter()
-        .find(|(resources, dict)| resources.join("sudachi.json").is_file() && dict.is_file())
+    let venv = (
+        site.join("sudachipy/resources"),
+        site.join("sudachidict_core/resources/system.dic"),
+    );
+    if venv.0.join("sudachi.json").is_file() && venv.1.is_file() {
+        return Some(venv);
+    }
+    layout(&project_root.join(BUNDLED_DIR))
+}
+
+/// 随程序一起装的那一份：`<exe 目录>/resources/sudachi/`（Tauri 的 `bundle.resources`）。
+///
+/// **振假名不该要用户自己准备词典**——0.1.x 的词典就在项目目录里，装了就有。
+/// 开发树上跑 `cargo run` 时 exe 旁边没有 resources，这时返回 `None`，
+/// 由上面那条 venv 的路兜住。
+pub fn bundled_with_app() -> Option<(PathBuf, PathBuf)> {
+    let exe = std::env::current_exe().ok()?;
+    layout(&exe.parent()?.join("resources").join(BUNDLED_DIR))
+}
+
+/// 用哪一份词典。语料库目录里的优先——用户自己导过就按他导的来；
+/// 都没有才用程序自带的那一份。
+pub fn locate_sudachipy(project_root: &Path) -> Option<(PathBuf, PathBuf)> {
+    locate_in_library(project_root).or_else(bundled_with_app)
 }
 
 /// 从用户选的目录里找出可以复制过来的那一份词典。
@@ -191,7 +230,7 @@ mod locate_tests {
             "venv/Lib/site-packages/sudachipy/resources",
             "venv/Lib/site-packages/sudachidict_core/resources/system.dic",
         );
-        let (resources, dict) = locate_sudachipy(&tmp).unwrap();
+        let (resources, dict) = locate_in_library(&tmp).unwrap();
         assert!(resources.ends_with("sudachipy/resources"));
         assert!(dict.ends_with("system.dic"));
     }
@@ -200,7 +239,7 @@ mod locate_tests {
     fn a_library_without_a_venv_uses_the_copy_sitting_in_sudachi() {
         let tmp = dir("bundled");
         fake(&tmp, BUNDLED_DIR, "sudachi/system.dic");
-        let (resources, dict) = locate_sudachipy(&tmp).unwrap();
+        let (resources, dict) = locate_in_library(&tmp).unwrap();
         assert_eq!(resources, tmp.join(BUNDLED_DIR));
         assert_eq!(dict, tmp.join(BUNDLED_DIR).join("system.dic"));
     }
@@ -208,8 +247,19 @@ mod locate_tests {
     #[test]
     fn an_empty_library_has_none_and_says_so() {
         let tmp = dir("empty");
-        assert!(locate_sudachipy(&tmp).is_none());
+        // 库里没有。`locate_sudachipy` 这时会退到「程序自带」那一份，
+        // 所以问的是 `locate_in_library`——这里测的是库里有没有。
+        assert!(locate_in_library(&tmp).is_none());
         assert!(find_sudachipy_source(&tmp).is_none());
+    }
+
+    #[test]
+    fn the_library_copy_wins_over_the_one_shipped_with_the_app() {
+        let tmp = dir("prefers-library");
+        fake(&tmp, BUNDLED_DIR, "sudachi/system.dic");
+        // 自带的那一份在 exe 旁边，测试里没有；有也该让库里的赢
+        let (resources, _) = locate_sudachipy(&tmp).unwrap();
+        assert_eq!(resources, tmp.join(BUNDLED_DIR));
     }
 
     #[test]

@@ -12,11 +12,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { api, type HealthReport, type Overview, type QuickHit } from "./api";
+import { api, NO_DICTIONARY, type HealthReport, type Overview, type QuickHit } from "./api";
 import { CommandPalette, type PaletteCommand, type PaletteMode } from "./components/CommandPalette";
 import { NavIcon } from "./components/NavIcons";
 import { invalidatePerformers } from "./components/PerformerPicker";
 import { Player } from "./components/Player";
+import { SudachiBanner } from "./components/SudachiBanner";
 import { warmFontOptions } from "./fonts";
 import { useAppSettings } from "./settings";
 import { Stat } from "./components/Stat";
@@ -337,7 +338,18 @@ export default function App() {
             没有可用的音频输出设备，播放已禁用；歌词与语料浏览不受影响。
           </div>
         )}
-        {notice && (
+        {/* 没有词典是唯一一条「能当场解决」的报错：横幅上直接给下载按钮，别让用户去设置里找 */}
+        {notice && notice.includes(NO_DICTIONARY) && (
+          <SudachiBanner
+            message={notice}
+            onDone={() => {
+              setNotice(null);
+              void api.health().then(setHealth).catch(() => undefined);
+            }}
+            onDismiss={() => setNotice(null)}
+          />
+        )}
+        {notice && !notice.includes(NO_DICTIONARY) && (
           <div className="banner error" onClick={() => setNotice(null)}>
             {notice}（点击关闭）
           </div>

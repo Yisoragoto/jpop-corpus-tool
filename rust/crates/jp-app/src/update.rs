@@ -30,7 +30,7 @@ pub const REPO: &str = "Yisoragoto/jpop-corpus-tool";
 pub const DOWNLOAD_PREFIX: &str = "https://github.com/Yisoragoto/jpop-corpus-tool/releases/download/";
 
 const API_BASE: &str = "https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases";
-const USER_AGENT: &str = "jpop-corpus-tool-updater";
+pub(crate) const USER_AGENT: &str = "jpop-corpus-tool-updater";
 
 /// 一次发布里能装的那个文件。
 ///
@@ -240,10 +240,71 @@ pub struct DownloadProgress {
     pub message: String,
 }
 
+/// 同一个进程里只允许一个下载在跑。
+///
+/// 下载有**两条路**：启动时的自动更新（App.tsx）和设置里的按钮。两条一起跑的话，
+/// 以前共用同一个 `.part`：两边各写各的、内容交错，而各自的哈希只算自己收到的字节——
+/// **校验会「通过」，落盘的却是一团乱**；先改完名的那个还会把另一个的文件抽走，
+/// 另一个于是报「改名失败」。锁 + 各用各的临时文件，两个问题一起没了。
+static DOWNLOADING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// 安装程序这个进程里只拉起一次。两条路都走到「装」的时候，
+/// 同时跑两个 NSIS 会互相抢文件。
+static INSTALL_LAUNCHED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 这个文件是不是已经下好而且校验得过。半截的、损坏的都返回 false。
+fn verified(path: &Path, expected: &str) -> bool {
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut hasher = Sha256::new();
+    if std::io::copy(&mut file, &mut hasher).is_err() {
+        return false;
+    }
+    format!("{:x}", hasher.finalize()).eq_ignore_ascii_case(expected)
+}
+
+/// 把临时文件变成最终文件。
+///
+/// 刚写完的 exe 可能还被杀软扫着，`rename` 会吃一个「拒绝访问」；retry 几次通常就过了。
+/// 真过不去就复制一份——复制开的是新句柄，很多锁得住改名的情况它能过。
+/// **错误里带上操作系统说的那句话**：上一版只写了「改名失败：<路径>」，
+/// 排查时等于什么都没说。
+fn finish(part: &Path, dest: &Path) -> Result<()> {
+    let mut last: Option<std::io::Error> = None;
+    for attempt in 0..10 {
+        match std::fs::rename(part, dest) {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                last = Some(err);
+                std::thread::sleep(std::time::Duration::from_millis(100 * (attempt + 1)));
+            }
+        }
+    }
+    match std::fs::copy(part, dest) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(part);
+            Ok(())
+        }
+        Err(copy_err) => {
+            let _ = std::fs::remove_file(part);
+            let rename_err = last
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "（没有记录）".to_string());
+            bail!(
+                "落盘失败：{}\n改名：{rename_err}\n复制：{copy_err}",
+                dest.display()
+            )
+        }
+    }
+}
+
 /// 把安装包下到 `dir`，校验 SHA-256，返回落盘路径。
 ///
 /// `on_progress` 每收到一块调一次——6 MB 的文件在慢网上要好几分钟，
 /// 没有进度的话用户只会看到一个不动的按钮。
+///
+/// 已经下好过、而且校验得过的那一份直接用，不重下。
 pub fn download_installer(
     asset: &AssetView,
     dir: &Path,
@@ -252,9 +313,30 @@ pub fn download_installer(
     if !is_official_download_url(&asset.url) {
         bail!("下载地址不是本仓库的发布地址，已拒绝：{}", asset.url);
     }
+    let Some(expected) = asset.sha256.clone() else {
+        bail!("这次发布没有给出校验值，不能自动安装；请到发布页手动下载");
+    };
     std::fs::create_dir_all(dir).with_context(|| format!("建不出 {}", dir.display()))?;
     let dest = dir.join(&asset.name);
-    let part = dir.join(format!("{}.part", asset.name));
+
+    // 排队：另一条路正在下同一个文件时，这里等它下完，然后走下面那条「已经有了」
+    let _queued = DOWNLOADING.lock().unwrap_or_else(|err| err.into_inner());
+
+    if verified(&dest, &expected) {
+        on_progress(asset.size, asset.size);
+        return Ok(dest);
+    }
+
+    // 每次下载各用各的临时文件：同名的话两个下载会写进同一个文件
+    let part = dir.join(format!(
+        "{}.part-{}-{}",
+        asset.name,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
 
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_connect(Some(std::time::Duration::from_secs(10)))
@@ -295,28 +377,25 @@ pub fn download_installer(
         file.flush().ok();
 
         // 校验在改名之前：对不上的那一份连文件名都不该出现
-        if let Some(expected) = &asset.sha256 {
-            let got = format!("{:x}", hasher.finalize());
-            if !got.eq_ignore_ascii_case(expected) {
-                let _ = std::fs::remove_file(&part);
-                bail!("下载的文件校验不过（期望 {expected}，实际 {got}），已删掉");
-            }
-        } else {
+        let got = format!("{:x}", hasher.finalize());
+        if !got.eq_ignore_ascii_case(&expected) {
             let _ = std::fs::remove_file(&part);
-            bail!("这次发布没有给出校验值，不能自动安装；请到发布页手动下载");
+            bail!("下载的文件校验不过（期望 {expected}，实际 {got}），已删掉");
         }
     }
 
-    if dest.exists() {
-        std::fs::remove_file(&dest).ok();
-    }
-    std::fs::rename(&part, &dest).with_context(|| format!("改名失败：{}", dest.display()))?;
+    finish(&part, &dest)?;
     Ok(dest)
 }
 
 /// 拉起安装程序。调用方随后退出应用——NSIS 要替换正在运行的 exe。
 pub fn launch_installer(path: &Path) -> Result<()> {
     anyhow::ensure!(path.is_file(), "找不到安装包：{}", path.display());
+    // 两条路（启动时自动更新、设置里的按钮）可能都走到这儿。拉起两个 NSIS 会互相抢文件，
+    // 所以第二次就什么都不做——反正第一个已经在装了，应用马上要退出。
+    if INSTALL_LAUNCHED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Ok(());
+    }
     std::process::Command::new(path)
         .spawn()
         .with_context(|| format!("启动安装程序失败：{}", path.display()))?;
@@ -439,5 +518,59 @@ mod tests {
         let err = download_installer(&asset, &dir, |_, _| {}).unwrap_err();
         assert!(format!("{err}").contains("已拒绝"), "{err}");
         assert!(!dir.join("evil.exe").exists());
+    }
+
+    /// 下载那条路的核心不变量：已经下好、校验得过的那一份直接用，不重下、不改名。
+    #[test]
+    fn an_already_downloaded_and_verified_file_is_reused() {
+        let dir = std::env::temp_dir().join(format!(
+            "jp-update-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let body = b"pretend this is an installer";
+        let sha = format!("{:x}", Sha256::digest(body));
+        let name = "JPOP.Corpus.Tool_9.9.9_x64-setup.exe";
+        std::fs::write(dir.join(name), body).unwrap();
+
+        let asset = AssetView {
+            name: name.to_string(),
+            size: body.len() as u64,
+            // 地址必须是本仓库的，否则第一道关就挡了
+            url: format!("{DOWNLOAD_PREFIX}v9.9.9/{name}"),
+            sha256: Some(sha.clone()),
+        };
+        // 没有网也该成功：走的是「已经有了」那条
+        let got = download_installer(&asset, &dir, |_, _| {}).unwrap();
+        assert_eq!(got, dir.join(name));
+
+        // 内容被改坏之后就不能再当成「已经有了」。这里不真下载（会连网），
+        // 只验校验函数本身的判断。
+        std::fs::write(dir.join(name), b"corrupted").unwrap();
+        assert!(!verified(&dir.join(name), &sha));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn finish_moves_the_temp_file_into_place_even_if_the_target_exists() {
+        let dir = std::env::temp_dir().join(format!(
+            "jp-update-finish-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("x.part-1");
+        let dest = dir.join("x.exe");
+        std::fs::write(&part, b"new").unwrap();
+        std::fs::write(&dest, b"old").unwrap();
+
+        finish(&part, &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"new");
+        assert!(!part.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

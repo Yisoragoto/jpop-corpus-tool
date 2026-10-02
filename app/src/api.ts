@@ -559,6 +559,8 @@ export const api = {
   tokenizerStatus: () => call<TokenizerStatus>("tokenizer_status", {}),
   /** 把别处那一份 Sudachi 词典复制进当前语料库目录，并立刻装上（207MB，要等几秒）。 */
   tokenizerInstall: (path: string) => call<InstalledDict>("tokenizer_install", { path }),
+  /** 去网上下一份词典（43MB，解开 207MB）。进度走 tokenizer://progress 事件。 */
+  tokenizerDownload: () => call<InstalledDict>("tokenizer_download", {}),
 
   // 检查更新
   /** 问一次 GitHub Releases：有没有比正在跑的这一版更新的。 */
@@ -848,17 +850,31 @@ export interface TokenizerStatus {
   ready: boolean;
   dictPath: string | null;
   dictBytes: number;
-  /** 用的是语料库目录自带的那一份（而不是 0.1.x 的 venv） */
-  bundled: boolean;
-  /** 自带的那一份会放在哪 */
+  /** 哪儿来的：随程序自带 / 语料库目录里的 / 0.1.x 的 venv / 都没有 */
+  source: "app" | "library" | "venv" | "none";
+  /** 导入进来的那一份会放在哪 */
   bundledDir: string;
 }
 
-/** 复制结果（`tokenizer_install`）。 */
+/** 复制 / 下载的结果（`tokenizer_install`、`tokenizer_download`）。 */
 export interface InstalledDict {
   bytes: number;
   dir: string;
 }
+
+/** 下词典的进度（`tokenizer://progress`）。 */
+export interface DictProgress {
+  received: number;
+  total: number;
+  /** downloading / extracting / done */
+  stage: string;
+}
+
+/** 词典压缩包多大——界面上要先告诉用户这要下多少 */
+export const DICT_DOWNLOAD_BYTES = 45_128_544;
+
+/** 后端说「没有词典」时错误里一定有这一句，界面据此换成「下载」那条横幅 */
+export const NO_DICTIONARY = "找不到 Sudachi 词典";
 
 /** 一次发布里能装的那个文件（`update_check` 给的，原样传回 `update_download`）。 */
 export interface UpdateAsset {

@@ -1,6 +1,6 @@
 [package]
 name = "jp-app"
-version = "0.2.4"
+version = "0.2.5"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -45,6 +45,8 @@ jp-import = { path = "../jp-import" }
 # 检查更新：问 GitHub Releases、下安装包、校验哈希。三个都已经在依赖树里。
 ureq = "3"
 sha2 = "0.10"
+# 分词词典下回来是 .xz（217MB → 43MB）。纯 Rust 实现，不用 C 工具链。
+lzma-rs = "0.3"
 semver = "1"
 
 # 用户自己选的歌词文件可能是 Shift-JIS / GBK。已经在依赖树里。
