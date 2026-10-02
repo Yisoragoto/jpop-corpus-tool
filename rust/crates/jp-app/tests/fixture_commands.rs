@@ -14,6 +14,7 @@
 //! 装配走的是 `jp_app_lib::register()`——和生产路径同一份命令清单。
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 
 use serde_json::{Value, json};
 use tauri::WebviewWindowBuilder;
@@ -26,6 +27,16 @@ use tauri::webview::InvokeRequest;
 use jp_app_lib::state::AppState;
 use jp_corpus::fixture;
 
+/// **一次只许存在一个 app。**
+///
+/// 13 个测试并行各装一个 Tauri app，在 GitHub 的 Windows runner 上会把整个
+/// 测试进程打成 STATUS_ACCESS_VIOLATION（本机跑得过，所以只有推上去才看得见）。
+/// 以前没撞上是因为 `tests/commands.rs` 的那些在 CI 上找不到真库、全都直接返回，
+/// 一个 app 都没建过。
+///
+/// 这一行锁让它们排队。每个测试仍然有自己的临时库和自己的 app，只是不同时存在。
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
 /// 一个建在临时目录上的真实应用。
 ///
 /// 离开作用域时**先把 AppState 里的连接换成内存库**再删目录：窗口 drop 了
@@ -34,10 +45,14 @@ use jp_corpus::fixture;
 struct Fixture {
     w: Option<tauri::WebviewWindow<MockRuntime>>,
     dir: PathBuf,
+    /// 排队用。**声明在最后**，保证它最后 drop——app 拆干净了才放下一个进来。
+    _lock: MutexGuard<'static, ()>,
 }
 
 impl Fixture {
     fn new(tag: &str) -> Self {
+        // 上一个测试 panic 过的话锁会中毒，但锁本身没坏，照用
+        let lock = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("jp-fixture-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         fixture::write_to(&dir).expect("建不出 fixture 库");
@@ -50,7 +65,11 @@ impl Fixture {
         let w = WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .expect("建 webview 失败");
-        Self { w: Some(w), dir }
+        Self {
+            w: Some(w),
+            dir,
+            _lock: lock,
+        }
     }
 
     fn w(&self) -> &tauri::WebviewWindow<MockRuntime> {
