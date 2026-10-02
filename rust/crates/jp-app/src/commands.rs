@@ -165,7 +165,7 @@ pub fn lyrics_furigana(
 ) -> CmdResult<Vec<LineFurigana>> {
     let analyzer = state
         .analyzer()
-        .ok_or_else(|| anyhow::anyhow!("振假名不可用：找不到 Sudachi 词典。设置 → 歌词 → 分词词典里可以导入一份"))?;
+        .ok_or_else(|| anyhow::anyhow!(crate::tokenizer::no_dictionary("振假名")))?;
     let lines = state.corpus().lyrics(&song_id)?;
     let mut out = Vec::with_capacity(lines.len());
     for line in lines {
@@ -273,7 +273,7 @@ pub fn most_played(
 pub fn tokenize(state: State<'_, AppState>, text: String) -> CmdResult<Vec<jp_tokenizer::Token>> {
     match state.analyzer() {
         Some(analyzer) => Ok(analyzer.analyze(&text)?),
-        None => Err(anyhow::anyhow!("分词器不可用：找不到 Sudachi 词典。设置 → 歌词 → 分词词典里可以导入一份").into()),
+        None => Err(anyhow::anyhow!(crate::tokenizer::no_dictionary("分词器")).into()),
     }
 }
 
@@ -479,7 +479,8 @@ pub fn audio_spectrum(state: State<'_, AppState>) -> CmdResult<Vec<f32>> {
 ///
 /// 实现在 `maintenance` 里（不依赖 Tauri，可离线测试，
 /// 也能用 `cargo run -p jp-app --example backfill_durations` 跑）。
-#[tauri::command]
+// 逐个音频文件解码探时长，整库是分钟级——同步 command 跑在主线程上会让整个窗口冻住
+#[tauri::command(async)]
 pub fn backfill_durations(
     state: State<'_, AppState>,
 ) -> CmdResult<crate::maintenance::DurationBackfillReport> {
@@ -1015,7 +1016,8 @@ pub struct ScanResult {
 /// 扫描一个目录（或单个音频文件），和现有曲库比对，返回一份计划供复核。
 ///
 /// **只读，什么都不写。** 真正写库要再调一次 `run_import`。
-#[tauri::command]
+// 遍历整个音乐目录、逐个文件读 tag，几百首要好几秒到几十秒——同步 command 跑在主线程上会让整个窗口冻住
+#[tauri::command(async)]
 pub fn scan_folder(
     state: State<'_, AppState>,
     path: String,
@@ -1033,7 +1035,8 @@ pub fn scan_folder(
 /// 为什么需要它：以前只能选整个文件夹，而「音乐 App 下载目录里新增的那一首」
 /// 没法单独导——用户得么把文件挪进一个临时目录，要么扫整个目录再在几百条
 /// 计划里找那一条。`scan_dir` 本来就认单个文件，缺的只是一个入口。
-#[tauri::command]
+// 同 `scan_folder`——同步 command 跑在主线程上会让整个窗口冻住
+#[tauri::command(async)]
 pub fn scan_files(
     state: State<'_, AppState>,
     paths: Vec<String>,
@@ -1118,33 +1121,88 @@ fn plan_targets(
     })
 }
 
+/// 一次导入的进度。`import://progress` 事件。
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgress {
+    pub done: usize,
+    pub total: usize,
+    /// 刚导完的那首，给界面显示「正在导：…」
+    pub title: String,
+    pub finished: bool,
+    pub cancelled: bool,
+}
+
+/// 把复核过的那批真正写进库。
+///
+/// **跑在阻塞线程池里**：几百首歌连带分词要好几分钟，原来这是个同步 command，
+/// 直接占着主线程——整个窗口在导完之前一动不动，连进度都显示不了。
+///
+/// 一首歌一个事务，所以中途 [`cancel_import`] 停下来是安全的：
+/// 停在哪儿，哪儿之前的就是真导进去了，之后一行都没写。
 #[tauri::command]
-pub fn run_import(
-    state: State<'_, AppState>,
+pub async fn run_import<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     tokenize: Option<bool>,
 ) -> CmdResult<crate::library_admin::Maintained<jp_import::ImportReport>> {
-    let tracks = state.pending_scan().clone();
-    if tracks.is_empty() {
-        return Err(anyhow::anyhow!("没有待导入的条目，先调 scan_folder").into());
-    }
-    let analyzer = if tokenize.unwrap_or(true) {
-        state.analyzer()
-    } else {
-        None
-    };
+    let handle = app.clone();
+    blocking(app, move |state| {
+        let tracks = state.pending_scan().clone();
+        anyhow::ensure!(!tracks.is_empty(), "没有待导入的条目，先调 scan_folder");
+        let analyzer = if tokenize.unwrap_or(true) {
+            state.analyzer()
+        } else {
+            None
+        };
 
-    let mut corpus = state.corpus();
-    // 拿当前曲库重新算计划：扫描到确认之间库可能已经变了
-    let index = jp_import::LibraryIndex::from_corpus(&corpus)?;
-    let plan = jp_import::plan(&tracks, &index);
-    let report = jp_import::execute(corpus.connection_mut(), &plan, analyzer.as_deref())?;
-    drop(corpus);
+        let job = state.import_job();
+        let guard = job
+            .start()
+            .ok_or_else(|| anyhow::anyhow!("已经有一个导入在跑"))?;
 
-    // 导完就清掉，避免同一批被点两次
-    state.pending_scan().clear();
-    // 新歌追加进 metadata/songs.csv（Python 版加歌时也追加）
-    let csv = crate::library_admin::sync_imported(&state, &report);
-    Ok(crate::library_admin::Maintained { report, csv })
+        let report = {
+            let mut corpus = state.corpus();
+            // 拿当前曲库重新算计划：扫描到确认之间库可能已经变了
+            let index = jp_import::LibraryIndex::from_corpus(&corpus)?;
+            let plan = jp_import::plan(&tracks, &index);
+            let total = plan.to_import().count();
+            jp_import::execute_cancellable(
+                corpus.connection_mut(),
+                &plan,
+                analyzer.as_deref(),
+                |track, done, _| {
+                    let _ = handle.emit(
+                        "import://progress",
+                        ImportProgress {
+                            done,
+                            total,
+                            title: track.title.clone(),
+                            ..Default::default()
+                        },
+                    );
+                },
+                &|| job.cancelled(),
+            )?
+        };
+        drop(guard);
+        let _ = handle.emit(
+            "import://progress",
+            ImportProgress {
+                done: report.tracks.len(),
+                total: report.tracks.len(),
+                finished: true,
+                cancelled: report.cancelled,
+                ..Default::default()
+            },
+        );
+
+        // 导完就清掉，避免同一批被点两次
+        state.pending_scan().clear();
+        // 新歌追加进 metadata/songs.csv（Python 版加歌时也追加）
+        let csv = crate::library_admin::sync_imported(state, &report);
+        Ok(crate::library_admin::Maintained { report, csv })
+    })
+    .await
 }
 
 // ────────────────────────────── 统计 ──────────────────────────────
@@ -1336,9 +1394,19 @@ pub fn library_relink_audio(
     Ok(crate::library_admin::relink_audio(&state, &links)?)
 }
 
-/// 丢弃上一次扫描的结果。用户在复核界面点「取消」时调。
+/// 取消导入。复核界面点「取消」、以及导入过程中点「停止」都调它。
+///
+/// 两件事一起做：
+///
+/// * 丢弃上一次扫描的结果（还没开始导的情况）；
+/// * 给正在跑的导入置取消标志——它每导完一首问一次，所以最多再多导一首。
+///   **这是安全的**：一首歌一个事务，停在哪儿哪儿之前就是真导进去了。
+///
+/// 原来它只做第一件事，导入中点「取消」什么都不会发生（而且那时候
+/// 整个窗口还是卡住的，连按钮都点不了）。
 #[tauri::command]
 pub fn cancel_import(state: State<'_, AppState>) -> CmdResult<()> {
+    state.import_job().request_cancel();
     state.pending_scan().clear();
     Ok(())
 }

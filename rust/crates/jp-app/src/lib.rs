@@ -12,6 +12,7 @@ pub mod commands;
 pub mod diagnostics;
 pub mod dict;
 pub mod fonts;
+pub mod job;
 pub mod library_admin;
 pub mod log;
 pub mod lyrics;

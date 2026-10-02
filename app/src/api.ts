@@ -801,7 +801,16 @@ export interface LyricsProgress {
   source: string;
   matched: string;
   lyricLines: number;
+  /** **这一首**的失败原因，成功时是空串 */
   message: string;
+  /**
+   * 作业**整体**断在半路的原因，正常结束时是空串。
+   *
+   * 和 `message` 分开是因为原来它俩是同一个字段：整批黄了和某一首没补上
+   * 在界面看来一模一样，而这两件事该说的话完全不同。
+   * 四个后台作业（刮削 / Anki / 词典 / 补齐歌词）统一用 `error` 这个名字。
+   */
+  error: string;
   filled: number;
   notFound: number;
   failed: number;
@@ -965,8 +974,24 @@ export interface ImportedTrack {
 
 export interface ImportReport {
   tracks: ImportedTrack[];
+  /**
+   * 用户中途点了停止。**`tracks` 里的那些是真导进去了**——一首歌一个事务，
+   * 停在哪儿哪儿之前就是完成的。所以结果页要说「停在第 N 首」，
+   * 既不能说「全部完成」，也不能说「什么都没做」。
+   */
+  cancelled: boolean;
   /** metadata/songs.csv 同步：updated / noFile / unchanged，其余是出错原因（库已经导进去了） */
   csv?: string;
+}
+
+/** `import://progress`。导入可能要好几分钟，界面得知道走到哪儿了。 */
+export interface ImportProgress {
+  done: number;
+  total: number;
+  /** 刚导完的那首 */
+  title: string;
+  finished: boolean;
+  cancelled: boolean;
 }
 
 export const ACTION_LABELS: Record<ImportAction["kind"], string> = {
@@ -1079,6 +1104,13 @@ export interface ScrapeProgress {
   coverSaved: boolean;
   finished: boolean;
   cancelled: boolean;
+  /**
+   * 整批**断在半路**的原因（库打不开、解析器建不起来……），正常结束时是空串。
+   *
+   * 以前没有这个字段：出错时后端只往日志里写一行，发过来的终态仍然是
+   * `finished: true, cancelled: false`——界面显示「完成」，而其实一首都没刮完。
+   */
+  error: string;
 }
 
 export const SCRAPE_STATUS_LABELS: Record<ScrapeStatusName, string> = {
@@ -1246,8 +1278,8 @@ export interface AnkiProgress {
   message: string;
   finished: boolean;
   cancelled: boolean;
-  /** 整批中断的原因（比如 Anki 中途关了）。空表示正常结束。 */
-  aborted: string;
+  /** 整批中断的原因（比如 Anki 中途关了）。空表示正常结束。四处统一叫 `error`。 */
+  error: string;
 }
 
 export const ANKI_OUTCOME_LABELS: Record<string, string> = {

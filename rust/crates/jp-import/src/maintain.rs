@@ -497,66 +497,14 @@ pub(crate) mod tests {
         .unwrap()
     }
 
-    /// 和真库同构的库：导入测试用的那几张表，加上删除要维护的其他表（建表语句抄自真库 sqlite_master）
+    /// 和真库同构的库。
+    ///
+    /// **走 `jp_corpus` 的 `schema.sql`，不要在这里手抄。** 删歌要把十几张表一起
+    /// 维护干净，而这份夹具原来是手抄的——真 schema 多一张挂着 song_id 的表，
+    /// 这里不会有，于是「删干净了」这个断言测的是一个比生产少的世界。
     pub(crate) fn full_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE songs (
-                id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL,
-                year TEXT, album TEXT, genre TEXT, audio_path TEXT,
-                corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT,
-                cover_path TEXT, duration_sec REAL, album_id INTEGER);
-             CREATE TABLE utterances (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
-                line_idx INTEGER NOT NULL, time_sec REAL, text TEXT NOT NULL, chapter_id INTEGER);
-             CREATE VIRTUAL TABLE utterances_fts USING fts5(text, content=utterances, content_rowid=id, tokenize='trigram');
-             CREATE TABLE tokens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, utterance_id INTEGER NOT NULL REFERENCES utterances(id),
-                token_idx INTEGER NOT NULL, surface TEXT NOT NULL, lemma TEXT NOT NULL, pos TEXT, dep TEXT, head TEXT);
-             CREATE TABLE people (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-                normalized_name TEXT NOT NULL UNIQUE, sort_name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '');
-             CREATE TABLE track_credits (
-                song_id TEXT NOT NULL, person_id INTEGER NOT NULL, role TEXT NOT NULL,
-                position INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY (song_id, person_id, role));
-             CREATE TABLE albums (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, normalized_title TEXT NOT NULL,
-                album_artist TEXT NOT NULL DEFAULT '', normalized_album_artist TEXT NOT NULL DEFAULT '',
-                year TEXT NOT NULL DEFAULT '', artwork_path TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '',
-                UNIQUE (normalized_title, normalized_album_artist));
-             CREATE TABLE token_corrections (
-                utterance_id INTEGER PRIMARY KEY, tokens_json TEXT NOT NULL, orig_json TEXT NOT NULL DEFAULT '[]',
-                text TEXT NOT NULL DEFAULT '', song_artist TEXT NOT NULL DEFAULT '', song_title TEXT NOT NULL DEFAULT '',
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
-             CREATE TABLE chapters (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, source_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
-                chapter_idx INTEGER NOT NULL, title TEXT DEFAULT '', utt_start INTEGER, utt_end INTEGER);
-             CREATE TABLE favorites (
-                entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY (entity_type, entity_id));
-             CREATE TABLE play_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, song_id TEXT NOT NULL, played_at TEXT NOT NULL,
-                listened_sec REAL NOT NULL DEFAULT 0, position_sec REAL NOT NULL DEFAULT 0,
-                completed INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT '');
-             CREATE TABLE scrape_state (
-                file_path TEXT PRIMARY KEY, song_id TEXT, status TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0,
-                provider TEXT NOT NULL DEFAULT '', provider_id TEXT NOT NULL DEFAULT '', error_type TEXT NOT NULL DEFAULT '',
-                error_message TEXT NOT NULL DEFAULT '', retry_count INTEGER NOT NULL DEFAULT 0, first_seen_at TEXT,
-                last_attempt_at TEXT, resolved_at TEXT, breakdown_json TEXT, candidates_json TEXT, queries_json TEXT);
-             CREATE TABLE scrape_attempts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT NOT NULL, provider TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0, error_type TEXT NOT NULL DEFAULT '',
-                error_message TEXT NOT NULL DEFAULT '', attempted_at TEXT NOT NULL);
-             CREATE TABLE track_original_metadata (
-                file_path TEXT PRIMARY KEY, song_id TEXT, title TEXT NOT NULL DEFAULT '', artist TEXT NOT NULL DEFAULT '',
-                album TEXT NOT NULL DEFAULT '', year TEXT NOT NULL DEFAULT '', genre TEXT NOT NULL DEFAULT '',
-                track_number INTEGER, disc_number INTEGER, duration_sec REAL, size INTEGER, mtime REAL,
-                normalized_title TEXT NOT NULL DEFAULT '', normalized_artist TEXT NOT NULL DEFAULT '',
-                normalized_album TEXT NOT NULL DEFAULT '', source_json TEXT, captured_at TEXT);",
-        )
-        .unwrap();
+        jp_corpus::Corpus::ensure_schema_on(&conn).unwrap();
         conn
     }
 

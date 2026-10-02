@@ -27,7 +27,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, params};
@@ -342,8 +341,14 @@ pub struct LyricsProgress {
     pub source: String,
     pub matched: String,
     pub lyric_lines: usize,
-    /// 失败原因，成功时是空串
+    /// **这一首**的失败原因，成功时是空串
     pub message: String,
+    /// 作业**整体**断在半路的原因，正常结束时是空串。
+    ///
+    /// 和 `message` 分开是因为原来它俩是同一个字段：整批黄了和某一首没补上
+    /// 在界面看来一模一样，而这两件事该说的话完全不同。
+    /// 名字和刮削、Anki、词典三处统一。
+    pub error: String,
     // 跑到这一步的累计数，省得前端自己攒
     pub filled: usize,
     pub not_found: usize,
@@ -352,31 +357,10 @@ pub struct LyricsProgress {
     pub cancelled: bool,
 }
 
-/// 批量补齐作业的共享状态。和刮削、Anki、词典各自独立。
-#[derive(Default)]
-pub struct LyricsJob {
-    running: AtomicBool,
-    cancel: AtomicBool,
-}
-
-impl LyricsJob {
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-
-    pub fn request_cancel(&self) {
-        self.cancel.store(true, Ordering::SeqCst);
-    }
-
-    fn try_start(&self) -> bool {
-        self.cancel.store(false, Ordering::SeqCst);
-        !self.running.swap(true, Ordering::SeqCst)
-    }
-
-    fn finish(&self) {
-        self.running.store(false, Ordering::SeqCst);
-    }
-}
+/// 补齐歌词作业的运行/取消状态。和刮削、Anki、词典各自独立。四个后台作业共用 `crate::job::Job`——
+/// 原来这里自己写了一份，和另外三处一样带着「第二次启动会抹掉取消」
+/// 和「panic 之后界面永久卡住」两个毛病。
+pub type LyricsJob = crate::job::Job;
 
 /// 在后台线程补一批歌词。立刻返回，进度走 `lyrics://progress` 事件。
 ///
@@ -390,7 +374,20 @@ pub fn spawn_fill<R: Runtime>(
     lyrics_dir: PathBuf,
     song_ids: Option<Vec<String>>,
 ) -> Result<()> {
-    anyhow::ensure!(job.try_start(), "已经有一个补齐歌词的作业在跑");
+    // 线程崩了也要让界面收一条终态，否则进度条永远转着（见 `crate::job`）
+    let crashed = app.clone();
+    let guard = job
+        .start_with(move || {
+            let _ = crashed.emit(
+                "lyrics://progress",
+                LyricsProgress {
+                    finished: true,
+                    error: "补齐歌词的后台线程崩了，详情见日志".into(),
+                    ..Default::default()
+                },
+            );
+        })
+        .ok_or_else(|| anyhow::anyhow!("已经有一个补齐歌词的作业在跑"))?;
 
     std::thread::spawn(move || {
         // 收尾事件里要报的那几个数。闭包里每处理一首就更新，
@@ -416,7 +413,7 @@ pub fn spawn_fill<R: Runtime>(
             let provider = provider();
 
             for target in &targets {
-                if job.cancel.load(Ordering::SeqCst) {
+                if job.cancelled() {
                     return Ok(true);
                 }
                 let result = fill_one(
@@ -472,7 +469,7 @@ pub fn spawn_fill<R: Runtime>(
             Ok(false)
         })();
 
-        let (cancelled, message) = match outcome {
+        let (cancelled, error) = match outcome {
             Ok(cancelled) => (cancelled, String::new()),
             Err(err) => {
                 crate::log::error(format!("补齐歌词作业中断: {err:#}"));
@@ -480,7 +477,9 @@ pub fn spawn_fill<R: Runtime>(
                 (false, format!("{err:#}"))
             }
         };
-        job.finish();
+        // 先放开运行权再发终态：顺序和原来的 `job.finish()` 一致，
+        // 免得界面收到「完成」时再问 `lyrics_fill_running` 还答「在跑」
+        drop(guard);
         let _ = app.emit(
             "lyrics://progress",
             LyricsProgress {
@@ -488,7 +487,7 @@ pub fn spawn_fill<R: Runtime>(
                 total: tally.total,
                 finished: true,
                 cancelled,
-                message,
+                error,
                 ..tally
             },
         );
@@ -500,32 +499,13 @@ pub fn spawn_fill<R: Runtime>(
 mod tests {
     use super::*;
 
-    /// 和真库同构的一小块：补齐歌词碰得到的表
+    /// 和真库同构：补齐歌词碰得到的表。
+    ///
+    /// **走 `jp_corpus` 的 `schema.sql`，不要在这里手抄建表语句**——
+    /// 手抄的副本漂了不会报错，只会让测试在一个和生产不同的形状上通过。
     fn db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE songs (
-                id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL,
-                year TEXT, album TEXT, genre TEXT, audio_path TEXT,
-                corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT,
-                cover_path TEXT, duration_sec REAL, album_id INTEGER);
-             CREATE TABLE utterances (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
-                line_idx INTEGER NOT NULL, time_sec REAL, text TEXT NOT NULL, chapter_id INTEGER);
-             CREATE VIRTUAL TABLE utterances_fts USING fts5(text, content=utterances, content_rowid=id, tokenize='trigram');
-             CREATE TABLE tokens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, utterance_id INTEGER NOT NULL REFERENCES utterances(id),
-                token_idx INTEGER NOT NULL, surface TEXT NOT NULL, lemma TEXT NOT NULL, pos TEXT, dep TEXT, head TEXT);
-             CREATE TABLE people (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-                normalized_name TEXT NOT NULL UNIQUE, sort_name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '');
-             CREATE TABLE track_credits (
-                song_id TEXT NOT NULL, person_id INTEGER NOT NULL, role TEXT NOT NULL,
-                position INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY (song_id, person_id, role));",
-        )
-        .unwrap();
+        jp_corpus::Corpus::ensure_schema_on(&conn).unwrap();
         conn.execute(
             "INSERT INTO songs (id, title, artist, audio_path, duration_sec) \
              VALUES ('001','ネイティブダンサー','サカナクション','E:/music/a.flac', 264.2)",
@@ -672,14 +652,5 @@ mod tests {
         assert!(sibling_lrc(&audio.display().to_string()).is_some());
         // 空路径（库里有音频丢了的歌）不该 panic
         assert!(sibling_lrc("").is_none());
-    }
-
-    #[test]
-    fn two_jobs_do_not_run_at_once() {
-        let job = LyricsJob::default();
-        assert!(job.try_start());
-        assert!(!job.try_start(), "第二个作业抢到了运行权");
-        job.finish();
-        assert!(job.try_start());
     }
 }

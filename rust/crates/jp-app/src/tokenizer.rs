@@ -71,6 +71,22 @@ pub fn status(root: &Path) -> TokenizerStatus {
 /// 词典发在哪。
 ///
 /// 单独一个 tag，和应用版本解耦：换了应用版本这个地址不变，已经下好的那一份照用。
+/// 「没有词典」这件事在界面上说的那半句话。
+///
+/// **界面靠它分支**：`App.tsx` 用 `notice.includes(NO_DICTIONARY)` 决定把红条
+/// 换成「下载词典」那条横幅。所以这半句话是个**契约**，不是随手写的文案——
+/// 改一个字，横幅就静默消失，没有任何东西会报错。
+///
+/// 前端那一份在 `app/src/api.ts` 的 `NO_DICTIONARY`。两边对不上时，
+/// `jp-app/tests/fixture_commands.rs` 里的
+/// `the_no_dictionary_wording_is_the_same_on_both_sides` 会红。
+pub const NO_DICTIONARY: &str = "找不到 Sudachi 词典";
+
+/// 没有词典时给用户的完整一句话：是什么问题 + 去哪儿解决。
+pub fn no_dictionary(what: &str) -> String {
+    format!("{what}不可用：{NO_DICTIONARY}。设置 → 歌词 → 分词词典里可以导入一份")
+}
+
 pub const DICT_URL: &str = concat!(
     "https://github.com/Yisoragoto/jpop-corpus-tool/releases/download/",
     "sudachi-dict-core/system.dic.xz"

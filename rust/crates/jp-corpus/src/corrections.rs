@@ -356,19 +356,12 @@ mod tests {
     use super::*;
     use crate::models::KwicQuery;
 
+    /// **走 `schema.sql`，不要手抄建表语句。** 原来这里抄的是一个三张表的子集，
+    /// 连 `token_corrections` 都没有——于是 `save` 走的是「表不存在、现建一张」
+    /// 那条分支，和生产库里的情况正好相反。
     fn fixture() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE songs (id TEXT PRIMARY KEY, title TEXT NOT NULL,
-                                 artist TEXT NOT NULL, audio_path TEXT);
-             CREATE TABLE utterances (id INTEGER PRIMARY KEY AUTOINCREMENT, song_id TEXT NOT NULL,
-                                      line_idx INTEGER NOT NULL, time_sec REAL, text TEXT NOT NULL);
-             CREATE TABLE tokens (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                  utterance_id INTEGER NOT NULL, token_idx INTEGER NOT NULL,
-                                  surface TEXT NOT NULL, lemma TEXT NOT NULL, pos TEXT,
-                                  dep TEXT, head TEXT);",
-        )
-        .unwrap();
+        crate::Corpus::create_tables_on(&conn).unwrap();
         conn
     }
 

@@ -52,7 +52,7 @@ function startedProgress(job: string, total: number): AnkiProgress {
     message: "",
     finished: false,
     cancelled: false,
-    aborted: "",
+    error: "",
   };
 }
 
@@ -127,7 +127,7 @@ export function AnkiPage({ onError }: Props) {
       }
       if (payload.finished) {
         setRunning(false);
-        if (payload.aborted !== "") errorRef.current(payload.aborted);
+        if (payload.error !== "") errorRef.current(payload.error);
         void api.ankiStatus().then(setStatus).catch(() => undefined);
         void loadWords(pos, skipStudied);
       }

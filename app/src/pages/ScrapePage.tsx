@@ -90,6 +90,8 @@ export function ScrapePage({ onError, onChanged }: Props) {
       setProgress(event.payload);
       if (event.payload.finished) {
         setRunning(false);
+        // 整批断了要说出来。以前这里只会安静地变成「完成」
+        if (event.payload.error) errorRef.current(`刮削中断：${event.payload.error}`);
         void refresh(queue);
         onChanged();
       }
@@ -120,6 +122,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
             coverSaved: false,
             finished: false,
             cancelled: false,
+            error: "",
           });
         }
       } catch (e) {
@@ -223,6 +226,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
           coverSaved: false,
           finished: false,
           cancelled: false,
+          error: "",
         });
       }
     } catch (e) {

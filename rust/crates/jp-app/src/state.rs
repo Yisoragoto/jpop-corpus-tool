@@ -67,6 +67,9 @@ pub struct AppState {
     dict_job: std::sync::Arc<crate::dict::ImportJob>,
     /// 补齐歌词作业。同上，各自独立：补歌词排的是网易云的队，和别的互不相干。
     lyrics_job: std::sync::Arc<crate::lyrics::LyricsJob>,
+    /// 导入作业。只用它的取消标志——导入跑在 `spawn_blocking` 里、
+    /// 一首歌一个事务，中途停下来是安全的（见 `jp_import::execute_cancellable`）。
+    import_job: std::sync::Arc<crate::job::Job>,
 }
 
 impl AppState {
@@ -78,8 +81,14 @@ impl AppState {
         let dictionaries_path = project_root.join("dictionaries.db");
         let corpus = Corpus::open_writable(&db_path)
             .with_context(|| format!("打不开 {}", db_path.display()))?;
-        // 新装的程序第一次启动时这里还是个空文件，先把表建齐；已有的库是空操作
-        corpus.ensure_schema()?;
+        // 新装的程序第一次启动时这里还是个空文件，先把表建齐；
+        // 老版本建的库在这一步补上缺的表和列（见 `jp_corpus::migrations`）。
+        // **结果一定要进日志**：用户那边唯一能看到的就是「打不开」，
+        // 而「这个库从 20260907 升上来了」这种话出事时值一百句猜测。
+        let migrated = corpus
+            .migrate()
+            .with_context(|| format!("{} 的结构升不上来", db_path.display()))?;
+        crate::log::info(migrated.summary());
         corpus.check_schema()?;
 
         let analyzer = load_analyzer(project_root);
@@ -125,6 +134,7 @@ impl AppState {
             translator: jp_dict::translator::Translator::new(),
             dict_job: std::sync::Arc::new(crate::dict::ImportJob::default()),
             lyrics_job: std::sync::Arc::new(crate::lyrics::LyricsJob::default()),
+            import_job: std::sync::Arc::new(crate::job::Job::default()),
         })
     }
 
@@ -152,6 +162,10 @@ impl AppState {
 
     pub fn lyrics_job(&self) -> std::sync::Arc<crate::lyrics::LyricsJob> {
         self.lyrics_job.clone()
+    }
+
+    pub fn import_job(&self) -> std::sync::Arc<crate::job::Job> {
+        self.import_job.clone()
     }
 
     pub fn dictionaries_path(&self) -> &std::path::Path {

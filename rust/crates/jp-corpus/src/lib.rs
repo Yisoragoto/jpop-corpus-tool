@@ -3,10 +3,10 @@
 //! 这一层不认识 UI，也不认识 Tauri——所有方法都是「进 SQL 出结构体」，
 //! 可以离线测试。Tauri command 只是薄薄一层转发。
 //!
-//! Schema 由 Python 侧的 `scripts/migrate_db.py` 拥有（`library/schema.py`
-//! + `scraper/store.py`）。迁移期两边共用同一个 `corpus.db`。
-//!
-//! 这里**只读不建表**，避免两处各建一套、互相打架。
+//! Schema 的事实来源是 `schema.sql`（从迁移完成的真实库里导出来的），
+//! 结构版本和前向迁移在 [`migrations`]：`PRAGMA user_version` 由那个模块
+//! 统一维护，编号和 Python 侧 `scripts/migrate_db.py` 共用一套，
+//! 两边建出来的库才不会互相看成「另一版」。
 //!
 //! ```no_run
 //! # use jp_corpus::{Corpus, KwicQuery, MatchField};
@@ -25,6 +25,8 @@ mod models;
 mod search;
 mod quick;
 pub mod corrections;
+pub mod fixture;
+pub mod migrations;
 pub mod stats;
 
 use std::path::Path;
@@ -95,23 +97,39 @@ impl Corpus {
         &mut self.conn
     }
 
-    /// 把表建齐。**空库用得上**：新装的程序第一次启动时，数据目录里还什么都没有，
-    /// `Connection::open` 只会生成一个 0 表的空文件，接着 [`Corpus::check_schema`] 就会失败。
+    /// 把库建齐并升到当前结构版本。**空库用得上**：新装的程序第一次启动时，
+    /// 数据目录里还什么都没有，`Connection::open` 只会生成一个 0 表的空文件，
+    /// 接着 [`Corpus::check_schema`] 就会失败。
     ///
-    /// `schema.sql` 是从迁移完成的真实库里导出来的（事实来源是库本身，不是手写的副本），
-    /// 全是 `IF NOT EXISTS`，对已有的库重复跑不会动任何数据。
+    /// 对已有的库这一步也要跑：老版本建的库可能缺表、缺列，
+    /// 由 [`migrations::apply`] 按版本补齐。什么都不缺时是空操作。
     pub fn ensure_schema(&self) -> Result<()> {
-        Self::ensure_schema_on(&self.conn)
+        self.migrate().map(|_| ())
     }
 
     /// 同上，但作用在一个裸连接上。迁移和测试要在自己打开的连接上建表。
     pub fn ensure_schema_on(conn: &Connection) -> Result<()> {
+        migrations::apply(conn).map(|_| ())
+    }
+
+    /// 同 [`Corpus::ensure_schema`]，但把「这次做了什么」带回来，给日志和诊断用。
+    pub fn migrate(&self) -> Result<migrations::Applied> {
+        migrations::apply(&self.conn)
+    }
+
+    /// 只建表，不碰版本戳。**只给 [`migrations`] 用**——别处要建表请走
+    /// [`Corpus::ensure_schema`]，否则库会立起来却没有版本戳。
+    ///
+    /// `schema.sql` 是从迁移完成的真实库里导出来的（事实来源是库本身，不是手写的副本），
+    /// 全是 `IF NOT EXISTS`，对已有的库重复跑不会动任何数据——但**它只补表和索引，
+    /// 补不了已有表上缺的列**，那是 `migrations` 里步骤的活儿。
+    pub(crate) fn create_tables_on(conn: &Connection) -> Result<()> {
         conn.execute_batch(include_str!("../schema.sql"))
             .context("建表失败")?;
         Ok(())
     }
 
-    /// 这个库是不是已经跑过迁移。缺表时要给出可操作的提示，
+    /// 这个库是不是已经建齐了。缺表时要给出可操作的提示，
     /// 而不是让调用方撞上一个 "no such table"。
     pub fn check_schema(&self) -> Result<()> {
         for table in ["songs", "utterances", "tokens", "people", "track_credits", "albums"] {
@@ -120,9 +138,12 @@ impl Corpus {
                 rusqlite::params![table],
                 |row| row.get(0),
             )?;
+            // 不要再提 `python scripts/migrate_db.py`：装了的用户手上只有 jp-app.exe，
+            // 没有 Python，也没有仓库。能走到这儿说明建表那步失败了。
             anyhow::ensure!(
                 exists > 0,
-                "数据库缺少表 `{table}`，先跑 python scripts/migrate_db.py"
+                "语料库缺少表 `{table}`。这个 corpus.db 可能坏了或者不是本程序的库——\
+                 换一个数据目录（设置 → 语料库目录）再试。"
             );
         }
         Ok(())
@@ -315,5 +336,21 @@ mod tests {
         assert!(corpus.tracks(10).unwrap().is_empty());
         assert_eq!(corpus.overview().unwrap().tracks, 0);
         corpus.ensure_schema().unwrap();
+    }
+
+    /// 建完要**戳上版本号**。不戳的话下次打开分不清这是新库还是远古库，
+    /// 将来的迁移就无从判断「从哪一版升」。
+    #[test]
+    fn a_brand_new_database_is_stamped_with_the_current_schema_version() {
+        let corpus = Corpus::open_in_memory().unwrap();
+        assert_eq!(migrations::version(corpus.connection()).unwrap(), 0);
+
+        let applied = corpus.migrate().unwrap();
+        assert!(applied.created);
+        assert_eq!(
+            migrations::version(corpus.connection()).unwrap(),
+            migrations::CURRENT
+        );
+        assert!(applied.summary().contains("新建"), "{}", applied.summary());
     }
 }

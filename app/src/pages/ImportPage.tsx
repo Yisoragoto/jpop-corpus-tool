@@ -14,7 +14,8 @@
  * 也可能真有两个版本——猜错会把库弄脏，这种事交给人判断。
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { CommandButton } from "../components/CommandButton";
@@ -24,6 +25,7 @@ import {
   api,
   formatDuration,
   type ImportAction,
+  type ImportProgress,
   type ImportReport,
   type PlanItem,
   type ScanResult,
@@ -55,6 +57,7 @@ export function ImportPage({ onError, onImported }: Props) {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [busy, setBusy] = useState<"" | "scanning" | "importing">("");
+  const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [tokenize, setTokenize] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -108,8 +111,19 @@ export function ImportPage({ onError, onImported }: Props) {
     }
   }, [path, files, onError]);
 
+  // 导入要好几分钟，进度走 `import://progress` 事件
+  useEffect(() => {
+    const unlisten = listen<ImportProgress>("import://progress", (event) => {
+      setProgress(event.payload.finished ? null : event.payload);
+    });
+    return () => {
+      void unlisten.then((f) => f());
+    };
+  }, []);
+
   const doImport = useCallback(async () => {
     setBusy("importing");
+    setProgress(null);
     try {
       const result = await api.runImport(tokenize);
       setReport(result);
@@ -121,9 +135,11 @@ export function ImportPage({ onError, onImported }: Props) {
       onError(String((e as { message?: string })?.message ?? e));
     } finally {
       setBusy("");
+      setProgress(null);
     }
   }, [tokenize, onError, onImported]);
 
+  /** 丢弃还没导的那批；导入进行中则是「停止」——后端每导完一首看一次标志。 */
   const doCancel = useCallback(async () => {
     await api.cancelImport().catch(() => {});
     setScan(null);
@@ -263,14 +279,29 @@ export function ImportPage({ onError, onImported }: Props) {
             </label>
             <CommandButton
               icon="import"
-              label={busy === "importing" ? "导入中…" : `导入 ${scan.summary.new} 首`}
+              label={
+                busy === "importing"
+                  ? progress === null
+                    ? "导入中…"
+                    : `导入中 ${progress.done}/${progress.total}`
+                  : `导入 ${scan.summary.new} 首`
+              }
               onClick={() => void doImport()}
               disabled={busy !== "" || scan.summary.new === 0}
               primary
               title="写库就在这一步"
             />
-            <CommandButton icon="discard" label="丢弃" onClick={() => void doCancel()} disabled={busy !== ""} />
+            {/* 导入中这个按钮是「停止」：一首歌一个事务，停在哪儿哪儿之前是真导进去了 */}
+            <CommandButton
+              icon="discard"
+              label={busy === "importing" ? "停止" : "丢弃"}
+              onClick={() => void doCancel()}
+              disabled={busy === "scanning"}
+            />
           </div>
+          {progress !== null && progress.title !== "" && (
+            <p className="muted small">正在导：{progress.title}</p>
+          )}
           {scan.summary.new === 0 && scan.summary.total > 0 && (
             <p className="muted small">这一批里没有新东西，不需要导入。</p>
           )}
@@ -282,6 +313,12 @@ export function ImportPage({ onError, onImported }: Props) {
           <div className="card-head">
             <h2>导入结果</h2>
           </div>
+          {report.cancelled && (
+            <p className="muted small">
+              你中途停了。下面这 {report.tracks.length} 首是<strong>真的导进去了</strong>
+              （一首一个事务），剩下的一行都没写——再点一次「导入」会接着往下走。
+            </p>
+          )}
           <div className="stats">
             <Stat label="成功" value={imported.length} />
             <Stat label="失败" value={failures.length} />

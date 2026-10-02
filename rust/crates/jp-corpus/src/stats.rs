@@ -401,19 +401,22 @@ pub fn report_text(report: &CorpusReport, performers: &[String], jp_only: bool) 
 mod tests {
     use super::*;
 
+    /// **走 `schema.sql`，不要手抄建表语句。**
+    ///
+    /// 顺带把按位置写的 `INSERT INTO songs VALUES (...)` 改成写明列名：
+    /// 真表有 12 列，不写列名的话加一列就全挂，而且挂的是夹具不是生产代码。
     fn db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
+        crate::Corpus::create_tables_on(&conn).unwrap();
         conn.execute_batch(
-            "CREATE TABLE songs (id TEXT PRIMARY KEY, title TEXT, artist TEXT);
-             CREATE TABLE utterances (id INTEGER PRIMARY KEY, song_id TEXT, line_idx INTEGER, text TEXT);
-             CREATE TABLE tokens (id INTEGER PRIMARY KEY, utterance_id INTEGER, token_idx INTEGER, surface TEXT, lemma TEXT, pos TEXT);
-             CREATE TABLE track_credits (song_id TEXT, person_id INTEGER, role TEXT);
-             INSERT INTO songs VALUES ('001','夜','A'), ('002','朝','B');
-             INSERT INTO utterances VALUES (1,'001',0,'夜 が 来る yeah'), (2,'002',0,'朝 が 来る 。');
+            "INSERT INTO songs (id, title, artist) VALUES ('001','夜','A'), ('002','朝','B');
+             INSERT INTO utterances (id, song_id, line_idx, text)
+               VALUES (1,'001',0,'夜 が 来る yeah'), (2,'002',0,'朝 が 来る 。');
              INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) VALUES
                (1,0,'夜','夜','NOUN'), (1,1,'が','が','ADP'), (1,2,'来る','来る','VERB'), (1,3,'yeah','yeah','X'),
                (2,0,'朝','朝','NOUN'), (2,1,'が','が','ADP'), (2,2,'来','来る','VERB'), (2,3,'。','。','PUNCT');
-             INSERT INTO track_credits VALUES ('001', 1, 'performer'), ('002', 2, 'performer'), ('002', 1, 'composer');",
+             INSERT INTO track_credits (song_id, person_id, role)
+               VALUES ('001', 1, 'performer'), ('002', 2, 'performer'), ('002', 1, 'composer');",
         )
         .unwrap();
         conn

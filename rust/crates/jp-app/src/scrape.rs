@@ -7,7 +7,6 @@
 //! 进度通过 `scrape://progress` 事件推给前端，取消靠一个原子标志。
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result};
 use jp_scraper::{ScrapeStatus, ScrapeStore, TrackFile};
@@ -32,35 +31,22 @@ pub struct ScrapeProgress {
     pub cover_saved: bool,
     pub finished: bool,
     pub cancelled: bool,
+    /// 整批**断在半路**的原因（库打不开、resolver 建不起来……），
+    /// 正常结束时是空串。
+    ///
+    /// 原来没有这个字段：出错时只往日志里写一行，发给界面的终态仍然是
+    /// `finished: true, cancelled: false`——用户看到的是「完成」。
+    /// anki / dict / lyrics 三处早就报了，只有刮削把错误吞了。
+    pub error: String,
 }
 
-/// 批量作业的共享状态。
-#[derive(Default)]
-pub struct ScrapeJob {
-    running: AtomicBool,
-    cancel: AtomicBool,
-}
-
-impl ScrapeJob {
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-
-    pub fn request_cancel(&self) {
-        self.cancel.store(true, Ordering::SeqCst);
-    }
-
-    /// 抢占运行权。已经在跑就返回 false——两个批量作业同时刮
-    /// 会把限流额度用光，两边都变慢还都失败。
-    fn try_start(&self) -> bool {
-        self.cancel.store(false, Ordering::SeqCst);
-        !self.running.swap(true, Ordering::SeqCst)
-    }
-
-    fn finish(&self) {
-        self.running.store(false, Ordering::SeqCst);
-    }
-}
+/// 批量刮削作业的运行/取消状态。四个后台作业共用 `crate::job::Job`——
+/// 原来这里自己写了一份，带着「第二次启动会抹掉取消」和
+/// 「panic 之后界面永久卡住」两个毛病。
+///
+/// 和 Anki、词典、补齐歌词**各自独立**：刮削排的是外部服务的限流队列，
+/// 两个批量刮削同时跑会把额度用光，别的作业和它没冲突。
+pub type ScrapeJob = crate::job::Job;
 
 /// 库里一首歌，转成刮削要的输入。
 ///
@@ -394,7 +380,21 @@ pub fn spawn_batch<R: Runtime>(
     covers_dir: std::path::PathBuf,
     song_ids: Vec<String>,
 ) -> Result<()> {
-    anyhow::ensure!(job.try_start(), "已经有一个刮削作业在跑");
+    // 线程崩了也要让界面收一条终态（见 `crate::job`）
+    let crashed = app.clone();
+    let guard = job
+        .start_with(move || {
+            let _ = crashed.emit(
+                "scrape://progress",
+                ScrapeProgress {
+                    kind: "track".into(),
+                    finished: true,
+                    error: "刮削的后台线程崩了，详情见日志".into(),
+                    ..Default::default()
+                },
+            );
+        })
+        .ok_or_else(|| anyhow::anyhow!("已经有一个刮削作业在跑"))?;
 
     std::thread::spawn(move || {
         let total = song_ids.len();
@@ -425,7 +425,7 @@ pub fn spawn_batch<R: Runtime>(
             let mut done = 0usize;
 
             loop {
-                if job.cancel.load(Ordering::SeqCst) {
+                if job.cancelled() {
                     // 取消时把已经拿到的收干净，不然白跑了
                     while let Some(pending) = metas.pop_front() {
                         settle_meta(&conn, pending, &covers_dir, &mut covers);
@@ -484,6 +484,7 @@ pub fn spawn_batch<R: Runtime>(
                         cover_saved,
                         finished: false,
                         cancelled: false,
+                        error: String::new(),
                     },
                 );
             }
@@ -493,14 +494,15 @@ pub fn spawn_batch<R: Runtime>(
             Ok(false)
         })();
 
-        let cancelled = match outcome {
-            Ok(cancelled) => cancelled,
+        let (cancelled, error) = match outcome {
+            Ok(cancelled) => (cancelled, String::new()),
             Err(err) => {
                 crate::log::error(format!("刮削作业中断: {err:#}"));
-                false
+                // 整批断了要**说出来**，不能只是悄悄「完成」
+                (false, format!("{err:#}"))
             }
         };
-        job.finish();
+        drop(guard);
         let _ = app.emit(
             "scrape://progress",
             ScrapeProgress {
@@ -509,6 +511,7 @@ pub fn spawn_batch<R: Runtime>(
                 total,
                 finished: true,
                 cancelled,
+                error,
                 ..Default::default()
             },
         );
@@ -664,7 +667,21 @@ pub fn spawn_artist_batch<R: Runtime>(
     artists_dir: std::path::PathBuf,
     names: Vec<String>,
 ) -> Result<()> {
-    anyhow::ensure!(job.try_start(), "已经有一个刮削作业在跑");
+    // 线程崩了也要让界面收一条终态（见 `crate::job`）
+    let crashed = app.clone();
+    let guard = job
+        .start_with(move || {
+            let _ = crashed.emit(
+                "scrape://progress",
+                ScrapeProgress {
+                    kind: "artist".into(),
+                    finished: true,
+                    error: "刮削的后台线程崩了，详情见日志".into(),
+                    ..Default::default()
+                },
+            );
+        })
+        .ok_or_else(|| anyhow::anyhow!("已经有一个刮削作业在跑"))?;
 
     std::thread::spawn(move || {
         let total = names.len();
@@ -672,7 +689,7 @@ pub fn spawn_artist_batch<R: Runtime>(
             let conn = rusqlite::Connection::open(&db_path)?;
             conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
             for (index, name) in names.iter().enumerate() {
-                if job.cancel.load(Ordering::SeqCst) {
+                if job.cancelled() {
                     return Ok(true);
                 }
                 let got = scrape_artist_one(&conn, &artists_dir, name).unwrap_or_else(|err| {
@@ -704,17 +721,21 @@ pub fn spawn_artist_batch<R: Runtime>(
                         cover_saved: !got.image_path.is_empty(),
                         finished: false,
                         cancelled: false,
+                        error: String::new(),
                     },
                 );
             }
             Ok(false)
         })();
 
-        let cancelled = outcome.unwrap_or_else(|err| {
-            crate::log::error(format!("歌手刮削作业中断: {err:#}"));
-            false
-        });
-        job.finish();
+        let (cancelled, error) = match outcome {
+            Ok(cancelled) => (cancelled, String::new()),
+            Err(err) => {
+                crate::log::error(format!("歌手刮削作业中断: {err:#}"));
+                (false, format!("{err:#}"))
+            }
+        };
+        drop(guard);
         let _ = app.emit(
             "scrape://progress",
             ScrapeProgress {
@@ -723,6 +744,7 @@ pub fn spawn_artist_batch<R: Runtime>(
                 total,
                 finished: true,
                 cancelled,
+                error,
                 ..Default::default()
             },
         );
@@ -1013,43 +1035,14 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn a_second_batch_cannot_start_while_one_is_running() {
-        // 两个批量作业同时刮会把限流额度用光，两边都变慢还都失败
-        let job = ScrapeJob::default();
-        assert!(job.try_start());
-        assert!(!job.try_start());
-        job.finish();
-        assert!(job.try_start());
-    }
-
-    #[test]
-    fn starting_clears_a_stale_cancel_flag() {
-        // 上一轮被取消过，下一轮不该一启动就自己停掉
-        let job = ScrapeJob::default();
-        job.request_cancel();
-        job.finish();
-        assert!(job.try_start());
-        assert!(!job.cancel.load(Ordering::SeqCst));
-    }
-
-    /// 人工确认要用到的最小 schema。生产库由 Python 的 migrate 脚本建。
+    /// 人工确认要用到的库。
+    ///
+    /// **走 `jp_corpus` 的 `schema.sql`，不要在这里手抄建表语句。**
     fn manual_db() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
+        jp_corpus::Corpus::ensure_schema_on(&conn).unwrap();
         conn.execute_batch(
-            "CREATE TABLE songs (
-                id TEXT PRIMARY KEY, title TEXT, artist TEXT, year TEXT,
-                album TEXT, genre TEXT, audio_path TEXT, cover_path TEXT,
-                duration_sec REAL, album_id INTEGER);
-             CREATE TABLE people (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-                normalized_name TEXT NOT NULL UNIQUE, sort_name TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT '');
-             CREATE TABLE track_credits (
-                song_id TEXT NOT NULL, person_id INTEGER NOT NULL, role TEXT NOT NULL,
-                position INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY (song_id, person_id, role));
-             INSERT INTO songs (id, title, artist, album, year, genre)
+            "INSERT INTO songs (id, title, artist, album, year, genre)
                 VALUES ('001', '夜行', 'ヨルシカ', '', '', '');
              INSERT INTO people (id, name, normalized_name) VALUES (1, 'ヨルシカ', 'ヨルシカ');
              INSERT INTO track_credits (song_id, person_id, role, source)

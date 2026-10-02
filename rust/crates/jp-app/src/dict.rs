@@ -5,7 +5,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, bail};
 use jp_dict::import::{
@@ -24,34 +23,10 @@ pub const SCAN_LENGTH: usize = 16;
 /// 一次最多返回多少条词条。
 pub const MAX_RESULTS: usize = 32;
 
-#[derive(Default)]
-pub struct ImportJob {
-    running: AtomicBool,
-    cancel: Arc<AtomicBool>,
-}
-
-impl ImportJob {
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-
-    pub fn request_cancel(&self) {
-        self.cancel.store(true, Ordering::SeqCst);
-    }
-
-    fn try_start(&self) -> bool {
-        // 先占住再清取消标志：已经在跑时不能把人家的「取消」抹掉
-        if self.running.swap(true, Ordering::SeqCst) {
-            return false;
-        }
-        self.cancel.store(false, Ordering::SeqCst);
-        true
-    }
-
-    fn finish(&self) {
-        self.running.store(false, Ordering::SeqCst);
-    }
-}
+/// 词典导入作业的运行/取消状态。四个后台作业共用 `crate::job::Job`——
+/// 「第二次启动不能抹掉第一个的取消」最早就是在这儿发现并修掉的，
+/// 现在那条规则在 `job.rs` 里只有一份，另外三个作业也跟着对了。
+pub type ImportJob = crate::job::Job;
 
 /// `dict://progress`
 #[derive(Debug, Clone, Serialize)]
@@ -91,21 +66,34 @@ pub fn spawn_import<R: Runtime>(
     db_path: PathBuf,
     paths: Vec<String>,
 ) -> Result<()> {
-    anyhow::ensure!(job.try_start(), "已经有词典在导入");
+    // 线程崩了也要让界面收一条终态（见 `crate::job`）
+    let crashed = app.clone();
+    let guard = job
+        .start_with(move || {
+            let _ = crashed.emit(
+                "dict://done",
+                DictImportDone {
+                    results: Vec::new(),
+                    cancelled: false,
+                    error: Some("词典导入的后台线程崩了，详情见日志".into()),
+                },
+            );
+        })
+        .ok_or_else(|| anyhow::anyhow!("已经有词典在导入"))?;
     std::thread::spawn(move || {
         let total = paths.len();
         let mut results = Vec::new();
         let outcome = (|| -> Result<()> {
             let mut store = DictionaryStore::open(&db_path)?;
             for (index, path) in paths.iter().enumerate() {
-                if job.cancel.load(Ordering::SeqCst) {
+                if job.cancelled() {
                     break;
                 }
                 let result = (|| -> Result<ImportSummary> {
                     let mut archive = open_archive(Path::new(path))?;
                     let options = ImportOptions {
                         source_path: path.clone(),
-                        cancel: Some(Arc::clone(&job.cancel)),
+                        cancel: Some(job.cancel_flag()),
                         ..ImportOptions::default()
                     };
                     import_dictionary(
@@ -142,7 +130,7 @@ pub fn spawn_import<R: Runtime>(
             }
             Ok(())
         })();
-        let cancelled = job.cancel.load(Ordering::SeqCst);
+        let cancelled = job.cancelled();
         let _ = app.emit(
             "dict://done",
             DictImportDone {
@@ -151,7 +139,7 @@ pub fn spawn_import<R: Runtime>(
                 error: outcome.err().map(|e| format!("{e:#}")),
             },
         );
-        job.finish();
+        drop(guard);
     });
     Ok(())
 }
@@ -302,18 +290,6 @@ mod tests {
                 .iter()
                 .all(|d| d.parts_of_speech_filter && d.use_deinflections)
         );
-    }
-
-    #[test]
-    fn a_second_import_cannot_start_and_does_not_clear_the_first_ones_cancel() {
-        let job = ImportJob::default();
-        assert!(job.try_start());
-        job.request_cancel();
-        assert!(!job.try_start());
-        assert!(job.cancel.load(Ordering::SeqCst), "第二次启动不能抹掉取消");
-        job.finish();
-        assert!(job.try_start());
-        assert!(!job.cancel.load(Ordering::SeqCst));
     }
 
     #[test]

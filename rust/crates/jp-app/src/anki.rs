@@ -5,7 +5,6 @@
 //! Anki 是本机，两件事同时做没有冲突。
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
 use jp_anki::{
@@ -38,31 +37,17 @@ pub struct ExportProgress {
     pub message: String,
     pub finished: bool,
     pub cancelled: bool,
-    /// 作业整体中断的原因（比如 Anki 中途关了）。为空表示正常结束。
-    pub aborted: String,
+    /// 作业**整体**中断的原因（比如 Anki 中途关了）。为空表示正常结束。
+    ///
+    /// 和上面的 `message` 分开：那个是**单个词**的结果，这个是整批黄了。
+    /// 四个后台作业统一用 `error` 这个名字（刮削、词典、补齐歌词同）。
+    pub error: String,
 }
 
-#[derive(Default)]
-pub struct ExportJob {
-    running: AtomicBool,
-    cancel: AtomicBool,
-}
-
-impl ExportJob {
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-    pub fn request_cancel(&self) {
-        self.cancel.store(true, Ordering::SeqCst);
-    }
-    fn try_start(&self) -> bool {
-        self.cancel.store(false, Ordering::SeqCst);
-        !self.running.swap(true, Ordering::SeqCst)
-    }
-    fn finish(&self) {
-        self.running.store(false, Ordering::SeqCst);
-    }
-}
+/// Anki 作业的运行/取消状态。四个后台作业共用 `crate::job::Job`——
+/// 原来这里自己写了一份，带着「第二次启动会抹掉取消」和
+/// 「panic 之后界面永久卡住」两个毛病。
+pub type ExportJob = crate::job::Job;
 
 /// 要导的一个词。
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -81,11 +66,25 @@ pub fn spawn_export<R: Runtime>(
     items: Vec<ExportItem>,
     options: ExportOptions,
 ) -> Result<()> {
-    anyhow::ensure!(job.try_start(), "已经有一个导出作业在跑");
+    // 线程崩了也要让界面收一条终态（见 `crate::job`）
+    let crashed = app.clone();
+    let guard = job
+        .start_with(move || {
+            let _ = crashed.emit(
+                "anki://progress",
+                ExportProgress {
+                    finished: true,
+                    error: "Anki 后台线程崩了，详情见日志".into(),
+                    job: "export".into(),
+                    ..Default::default()
+                },
+            );
+        })
+        .ok_or_else(|| anyhow::anyhow!("已经有一个导出作业在跑"))?;
 
     std::thread::spawn(move || {
         let total = items.len();
-        let mut aborted = String::new();
+        let mut error = String::new();
         let mut cancelled = false;
 
         let outcome = (|| -> Result<()> {
@@ -99,12 +98,12 @@ pub fn spawn_export<R: Runtime>(
             jp_anki::export::prepare(&anki)?;
             // 牌组不存在就别开始：否则几百个词各报一次同样的错。和 Python 导出前的检查一致
             if let Some(message) = jp_anki::missing_deck_message(&anki, &options.deck)? {
-                aborted = message;
+                error = message;
                 return Ok(());
             }
 
             for (index, item) in items.iter().enumerate() {
-                if job.cancel.load(Ordering::SeqCst) {
+                if job.cancelled() {
                     cancelled = true;
                     return Ok(());
                 }
@@ -124,7 +123,7 @@ pub fn spawn_export<R: Runtime>(
                     Ok(ExportOutcome::Failed { error }) => ("failed", 0, error),
                     // **Anki 挂了要停整批**，而不是让 500 个词各报一次
                     Err(err) => {
-                        aborted = err.advice();
+                        error = err.advice();
                         return Ok(());
                     }
                 };
@@ -146,9 +145,10 @@ pub fn spawn_export<R: Runtime>(
         })();
 
         if let Err(err) = outcome {
-            aborted = format!("{err:#}");
+            error = format!("{err:#}");
         }
-        job.finish();
+        // 先放开运行权再发终态，顺序和原来的 `job.finish()` 一致
+        drop(guard);
         let _ = app.emit(
             "anki://progress",
             ExportProgress {
@@ -156,7 +156,7 @@ pub fn spawn_export<R: Runtime>(
                 total,
                 finished: true,
                 cancelled,
-                aborted,
+                error,
                 job: "export".into(),
                 ..Default::default()
             },
@@ -198,11 +198,25 @@ pub fn spawn_update<R: Runtime>(
     deck: String,
     scope: DupScope,
 ) -> Result<()> {
-    anyhow::ensure!(job.try_start(), "已经有一个 Anki 作业在跑");
+    // 线程崩了也要让界面收一条终态（见 `crate::job`）
+    let crashed = app.clone();
+    let guard = job
+        .start_with(move || {
+            let _ = crashed.emit(
+                "anki://progress",
+                ExportProgress {
+                    finished: true,
+                    error: "Anki 后台线程崩了，详情见日志".into(),
+                    job: "update".into(),
+                    ..Default::default()
+                },
+            );
+        })
+        .ok_or_else(|| anyhow::anyhow!("已经有一个 Anki 作业在跑"))?;
 
     std::thread::spawn(move || {
         let total = items.len();
-        let mut aborted = String::new();
+        let mut error = String::new();
         let mut cancelled = false;
 
         let outcome = (|| -> Result<()> {
@@ -214,11 +228,11 @@ pub fn spawn_update<R: Runtime>(
             // 顺带把模板和 CSS 更新到最新，和 Python 一致
             jp_anki::export::prepare(&anki)?;
             if let Some(message) = jp_anki::missing_deck_message(&anki, &deck)? {
-                aborted = message;
+                error = message;
                 return Ok(());
             }
             for (index, item) in items.iter().enumerate() {
-                if job.cancel.load(Ordering::SeqCst) {
+                if job.cancelled() {
                     cancelled = true;
                     return Ok(());
                 }
@@ -233,7 +247,7 @@ pub fn spawn_update<R: Runtime>(
                     Ok(result) => describe_refresh(result),
                     // Anki 挂了要停整批
                     Err(err) => {
-                        aborted = err.advice();
+                        error = err.advice();
                         return Ok(());
                     }
                 };
@@ -254,9 +268,10 @@ pub fn spawn_update<R: Runtime>(
         })();
 
         if let Err(err) = outcome {
-            aborted = format!("{err:#}");
+            error = format!("{err:#}");
         }
-        job.finish();
+        // 先放开运行权再发终态，顺序和原来的 `job.finish()` 一致
+        drop(guard);
         emit(
             &app,
             ExportProgress {
@@ -265,7 +280,7 @@ pub fn spawn_update<R: Runtime>(
                 total,
                 finished: true,
                 cancelled,
-                aborted,
+                error,
                 ..Default::default()
             },
         );
@@ -289,11 +304,25 @@ pub fn spawn_refresh<R: Runtime>(
     deck: String,
     scope: RefreshScope,
 ) -> Result<()> {
-    anyhow::ensure!(job.try_start(), "已经有一个 Anki 作业在跑");
+    // 线程崩了也要让界面收一条终态（见 `crate::job`）
+    let crashed = app.clone();
+    let guard = job
+        .start_with(move || {
+            let _ = crashed.emit(
+                "anki://progress",
+                ExportProgress {
+                    finished: true,
+                    error: "Anki 后台线程崩了，详情见日志".into(),
+                    job: "refresh".into(),
+                    ..Default::default()
+                },
+            );
+        })
+        .ok_or_else(|| anyhow::anyhow!("已经有一个 Anki 作业在跑"))?;
 
     std::thread::spawn(move || {
         let mut total = 0;
-        let mut aborted = String::new();
+        let mut error = String::new();
         let mut cancelled = false;
 
         let outcome = (|| -> Result<()> {
@@ -304,26 +333,26 @@ pub fn spawn_refresh<R: Runtime>(
             let anki = client();
             jp_anki::export::prepare(&anki)?;
             if let Some(message) = jp_anki::missing_deck_message(&anki, &deck)? {
-                aborted = message;
+                error = message;
                 return Ok(());
             }
             let targets = match jp_anki::refresh_targets(&anki, &deck, scope) {
                 Ok(targets) => targets,
                 Err(err) => {
-                    aborted = err.advice();
+                    error = err.advice();
                     return Ok(());
                 }
             };
             total = targets.len();
             for (index, target) in targets.iter().enumerate() {
-                if job.cancel.load(Ordering::SeqCst) {
+                if job.cancelled() {
                     cancelled = true;
                     return Ok(());
                 }
                 let (outcome, message) = match jp_anki::refresh_target(&anki, &conn, target) {
                     Ok(result) => describe_refresh(result),
                     Err(err) => {
-                        aborted = err.advice();
+                        error = err.advice();
                         return Ok(());
                     }
                 };
@@ -344,9 +373,10 @@ pub fn spawn_refresh<R: Runtime>(
         })();
 
         if let Err(err) = outcome {
-            aborted = format!("{err:#}");
+            error = format!("{err:#}");
         }
-        job.finish();
+        // 先放开运行权再发终态，顺序和原来的 `job.finish()` 一致
+        drop(guard);
         emit(
             &app,
             ExportProgress {
@@ -355,7 +385,7 @@ pub fn spawn_refresh<R: Runtime>(
                 total,
                 finished: true,
                 cancelled,
-                aborted,
+                error,
                 ..Default::default()
             },
         );
@@ -438,24 +468,6 @@ pub fn describe(err: &AnkiError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_second_export_cannot_start_while_one_is_running() {
-        let job = ExportJob::default();
-        assert!(job.try_start());
-        assert!(!job.try_start());
-        job.finish();
-        assert!(job.try_start());
-    }
-
-    #[test]
-    fn starting_clears_a_stale_cancel_flag() {
-        let job = ExportJob::default();
-        job.request_cancel();
-        job.finish();
-        assert!(job.try_start());
-        assert!(!job.cancel.load(Ordering::SeqCst));
-    }
 
     #[test]
     fn ffmpeg_next_to_the_database_is_found() {

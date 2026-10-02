@@ -508,25 +508,44 @@ mod tests {
         assert_eq!(pick_names(&[]), None);
     }
 
-    /// 本机真实字体（Windows 上走 DirectWrite）：常见的日文字体都应该在
+    /// 本机真实字体（Windows 上走 DirectWrite）：枚举得出来、排好序，
+    /// 而且这台机器要是装了日文字体，常见的那几个都应该在。
+    ///
+    /// **「装了日文字体」是环境前提，不是被测对象。** GitHub 的 Windows runner
+    /// 一个日文字体都没有，原来这里直接断言 Meiryo 在，于是 CI 恒红——而且它一挂
+    /// `cargo test --workspace` 就停了，后面的集成测试连跑都没跑到。
+    /// 所以：一个都没有时打一行 `[skip]` 跳过（CI 上是正常的），
+    /// 有任意一个却缺别的才算失败（那说明枚举真漏了）。排序是和机器无关的，照常断言。
     #[test]
     fn installed_fonts_include_the_usual_japanese_fonts() {
         let fonts = installed_fonts().unwrap();
         if fonts.is_empty() {
-            eprintln!("跳过：没有系统字体");
+            eprintln!("[skip] 没有系统字体");
             return;
         }
         let names: Vec<&str> = fonts.iter().map(|f| f.name.as_str()).collect();
-        #[cfg(windows)]
-        for expected in ["Meiryo", "Yu Gothic", "MS Gothic"] {
-            assert!(names.contains(&expected), "缺 {expected}");
-        }
         assert!(
             names
                 .windows(2)
                 .all(|w| w[0].to_lowercase() <= w[1].to_lowercase()),
             "要排好序"
         );
+
+        #[cfg(windows)]
+        {
+            const JAPANESE: [&str; 3] = ["Meiryo", "Yu Gothic", "MS Gothic"];
+            let found: Vec<&str> = JAPANESE
+                .into_iter()
+                .filter(|name| names.contains(name))
+                .collect();
+            if found.is_empty() {
+                eprintln!("[skip] 本机没装日文字体（{JAPANESE:?} 一个都没有）");
+                return;
+            }
+            for expected in JAPANESE {
+                assert!(names.contains(&expected), "有 {found:?} 却缺 {expected}");
+            }
+        }
     }
 
     #[test]

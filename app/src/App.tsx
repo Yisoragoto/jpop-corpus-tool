@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api, NO_DICTIONARY, type HealthReport, type Overview, type QuickHit } from "./api";
+import { messageOf } from "./errors";
 import { CommandPalette, type PaletteCommand, type PaletteMode } from "./components/CommandPalette";
 import { NavIcon } from "./components/NavIcons";
 import { invalidatePerformers } from "./components/PerformerPicker";
@@ -112,6 +113,17 @@ export default function App() {
   useEffect(warmFontOptions, []);
 
   const onError = useCallback((message: string) => setNotice(message), []);
+
+  // 没人 catch 的 Promise 失败。没有这一条的话它们只进控制台——
+  // 而这是个桌面程序，用户看不到控制台，表现就是「点了没反应」。
+  useEffect(() => {
+    const onRejection = (event: PromiseRejectionEvent) => {
+      console.error("没人处理的 Promise 失败", event.reason);
+      setNotice(messageOf(event.reason));
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => window.removeEventListener("unhandledrejection", onRejection);
+  }, []);
   const [library, actions] = useLibrary(audioReady, onError);
 
   useEffect(() => {
@@ -157,14 +169,22 @@ export default function App() {
   }, []);
   const consumeKwicRequest = useCallback(() => setKwicRequest(null), []);
   // 维护操作改了库之后要刷新总览，否则数字还是旧的；歌手列表也可能变了
+  // **读不出来要说。** 这两条原来是 `.catch(() => undefined)`：库出问题时
+  // 界面就显示「0 首歌」，一个字的报错都没有，用户只会以为数据丢了。
   const refreshOverview = useCallback(() => {
     invalidatePerformers();
-    api.overview().then(setOverview).catch(() => undefined);
+    api
+      .overview()
+      .then(setOverview)
+      .catch((err: unknown) => setNotice(`读不出语料总览：${messageOf(err)}`));
   }, []);
 
   // 导入之后曲库和语料统计都变了，两个都得重拉
   const onImported = useCallback(() => {
-    api.listTracks().then(actions.setTracks).catch(() => undefined);
+    api
+      .listTracks()
+      .then(actions.setTracks)
+      .catch((err: unknown) => setNotice(`读不出曲库：${messageOf(err)}`));
     refreshOverview();
   }, [actions, refreshOverview]);
 

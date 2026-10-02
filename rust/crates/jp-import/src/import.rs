@@ -66,6 +66,11 @@ pub struct ImportedTrack {
 #[serde(rename_all = "camelCase")]
 pub struct ImportReport {
     pub tracks: Vec<ImportedTrack>,
+    /// 用户中途点了取消。**已经导进去的那些是真的导进去了**（一首一个事务），
+    /// `tracks` 里就是实际做过的那几首——界面要照着这个说话，
+    /// 不能说成「全部完成」，也不能说成「什么都没做」。
+    #[serde(default)]
+    pub cancelled: bool,
 }
 
 impl ImportReport {
@@ -138,13 +143,32 @@ pub fn execute_with_progress(
     conn: &mut Connection,
     plan: &ImportPlan,
     analyzer: Option<&jp_tokenizer::Analyzer>,
+    on_progress: impl FnMut(&ImportedTrack, usize, usize),
+) -> Result<ImportReport> {
+    execute_cancellable(conn, plan, analyzer, on_progress, &|| false)
+}
+
+/// 同上，但每导完一首问一次 `should_stop`，为真就收工。
+///
+/// **能中途停下是因为一首歌一个事务**：停在第 N 首时，前 N 首已经各自提交，
+/// 后面的一行都没写——库里不会留下半首歌，再点一次「导入」接着往下走就行。
+/// 报告里只有真做过的那些，所以界面上的数字是实际发生的事。
+pub fn execute_cancellable(
+    conn: &mut Connection,
+    plan: &ImportPlan,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
     mut on_progress: impl FnMut(&ImportedTrack, usize, usize),
+    should_stop: &dyn Fn() -> bool,
 ) -> Result<ImportReport> {
     let todo: Vec<&PlannedTrack> = plan.to_import().collect();
     let total = todo.len();
     let mut report = ImportReport::default();
 
     for (index, item) in todo.into_iter().enumerate() {
+        if should_stop() {
+            report.cancelled = true;
+            break;
+        }
         let song_id = match &item.action {
             crate::plan::Action::New { song_id } => song_id.clone(),
             // to_import() 只放 New，走不到这里
@@ -472,45 +496,14 @@ mod tests {
     use super::*;
     use crate::plan::{LibraryIndex, plan};
 
-    /// 建一个和真库同构的空库。schema 抄自 `scripts/migrate_db.py`——
-    /// 这里只为测试，生产库仍由 Python 侧建表。
+    /// 建一个和真库同构的空库。
+    ///
+    /// **走 `jp_corpus` 的 `schema.sql`，不要在这里手抄建表语句。** 原来这儿抄了
+    /// 一份 13 张表的副本，往真 schema 里加一列、改一个约束，这份副本照旧全绿——
+    /// 测试于是在一个和生产不一样的形状上做断言。
     fn test_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE songs (
-                id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL,
-                year TEXT, album TEXT, genre TEXT, audio_path TEXT,
-                corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT,
-                cover_path TEXT, duration_sec REAL, album_id INTEGER);
-             CREATE TABLE utterances (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
-                line_idx INTEGER NOT NULL, time_sec REAL, text TEXT NOT NULL,
-                chapter_id INTEGER);
-             CREATE VIRTUAL TABLE utterances_fts USING fts5(
-                text, content=utterances, content_rowid=id, tokenize='trigram');
-             CREATE TABLE tokens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                utterance_id INTEGER NOT NULL REFERENCES utterances(id),
-                token_idx INTEGER NOT NULL, surface TEXT NOT NULL,
-                lemma TEXT NOT NULL, pos TEXT, dep TEXT, head TEXT);
-             CREATE TABLE people (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-                normalized_name TEXT NOT NULL UNIQUE, sort_name TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT '');
-             CREATE TABLE track_credits (
-                song_id TEXT NOT NULL, person_id INTEGER NOT NULL, role TEXT NOT NULL,
-                position INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY (song_id, person_id, role));
-             CREATE TABLE albums (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
-                normalized_title TEXT NOT NULL, album_artist TEXT NOT NULL DEFAULT '',
-                normalized_album_artist TEXT NOT NULL DEFAULT '',
-                year TEXT NOT NULL DEFAULT '', artwork_path TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT '',
-                UNIQUE (normalized_title, normalized_album_artist));",
-        )
-        .unwrap();
+        jp_corpus::Corpus::ensure_schema_on(&conn).unwrap();
         conn
     }
 
@@ -535,6 +528,74 @@ mod tests {
     fn run(conn: &mut Connection, tracks: &[ScannedTrack]) -> ImportReport {
         let p = plan(tracks, &LibraryIndex::empty());
         execute(conn, &p, None).unwrap()
+    }
+
+    /// 中途取消：**停在哪儿就是哪儿**。
+    ///
+    /// 前面几首是真进去了（各自一个事务已经提交），后面的一行都没写，
+    /// 报告里只有做过的那几首并且标着 `cancelled`。
+    /// 库里不能留下半首歌——那才是最难查的那种脏数据。
+    #[test]
+    fn cancelling_halfway_keeps_what_was_done_and_writes_nothing_after_it() {
+        let dir = tempdir();
+        let mut tracks = Vec::new();
+        for i in 0..4 {
+            let (audio, _) = with_lyrics(
+                &dir,
+                &format!("cancel{i}"),
+                "[00:10.00]夜が明けるまで
+[00:15.00]君を待っている
+",
+            );
+            let mut t = track(&audio, &format!("曲{i}"), "テスト");
+            t.lyrics_path = Some(audio.replace(".flac", ".lrc"));
+            tracks.push(t);
+        }
+
+        let mut conn = test_db();
+        let p = plan(&tracks, &LibraryIndex::empty());
+        let done = std::cell::Cell::new(0usize);
+        let report = execute_cancellable(
+            &mut conn,
+            &p,
+            None,
+            |_, n, _| done.set(n),
+            // 导完两首之后喊停
+            &|| done.get() >= 2,
+        )
+        .unwrap();
+
+        assert!(report.cancelled, "报告要标出来是取消的");
+        assert_eq!(report.tracks.len(), 2, "只该做两首");
+        assert_eq!(report.imported(), 2);
+
+        let songs: i64 = conn
+            .query_row("SELECT COUNT(*) FROM songs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(songs, 2, "库里只该有两首，不能多也不能少");
+        // 每首都是完整的：有歌词，没有「只写了 songs 行却没有 utterances」的残骸
+        let orphans: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM songs s                  WHERE NOT EXISTS (SELECT 1 FROM utterances u WHERE u.song_id = s.id)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphans, 0, "留下了半首歌");
+    }
+
+    /// 不取消时 `cancelled` 必须是假——界面拿它决定说「完成」还是「已停止」。
+    #[test]
+    fn a_normal_import_is_not_marked_cancelled() {
+        let dir = tempdir();
+        let (audio, _) = with_lyrics(&dir, "normal", "[00:10.00]あ
+");
+        let mut t = track(&audio, "曲", "テスト");
+        t.lyrics_path = Some(audio.replace(".flac", ".lrc"));
+        let mut conn = test_db();
+        let report = run(&mut conn, &[t]);
+        assert!(!report.cancelled);
+        assert_eq!(report.imported(), 1);
     }
 
     #[test]

@@ -175,6 +175,7 @@ const EMPTY_PROGRESS: LyricsProgress = {
   matched: "",
   lyricLines: 0,
   message: "",
+  error: "",
   filled: 0,
   notFound: 0,
   failed: 0,
@@ -240,6 +241,8 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
     const off = listen<LyricsProgress>("lyrics://progress", (event) => {
       setLyricsJob(event.payload);
       if (event.payload.finished) {
+        // 整批断了要说出来，不能只是悄悄「完成」
+        if (event.payload.error !== "") setNote(`补齐歌词中断：${event.payload.error}`);
         countMissingLyrics();
         onChangedRef.current();
       }
