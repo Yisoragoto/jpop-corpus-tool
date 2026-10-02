@@ -787,6 +787,7 @@ FTS 行数 = 歌词行数、每首歌随机取一行都搜得到、时间轴全�
 | `dictionaries.db` | 另一个文件，整份复制；目标已经有就不覆盖 |
 | 封面 / .lrc / 歌手照片 | 文件名里有 song_id，按新 id 改名复制，再把新路径写回库 |
 | 音频 | **不复制**。`audio_path` 是绝对路径，源目录还在路径就还通；搬几十 GB 不是这个功能该做的事 |
+| 分词词典 | `venv` 里那份 `system.dic`（207 MB）复制进目标库的 `sudachi/`；目标已经有就不动 |
 
 整件事一个事务，中途出错什么都不会变；文件复制失败只少几张图，重跑会补上
 （重跑时歌已经在库里，走「已存在」那条路，不会搬两份——这条有测试）。
@@ -804,6 +805,29 @@ FTS 行数 = 歌词行数、每首歌随机取一行都搜得到、时间轴全�
 `utterances`/`tokens`/`track_credits`/`songs.album_id`/`play_history` **没有一条外键落空**；
 抽 40 首和源库比每首的歌词行数，0 处不一致；随机抽 5 行歌词按前 4 个字搜，5 条全中；
 SQLite 自己的 `integrity-check` 通过。
+
+### 分词词典要跟着走
+
+第一次迁完有个漏：歌、歌词、词典都在了，歌词上面却常驻一条
+**「振假名不可用：找不到 Sudachi 词典」**。原因是 `locate_sudachipy` 只看
+`<库>/venv/Lib/site-packages`——0.1.x 把 SudachiPy 装在项目目录里，开发树上一直都有，
+而新装的程序把库建在 `%LOCALAPPDATA%`，那里没有 venv。
+
+现在两条路都认：先找 `venv/Lib/site-packages`，再找 `<库>/sudachi/`。后者是
+迁移时搬过来的、或者设置 → 歌词 → 分词词典里导入的那一份。
+
+- **复制而不是记路径**：记路径的话源目录一删一移，振假名第二天就没了，
+  而用户不会想到是这个原因。
+- 先写 `.part` 再改名——207 MB 复制到一半断了，留下的是半截的 `.part`，
+  不是一个「看起来齐了、加载时才炸」的 `system.dic`。
+- 复制完当场 `Analyzer::from_sudachipy` 加载一次，装不上就把这份删掉，
+  免得它顶掉下次的查找。
+- 装上立刻生效：`AppState.analyzer` 改成 `RwLock<Option<Arc<Analyzer>>>`，
+  导入词典和迁移跑完都会 `reload_analyzer()`，不用重启。
+
+实测（库里只有 corpus.db、没有 venv）：装之前 `tokenizer_status.ready = false`、
+`lyrics_furigana` 报错；指 `D:\jp_corpus` 导入，复制 217,218,859 字节用时 172 ms；
+之后 `ready = true`、`health.tokenizerReady = true`、同一首歌 41 行全部注上假名。
 
 ## 检查更新
 

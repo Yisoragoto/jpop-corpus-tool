@@ -10,9 +10,18 @@
 
 import type { ReactNode } from "react";
 
-export function SettingGroup({ title, children }: { title?: string | undefined; children: ReactNode }) {
+export function SettingGroup({
+  title,
+  id,
+  children,
+}: {
+  title?: string | undefined;
+  /** 左边目录跳转用的锚点 */
+  id?: string | undefined;
+  children: ReactNode;
+}) {
   return (
-    <section className="setting-group">
+    <section className="setting-group" id={id}>
       {title !== undefined && <h2 className="setting-group-title">{title}</h2>}
       <div className="setting-rows">{children}</div>
     </section>

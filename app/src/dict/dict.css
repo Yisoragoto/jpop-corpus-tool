@@ -101,7 +101,9 @@
 
 /* ── 页面：整页就是查词，管理在设置页 ── */
 .dict-page { display: block; }
-.dict-search { min-width: 0; max-width: 900px; margin: 0 auto; }
+/* 查词页占满：释义里有表格、例句和音调图，窗口拉大就该用上。
+   上限由 `.page` 的 1600px 居中 padding 给，这里不再额外卡一个 900px。 */
+.dict-search { min-width: 0; }
 .dict-query { width: 100%; margin: 0; font-size: 16px; padding: 10px 14px; }
 .dict-subbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 2px 12px; }
 

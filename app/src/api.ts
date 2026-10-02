@@ -554,6 +554,12 @@ export const api = {
   migrateRun: (path: string, options: { dictionaries: boolean; history: boolean }) =>
     call<MigrateOutcome>("migrate_run", { path, options }),
 
+  // 分词词典
+  /** 当前语料库目录里有没有 Sudachi 词典。 */
+  tokenizerStatus: () => call<TokenizerStatus>("tokenizer_status", {}),
+  /** 把别处那一份 Sudachi 词典复制进当前语料库目录，并立刻装上（207MB，要等几秒）。 */
+  tokenizerInstall: (path: string) => call<InstalledDict>("tokenizer_install", { path }),
+
   // 检查更新
   /** 问一次 GitHub Releases：有没有比正在跑的这一版更新的。 */
   updateCheck: () => call<UpdateStatus>("update_check"),
@@ -831,7 +837,27 @@ export interface MigrateOutcome {
   artistPhotosCopied: number;
   dictionariesCopied: boolean;
   dictionariesBytes: number;
+  /** 分词词典（振假名靠它）搬过来了没有 */
+  sudachiCopied: boolean;
+  sudachiBytes: number;
   warnings: string[];
+}
+
+/** 分词词典（Sudachi）在当前语料库目录里的状态（`tokenizer_status`）。 */
+export interface TokenizerStatus {
+  ready: boolean;
+  dictPath: string | null;
+  dictBytes: number;
+  /** 用的是语料库目录自带的那一份（而不是 0.1.x 的 venv） */
+  bundled: boolean;
+  /** 自带的那一份会放在哪 */
+  bundledDir: string;
+}
+
+/** 复制结果（`tokenizer_install`）。 */
+export interface InstalledDict {
+  bytes: number;
+  dir: string;
 }
 
 /** 一次发布里能装的那个文件（`update_check` 给的，原样传回 `update_download`）。 */

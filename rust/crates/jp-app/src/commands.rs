@@ -162,7 +162,7 @@ pub fn lyrics_furigana(
 ) -> CmdResult<Vec<LineFurigana>> {
     let analyzer = state
         .analyzer()
-        .ok_or_else(|| anyhow::anyhow!("振假名不可用：找不到 Sudachi 词典"))?;
+        .ok_or_else(|| anyhow::anyhow!("振假名不可用：找不到 Sudachi 词典。设置 → 歌词 → 分词词典里可以导入一份"))?;
     let lines = state.corpus().lyrics(&song_id)?;
     let mut out = Vec::with_capacity(lines.len());
     for line in lines {
@@ -270,7 +270,7 @@ pub fn most_played(
 pub fn tokenize(state: State<'_, AppState>, text: String) -> CmdResult<Vec<jp_tokenizer::Token>> {
     match state.analyzer() {
         Some(analyzer) => Ok(analyzer.analyze(&text)?),
-        None => Err(anyhow::anyhow!("分词器不可用：找不到 Sudachi 词典").into()),
+        None => Err(anyhow::anyhow!("分词器不可用：找不到 Sudachi 词典。设置 → 歌词 → 分词词典里可以导入一份").into()),
     }
 }
 
@@ -542,7 +542,7 @@ pub async fn lyrics_fill_one<R: tauri::Runtime>(
             &lyrics_dir,
             &provider,
             &target,
-            state.analyzer(),
+            state.analyzer().as_deref(),
         )
     })
     .await
@@ -566,7 +566,7 @@ pub async fn lyrics_import_file<R: tauri::Runtime>(
             &lyrics_dir,
             &song_id,
             std::path::Path::new(&path),
-            state.analyzer(),
+            state.analyzer().as_deref(),
         )
     })
     .await
@@ -699,7 +699,7 @@ pub async fn migrate_run<R: tauri::Runtime>(
             .unwrap_or_default();
         anyhow::ensure!(source != target_root, "源目录就是当前库，不用迁移");
         let mut corpus = state.corpus();
-        crate::migrate::run(
+        let outcome = crate::migrate::run(
             corpus.connection_mut(),
             &source,
             &target_root,
@@ -707,7 +707,36 @@ pub async fn migrate_run<R: tauri::Runtime>(
             |step| {
                 let _ = handle.emit("migrate://progress", step.to_string());
             },
-        )
+        );
+        drop(corpus);
+        // 搬过来的 sudachi/ 立刻生效，不用重启——振假名是用户马上会去看的东西
+        state.reload_analyzer();
+        outcome
+    })
+    .await
+}
+
+// ──────────────────────────── 分词词典 ────────────────────────────
+
+/// 当前语料库目录里有没有 Sudachi 词典。
+#[tauri::command]
+pub fn tokenizer_status(state: State<'_, AppState>) -> CmdResult<crate::tokenizer::TokenizerStatus> {
+    Ok(crate::tokenizer::status(&state.project_root()))
+}
+
+/// 把别处的那一份 Sudachi 词典复制进当前语料库目录，并立刻装上。
+///
+/// 207MB 的复制，所以走 `spawn_blocking`。
+#[tauri::command]
+pub async fn tokenizer_install<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    path: String,
+) -> CmdResult<crate::tokenizer::Installed> {
+    blocking(app, move |state| {
+        let installed =
+            crate::tokenizer::install(&state.project_root(), std::path::Path::new(&path))?;
+        anyhow::ensure!(state.reload_analyzer(), "复制完了，但词典还是装不上");
+        Ok(installed)
     })
     .await
 }
@@ -1022,7 +1051,7 @@ pub fn run_import(
     // 拿当前曲库重新算计划：扫描到确认之间库可能已经变了
     let index = jp_import::LibraryIndex::from_corpus(&corpus)?;
     let plan = jp_import::plan(&tracks, &index);
-    let report = jp_import::execute(corpus.connection_mut(), &plan, analyzer)?;
+    let report = jp_import::execute(corpus.connection_mut(), &plan, analyzer.as_deref())?;
     drop(corpus);
 
     // 导完就清掉，避免同一批被点两次

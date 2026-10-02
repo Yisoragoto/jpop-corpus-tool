@@ -34,9 +34,12 @@ pub struct AppState {
     /// Anki 是本机，两件事同时做没有冲突。
     anki_job: std::sync::Arc<crate::anki::ExportJob>,
     corpus: Mutex<Corpus>,
-    /// 分词器是可选的：没有词典时（比如用户没装 Python venv）
+    /// 分词器是可选的：没有词典时（比如新装的程序，库里还没有 `sudachi/`）
     /// 其余功能仍然可用，只有「实时分词」这一个能力降级。
-    analyzer: Option<Analyzer>,
+    ///
+    /// **可换**：设置里导入词典、或者迁移时搬过来之后要立刻生效，
+    /// 不能让用户重启程序才有振假名。`Arc` 是为了取出来用的时候不占着锁。
+    analyzer: std::sync::RwLock<Option<std::sync::Arc<Analyzer>>>,
     /// 音频引擎同样是可选的：没有声卡（远程桌面、CI、无声卡的虚拟机）
     /// 时应用照常能浏览歌词和语料，只是不能播。Arc 是因为变调渲染线程渲染完要换文件。
     audio: Option<std::sync::Arc<AudioEngine>>,
@@ -79,8 +82,7 @@ impl AppState {
         corpus.ensure_schema()?;
         corpus.check_schema()?;
 
-        let analyzer = jp_tokenizer::locate_sudachipy(project_root)
-            .and_then(|(res, dict)| Analyzer::from_sudachipy(&res, &dict).ok());
+        let analyzer = load_analyzer(project_root);
         if analyzer.is_none() {
             eprintln!("[warn] 找不到 Sudachi 词典，实时分词不可用（其余功能正常）");
         }
@@ -101,7 +103,7 @@ impl AppState {
             scrape_job: std::sync::Arc::new(crate::scrape::ScrapeJob::default()),
             anki_job: std::sync::Arc::new(crate::anki::ExportJob::default()),
             corpus: Mutex::new(corpus),
-            analyzer,
+            analyzer: std::sync::RwLock::new(analyzer),
             audio,
             pitch: crate::pitch::PitchControl::new(std::sync::Arc::new(
                 crate::pitch::FfmpegRenderer {
@@ -182,8 +184,27 @@ impl AppState {
         }
     }
 
-    pub fn analyzer(&self) -> Option<&Analyzer> {
-        self.analyzer.as_ref()
+    /// 当前的分词器。拿的是一份 `Arc`，用的时候锁已经放掉了。
+    pub fn analyzer(&self) -> Option<std::sync::Arc<Analyzer>> {
+        self.analyzer.read().ok().and_then(|guard| guard.clone())
+    }
+
+    /// 重新找一次词典（导入词典、迁移完数据之后调）。返回现在有没有。
+    pub fn reload_analyzer(&self) -> bool {
+        let loaded = load_analyzer(&self.project_root());
+        let ready = loaded.is_some();
+        if let Ok(mut guard) = self.analyzer.write() {
+            *guard = loaded;
+        }
+        ready
+    }
+
+    /// 语料库目录。`db_path` 一定是 `<目录>/corpus.db`。
+    pub fn project_root(&self) -> std::path::PathBuf {
+        self.db_path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default()
     }
 
     pub fn audio(&self) -> Option<&AudioEngine> {
@@ -265,4 +286,10 @@ impl AppState {
             eprintln!("[warn] 退出时播放历史写入失败: {err}");
         }
     }
+}
+
+fn load_analyzer(project_root: &std::path::Path) -> Option<std::sync::Arc<Analyzer>> {
+    jp_tokenizer::locate_sudachipy(project_root)
+        .and_then(|(res, dict)| Analyzer::from_sudachipy(&res, &dict).ok())
+        .map(std::sync::Arc::new)
 }

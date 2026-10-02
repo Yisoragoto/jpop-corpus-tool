@@ -24,6 +24,8 @@ import { setDictionariesCollapsed, useCollapsedDictionaries } from "../dict/coll
 import { DictionaryManager } from "../dict/DictionaryManager";
 import { UpdateCard } from "../components/UpdateCard";
 import { MigrateCard } from "../components/MigrateCard";
+import { SudachiCard } from "../components/SudachiCard";
+import { SettingsToc, type TocItem } from "../components/SettingsToc";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
 import { lyricFontStack, useFontOptions } from "../fonts";
 import {
@@ -181,6 +183,17 @@ const ROOT_SOURCE_LABELS: Record<LibraryRootInfo["source"], string> = {
   default: "默认数据目录",
 };
 
+/** 左边那一列目录。顺序和下面的分组一致 */
+const TOC: TocItem[] = [
+  { id: "settings-appearance", label: "外观" },
+  { id: "settings-lyrics", label: "歌词" },
+  { id: "settings-lookup", label: "查词" },
+  { id: "settings-mining", label: "制卡" },
+  { id: "settings-library", label: "曲库维护" },
+  { id: "settings-system", label: "系统" },
+  { id: "settings-about", label: "关于" },
+];
+
 export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) {
   const settings = useAppSettings();
   const display = useLyricsDisplay();
@@ -317,7 +330,10 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
 
   return (
     <div className="page settings-page">
-      <SettingGroup title="外观">
+      <div className="settings-layout">
+        <SettingsToc items={TOC} />
+        <div className="settings-body">
+      <SettingGroup title="外观" id="settings-appearance">
         <SettingCard
           icon={Icons.stage}
           title="全屏歌词的背景用封面虚化"
@@ -358,7 +374,8 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
         </SettingCard>
       </SettingGroup>
 
-      <SettingGroup title="歌词">
+      <SettingGroup title="歌词" id="settings-lyrics">
+        <SudachiCard icon={Icons.ruby} onError={onError} onChanged={onChanged} />
         <SettingCard icon={Icons.ruby} title="默认显示振假名" description="也可以在歌词右上角随时开关">
           <Switch checked={display.furigana} onChange={(v) => updateLyricsDisplay({ furigana: v })} label="显示振假名" />
         </SettingCard>
@@ -429,7 +446,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
 
       <DictionaryManager onError={onError} />
 
-      <SettingGroup title="查词">
+      <SettingGroup title="查词" id="settings-lookup">
         <SettingCard icon={Icons.dict} title="折叠记忆" description="查词结果里点词典名可以折叠那一本，之后每次查词都保持折叠">
           <button
             className="tc-btn"
@@ -441,12 +458,12 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
         </SettingCard>
       </SettingGroup>
 
-      <SettingGroup title="制卡">
+      <SettingGroup title="制卡" id="settings-mining">
         <MineSettingsCard connected={anki?.connected ?? false} decks={anki?.decks ?? []} />
         {anki !== null && !anki.connected && <SettingNote>{anki.message}</SettingNote>}
       </SettingGroup>
 
-      <SettingGroup title="曲库维护">
+      <SettingGroup title="曲库维护" id="settings-library">
         <SettingCard icon={Icons.cover} title="补齐缺失封面" description="只补还没有封面的那些，用刮削时存下的候选，不重新搜索">
           <CommandButton
             icon="photo"
@@ -523,14 +540,14 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
         {note !== "" && <SettingNote>{note}</SettingNote>}
       </SettingGroup>
 
-      <SettingGroup title="系统">
+      <SettingGroup title="系统" id="settings-system">
         <UpdateCard
           icons={{ update: Icons.update, clock: Icons.clock, install: Icons.install }}
           onError={onError}
         />
       </SettingGroup>
 
-      <SettingGroup title="关于">
+      <SettingGroup title="关于" id="settings-about">
         <SettingCard
           icon={Icons.db}
           title="语料库"
@@ -574,6 +591,8 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
           </span>
         </SettingCard>
       </SettingGroup>
+        </div>
+      </div>
     </div>
   );
 }

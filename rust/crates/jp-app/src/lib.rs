@@ -19,6 +19,7 @@ pub mod mine;
 pub mod pitch;
 pub mod scrape;
 pub mod state;
+pub mod tokenizer;
 pub mod tracker;
 pub mod update;
 
@@ -95,6 +96,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::backfill_durations,
             commands::migrate_plan,
             commands::migrate_run,
+            commands::tokenizer_status,
+            commands::tokenizer_install,
             // 检查更新
             commands::update_check,
             commands::update_changelog,

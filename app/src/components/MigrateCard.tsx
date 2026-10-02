@@ -73,7 +73,7 @@ export function MigrateCard({ icon, onError, onChanged }: Props) {
       <SettingCard
         icon={icon}
         title="从别的语料库目录迁移数据"
-        description="把另一个目录里的歌、歌词、分词、署名、收听记录和词典搬过来；当前库里已经有的那几首会跳过。音频文件不复制，原路径照旧可用。"
+        description="把另一个目录里的歌、歌词、分词、署名、收听记录、词典和分词词典搬过来；当前库里已经有的那几首会跳过。音频文件不复制，原路径照旧可用。"
         onClick={() => setOpen((v) => !v)}
       >
         <span className="setting-chevron" aria-hidden="true">
@@ -153,6 +153,8 @@ export function MigrateCard({ icon, onError, onChanged }: Props) {
               {outcome.dictTerms > 0 && `；词典词条 ${outcome.dictTerms.toLocaleString()}`}
               {outcome.dictionariesCopied &&
                 `、词典库 ${(outcome.dictionariesBytes / 1024 / 1024).toFixed(0)} MB`}
+              {outcome.sudachiCopied &&
+                `、分词词典 ${(outcome.sudachiBytes / 1024 / 1024).toFixed(0)} MB（振假名已可用）`}
               。
               {outcome.warnings.length > 0 && <> 另有 {outcome.warnings.length} 条提醒：{outcome.warnings.join("；")}</>}
             </SettingNote>

@@ -30,6 +30,11 @@ pub struct MigrateOutcome {
     pub dictionaries_copied: bool,
     /// 词典库多大（字节），没复制时是 0
     pub dictionaries_bytes: u64,
+    /// 分词词典（Sudachi）搬过来了没有。**振假名和导入分词靠它**，
+    /// 而新装的程序那边没有 0.1.x 的 venv，所以这一份必须跟着走。
+    pub sudachi_copied: bool,
+    /// 分词词典多大（字节），没复制时是 0
+    pub sudachi_bytes: u64,
     pub warnings: Vec<String>,
 }
 
@@ -70,6 +75,19 @@ pub fn run(
     if options.dictionaries {
         on_step("正在复制词典库…");
         copy_dictionaries(source_root, target_root, &mut outcome)?;
+    }
+
+    // 分词词典 207MB，不走 options：没有它振假名直接不可用，而用户看不出是缺这个。
+    // 当前库已经有了就不动（`copy_from_library` 自己判断）。
+    on_step("正在复制分词词典…");
+    match crate::tokenizer::copy_from_library(source_root, target_root) {
+        Ok(Some(installed)) => {
+            outcome.sudachi_copied = true;
+            outcome.sudachi_bytes = installed.bytes;
+        }
+        Ok(None) => {}
+        // 词典搬不过来不该让整件事失败：歌和语料已经进去了，这里只记一笔
+        Err(err) => note(&mut outcome, format!("分词词典没搬过来：{err}")),
     }
     Ok(outcome)
 }

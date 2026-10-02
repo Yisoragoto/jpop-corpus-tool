@@ -1094,7 +1094,33 @@ button.chip:hover { color: var(--fg); }
 /* 设置页窄一些：一行一个开关，拉太宽标题和控件会离得很远（Win11 设置也这样）。
    自己限了宽就要把上面那份居中 padding 换掉——**百分比 padding 按包含块算**，
    不是按自己的宽度，照搬会在 980px 的盒子里留出 2×376px 的内边距，内容只剩 200 多。 */
-.settings-page { max-width: 980px; margin-inline: auto; padding-inline: 20px; }
+/* 加了左边一列目录之后，限宽的是「目录 + 正文」这个整体，正文自己还是 980px。 */
+.settings-page { max-width: 1192px; margin-inline: auto; padding-inline: 20px; }
+.settings-layout { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 20px; align-items: start; }
+.settings-body { min-width: 0; max-width: 980px; }
+
+/* 目录钉在滚动容器上沿。滚动的是 `.page` 自己，所以 sticky 的参照就是它。 */
+.settings-toc {
+  position: sticky; top: 0; display: flex; flex-direction: column; gap: 2px;
+  padding-top: 26px; min-width: 0;
+}
+.settings-toc-item {
+  position: relative; text-align: left; padding: 7px 10px; border-radius: 6px;
+  font-size: 13px; color: var(--muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.settings-toc-item:hover { background: var(--control-hover); color: var(--fg); }
+.settings-toc-item.active { background: var(--control); color: var(--fg); font-weight: 600; }
+/* 选中的那条左边一道竖杠，和左侧导航一致 */
+.settings-toc-item.active::before {
+  content: ""; position: absolute; left: 0; top: 7px; bottom: 7px;
+  width: 3px; border-radius: 2px; background: var(--accent);
+}
+/* 窄窗口没地方放目录，收起来，设置页回到原来的样子 */
+@media (max-width: 900px) {
+  .settings-toc { display: none; }
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
+}
 .setting-group { margin-bottom: 26px; }
 .setting-group-title { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
 .setting-rows { display: flex; flex-direction: column; gap: 3px; }
