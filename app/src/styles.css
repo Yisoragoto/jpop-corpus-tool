@@ -139,8 +139,25 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
 }
 
 /* ── 三栏 ── */
-.columns { display: grid; grid-template-columns: 260px 1fr 320px; min-height: 0; }
-.columns.explorer { grid-template-columns: 240px 1fr 300px; }
+/* 三栏：两边的宽度由 `useColumnWidths` 以行内样式给（可拖、记住），
+   这里只留一份兜底，万一行内样式没来得及上也不会错位。中间永远是 1fr，
+   窗口变宽变窄都算在正文上。 */
+.columns { display: grid; grid-template-columns: 260px 6px minmax(0, 1fr) 6px 320px; min-height: 0; }
+.columns.explorer { grid-template-columns: 240px 6px minmax(0, 1fr) 6px 300px; }
+
+/* 可拖的那道缝。平时看不见，鼠标到上面才显出一条高亮线。 */
+.col-splitter {
+  position: relative; cursor: col-resize; touch-action: none;
+  background: var(--line); outline: none;
+}
+.col-splitter::after {
+  content: ""; position: absolute; inset: 0 -3px; /* 判定比看起来宽一点，好点中 */
+}
+.col-splitter:hover, .col-splitter:focus-visible, body.col-resizing .col-splitter:active {
+  background: var(--accent);
+}
+/* 拖动时整页一个光标，并且别顺手把歌词选中了 */
+body.col-resizing { cursor: col-resize; user-select: none; }
 .pane { min-height: 0; overflow-y: auto; }
 .library { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
 .corpus { border-left: 1px solid var(--line); background: var(--panel); padding: 16px; }
@@ -177,7 +194,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
 
 /* 网格：封面卡片 */
 /* 网格时左栏加宽，一行能放下三四张封面 */
-.columns.wide-library { grid-template-columns: 420px 1fr 320px; }
+.columns.wide-library { grid-template-columns: 420px 6px minmax(0, 1fr) 6px 320px; }
 .list.as-grid .group-body {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 12px 10px; padding: 6px 12px 12px;
@@ -403,11 +420,16 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .stage-line.current { color: #fff; background: transparent; }
 .stage-line.current .text { transform: scale(1.02); }
 
+/* 宽度由 `usePaneWidth` 以 flex-basis 给（可拖、记住），这里只留兜底的 340px */
 .stage-side {
   position: relative; flex: 0 0 340px; overflow-y: auto; padding: 14px 16px 20px;
   border-radius: 12px; background: rgba(0, 0, 0, .34);
   backdrop-filter: blur(24px) saturate(140%);
 }
+/* 全屏里那道缝：底下是虚化封面，平时完全透明，鼠标到上面才亮一道 */
+.stage-body .col-splitter { flex: 0 0 6px; background: transparent; border-radius: 3px; }
+.stage-body .col-splitter:hover,
+.stage-body .col-splitter:focus-visible { background: rgba(255, 255, 255, .38); }
 .stage-side-close { position: absolute; top: 8px; right: 8px; z-index: 1; }
 .stage-card { display: flex; flex-direction: column; gap: 4px; }
 .stage-card .cover { width: 100% !important; height: auto !important; aspect-ratio: 1; object-fit: cover; box-shadow: 0 12px 34px rgba(0, 0, 0, .5); }

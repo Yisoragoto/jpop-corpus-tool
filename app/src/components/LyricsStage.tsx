@@ -23,6 +23,7 @@ import type { LyricsDisplay } from "../lyricsDisplay";
 import { useAppSettings } from "../settings";
 import { Cover } from "./Cover";
 import { LyricsTools } from "./LyricsTools";
+import { ColumnSplitter, usePaneWidth } from "./ColumnSplitter";
 
 interface Props {
   title: string;
@@ -46,6 +47,9 @@ interface Props {
 /** 当前行停在可视高度的这个位置（Python 版是 0.48） */
 const ANCHOR = 0.45;
 
+/** 右侧那一栏可拖的范围。再窄查词的释义表就排不开，再宽歌词那边就不够看了 */
+const SIDE_BOUNDS = { min: 260, max: 720, restMin: 420 };
+
 export function LyricsStage(props: Props) {
   const { lines, currentLine, onClose } = props;
   const scroller = useRef<HTMLDivElement>(null);
@@ -53,6 +57,8 @@ export function LyricsStage(props: Props) {
   const playerHeight = usePlayerHeight();
   const coverColor = useCoverColor(props.coverPath);
   const settings = useAppSettings();
+  // 右边那一栏可以拖，并且记住（和曲库页的两道缝同一套）
+  const side = usePaneWidth("stage-side", 340, SIDE_BOUNDS);
   // 封面读不出来时退回纯色。换歌要把失败状态清掉，否则一次读不到就再也不显示了
   const [bgBroken, setBgBroken] = useState(false);
   useEffect(() => setBgBroken(false), [props.coverPath]);
@@ -111,7 +117,7 @@ export function LyricsStage(props: Props) {
           ✕
         </button>
       </header>
-      <div className="stage-body">
+      <div className="stage-body" ref={side.container}>
         <div className="stage-lyrics" ref={scroller}>
           {lines.length === 0 && <p className="muted stage-empty">这首歌还没有歌词</p>}
           {lines.map((line, idx) => (
@@ -126,7 +132,14 @@ export function LyricsStage(props: Props) {
             </p>
           ))}
         </div>
-        <aside className="stage-side">
+        <ColumnSplitter
+          edge="right"
+          label="查词栏宽度"
+          onDrag={side.drag}
+          onNudge={side.nudge}
+          onReset={side.reset}
+        />
+        <aside className="stage-side" style={side.style}>
           {props.side === null ? (
             /* 没在查词时放这首歌本身：封面、歌名、歌手和署名 */
             <div className="stage-card">

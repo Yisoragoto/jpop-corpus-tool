@@ -36,6 +36,7 @@ import { dictApi, type FindTermsResult } from "../dict/api";
 import { LookupResults } from "../dict/LookupResults";
 import { MineButton } from "../dict/MineButton";
 import { mineApi, useMineSettings, type MineCheck } from "../dict/mine";
+import { ColumnSplitter, useColumnWidths } from "../components/ColumnSplitter";
 
 /** 查词是从哪一行第几个词发起的（制卡时用来取例句、切音频）。点释义里的链接查词时没有。 */
 interface LineContext {
@@ -194,6 +195,11 @@ export function LibraryPage({
 
   // 列表 / 网格，以及收起了哪些歌手。都记在 localStorage，下次打开还是这样
   const [view, setView] = useState<"list" | "grid">(() => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list"));
+  // 两边的宽度可以拖，并且记住。网格视图左边本来就该宽一些，所以两套各记各的。
+  const columns = useColumnWidths(
+    view === "grid" ? "library-grid" : "library",
+    view === "grid" ? { left: 420, right: 320 } : { left: 260, right: 320 },
+  );
   useEffect(() => {
     try {
       localStorage.setItem(VIEW_KEY, view);
@@ -609,7 +615,11 @@ export function LibraryPage({
   );
 
   return (
-    <div className={`columns ${view === "grid" ? "wide-library" : ""}`}>
+    <div
+      className={`columns ${view === "grid" ? "wide-library" : ""}`}
+      style={columns.style}
+      ref={columns.container}
+    >
       <aside className="pane library">
         {library.albumFilter && (
           <button
@@ -712,6 +722,14 @@ export function LibraryPage({
           {visible.length === 0 && <p className="muted pad">没有匹配的曲目</p>}
         </div>
       </aside>
+
+      <ColumnSplitter
+        edge="left"
+        label="曲库栏宽度"
+        onDrag={columns.drag}
+        onNudge={columns.nudge}
+        onReset={columns.reset}
+      />
 
       <main className={`pane lyrics ${furigana !== null ? "with-furigana" : ""}`} ref={lyricsRef} style={lyricsStyle}>
         {panel === "repair" && (
@@ -876,6 +894,14 @@ export function LibraryPage({
           </>
         )}
       </main>
+
+      <ColumnSplitter
+        edge="right"
+        label="查词栏宽度"
+        onDrag={columns.drag}
+        onNudge={columns.nudge}
+        onReset={columns.reset}
+      />
 
       <aside className="pane corpus">
         {corpusContent}

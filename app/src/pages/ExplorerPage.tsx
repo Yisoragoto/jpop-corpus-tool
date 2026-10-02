@@ -21,6 +21,7 @@ import {
 import { Stat } from "../components/Stat";
 import { Avatar } from "../components/Avatar";
 import type { LibraryActions } from "../useLibrary";
+import { ColumnSplitter, useColumnWidths } from "../components/ColumnSplitter";
 
 const ROLES = ["performer", "composer", "lyricist", "arranger"] as const;
 
@@ -41,6 +42,7 @@ export function ExplorerPage({
   onFocusConsumed,
 }: Props) {
   const [role, setRole] = useState<string>("performer");
+  const columns = useColumnWidths("explorer", { left: 240, right: 300 });
   const [people, setPeople] = useState<PersonSummary[]>([]);
   const [selected, setSelected] = useState<PersonSummary | null>(null);
   const [works, setWorks] = useState<Track[]>([]);
@@ -136,7 +138,7 @@ export function ExplorerPage({
   const span = years.length ? `${years[0]} — ${years[years.length - 1]}` : "";
 
   return (
-    <div className="columns explorer">
+    <div className="columns explorer" style={columns.style} ref={columns.container}>
       <aside className="pane library">
         <div className="segmented role-picker">
           {ROLES.map((r) => (
@@ -165,6 +167,14 @@ export function ExplorerPage({
           ))}
         </div>
       </aside>
+
+      <ColumnSplitter
+        edge="left"
+        label="人物栏宽度"
+        onDrag={columns.drag}
+        onNudge={columns.nudge}
+        onReset={columns.reset}
+      />
 
       <main className="pane person">
         {!selected && <p className="muted pad">从左侧选一个人</p>}
@@ -208,6 +218,14 @@ export function ExplorerPage({
           </>
         )}
       </main>
+
+      <ColumnSplitter
+        edge="right"
+        label="合作者栏宽度"
+        onDrag={columns.drag}
+        onNudge={columns.nudge}
+        onReset={columns.reset}
+      />
 
       <aside className="pane corpus">
         {selected && (
