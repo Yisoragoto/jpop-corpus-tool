@@ -10,7 +10,7 @@ use jp_corpus::{
     YearStats,
 };
 use serde::Serialize;
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 
 use crate::state::AppState;
 
@@ -570,6 +570,89 @@ pub async fn lyrics_import_file<R: tauri::Runtime>(
         )
     })
     .await
+}
+
+// ──────────────────────────── 检查更新 ────────────────────────────
+
+/// 问一次 GitHub Releases：有没有比正在跑的这一版更新的。
+///
+/// 异步 + `spawn_blocking`：网络那一步几百毫秒到几秒，占着主线程界面会卡。
+#[tauri::command]
+pub async fn update_check<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> CmdResult<crate::update::UpdateStatus> {
+    let current = app.package_info().version.to_string();
+    let value = tauri::async_runtime::spawn_blocking(move || crate::update::check(&current))
+        .await
+        .map_err(|err| anyhow::anyhow!("检查更新线程出错：{err}"))??;
+    Ok(value)
+}
+
+/// 最近几次发布，给「查看更新日志」用。
+#[tauri::command]
+pub async fn update_changelog(limit: Option<usize>) -> CmdResult<Vec<crate::update::ReleaseView>> {
+    let value =
+        tauri::async_runtime::spawn_blocking(move || crate::update::changelog(limit.unwrap_or(10)))
+            .await
+            .map_err(|err| anyhow::anyhow!("读更新日志线程出错：{err}"))??;
+    Ok(value)
+}
+
+/// 下载安装包。进度走 `update://progress` 事件，返回落盘路径。
+///
+/// **地址和哈希都来自同一次 `update_check`**：前端把那条资产原样传回来，
+/// `download_installer` 再核一遍地址是不是本仓库的、哈希对不对。
+#[tauri::command]
+pub async fn update_download<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    asset: crate::update::AssetView,
+) -> CmdResult<String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("updates");
+    let handle = app.clone();
+    let path = tauri::async_runtime::spawn_blocking(move || {
+        crate::update::download_installer(&asset, &dir, |received, total| {
+            let _ = handle.emit(
+                "update://progress",
+                crate::update::DownloadProgress {
+                    received,
+                    total,
+                    stage: "downloading".into(),
+                    message: String::new(),
+                },
+            );
+        })
+    })
+    .await
+    .map_err(|err| anyhow::anyhow!("下载线程出错：{err}"))??;
+    let _ = app.emit(
+        "update://progress",
+        crate::update::DownloadProgress {
+            received: 1,
+            total: 1,
+            stage: "done".into(),
+            message: path.display().to_string(),
+        },
+    );
+    Ok(path.display().to_string())
+}
+
+/// 拉起安装程序并退出。**NSIS 要替换正在运行的 exe，所以必须先退。**
+///
+/// 退出前把未结束的收听会话冲刷掉，不然这一段听歌记录会丢。
+#[tauri::command]
+pub fn update_install<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, AppState>,
+    path: String,
+) -> CmdResult<()> {
+    crate::update::launch_installer(std::path::Path::new(&path))?;
+    state.flush_session();
+    app.exit(0);
+    Ok(())
 }
 
 /// 播放状态 + 走一拍收听统计。**前端的轮询应当调这个，不是 `audio_state`。**

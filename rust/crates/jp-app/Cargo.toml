@@ -42,6 +42,11 @@ tauri-plugin-dialog = "2"
 jp-audio = { path = "../jp-audio" }
 jp-corpus = { path = "../jp-corpus" }
 jp-import = { path = "../jp-import" }
+# 检查更新：问 GitHub Releases、下安装包、校验哈希。三个都已经在依赖树里。
+ureq = "3"
+sha2 = "0.10"
+semver = "1"
+
 # 用户自己选的歌词文件可能是 Shift-JIS / GBK。已经在依赖树里。
 encoding_rs = "0.8"
 jp-anki = { path = "../jp-anki" }

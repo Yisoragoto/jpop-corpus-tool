@@ -19,6 +19,10 @@ export interface AppSettings {
   gridByArtist: boolean;
   /** 播放条上的频谱条。关掉之后连采样轮询一起停，不再每 50ms 问一次引擎 */
   spectrum: boolean;
+  /** 启动时问一次 GitHub Releases 有没有新版 */
+  autoCheckUpdates: boolean;
+  /** 自动检查发现新版时，直接下载并装上（**会关掉应用**）。默认关：装更新要由人决定什么时候 */
+  autoInstallUpdates: boolean;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
@@ -28,6 +32,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   stageBlurRadius: 64,
   gridByArtist: true,
   spectrum: true,
+  autoCheckUpdates: true,
+  autoInstallUpdates: false,
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -47,6 +53,10 @@ export function parseSettings(raw: string | null): AppSettings {
       stageBlurRadius: clamp(parsed.stageBlurRadius, STAGE_BLUR_LIMITS, d.stageBlurRadius),
       gridByArtist: typeof parsed.gridByArtist === "boolean" ? parsed.gridByArtist : d.gridByArtist,
       spectrum: typeof parsed.spectrum === "boolean" ? parsed.spectrum : d.spectrum,
+      autoCheckUpdates:
+        typeof parsed.autoCheckUpdates === "boolean" ? parsed.autoCheckUpdates : d.autoCheckUpdates,
+      autoInstallUpdates:
+        typeof parsed.autoInstallUpdates === "boolean" ? parsed.autoInstallUpdates : d.autoInstallUpdates,
     };
   } catch {
     return DEFAULT_SETTINGS;

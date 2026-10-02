@@ -768,6 +768,35 @@ FTS 行数 = 歌词行数、每首歌随机取一行都搜得到、时间轴全�
   会让「选了 5 个只导了 3 个」看起来像 bug，所以放进 `ScanResult.ignored`，
   界面逐个列出来。
 
+## 检查更新
+
+版本就发在仓库的 Releases 里，所以更新也从那儿来（`jp-app/src/update.rs`）：
+问一次 `GET /repos/{owner}/{repo}/releases?per_page=5`，比版本号，需要的话把
+`-setup.exe` 下回来、校验 SHA-256、再拉起安装程序并退出（NSIS 要替换正在运行的 exe）。
+
+**没用 `tauri-plugin-updater`**：那套要自己签名、再维护一份 `latest.json`，
+而这个项目的发布流程就是 `gh release create` 挂两个安装包。用现成的 Releases API
+少一套要维护的东西；代价是自动更新只在 Windows 的 NSIS 包上成立——现在也只发这一个平台。
+
+要跑的是一个 exe，所以有四条守得住的线，每条都有测试：
+
+| 规则 | 为什么 |
+|---|---|
+| 下载地址必须以 `https://github.com/Yisoragoto/jpop-corpus-tool/releases/download/` 开头 | 接口返回里混进别的域名时直接丢掉那个资产，而不是「下下来再说」 |
+| 装之前校验 SHA-256（GitHub 的资产带 `digest`） | 对不上就删掉重来。实测把期望哈希改成全 0，下完立刻报错、`tampered-setup.exe` 没留在磁盘上 |
+| 没有 `digest` 的发布不自动装 | 校验不了的东西不执行，让用户去发布页手动下 |
+| 版本号解析不出来就当没有新版 | 宁可不提示，也不要因为一个奇怪的 tag 名天天弹窗 |
+
+「下载后自动安装」默认**关**着：装更新会关掉应用，什么时候更新该由人决定。
+开关在「设置 → 系统」，那里还有「检查更新」和「查看更新日志」
+（更新日志就是最近几次发布的 `body`，和检查更新共用同一次请求的数据）。
+
+解析用的是**真实接口返回**存下来的 `tests/data/github-releases.json`，不是手捏的 JSON：
+三次发布逐条对过版本号、发布时间、说明长度、安装包名字和 64 位十六进制的哈希。
+
+实测：当前 0.2.2 / 最新 0.2.2 → 「已是最新」；下载 6,636,695 字节用 14 秒，
+校验通过落到 `%LOCALAPPDATA%\com.github.yisoragoto.jpop-corpus-tool\updates\`。
+
 ## 收听统计
 
 `play_history` 表和 `recently_played` / `most_played` 查询一直都在，

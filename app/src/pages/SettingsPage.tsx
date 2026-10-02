@@ -22,6 +22,7 @@ import { CommandButton } from "../components/CommandButton";
 import { SettingCard, SettingGroup, SettingNote, SettingSelect, SettingSlider, Switch } from "../components/SettingCard";
 import { setDictionariesCollapsed, useCollapsedDictionaries } from "../dict/collapse";
 import { DictionaryManager } from "../dict/DictionaryManager";
+import { UpdateCard } from "../components/UpdateCard";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
 import { lyricFontStack, useFontOptions } from "../fonts";
 import {
@@ -124,6 +125,19 @@ const Icons = {
     <svg {...ICON}>
       <circle cx="12" cy="12" r="8" />
       <path d="M12 7.5V12l3 2" />
+    </svg>
+  ),
+  update: (
+    <svg {...ICON}>
+      <path d="M20 12a8 8 0 1 1-2.3-5.6" />
+      <path d="M20 4v4h-4" />
+    </svg>
+  ),
+  install: (
+    <svg {...ICON}>
+      <path d="M12 3v11" />
+      <path d="M8 10.5l4 4 4-4" />
+      <path d="M4 18.5h16" />
     </svg>
   ),
   wave: (
@@ -505,6 +519,13 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
           </span>
         </SettingCard>
         {note !== "" && <SettingNote>{note}</SettingNote>}
+      </SettingGroup>
+
+      <SettingGroup title="系统">
+        <UpdateCard
+          icons={{ update: Icons.update, clock: Icons.clock, install: Icons.install }}
+          onError={onError}
+        />
       </SettingGroup>
 
       <SettingGroup title="关于">

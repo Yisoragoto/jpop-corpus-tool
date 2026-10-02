@@ -19,6 +19,7 @@ pub mod pitch;
 pub mod scrape;
 pub mod state;
 pub mod tracker;
+pub mod update;
 
 
 use state::AppState;
@@ -91,6 +92,11 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::is_favorite,
             // 维护
             commands::backfill_durations,
+            // 检查更新
+            commands::update_check,
+            commands::update_changelog,
+            commands::update_download,
+            commands::update_install,
             commands::lyrics_missing,
             commands::lyrics_fill_start,
             commands::lyrics_fill_cancel,

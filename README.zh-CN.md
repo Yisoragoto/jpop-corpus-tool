@@ -36,6 +36,9 @@
 `JPOP.Corpus.Tool_x.y.z_x64-setup.exe`（或 `.msi`）。Windows 10/11 需要 **WebView2 运行时**，
 系统一般已自带，安装程序也会按需引导安装。
 
+「设置 → 系统」里可以检查更新、看更新日志，也可以直接下载安装新版本——安装包只从本仓库的
+Releases 取，装之前校验 SHA-256。自动安装默认关着。
+
 0.2.0 起桌面端换成了 Tauri 2 + React + Rust（0.1.x 是 PyQt6）。旧版 Python 代码仍留在仓库里作参考，
 数据库 `corpus.db` 两版通用。
 

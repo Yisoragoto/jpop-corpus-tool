@@ -37,6 +37,10 @@ Grab the latest `JPOP.Corpus.Tool_x.y.z_x64-setup.exe` (or the `.msi`) from
 [Releases](https://github.com/Yisoragoto/jpop-corpus-tool/releases). Windows 10/11 needs the
 **WebView2 runtime**, which the system usually already has and the installer offers to add if not.
 
+**Settings → System** checks for new releases, shows the changelog, and can download and install
+an update for you — the installer is pulled from this repository's Releases and its SHA-256 is verified
+before anything is run. Automatic installing is off by default.
+
 Since 0.2.0 the desktop app is Tauri 2 + React + Rust (0.1.x was PyQt6). The old Python code is still
 in the repository for reference, and `corpus.db` works with both.
 

@@ -1899,11 +1899,14 @@ dependencies = [
  "jp-scraper",
  "jp-tokenizer",
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "ureq",
  "windows",
 ]
 

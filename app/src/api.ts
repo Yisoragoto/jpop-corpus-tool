@@ -546,6 +546,16 @@ export const api = {
   /** 用自己的一份歌词文件覆盖这首歌的歌词。 */
   lyricsImportFile: (songId: string, path: string) =>
     call<AttachedLyrics>("lyrics_import_file", { songId, path }),
+
+  // 检查更新
+  /** 问一次 GitHub Releases：有没有比正在跑的这一版更新的。 */
+  updateCheck: () => call<UpdateStatus>("update_check"),
+  /** 最近几次发布，给「查看更新日志」用。 */
+  updateChangelog: (limit?: number) => call<ReleaseInfo[]>("update_changelog", { limit }),
+  /** 下载安装包。进度走 update://progress 事件，返回落盘路径。 */
+  updateDownload: (asset: UpdateAsset) => call<string>("update_download", { asset }),
+  /** 拉起安装程序并退出应用（NSIS 要替换正在运行的 exe）。 */
+  updateInstall: (path: string) => call<void>("update_install", { path }),
   /** 丢弃上一次扫描的结果。 */
   cancelImport: () => call<void>("cancel_import"),
 
@@ -772,6 +782,43 @@ export interface LyricsProgress {
   failed: number;
   finished: boolean;
   cancelled: boolean;
+}
+
+/** 一次发布里能装的那个文件（`update_check` 给的，原样传回 `update_download`）。 */
+export interface UpdateAsset {
+  name: string;
+  size: number;
+  url: string;
+  /** GitHub 给的 sha256，装之前要对上 */
+  sha256: string | null;
+}
+
+/** 一次发布。`notes` 是 Markdown 原文。 */
+export interface ReleaseInfo {
+  version: string;
+  tag: string;
+  name: string;
+  notes: string;
+  publishedAt: string;
+  url: string;
+  prerelease: boolean;
+  /** 能直接装的安装包；只发了 msi 时是 null */
+  installer: UpdateAsset | null;
+}
+
+export interface UpdateStatus {
+  current: string;
+  latest: ReleaseInfo | null;
+  updateAvailable: boolean;
+}
+
+/** 下载进度事件（`update://progress`）。 */
+export interface UpdateProgress {
+  received: number;
+  total: number;
+  /** downloading / done */
+  stage: string;
+  message: string;
 }
 
 export const LYRICS_SOURCE_LABELS: Record<LyricsSource, string> = {

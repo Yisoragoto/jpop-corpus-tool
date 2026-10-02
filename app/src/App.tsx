@@ -49,7 +49,7 @@ const ROUTES: { key: Route; label: string; hint: string }[] = [
 ];
 
 /** 设置不排在导航列表里，钉在左下角——和 Windows 11 设置、Niratan 一样 */
-const SETTINGS_ROUTE = { key: "settings" as const, label: "设置", hint: "外观 · 歌词 · 词典 · 制卡 · 曲库维护" };
+const SETTINGS_ROUTE = { key: "settings" as const, label: "设置", hint: "外观 · 歌词 · 词典 · 制卡 · 曲库维护 · 更新" };
 
 type Status = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready" };
 
@@ -74,6 +74,37 @@ export default function App() {
     setStageWanted(true);
   }, []);
   const consumeStage = useCallback(() => setStageWanted(false), []);
+
+  // 启动时检查更新（设置里可关）。只问版本号；开了「下载后自动安装」才会接着下。
+  // 放在这里而不是设置页：用户不进设置也该知道有新版。
+  useEffect(() => {
+    if (!settings.autoCheckUpdates) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      void api
+        .updateCheck()
+        .then(async (status) => {
+          if (!alive || !status.updateAvailable || status.latest === null) return;
+          const asset = status.latest.installer;
+          if (!settings.autoInstallUpdates || asset === null) {
+            setNotice(`有新版本 ${status.latest.version}，到「设置 → 系统」里更新`);
+            return;
+          }
+          // 用户明确开过「下载后自动安装」才走到这里；装之前先说一声要关应用
+          setNotice(`正在下载新版本 ${status.latest.version}，装好会自动重启应用`);
+          const path = await api.updateDownload(asset);
+          if (!alive) return;
+          await api.updateInstall(path);
+        })
+        .catch(() => undefined); // 没网、被限流都不该在启动时打扰用户
+    }, 4000);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+    // 开关改了之后不重新跑：这一轮已经查过了
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 字体探测很贵（本机 401 个名字冷着跑 1.8 秒），空闲时先备好，
   // 免得用户点开「显示」面板或设置页时卡在那里。结果会存进 localStorage。
