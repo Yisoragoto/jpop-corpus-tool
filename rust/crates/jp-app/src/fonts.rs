@@ -508,43 +508,45 @@ mod tests {
         assert_eq!(pick_names(&[]), None);
     }
 
-    /// 本机真实字体（Windows 上走 DirectWrite）：枚举得出来、排好序，
-    /// 而且这台机器要是装了日文字体，常见的那几个都应该在。
+    /// 本机真实字体（Windows 上走 DirectWrite）。
     ///
-    /// **「装了日文字体」是环境前提，不是被测对象。** GitHub 的 Windows runner
-    /// 一个日文字体都没有，原来这里直接断言 Meiryo 在，于是 CI 恒红——而且它一挂
-    /// `cargo test --workspace` 就停了，后面的集成测试连跑都没跑到。
-    /// 所以：一个都没有时打一行 `[skip]` 跳过（CI 上是正常的），
-    /// 有任意一个却缺别的才算失败（那说明枚举真漏了）。排序是和机器无关的，照常断言。
+    /// **断言的是和机器无关的那部分**：列得出东西、名字都不空、
+    /// 按不分大小写排好序、没有重名。这几条才是枚举本身的不变量。
+    ///
+    /// 「装了哪几个日文字体」是**环境**，不是被测对象。原来这里直接断言
+    /// Meiryo / Yu Gothic / MS Gothic 三个都在，于是 CI 恒红；改成「有一个就
+    /// 得有全部」还是红——GitHub 的 Windows runner 有 Yu Gothic 和 MS Gothic，
+    /// 偏偏没有 Meiryo。所以这部分只打印，不断言；
+    /// 真要测「日文字体名能不能正确读出来」，上面那几条加
+    /// `same_names_are_listed_once_and_localized_names_are_used_when_there_is_no_english`
+    /// 已经覆盖了。
     #[test]
-    fn installed_fonts_include_the_usual_japanese_fonts() {
+    fn installed_fonts_are_listed_once_each_and_sorted() {
         let fonts = installed_fonts().unwrap();
         if fonts.is_empty() {
-            eprintln!("[skip] 没有系统字体");
+            eprintln!("[skip] 这台机器列不出任何系统字体");
             return;
         }
         let names: Vec<&str> = fonts.iter().map(|f| f.name.as_str()).collect();
+
+        assert!(names.iter().all(|n| !n.trim().is_empty()), "有空名字");
         assert!(
             names
                 .windows(2)
                 .all(|w| w[0].to_lowercase() <= w[1].to_lowercase()),
             "要排好序"
         );
+        let unique: std::collections::HashSet<&str> = names.iter().copied().collect();
+        assert_eq!(unique.len(), names.len(), "有重名");
 
         #[cfg(windows)]
         {
+            // 只报不断言：装了哪几个日文字体因机器而异
             const JAPANESE: [&str; 3] = ["Meiryo", "Yu Gothic", "MS Gothic"];
-            let found: Vec<&str> = JAPANESE
+            let (found, missing): (Vec<&str>, Vec<&str>) = JAPANESE
                 .into_iter()
-                .filter(|name| names.contains(name))
-                .collect();
-            if found.is_empty() {
-                eprintln!("[skip] 本机没装日文字体（{JAPANESE:?} 一个都没有）");
-                return;
-            }
-            for expected in JAPANESE {
-                assert!(names.contains(&expected), "有 {found:?} 却缺 {expected}");
-            }
+                .partition(|name| names.contains(name));
+            eprintln!("[info] 本机日文字体：有 {found:?}，没有 {missing:?}（共 {} 个字体）", names.len());
         }
     }
 
