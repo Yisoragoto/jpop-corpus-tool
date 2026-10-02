@@ -14,6 +14,7 @@ pub mod fonts;
 pub mod library_admin;
 pub mod lyrics;
 pub mod maintenance;
+pub mod migrate;
 pub mod mine;
 pub mod pitch;
 pub mod scrape;
@@ -92,6 +93,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::is_favorite,
             // 维护
             commands::backfill_durations,
+            commands::migrate_plan,
+            commands::migrate_run,
             // 检查更新
             commands::update_check,
             commands::update_changelog,

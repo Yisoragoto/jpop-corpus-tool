@@ -101,8 +101,12 @@ impl Corpus {
     /// `schema.sql` 是从迁移完成的真实库里导出来的（事实来源是库本身，不是手写的副本），
     /// 全是 `IF NOT EXISTS`，对已有的库重复跑不会动任何数据。
     pub fn ensure_schema(&self) -> Result<()> {
-        self.conn
-            .execute_batch(include_str!("../schema.sql"))
+        Self::ensure_schema_on(&self.conn)
+    }
+
+    /// 同上，但作用在一个裸连接上。迁移和测试要在自己打开的连接上建表。
+    pub fn ensure_schema_on(conn: &Connection) -> Result<()> {
+        conn.execute_batch(include_str!("../schema.sql"))
             .context("建表失败")?;
         Ok(())
     }

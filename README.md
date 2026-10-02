@@ -112,6 +112,10 @@ to add cards through. That is how cards get made here — **local only, nothing 
     by hand is re-applied by text, so it survives replacing the lyrics.
 - Scraping: iTunes → MusicBrainz for tracks, Cover Art Archive for covers, Deezer for artist photos. Anything below
   the confidence threshold stops in a review queue for a human.
+- Already have a library somewhere else (a 0.1.x checkout, say)? **Settings → Library maintenance → Migrate from
+  another library directory** previews what would move, then **merges** songs, lyrics, tokenisation, credits, play
+  history and dictionaries into the current library. Songs you already have are skipped, and audio files are not
+  copied — they keep playing from where they are.
 
 ## First run
 

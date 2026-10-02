@@ -23,6 +23,7 @@ import { SettingCard, SettingGroup, SettingNote, SettingSelect, SettingSlider, S
 import { setDictionariesCollapsed, useCollapsedDictionaries } from "../dict/collapse";
 import { DictionaryManager } from "../dict/DictionaryManager";
 import { UpdateCard } from "../components/UpdateCard";
+import { MigrateCard } from "../components/MigrateCard";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
 import { lyricFontStack, useFontOptions } from "../fonts";
 import {
@@ -508,6 +509,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             disabled={busy !== null}
           />
         </SettingCard>
+        <MigrateCard icon={Icons.db} onError={onError} onChanged={onChanged} />
         <SettingCard
           icon={Icons.card}
           title="刮削与人工复核"

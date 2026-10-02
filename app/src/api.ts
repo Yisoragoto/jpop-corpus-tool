@@ -547,6 +547,13 @@ export const api = {
   lyricsImportFile: (songId: string, path: string) =>
     call<AttachedLyrics>("lyrics_import_file", { songId, path }),
 
+  // 数据迁移
+  /** 预览：把那个目录的数据搬过来会发生什么。只读。 */
+  migratePlan: (path: string) => call<MigratePlan>("migrate_plan", { path }),
+  /** 真的搬。进度走 migrate://progress 事件。 */
+  migrateRun: (path: string, options: { dictionaries: boolean; history: boolean }) =>
+    call<MigrateOutcome>("migrate_run", { path, options }),
+
   // 检查更新
   /** 问一次 GitHub Releases：有没有比正在跑的这一版更新的。 */
   updateCheck: () => call<UpdateStatus>("update_check"),
@@ -782,6 +789,49 @@ export interface LyricsProgress {
   failed: number;
   finished: boolean;
   cancelled: boolean;
+}
+
+/** 迁移预览（`migrate_plan`，只读）。 */
+export interface MigratePlan {
+  sourceSongs: number;
+  newSongs: number;
+  duplicateSongs: number;
+  lyricLines: number;
+  tokens: number;
+  people: number;
+  albums: number;
+  credits: number;
+  plays: number;
+  favorites: number;
+  corrections: number;
+  dictTerms: number;
+  jlptRows: number;
+  /** 当前库已经有词典表了——有的话不覆盖 */
+  targetHasDictionaries: boolean;
+  samples: string[];
+}
+
+/** 迁移结果（`migrate_run`）。库里的数字和文件的数字合在一起。 */
+export interface MigrateOutcome {
+  songs: number;
+  lyricLines: number;
+  tokens: number;
+  people: number;
+  albums: number;
+  credits: number;
+  plays: number;
+  favorites: number;
+  corrections: number;
+  dictTerms: number;
+  jlptRows: number;
+  skipped: number;
+  idMap: [string, string][];
+  coversCopied: number;
+  lyricsCopied: number;
+  artistPhotosCopied: number;
+  dictionariesCopied: boolean;
+  dictionariesBytes: number;
+  warnings: string[];
 }
 
 /** 一次发布里能装的那个文件（`update_check` 给的，原样传回 `update_download`）。 */

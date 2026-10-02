@@ -135,6 +135,36 @@ impl LibraryIndex {
     fn allocate(&self, num: u32) -> String {
         format!("{:0width$}", num, width = self.width)
     }
+
+    /// 这个音频路径已经在库里了吗（迁移去重用，判据和导入的那条一样）
+    pub fn song_for_path(&self, audio_path: &str) -> Option<&str> {
+        self.by_path.get(&path_key(audio_path)).map(String::as_str)
+    }
+
+    /// 同歌手同曲名的已经在库里了吗
+    pub fn song_for_identity(&self, artist: &str, title: &str) -> Option<&str> {
+        identity_key(artist, title)
+            .and_then(|key| self.by_identity.get(&key))
+            .map(|(id, _)| id.as_str())
+    }
+
+    /// 取下一个 id 并占住它。**连着分很多个时用这个**——
+    /// `plan()` 自己在批内累加，迁移那边是一首一首要，不能每次都从库里重算。
+    pub fn take_next_id(&mut self) -> String {
+        let id = self.allocate(self.next_num);
+        self.next_num += 1;
+        id
+    }
+
+    /// 把一首歌记进索引。迁移时边分边记，免得源库里本来就有的重复歌被搬两份。
+    pub fn remember(&mut self, id: &str, audio_path: &str, artist: &str, title: &str) {
+        self.by_path.insert(path_key(audio_path), id.to_string());
+        if let Some(key) = identity_key(artist, title) {
+            self.by_identity
+                .entry(key)
+                .or_insert_with(|| (id.to_string(), audio_path.to_string()));
+        }
+    }
 }
 
 /// 一份计划。

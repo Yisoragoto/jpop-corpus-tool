@@ -655,6 +655,63 @@ pub fn update_install<R: tauri::Runtime>(
     Ok(())
 }
 
+// ──────────────────────────── 数据迁移 ────────────────────────────
+
+/// 预览：把 `path` 那个语料库目录的数据搬过来会发生什么。**只读**。
+#[tauri::command]
+pub async fn migrate_plan<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    path: String,
+) -> CmdResult<jp_import::migrate::MigratePlan> {
+    blocking(app, move |state| {
+        let root = std::path::PathBuf::from(&path);
+        anyhow::ensure!(
+            crate::migrate::source_db(&root).is_file(),
+            "{} 里没有 corpus.db",
+            root.display()
+        );
+        anyhow::ensure!(
+            root != state.db_path.parent().unwrap_or(&root),
+            "源目录就是当前库，不用迁移"
+        );
+        crate::migrate::plan(state.corpus().connection(), &root)
+    })
+    .await
+}
+
+/// 真的搬。进度走 `migrate://progress` 事件。
+///
+/// 两百多万行词条 + 两百首歌的歌词分词，整件事几十秒，所以走 `spawn_blocking`，
+/// 并且每一步报一句——否则界面只能干等。
+#[tauri::command]
+pub async fn migrate_run<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    path: String,
+    options: jp_import::migrate::MigrateOptions,
+) -> CmdResult<crate::migrate::MigrateOutcome> {
+    let handle = app.clone();
+    blocking(app, move |state| {
+        let source = std::path::PathBuf::from(&path);
+        let target_root = state
+            .db_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_default();
+        anyhow::ensure!(source != target_root, "源目录就是当前库，不用迁移");
+        let mut corpus = state.corpus();
+        crate::migrate::run(
+            corpus.connection_mut(),
+            &source,
+            &target_root,
+            options,
+            |step| {
+                let _ = handle.emit("migrate://progress", step.to_string());
+            },
+        )
+    })
+    .await
+}
+
 /// 播放状态 + 走一拍收听统计。**前端的轮询应当调这个，不是 `audio_state`。**
 ///
 /// 名字里带 tick 是因为它**有副作用**：会把收听时长累加进会话，

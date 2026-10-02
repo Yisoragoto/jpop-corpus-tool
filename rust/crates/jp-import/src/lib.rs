@@ -17,6 +17,7 @@ pub mod filename;
 pub mod import;
 pub mod lrc;
 pub mod maintain;
+pub mod migrate;
 pub mod metadata_csv;
 pub mod plan;
 pub mod scan;
