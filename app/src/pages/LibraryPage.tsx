@@ -286,9 +286,18 @@ export function LibraryPage({ library, actions, playback, audioReady, onAudioErr
     "--lyric-font": lyricFontStack(display.fontFamily, display.fallbackFamily),
   } as CSSProperties;
 
-  // 当前行由位置推导，不是引擎给的——见 usePlayback.ts
-  const currentLine = useCurrentLine(lyrics, playback.positionSec);
+  // 当前行由位置推导，不是引擎给的——见 usePlayback.ts。
+  // **歌词属于 selected，位置属于正在放的那一首**，换歌的一瞬间两者不是同一首。
+  const lyricsArePlaying = selected !== null && playback.songId === selected.id;
+  const currentLine = useCurrentLine(lyrics, playback.positionSec, lyricsArePlaying);
   const loopLine = useLineLoop(lyrics, playback.durationSec);
+
+  // 换歌先回到开头。歌词栏是个常驻的滚动容器，内容换了 scrollTop 不会跟着变，
+  // 上一首滚到了 3:38 的位置，新歌一进来就停在半腰。
+  // 放在跨页跳转那个 effect 前面：那边用 rAF 滚到指定行，后发生，赢。
+  useEffect(() => {
+    lyricsRef.current?.scrollTo({ top: 0 });
+  }, [selected?.id]);
 
   // 跨页跳转过来时滚到指定行
   useEffect(() => {
@@ -303,10 +312,12 @@ export function LibraryPage({ library, actions, playback, audioReady, onAudioErr
   }, [library.pendingScrollUtterance, lyrics, actions]);
 
   // 歌词跟随。只在播放时滚——用户手动翻歌词时被抢走滚动位置很烦人。
+  // 也只在看的就是正在放的那一首时滚：否则换歌、或者一边放一边翻别的歌时，
+  // 另一首的位置会把这一屏歌词拖走。
   useEffect(() => {
-    if (playback.playState !== "playing") return;
+    if (!lyricsArePlaying || playback.playState !== "playing") return;
     currentLineRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [currentLine, playback.playState]);
+  }, [currentLine, playback.playState, lyricsArePlaying]);
 
   /** 一行歌词：词之间的原文 + 可点的词（里面带振假名）。普通视图和全屏共用 */
   const renderLineText = (idx: number): ReactNode => {

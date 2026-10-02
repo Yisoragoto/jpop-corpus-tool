@@ -4,6 +4,11 @@
  * 唯一的本地状态是「进度条正在被拖动」——拖动期间不能被轮询回来的
  * 位置覆盖，否则手指还没松开滑块就跳回去了。
  *
+ * **松手的监听常驻**，不随「正在拖」挂上去：effect 在渲染之后才跑，
+ * 而在进度条上点一下（按下即改值、立刻松手）时，pointerup 往往早于
+ * 那次 effect——第一下于是只改了显示、没发 seek，看起来就是
+ * 「要点两次才跳得过去」。常驻监听没有这个时序窗口。
+ *
  * 版面照 Spotify 的三栏：左边这首歌、中间走带和进度、右边工具和音量。
  * 控件按 Windows 11 的质感做（半透明填充 + 细描边 + 悬停变亮），
  * 窗口本身开了 Mica，所以这一条留了透明度，桌面的颜色会透上来。
@@ -32,21 +37,32 @@ interface Props {
 
 export function Player({ state, spectrum, title, artist, coverPath, disabled, onError }: Props) {
   const [scrubbing, setScrubbing] = useState<number | null>(null);
+  /** 和 scrubbing 同步的副本，给常驻的 pointerup 读——监听器只挂一次，闭包里拿不到最新的 state */
+  const scrubRef = useRef<number | null>(null);
   const duration = state.durationSec;
   const position = scrubbing ?? state.positionSec;
   const playing = state.playState === "playing";
   const idle = state.playState === "empty" && !state.pitchRendering;
 
   // 换歌时丢掉拖动中的位置，否则新歌会从旧位置开始显示
-  useEffect(() => setScrubbing(null), [state.songId]);
+  useEffect(() => {
+    scrubRef.current = null;
+    setScrubbing(null);
+  }, [state.songId]);
 
   // 松手在哪都算数：只听滑块自己的 mouseup 的话，拖出滑块再松手就白拖了，
-  // 进度条弹回原处，看着像「拖不动」
+  // 进度条弹回原处，看着像「拖不动」。**只挂一次**，理由见文件头。
   useEffect(() => {
-    if (scrubbing === null) return;
     const commit = () => {
-      void api.audioSeek(scrubbing);
-      setScrubbing(null);
+      const target = scrubRef.current;
+      if (target === null) return;
+      scrubRef.current = null;
+      // 等引擎真的跳过去再放开显示。先清空的话，下一拍轮询回来的还是
+      // 跳之前的位置，进度条会先弹回去再跳过来，看着像「跳歪了」。
+      void api
+        .audioSeek(target)
+        .catch(() => undefined)
+        .finally(() => setScrubbing(null));
     };
     window.addEventListener("pointerup", commit);
     window.addEventListener("pointercancel", commit);
@@ -54,7 +70,12 @@ export function Player({ state, spectrum, title, artist, coverPath, disabled, on
       window.removeEventListener("pointerup", commit);
       window.removeEventListener("pointercancel", commit);
     };
-  }, [scrubbing]);
+  }, []);
+
+  const scrub = (value: number) => {
+    scrubRef.current = value;
+    setScrubbing(value);
+  };
 
   // 变调失败（已退回原调）只提示一次
   const shownPitchError = useRef<number | null>(null);
@@ -86,10 +107,17 @@ export function Player({ state, spectrum, title, artist, coverPath, disabled, on
             step={0.05}
             value={duration ? Math.min(position, duration) : 0}
             disabled={disabled || !duration}
-            onChange={(e) => setScrubbing(Number(e.target.value))}
+            onChange={(e) => scrub(Number(e.target.value))}
             onKeyUp={() => {
-              if (scrubbing !== null) void api.audioSeek(scrubbing);
-              setScrubbing(null);
+              // 键盘调进度：方向键改完就跳。和鼠标那条路各走各的，
+              // 因为键盘没有 pointerup。
+              const target = scrubRef.current;
+              if (target === null) return;
+              scrubRef.current = null;
+              void api
+                .audioSeek(target)
+                .catch(() => undefined)
+                .finally(() => setScrubbing(null));
             }}
             aria-label="播放进度"
           />

@@ -126,13 +126,20 @@ struct RateControlled<S: Source> {
 impl<S: Source> RateControlled<S> {
     fn new(source: S, shared: Arc<Shared>) -> Self {
         let rate = shared.rate();
-        let position = shared.position_sec();
         Self {
             inner: Wsola::new(source, rate),
             shared,
             applied: rate,
             countdown: 0,
-            position,
+            // **从 0 数起，不要去读 shared 里的位置。** 一个 source 永远是从
+            // 它自己的开头开始吐样本的；读 shared 等于把上一首的位置抄过来，
+            // 然后每个样本再往上加——换一首歌，进度条和位置就接着上一首走。
+            // 表现：播到 4:08 切下一首，新歌的位置报 4:08 并继续往上数，
+            // 进度条顶在最右边，歌词跟随把整屏歌词滚到最后一行。
+            //
+            // 要从中间开始放的情形（变调换版本、放完再拖回去）由 `load_at`
+            // 在 append 之后显式 seek 一次，`try_seek` 会把两边都设对。
+            position: 0.0,
         }
     }
 
@@ -339,7 +346,9 @@ impl AudioEngine {
         let source = playback_chain(decoder, &self.shared, &self.tap, self.output);
 
         self.player.clear();
-        // 位置先摆到起点：新的一首从这里开始数
+        // 位置先摆到起点。新 source 自己也从 0 数（见 `RateControlled::new`），
+        // 这一行管的是 append 到第一个样本吐出来之间那一小段：
+        // 不清的话界面会先闪一下上一首的位置。
         self.shared.set_position_sec(0.0);
         self.player.append(source);
         let same_song = self.shared.loaded.load(Ordering::Relaxed)
@@ -890,6 +899,39 @@ mod tests {
         assert!(e.state().loop_region.is_none(), "换歌要清掉循环");
         e.stop();
         let _ = std::fs::remove_file(file);
+    }
+
+    /// 换一首歌，位置要从头开始数。
+    ///
+    /// 以前 `RateControlled::new` 把 `shared` 里的位置抄进新 source 当起点，
+    /// 于是播到 4:08 切下一首，新歌的位置报 4:08 并接着往上数：
+    /// 进度条顶在最右边，歌词跟随把整屏歌词滚到最后一行
+    /// （用户报的「播完一首切另一首，歌词总跑到最下面」）。
+    #[test]
+    fn switching_songs_restarts_the_position_at_zero() {
+        let e = engine_or_skip!();
+        // 时长各不相同：silent_wav 的文件名只带秒数，和别的测试撞名字时
+        // 会被对方删掉（并行跑的时候），表现为「打不开音频文件」
+        let first = silent_wav(9);
+        let second = silent_wav(10);
+        e.load(&first, "A").unwrap();
+        e.seek(4.0).unwrap();
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(e.state().position_sec > 3.5, "前提：A 已经放到靠后的位置");
+
+        e.load(&second, "B").unwrap();
+        std::thread::sleep(Duration::from_millis(250));
+        let state = e.state();
+        assert_eq!(state.song_id, "B");
+        assert!(
+            state.position_sec < 1.0,
+            "换歌之后位置应当从头数，实际 {}",
+            state.position_sec
+        );
+
+        e.stop();
+        let _ = std::fs::remove_file(first);
+        let _ = std::fs::remove_file(second);
     }
 
     /// 等到这首播完（没有声卡时上面已经跳过了）
