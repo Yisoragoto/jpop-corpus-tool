@@ -32,10 +32,24 @@ interface Props {
   coverPath?: string | null | undefined;
   /** 引擎不可用时整条禁用，并说明原因 */
   disabled: boolean;
+  /** 频谱条开不开（设置里可关）。关掉时连采样轮询一起停，由上层决定 */
+  showSpectrum: boolean;
+  /** 点左下角这首歌：进全屏歌词。没有选中曲目时传 null，卡片就不可点 */
+  onOpenStage: (() => void) | null;
   onError: (message: string) => void;
 }
 
-export function Player({ state, spectrum, title, artist, coverPath, disabled, onError }: Props) {
+export function Player({
+  state,
+  spectrum,
+  title,
+  artist,
+  coverPath,
+  disabled,
+  showSpectrum,
+  onOpenStage,
+  onError,
+}: Props) {
   const [scrubbing, setScrubbing] = useState<number | null>(null);
   /** 和 scrubbing 同步的副本，给常驻的 pointerup 读——监听器只挂一次，闭包里拿不到最新的 state */
   const scrubRef = useRef<number | null>(null);
@@ -94,7 +108,7 @@ export function Player({ state, spectrum, title, artist, coverPath, disabled, on
 
   return (
     <footer className={`player ${disabled ? "off" : ""}`}>
-      <Spectrum bands={spectrum} active={playing} />
+      {showSpectrum && <Spectrum bands={spectrum} active={playing} />}
 
       <div className="seek-row">
         <span className="time">{formatDuration(position)}</span>
@@ -127,7 +141,19 @@ export function Player({ state, spectrum, title, artist, coverPath, disabled, on
       </div>
 
       <div className="player-row">
-        <div className="player-now">
+        <div
+          className={`player-now ${onOpenStage ? "clickable" : ""}`}
+          role={onOpenStage ? "button" : undefined}
+          tabIndex={onOpenStage ? 0 : undefined}
+          title={onOpenStage ? "打开全屏歌词" : undefined}
+          onClick={() => onOpenStage?.()}
+          onKeyDown={(e) => {
+            if (onOpenStage && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault();
+              onOpenStage();
+            }
+          }}
+        >
           <Cover path={coverPath} size={48} rounded={6} />
           <div className="now">
             <span className="now-title">{title || "—"}</span>

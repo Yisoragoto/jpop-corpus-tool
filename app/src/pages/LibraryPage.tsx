@@ -116,9 +116,22 @@ interface Props {
   onAudioError: (message: string) => void;
   /** 删歌、改歌之后总览的数字要重拉 */
   onLibraryChanged: () => void;
+  /** 外面（播放条左下角那张卡片）请求打开全屏歌词 */
+  stageWanted?: boolean;
+  /** 收到了，把请求清掉 */
+  onStageConsumed?: () => void;
 }
 
-export function LibraryPage({ library, actions, playback, audioReady, onAudioError, onLibraryChanged }: Props) {
+export function LibraryPage({
+  library,
+  actions,
+  playback,
+  audioReady,
+  onAudioError,
+  onLibraryChanged,
+  stageWanted = false,
+  onStageConsumed,
+}: Props) {
   const { tracks, selected, lyrics, credits, lyricsLoading, word, wordLoading, activeLemma } =
     library;
   const [filter, setFilter] = useState("");
@@ -263,6 +276,14 @@ export function LibraryPage({ library, actions, playback, audioReady, onAudioErr
   useLyricFontFiles([display.fontFamily, display.fallbackFamily], onAudioError);
   // 全屏歌词；stageSide 是全屏里右边的查词栏（点了词才出来）
   const [stageOpen, setStageOpen] = useState(false);
+  // 播放条左下角那张卡片点一下就进全屏。**请求 + 消费**，和跨页跳转那条路一样：
+  // 点卡片时这一页往往还没挂载（人在分析页），用「计数变了才算」会把请求漏掉——
+  // 挂载时读到的就是新值，看着像没变过。
+  useEffect(() => {
+    if (!stageWanted) return;
+    onStageConsumed?.();
+    if (selected !== null) setStageOpen(true);
+  }, [stageWanted, selected, onStageConsumed]);
   const [stageSide, setStageSide] = useState(false);
   const closeStage = useCallback(() => setStageOpen(false), []);
   // 每行拆成「词之间的原文 + 词（里面带注音）」。播放轮询每秒重渲染 10 次，拆分结果要缓存

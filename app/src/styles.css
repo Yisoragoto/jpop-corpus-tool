@@ -324,6 +324,23 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
   background:
     linear-gradient(180deg, var(--stage-color, #1a1a20) 0%, rgba(10, 10, 13, .96) 62%, #0a0a0d 100%),
     #0a0a0d;
+  /* 进场：淡入 + 从底下抬一点点。只动 opacity / transform，这两样走合成器，
+     不会因为全屏那一屏歌词的布局而掉帧。 */
+  animation: stage-in 220ms cubic-bezier(.2, .8, .3, 1) both;
+}
+@keyframes stage-in {
+  from { opacity: 0; transform: translateY(14px) scale(.995); }
+  to { opacity: 1; transform: none; }
+}
+/* 歌词再单独迟 60ms 浮上来一点，进场有个先后，不是整块一起平移 */
+.stage .stage-body { animation: stage-body-in 320ms 60ms cubic-bezier(.2, .8, .3, 1) both; }
+@keyframes stage-body-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+/* 系统里关了动画效果就别动 */
+@media (prefers-reduced-motion: reduce) {
+  .stage, .stage .stage-body { animation: none; }
 }
 /* 封面虚化铺满（设置里开）。`scale` 是必须的——blur 会把边缘晕成透明，
    不放大就能看见一圈灰边。 */
@@ -459,6 +476,10 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 
 /* 左：这首歌 */
 .player-now { display: flex; align-items: center; gap: 11px; min-width: 0; }
+/* 左下角这张卡片可以点：进全屏歌词 */
+.player-now.clickable { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; }
+.player-now.clickable:hover { background: var(--control-hover); }
+.player-now.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .now { display: flex; flex-direction: column; min-width: 0; }
 .now-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .now-artist { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -605,8 +626,17 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .body { flex: 1; min-height: 0; display: flex; }
 .body > * { flex: 1; min-height: 0; }
 
-/* 内容页限宽：一行文字横穿 1600px 没法读。三栏的曲库 / 检索不走这个类 */
-.page { overflow-y: auto; padding: 16px 20px 32px; max-width: 1180px; }
+/* 内容页。三栏的曲库 / 检索不走这个类。
+   **限宽加在内容上，不加在滚动容器上**：加在 `.page` 自己身上的话，滚动条会跟着
+   缩到 1180px 处，右边一大片空白里飘着一根滚动条——窗口一最大化就很明显。
+   现在滚动条贴窗口边，里面的区块限宽并居中；文字块另有自己的 64ch 上限。 */
+.page {
+  overflow-y: auto;
+  /* 左右留白由 padding 给：滚动条还在窗口边上，内容居中且最宽 1600px。
+     不用「子元素 max-width + margin auto」是因为那条规则和 `.section` 等
+     同样是一个 class 的特异性，后定义的 margin 会把居中覆盖掉。 */
+  padding: 16px max(20px, calc((100% - 1600px) / 2)) 32px;
+}
 /* 页首那句说明。页名不在这里重复——命令栏里已经有了 */
 .page-lead { margin: 0 0 24px; font-size: 13px; color: var(--muted); max-width: 64ch; line-height: 1.75; }
 .pad-x { padding: 0 20px; }
@@ -1061,7 +1091,10 @@ button.chip:hover { color: var(--fg); }
 
 /* ── 设置页：Windows 11 设置 / WinUI 的 SettingsCard ──
    一组行挨在一起、圆角只在头尾，看上去是一块。左图标、中文字、右控件。 */
-.settings-page { max-width: 980px; }
+/* 设置页窄一些：一行一个开关，拉太宽标题和控件会离得很远（Win11 设置也这样）。
+   自己限了宽就要把上面那份居中 padding 换掉——**百分比 padding 按包含块算**，
+   不是按自己的宽度，照搬会在 980px 的盒子里留出 2×376px 的内边距，内容只剩 200 多。 */
+.settings-page { max-width: 980px; margin-inline: auto; padding-inline: 20px; }
 .setting-group { margin-bottom: 26px; }
 .setting-group-title { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
 .setting-rows { display: flex; flex-direction: column; gap: 3px; }

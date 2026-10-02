@@ -17,6 +17,8 @@ export interface AppSettings {
   stageBlurRadius: number;
   /** 封面网格先显示歌手，点进去才是他的歌 */
   gridByArtist: boolean;
+  /** 播放条上的频谱条。关掉之后连采样轮询一起停，不再每 50ms 问一次引擎 */
+  spectrum: boolean;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
@@ -25,6 +27,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   stageCoverBlur: true,
   stageBlurRadius: 64,
   gridByArtist: true,
+  spectrum: true,
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -43,6 +46,7 @@ export function parseSettings(raw: string | null): AppSettings {
       stageCoverBlur: typeof parsed.stageCoverBlur === "boolean" ? parsed.stageCoverBlur : d.stageCoverBlur,
       stageBlurRadius: clamp(parsed.stageBlurRadius, STAGE_BLUR_LIMITS, d.stageBlurRadius),
       gridByArtist: typeof parsed.gridByArtist === "boolean" ? parsed.gridByArtist : d.gridByArtist,
+      spectrum: typeof parsed.spectrum === "boolean" ? parsed.spectrum : d.spectrum,
     };
   } catch {
     return DEFAULT_SETTINGS;

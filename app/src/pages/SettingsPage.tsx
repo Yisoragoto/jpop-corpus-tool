@@ -126,6 +126,11 @@ const Icons = {
       <path d="M12 7.5V12l3 2" />
     </svg>
   ),
+  wave: (
+    <svg {...ICON}>
+      <path d="M4 12h2l2-5 3 10 3-13 3 8h3" />
+    </svg>
+  ),
   lyrics: (
     <svg {...ICON}>
       <path d="M4 6h10M4 11h16M4 16h12" />
@@ -318,6 +323,17 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             />
           </SettingCard>
         )}
+        <SettingCard
+          icon={Icons.wave}
+          title="播放条上的音频可视化"
+          description="播放条顶上那排随音乐跳动的频谱条。关掉之后连采样一起停，不再每 50ms 问一次引擎。"
+        >
+          <Switch
+            checked={settings.spectrum}
+            onChange={(v) => updateSettings({ spectrum: v })}
+            label="显示音频可视化"
+          />
+        </SettingCard>
         <SettingCard
           icon={Icons.grid}
           title="曲库的封面网格先显示歌手"

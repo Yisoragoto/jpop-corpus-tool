@@ -17,6 +17,8 @@ import { CommandPalette, type PaletteCommand, type PaletteMode } from "./compone
 import { NavIcon } from "./components/NavIcons";
 import { invalidatePerformers } from "./components/PerformerPicker";
 import { Player } from "./components/Player";
+import { warmFontOptions } from "./fonts";
+import { useAppSettings } from "./settings";
 import { Stat } from "./components/Stat";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { HomePage } from "./pages/HomePage";
@@ -60,9 +62,22 @@ export default function App() {
   const [navOpen, setNavOpen] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const settings = useAppSettings();
   const audioReady = health?.audioReady ?? false;
   const playback = usePlaybackState(audioReady);
-  const spectrum = useSpectrum(audioReady, playback.playState === "playing");
+  // 频谱关掉时连轮询一起停：没人看的东西不值得每 50ms 问一次引擎
+  const spectrum = useSpectrum(audioReady && settings.spectrum, playback.playState === "playing");
+  /** 「进全屏歌词」的请求。曲库页收到之后自己清掉（和跨页跳转同一个路子） */
+  const [stageWanted, setStageWanted] = useState(false);
+  const openStage = useCallback(() => {
+    setRoute("library");
+    setStageWanted(true);
+  }, []);
+  const consumeStage = useCallback(() => setStageWanted(false), []);
+
+  // 字体探测很贵（本机 401 个名字冷着跑 1.8 秒），空闲时先备好，
+  // 免得用户点开「显示」面板或设置页时卡在那里。结果会存进 localStorage。
+  useEffect(warmFontOptions, []);
 
   const onError = useCallback((message: string) => setNotice(message), []);
   const [library, actions] = useLibrary(audioReady, onError);
@@ -323,6 +338,8 @@ export default function App() {
             audioReady={audioReady}
             onAudioError={onError}
             onLibraryChanged={refreshOverview}
+            stageWanted={stageWanted}
+            onStageConsumed={consumeStage}
           />
         )}
         {route === "explorer" && (
@@ -374,6 +391,9 @@ export default function App() {
         artist={library.selected?.artist ?? ""}
         coverPath={library.selected?.coverPath}
         disabled={!audioReady}
+        showSpectrum={settings.spectrum}
+        // 没选中曲目时没有歌词可全屏，卡片就不可点
+        onOpenStage={library.selected ? openStage : null}
         onError={onError}
       />
     </div>

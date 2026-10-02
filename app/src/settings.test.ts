@@ -15,10 +15,15 @@ describe("应用设置", () => {
   });
 
   it("类型不对的字段逐个退回默认值，不整份丢掉", () => {
-    const got = parseSettings(JSON.stringify({ stageCoverBlur: "yes", stageBlurRadius: 40, gridByArtist: false }));
+    const got = parseSettings(
+      JSON.stringify({ stageCoverBlur: "yes", stageBlurRadius: 40, gridByArtist: false, spectrum: 0 }),
+    );
     expect(got.stageCoverBlur).toBe(DEFAULT_SETTINGS.stageCoverBlur);
     expect(got.stageBlurRadius).toBe(40);
     expect(got.gridByArtist).toBe(false);
+    // 0 不是 false，坏值退回默认（开着）
+    expect(got.spectrum).toBe(DEFAULT_SETTINGS.spectrum);
+    expect(parseSettings(JSON.stringify({ spectrum: false })).spectrum).toBe(false);
   });
 
   it("虚化强度夹在可调范围里", () => {
