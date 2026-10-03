@@ -193,7 +193,8 @@ pub struct ExportOptions {
     pub skip_without_examples: bool,
     pub dup_mode: DupMode,
     pub dup_scope: DupScope,
-    pub audio: Option<AudioOptions>,
+    /// 给例句切音频片段（见 `audio.rs`）
+    pub clip_audio: bool,
 }
 
 impl Default for ExportOptions {
@@ -205,7 +206,7 @@ impl Default for ExportOptions {
             skip_without_examples: true,
             dup_mode: DupMode::default(),
             dup_scope: DupScope::default(),
-            audio: None,
+            clip_audio: false,
         }
     }
 }
@@ -276,8 +277,8 @@ pub fn export_word(
     if !anki.can_add_note(&note(&card))? {
         return on_duplicate(anki, &card, options);
     }
-    if let Some(audio) = &options.audio {
-        card.sentence_audio = crate::audio::attach(anki, audio, &card.examples)?;
+    if options.clip_audio {
+        card.sentence_audio = crate::audio::attach(anki, &card.examples)?;
     }
 
     match anki.call("addNote", json!({ "note": note(&card) })) {
@@ -862,10 +863,7 @@ mod tests {
             ("findNotes", json!([])),
         ]));
         let options = ExportOptions {
-            audio: Some(AudioOptions {
-                ffmpeg: "ffmpeg-that-does-not-exist".into(),
-                work_dir: std::env::temp_dir(),
-            }),
+            clip_audio: true,
             ..Default::default()
         };
         let _ = export_word(&client(fake.clone()), &conn, "夜", "NOUN", &options).unwrap();

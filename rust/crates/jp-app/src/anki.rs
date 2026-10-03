@@ -165,18 +165,6 @@ pub fn spawn_export<R: Runtime>(
     Ok(())
 }
 
-/// 能切音频时给出切音频要的东西。
-///
-/// ffmpeg 找 PATH 和项目根目录（`corpus.db` 所在的目录），和 Python 一致；
-/// 临时目录名也沿用 Python 的 `jpop_anki_clips`。
-pub fn audio_options(db_path: &std::path::Path) -> Option<jp_anki::AudioOptions> {
-    let root = db_path.parent()?;
-    Some(jp_anki::AudioOptions {
-        ffmpeg: jp_anki::audio::find_ffmpeg(root)?,
-        work_dir: std::env::temp_dir().join("jpop_anki_clips"),
-    })
-}
-
 fn emit<R: Runtime>(app: &AppHandle<R>, progress: ExportProgress) {
     let _ = app.emit("anki://progress", progress);
 }
@@ -468,26 +456,6 @@ pub fn describe(err: &AnkiError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn ffmpeg_next_to_the_database_is_found() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .nth(3)
-            .unwrap();
-        let exe = if cfg!(windows) {
-            "ffmpeg.exe"
-        } else {
-            "ffmpeg"
-        };
-        if !root.join(exe).is_file() {
-            eprintln!("跳过：项目根目录没有 ffmpeg");
-            return;
-        }
-        let audio = audio_options(&root.join("corpus.db")).expect("该找到 ffmpeg");
-        assert!(audio.ffmpeg.is_file());
-        assert!(audio.work_dir.ends_with("jpop_anki_clips"));
-    }
 
     #[test]
     fn example_count_is_clamped_to_something_sane() {

@@ -2013,10 +2013,8 @@ pub fn anki_export_start<R: tauri::Runtime>(
     let mut options = crate::anki::options(deck, max_examples.unwrap_or(2), max_dicts);
     options.dup_mode = dup_mode.unwrap_or_default();
     options.dup_scope = dup_scope.unwrap_or_default();
-    // 有 ffmpeg 就默认切音频，和 Python 的默认一致
-    if clip_audio.unwrap_or(true) {
-        options.audio = crate::anki::audio_options(&state.db_path);
-    }
+    // 默认切音频，和 Python 的默认一致
+    options.clip_audio = clip_audio.unwrap_or(true);
     crate::anki::spawn_export(app, state.anki_job(), state.db_path.clone(), words, options)?;
     Ok(total)
 }
@@ -2030,12 +2028,6 @@ pub fn anki_cancel(state: State<'_, AppState>) -> CmdResult<()> {
 #[tauri::command]
 pub fn anki_is_running(state: State<'_, AppState>) -> CmdResult<bool> {
     Ok(state.anki_job().is_running())
-}
-
-/// 有没有 ffmpeg。没有时界面把「音频片段」禁掉，和 Python 一样。
-#[tauri::command(async)]
-pub fn anki_audio_available(state: State<'_, AppState>) -> CmdResult<bool> {
-    Ok(crate::anki::audio_options(&state.db_path).is_some())
 }
 
 /// 更新选中的词：只重查读音、释义、JLPT、音高、词频、词性，不动例句和音频。后台跑。

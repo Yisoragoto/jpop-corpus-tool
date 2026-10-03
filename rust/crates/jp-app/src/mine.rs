@@ -299,7 +299,6 @@ pub fn mine(state: &AppState, request: &MineRequest) -> Result<MineOutcome> {
         main_dictionary: request.main_dictionary.clone(),
         kind: request.kind,
         tags: vec!["jpop-corpus".to_owned()],
-        audio: crate::anki::audio_options(&state.db_path),
     };
     let anki = crate::anki::client();
     jp_anki::mine::mine(

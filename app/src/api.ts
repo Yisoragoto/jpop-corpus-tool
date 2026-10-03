@@ -684,8 +684,6 @@ export const api = {
   /** 刷新旧牌组。后台跑。 */
   ankiRefreshStart: (deck: string, scope: AnkiRefreshScope) =>
     call<void>("anki_refresh_start", { deck, scope }),
-  /** 本机有没有 ffmpeg（能不能切音频片段）。 */
-  ankiAudioAvailable: () => call<boolean>("anki_audio_available"),
   ankiCancel: () => call<void>("anki_cancel"),
   ankiIsRunning: () => call<boolean>("anki_is_running"),
   /** 挖词报告：读 collection、写 output/corpus_report.html 并用浏览器打开。now 是本地时间 YYYY-MM-DD HH:MM */

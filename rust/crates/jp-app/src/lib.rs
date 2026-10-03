@@ -149,7 +149,6 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::anki_export_start,
             commands::anki_cancel,
             commands::anki_is_running,
-            commands::anki_audio_available,
             commands::anki_update_start,
             commands::anki_refresh_preview,
             commands::anki_refresh_start,

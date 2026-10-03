@@ -72,7 +72,6 @@ export function AnkiPage({ onError }: Props) {
   const [log, setLog] = useState<AnkiProgress[]>([]);
   const [dupMode, setDupMode] = useState<AnkiDupMode>("append");
   const [dupScope, setDupScope] = useState<AnkiDupScope>("deck");
-  const [audioAvailable, setAudioAvailable] = useState(false);
   const [clipAudio, setClipAudio] = useState(true);
   const [refreshScope, setRefreshScope] = useState<AnkiRefreshScope>("deck");
   /** 范围内的旧卡数；null 表示还没数 */
@@ -108,7 +107,6 @@ export function AnkiPage({ onError }: Props) {
       })
       .catch(() => undefined);
     void api.ankiIsRunning().then(setRunning).catch(() => undefined);
-    void api.ankiAudioAvailable().then(setAudioAvailable).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -172,7 +170,7 @@ export function AnkiPage({ onError }: Props) {
         deck,
         maxExamples,
         maxDicts,
-        { dupMode, dupScope, clipAudio: audioAvailable && clipAudio },
+        { dupMode, dupScope, clipAudio },
       );
       setRunning(true);
       setProgress(startedProgress("export", total));
@@ -181,7 +179,7 @@ export function AnkiPage({ onError }: Props) {
     } finally {
       setBusy(false);
     }
-  }, [words, picked, deck, maxExamples, maxDicts, dupMode, dupScope, audioAvailable, clipAudio]);
+  }, [words, picked, deck, maxExamples, maxDicts, dupMode, dupScope, clipAudio]);
 
   const startUpdate = useCallback(async () => {
     const selected = words.filter((w) => picked.has(w.lemma));
@@ -433,20 +431,8 @@ export function AnkiPage({ onError }: Props) {
           <h2>导出</h2>
         </div>
         <div className="toolbar">
-          <label
-            className="check"
-            title={
-              audioAvailable
-                ? "用 ffmpeg 从原曲里切出例句那一句，放进卡片"
-                : "找不到 ffmpeg（PATH 或项目根目录）"
-            }
-          >
-            <input
-              type="checkbox"
-              checked={audioAvailable && clipAudio}
-              disabled={!audioAvailable}
-              onChange={(e) => setClipAudio(e.target.checked)}
-            />
+          <label className="check" title="从原曲里切出例句那一句，放进卡片">
+            <input type="checkbox" checked={clipAudio} onChange={(e) => setClipAudio(e.target.checked)} />
             音频片段
           </label>
           <label className="check">

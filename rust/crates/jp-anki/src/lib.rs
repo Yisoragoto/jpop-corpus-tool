@@ -20,13 +20,14 @@ pub mod learning;
 pub mod lyrics_model;
 pub mod mine;
 pub mod mining_report;
+pub mod mp3;
 pub mod model;
 
 pub use connect::{AnkiConnect, AnkiError};
 pub use card::{Card, CardOptions, Example, WordFields, word_fields};
 pub use dict::{Definition, WordInfo};
 pub use export::{
-    AudioOptions, DupMode, DupScope, ExportOptions, ExportOutcome, PickOptions, RefreshOutcome,
+    DupMode, DupScope, ExportOptions, ExportOutcome, PickOptions, RefreshOutcome,
     RefreshScope, RefreshTarget, WordCandidate, export_word, missing_deck_message, pick_words,
     refresh_target, refresh_targets, update_word,
 };

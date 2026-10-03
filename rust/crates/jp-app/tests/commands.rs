@@ -335,8 +335,6 @@ fn every_registered_command_is_reachable() {
         ("people_by_role", json!({ "role": "composer", "limit": 1 })),
         // 只放只读的；保存和撤销会写库，在下面的临时副本上测
         ("token_correction", json!({ "utteranceId": 1 })),
-        // 只看本机有没有 ffmpeg，不连 Anki
-        ("anki_audio_available", json!({})),
     ] {
         let result = invoke(&w, cmd, args);
         if let Err(err) = &result {

@@ -65,7 +65,6 @@ fn main() -> anyhow::Result<()> {
         main_dictionary,
         kind: LapisCardKind::WordAndSentence,
         tags: vec!["jpop-corpus".into()],
-        audio: None,
     };
     let sentence = MineSentence { text: &line, offset, utterance_id: 0, time_sec: Some(60.0), end_sec: None };
     let source = MineSource { artist: "サカナクション", title: "ナイロンの糸", album: "", audio_path: "", cover_path: "" };

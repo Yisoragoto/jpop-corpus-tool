@@ -19,3 +19,9 @@ rusqlite = { version = "0.40", features = ["bundled", "collation"] }
 jp-scraper = { path = "../jp-scraper" }
 # 一键制卡：查词结果和 Yomitan 格式的卡片字段
 jp-dict = { path = "../jp-dict" }
+# 例句音频片段：解码和播放用同一个解码器，切出来的时间才和播放时听到的一致
+jp-audio = { path = "../jp-audio" }
+# 片段编成 MP3。里面是 LAME 3.100 的源码，Windows 上用 cc + MSVC 编（和 bundled SQLite 一样），
+# 不需要 bindgen / libclang。ffmpeg 的 `-acodec libmp3lame` 用的就是它，参数能逐一对上。
+# 以前靠 ffmpeg 子进程，安装包又不带 ffmpeg，没装的人制卡就没有例句音频。
+mp3lame-encoder = "0.2"

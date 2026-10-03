@@ -51,8 +51,10 @@ pub fn cache_path(cache_dir: &Path, source: &Path, semitones: i32) -> std::io::R
     Ok(cache_dir.join(cache_file_name(&path, mtime_ns, metadata.len(), semitones, &stem)))
 }
 
-/// `canonicalize` 在 Windows 上带 `\\?\` 前缀，Python 的 `Path.resolve()` 不带
-fn plain_path(path: &Path) -> String {
+/// `canonicalize` 在 Windows 上带 `\\?\` 前缀，Python 的 `Path.resolve()` 不带。
+///
+/// Anki 例句片段的名字也拿它当「规范化后的音频路径」（`jp-anki` 的 `audio.rs`）。
+pub fn plain_path(path: &Path) -> String {
     let text = path.to_string_lossy();
     if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
         format!(r"\\{rest}")

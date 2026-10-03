@@ -33,7 +33,6 @@ use serde_json::{Map, Value, json};
 use crate::audio;
 use crate::card::md5;
 use crate::connect::{AnkiConnect, AnkiError};
-use crate::export::AudioOptions;
 
 pub const LAPIS: &str = "Lapis";
 pub use crate::lyrics_model::NOTE_TYPE as LYRICS;
@@ -106,8 +105,6 @@ pub struct MineOptions {
     pub main_dictionary: Option<String>,
     pub kind: LapisCardKind,
     pub tags: Vec<String>,
-    /// 没有 ffmpeg 时为 None，例句音频留空
-    pub audio: Option<AudioOptions>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -352,30 +349,20 @@ fn set_field(fields: &mut [(String, String)], name: &str, value: String) {
 /// 切一句的音频存进 Anki，返回文件名；切不出来时返回原因
 fn clip_line(
     anki: &AnkiConnect,
-    audio: Option<&AudioOptions>,
     song: Option<&MineSource<'_>>,
-    utterance_id: i64,
     time_sec: Option<f64>,
     end_sec: Option<f64>,
 ) -> Result<Result<String, String>, AnkiError> {
-    let Some(audio) = audio else { return Ok(Err("没找到 ffmpeg，切不了音频".into())) };
     let Some(song) = song.filter(|s| !s.audio_path.is_empty()) else {
         return Ok(Err("这首歌没有音频文件".into()));
     };
     let Some(start) = time_sec else { return Ok(Err("这一行歌词没有时间轴".into())) };
-    if !Path::new(song.audio_path).is_file() {
-        return Ok(Err(format!("音频文件不在了：{}", song.audio_path)));
-    }
-    let _ = std::fs::create_dir_all(&audio.work_dir);
-    let out = audio.work_dir.join(format!("jpop_work_{utterance_id}.mp3"));
-    if !audio::clip(&audio.ffmpeg, Path::new(song.audio_path), start, end_sec, &out) {
-        return Ok(Err("ffmpeg 切音频失败".into()));
-    }
-    let bytes = std::fs::read(&out);
-    let _ = std::fs::remove_file(&out);
-    let Ok(bytes) = bytes else { return Ok(Err("读不到切好的音频".into())) };
-    // 按内容起名、用 Anki 实际存下的名字，见 `audio::clip_name` 和 `store_media_file`
-    Ok(Ok(anki.store_media_file(&audio::clip_name(&bytes), &bytes)?))
+    let clip = match audio::clip(Path::new(song.audio_path), start, end_sec) {
+        Ok(clip) => clip,
+        Err(reason) => return Ok(Err(reason)),
+    };
+    // 用 Anki 实际存下的名字，见 `audio::clip_name` 和 `store_media_file`
+    Ok(Ok(anki.store_media_file(&clip.name, &clip.mp3)?))
 }
 
 pub fn mine(
@@ -432,14 +419,14 @@ pub fn mine(
     let mut warnings = Vec::new();
     let mut sounds = Vec::new();
     if let Some(line) = sentence {
-        match clip_line(anki, options.audio.as_ref(), source, line.utterance_id, line.time_sec, line.end_sec)? {
+        match clip_line(anki, source, line.time_sec, line.end_sec)? {
             Ok(name) => sounds.push(format!("[sound:{name}]")),
             Err(reason) => warnings.push(format!("当前句没有音频：{reason}")),
         }
     }
     let mut failed_others = 0;
     for line in other_lines {
-        match clip_line(anki, options.audio.as_ref(), source, line.utterance_id, line.time_sec, line.end_sec)? {
+        match clip_line(anki, source, line.time_sec, line.end_sec)? {
             Ok(name) => sounds.push(format!("[sound:{name}]")),
             Err(_) => failed_others += 1,
         }
@@ -529,7 +516,6 @@ mod tests {
             main_dictionary: None,
             kind: LapisCardKind::WordAndSentence,
             tags: vec!["jpop-corpus".into()],
-            audio: None,
         }
     }
 
@@ -649,7 +635,7 @@ mod tests {
         let outcome =
             mine(&client(fake.clone()), &entry, Some(&line), &others, Some(&song), &assets, &options()).unwrap();
         let MineOutcome::Added { warnings, .. } = outcome else { panic!("应当加上卡") };
-        assert_eq!(warnings, ["当前句没有音频：没找到 ffmpeg，切不了音频", "另有 1 句没切出音频"]);
+        assert_eq!(warnings, ["当前句没有音频：这首歌没有音频文件", "另有 1 句没切出音频"]);
         let note = &fake.params_of("addNote").unwrap()["note"];
         assert_eq!(note["fields"]["Sentence"], "<b>打ち込む</b><br><b>打ち込む</b>日々");
         assert_eq!(note["fields"]["SentenceAudio"], "");
