@@ -240,6 +240,7 @@ pub fn attach_from_file(
 }
 
 /// 读文本，编码按 UTF-8 → CP932 → GBK 试，和 `jp_import::lrc::parse_file` 同一套规则。
+/// 带 BOM 的 UTF-16 也认：`Encoding::decode` 先嗅 BOM（见 `jp_import::lrc` 里 `decode` 的注释）。
 fn read_text(path: &Path) -> Result<String> {
     let bytes =
         std::fs::read(path).with_context(|| format!("读不了歌词文件：{}", path.display()))?;
@@ -640,6 +641,18 @@ mod tests {
             })
             .unwrap();
         assert_eq!(text, "君を待っている");
+    }
+
+    /// 手动挑的歌词文件是记事本「Unicode」另存的（带 BOM 的 UTF-16 LE）。
+    /// 本来就能读（encoding_rs 嗅 BOM），这条是钉住它，别哪天改成不嗅 BOM 的解码
+    #[test]
+    fn a_utf16_file_with_a_bom_is_decoded() {
+        let dir = scratch("utf16");
+        let path = dir.join("utf16.lrc");
+        let mut bytes = vec![0xFF, 0xFE];
+        bytes.extend("[00:15.00]君を待っている\n".encode_utf16().flat_map(u16::to_le_bytes));
+        std::fs::write(&path, &bytes).unwrap();
+        assert_eq!(read_text(&path).unwrap().trim(), "[00:15.00]君を待っている");
     }
 
     #[test]

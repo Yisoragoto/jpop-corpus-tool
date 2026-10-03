@@ -481,6 +481,12 @@ pub fn parse_file(path: &std::path::Path) -> anyhow::Result<ParsedLrc> {
 /// 解出「字」来，只有一边是对的。这是个日文语料库，所以先假定日文编码；
 /// 真有 GBK 的中文歌词时，它多半含 CP932 解不出的字节（实测
 /// 「风的记忆」的 GBK 编码在 CP932 下第 17 字节就非法），于是会落到 GBK。
+///
+/// **带 BOM 的 UTF-16（LE / BE）也走得通，但靠的是一个不显眼的行为**：
+/// `Encoding::decode` 先嗅 BOM，看到 `FF FE` / `FE FF` 就改用 UTF-16 解，
+/// 不管调用的是哪个编码（encoding_rs 文档写明的）。所以 CP932 那一步其实就把它解对了。
+/// 改这段的时候别换成不嗅 BOM 的 `decode_without_bom_handling`——
+/// `utf16_with_a_bom_is_decoded_both_ways` 会拦住。
 fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     if let Ok(text) = std::str::from_utf8(bytes) {
         return std::borrow::Cow::Borrowed(text);
@@ -539,6 +545,29 @@ mod tests {
         std::fs::write(&path, &bytes).unwrap();
         let parsed = parse_file(&path).unwrap();
         assert_eq!(parsed.lines[0].text, "夜が明けるまで");
+    }
+
+    /// Windows 记事本「Unicode」另存出来的是带 BOM 的 UTF-16 LE；BE 少见但规范里有。
+    /// 这条本来就是绿的（encoding_rs 嗅 BOM，见 `decode` 的注释），写下来是为了钉住它。
+    #[test]
+    fn utf16_with_a_bom_is_decoded_both_ways() {
+        let text = "[00:10.00]夜が明けるまで\n";
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let mut le = vec![0xFF, 0xFE];
+        le.extend(units.iter().flat_map(|u| u.to_le_bytes()));
+        let mut be = vec![0xFE, 0xFF];
+        be.extend(units.iter().flat_map(|u| u.to_be_bytes()));
+
+        let dir = std::env::temp_dir().join(format!("jp-lrc-utf16-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, bytes) in [("le.lrc", le), ("be.lrc", be)] {
+            let path = dir.join(name);
+            std::fs::write(&path, &bytes).unwrap();
+            let parsed = parse_file(&path).unwrap();
+            assert_eq!(parsed.lines.len(), 1, "{name}");
+            assert_eq!(parsed.lines[0].text, "夜が明けるまで", "{name}");
+            assert_eq!(decode(&bytes), text, "{name}");
+        }
     }
 
     #[test]
