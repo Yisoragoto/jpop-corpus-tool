@@ -38,15 +38,15 @@ fn project_root() -> PathBuf {
 fn app() -> Option<tauri::WebviewWindow<MockRuntime>> {
     let root = project_root();
     if !root.join("corpus.db").exists() {
-        eprintln!("跳过：找不到 {}", root.join("corpus.db").display());
+        eprintln!("[skip] 找不到 {}", root.join("corpus.db").display());
         return None;
     }
     let state = match AppState::new(&root) {
         Ok(state) => state,
         Err(err) => {
             eprintln!(
-                "跳过：{err}\n  先跑 python scripts/migrate_db.py \
-                 && python scripts/backfill_library.py"
+                "[skip] {err}\n  这组测试要作者本机那个真实的 corpus.db，\
+                 克隆仓库的人没有它——不挑机器的那组在 tests/fixture_commands.rs"
             );
             return None;
         }
@@ -137,7 +137,7 @@ impl Drop for Scratch {
 fn scratch_app(tag: &str) -> Option<Scratch> {
     let root = project_root();
     if !root.join("corpus.db").exists() {
-        eprintln!("跳过：找不到 corpus.db");
+        eprintln!("[skip] 找不到 corpus.db");
         return None;
     }
     let scratch = std::env::temp_dir().join(format!("jp-scratch-{}-{tag}", std::process::id()));
@@ -189,13 +189,13 @@ fn the_asset_scope_actually_matches_the_cover_paths_in_the_database() {
     use tauri::Manager;
 
     let Some(webview) = app() else {
-        eprintln!("跳过：没有可用的 corpus.db");
+        eprintln!("[skip] 没有可用的 corpus.db");
         return;
     };
     let handle = webview.app_handle();
     let covers_dir = project_root().join("raw").join("covers");
     if !covers_dir.exists() {
-        eprintln!("跳过：还没刮削过，raw/covers 不存在");
+        eprintln!("[skip] 还没刮削过，raw/covers 不存在");
         return;
     }
 
@@ -224,7 +224,7 @@ fn the_asset_scope_actually_matches_the_cover_paths_in_the_database() {
         rows.filter_map(Result::ok).collect()
     };
     if paths.is_empty() {
-        eprintln!("跳过：库里还没有封面");
+        eprintln!("[skip] 库里还没有封面");
         return;
     }
 
@@ -248,7 +248,7 @@ fn the_asset_scope_also_covers_artist_photos() {
     use tauri::Manager;
 
     let Some(webview) = app() else {
-        eprintln!("跳过：没有可用的 corpus.db");
+        eprintln!("[skip] 没有可用的 corpus.db");
         return;
     };
     let handle = webview.app_handle();
@@ -268,7 +268,7 @@ fn the_asset_scope_also_covers_artist_photos() {
         )
         .expect("查询失败");
     if !has_table {
-        eprintln!("跳过：还没刮削过歌手");
+        eprintln!("[skip] 还没刮削过歌手");
         return;
     }
     let paths: Vec<String> = {
@@ -281,7 +281,7 @@ fn the_asset_scope_also_covers_artist_photos() {
         rows.filter_map(Result::ok).collect()
     };
     if paths.is_empty() {
-        eprintln!("跳过：库里还没有歌手照片");
+        eprintln!("[skip] 库里还没有歌手照片");
         return;
     }
 
@@ -833,7 +833,7 @@ fn loading_an_unknown_track_reports_which_one() {
 fn playback_controls_are_wired() {
     let w = app_or_skip!();
     if !audio_ready(&w) {
-        eprintln!("跳过：没有可用的输出设备");
+        eprintln!("[skip] 没有可用的输出设备");
         return;
     }
     // 每个控制都要能调到。没加载音频时调它们不该 panic。
@@ -907,7 +907,7 @@ fn the_full_playback_loop_works_through_ipc() {
         (!path.is_empty() && std::path::Path::new(path).exists())
             .then(|| t["id"].as_str().unwrap().to_string())
     }) else {
-        eprintln!("跳过：曲库里没有音频文件真实存在的曲目");
+        eprintln!("[skip] 曲库里没有音频文件真实存在的曲目");
         return;
     };
 
@@ -962,7 +962,7 @@ fn kwic_hit_has_every_field_the_page_renders() {
     );
     let list = hits.as_array().unwrap();
     if list.is_empty() {
-        eprintln!("跳过：语料里没有「夜」");
+        eprintln!("[skip] 语料里没有「夜」");
         return;
     }
     for key in [
@@ -1507,7 +1507,7 @@ fn scanning_an_already_imported_library_plans_nothing() {
     let w = app_or_skip!();
     let audio = project_root().join("raw/audio");
     if !audio.is_dir() {
-        eprintln!("跳过：找不到 {}", audio.display());
+        eprintln!("[skip] 找不到 {}", audio.display());
         return;
     }
     let result = ok(
@@ -1631,7 +1631,7 @@ fn scanning_two_files_plans_exactly_those_two() {
     let w = app_or_skip!();
     let audio = project_root().join("raw/audio");
     if !audio.is_dir() {
-        eprintln!("跳过：找不到 {}", audio.display());
+        eprintln!("[skip] 找不到 {}", audio.display());
         return;
     }
     let mut files: Vec<String> = Vec::new();
@@ -1644,7 +1644,7 @@ fn scanning_two_files_plans_exactly_those_two() {
         }
     }
     if files.len() < 2 {
-        eprintln!("跳过：raw/audio 里音频不足两个");
+        eprintln!("[skip] raw/audio 里音频不足两个");
         return;
     }
 
@@ -1672,7 +1672,7 @@ fn a_chosen_file_that_is_not_audio_is_reported_not_swallowed() {
     let w = app_or_skip!();
     let lrc = project_root().join("raw/lyrics_lrc/001.lrc");
     if !lrc.is_file() {
-        eprintln!("跳过：找不到 {}", lrc.display());
+        eprintln!("[skip] 找不到 {}", lrc.display());
         return;
     }
     let result = ok(
@@ -1895,7 +1895,7 @@ fn filling_online_is_refused_for_a_song_that_already_has_lyrics() {
             .is_empty()
     });
     let Some(track) = with_lyrics else {
-        eprintln!("跳过：库里没有带歌词的歌");
+        eprintln!("[skip] 库里没有带歌词的歌");
         return;
     };
     let err = invoke(
@@ -2304,7 +2304,7 @@ fn scraping_an_artist_end_to_end() {
 #[test]
 fn a_token_correction_round_trips_through_ipc_on_a_scratch_copy() {
     let Some(scratch) = scratch_app("token-correction") else {
-        eprintln!("跳过：没有可用的 corpus.db");
+        eprintln!("[skip] 没有可用的 corpus.db");
         return;
     };
     let w = scratch.w();
@@ -2325,7 +2325,7 @@ fn a_token_correction_round_trips_through_ipc_on_a_scratch_copy() {
         }
     }
     let Some((utt, before)) = picked else {
-        eprintln!("跳过：没找到合适的行");
+        eprintln!("[skip] 没找到合适的行");
         return;
     };
     let tokens = before["tokens"].as_array().unwrap().clone();
@@ -2380,7 +2380,7 @@ fn a_token_correction_round_trips_through_ipc_on_a_scratch_copy() {
 #[test]
 fn library_maintenance_round_trips_through_ipc_on_a_scratch_copy() {
     let Some(scratch) = scratch_app("library-maintenance") else {
-        eprintln!("跳过：没有可用的 corpus.db");
+        eprintln!("[skip] 没有可用的 corpus.db");
         return;
     };
     let w = scratch.w();

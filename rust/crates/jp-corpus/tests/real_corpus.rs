@@ -26,19 +26,19 @@ fn db_path() -> PathBuf {
 fn open_corpus() -> Option<Corpus> {
     let path = db_path();
     if !path.exists() {
-        eprintln!("跳过：找不到 {}", path.display());
+        eprintln!("[skip] 找不到 {}", path.display());
         return None;
     }
     let corpus = match Corpus::open(&path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("跳过：{e}");
+            eprintln!("[skip] {e}");
             return None;
         }
     };
     if let Err(e) = corpus.check_schema() {
-        eprintln!("跳过：{e}
-  先跑 python scripts/migrate_db.py && python scripts/backfill_library.py");
+        eprintln!("[skip] {e}
+  这组测试要作者本机那个真实的 corpus.db，克隆仓库的人没有它");
         return None;
     }
     Some(corpus)
@@ -90,7 +90,7 @@ fn scraped_performers_carry_their_photo_to_the_people_queries() {
         )
         .expect("查询失败");
     if !has_table {
-        eprintln!("跳过：还没刮削过歌手");
+        eprintln!("[skip] 还没刮削过歌手");
         return;
     }
     let expected: Vec<(i64, String)> = {
@@ -106,7 +106,7 @@ fn scraped_performers_carry_their_photo_to_the_people_queries() {
         rows.filter_map(Result::ok).collect()
     };
     if expected.is_empty() {
-        eprintln!("跳过：库里还没有歌手照片");
+        eprintln!("[skip] 库里还没有歌手照片");
         return;
     }
     for (id, path) in &expected {
@@ -155,7 +155,7 @@ fn an_album_falls_back_to_a_member_tracks_cover() {
 fn albums_have_tracks_and_no_double_counting() {
     let c = corpus!();
     let albums = c.albums(None, 500).expect("查询失败");
-    assert!(!albums.is_empty(), "没有专辑，先跑 backfill_library.py");
+    assert!(!albums.is_empty(), "没有专辑：这个库还没回填过音乐库实体表");
 
     for album in albums.iter().take(20) {
         let tracks = c.album_tracks(album.id).expect("查询失败");

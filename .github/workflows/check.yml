@@ -37,12 +37,23 @@ jobs:
       # 音频测试在没有输出设备的机器上会自己跳过（engine_or_skip!），
       # 要真实语料库的那些标了 #[ignore]。两类都会在日志里说一声。
       #
-      # jp-audio 单独先跑一遍、不吞输出：这台 runner 没有音频设备，
-      # 引擎相关的用例会全部跳过，而**跳过在 CI 上必须看得见**——
-      # 不然「测试全绿」在这里的含义比在本机弱得多，自己都不知道弱在哪。
-      - name: Tests (jp-audio, 跳过情况要看得见)
+      # 会在这台机器上**整组跳过**的三个套件，单独不吞输出地跑一遍。
+      #
+      # 跳过也打 ok，所以不开 --nocapture 根本分不清「跑过了」还是「跳过了」——
+      # 「测试全绿」在 CI 的含义会比在本机弱得多，而且自己都不知道弱在哪。
+      # 这一步把每条 [skip] 打出来，弱在哪儿一眼看得见：
+      #
+      #   jp-audio    没有音频输出设备
+      #   commands    没有那个 991MB 的真实 corpus.db（78 个里 78 个跳过）
+      #   real_corpus 同上（36 个全跳过）
+      #
+      # 真正不挑机器的那组是 tests/fixture_commands.rs，它在下面的 workspace 里跑。
+      - name: Tests (跳过情况要看得见)
         working-directory: rust
-        run: cargo test -p jp-audio --lib -- --nocapture
+        run: |
+          cargo test -p jp-audio --lib -- --nocapture
+          cargo test -p jp-app --test commands -- --nocapture
+          cargo test -p jp-corpus --test real_corpus -- --nocapture
 
       # --no-fail-fast：一个 crate 崩掉不该把后面所有 crate 的结果一起藏起来。
       # jp-audio 这个崩溃被 jp-app 的一个失败挡了八次 CI 没人看见，就是因为没有它。
