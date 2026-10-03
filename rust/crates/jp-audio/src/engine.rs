@@ -613,10 +613,36 @@ impl Drop for AudioEngine {
 mod tests {
     use super::*;
 
+    /// **一次只许有一个引擎。**
+    ///
+    /// 原来每个测试各开一个输出设备，十来个并行跑，在 GitHub 的 Windows runner
+    /// 上把整个测试进程打成 STATUS_ACCESS_VIOLATION（跑两个就炸）。
+    /// 本机有声卡，跑得过，所以只有推上去才看得见。
+    ///
+    /// 排队也更贴近生产：**应用自始至终只建一个 `AudioEngine`**，
+    /// 「同时开十个输出设备」这个场景在真实使用里根本不存在。
+    static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 独占的引擎。`engine` 声明在前，所以它先 drop、锁后放——
+    /// 设备彻底关掉了才让下一个测试进来。
+    struct Exclusive {
+        engine: AudioEngine,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl std::ops::Deref for Exclusive {
+        type Target = AudioEngine;
+        fn deref(&self) -> &AudioEngine {
+            &self.engine
+        }
+    }
+
     /// 没有声卡就跳过。CI 和无头环境都没有。
-    fn engine() -> Option<AudioEngine> {
+    fn engine() -> Option<Exclusive> {
+        // 上一个测试 panic 过的话锁会中毒，但锁本身没坏，照用
+        let lock = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         match AudioEngine::new() {
-            Ok(e) => Some(e),
+            Ok(engine) => Some(Exclusive { engine, _lock: lock }),
             Err(err) => {
                 eprintln!("跳过：{err}");
                 None
