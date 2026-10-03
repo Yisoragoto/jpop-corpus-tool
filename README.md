@@ -142,10 +142,20 @@ So a fresh install opens straight away with an empty library. If you already hav
 point **Settings → About → Library → Change directory…** at it and restart. The data directory lives outside the
 install directory, so uninstalling never takes your songs and corpus with it.
 
-> **Live tokenisation needs the Sudachi dictionary.** The tokeniser reads `venv/Lib/site-packages/sudachipy` and
-> `sudachidict_core` **inside the library directory** — the same copy 0.1.x uses. Without it, lookup, playback,
-> search and mining still work; only furigana and tokenisation on import are unavailable. Create a venv in the
-> library directory from `requirements.txt` to get it.
+> **Furigana, clicking words in lyrics and tokenisation on import need the Sudachi dictionary.** It is not in the
+> installer (207 MB unpacked). Since 0.2.5 the app downloads it for you: a banner offers it when it's missing, and
+> **Settings → Lyrics → Tokeniser dictionary (Sudachi)** has a Download button — a 43 MB `.xz` from this
+> repository's `sudachi-dict-core` release, checked against a fixed SHA-256 and unpacked into `sudachi/` in the
+> library directory. It is fetched once per library directory. The same card can instead copy it from a folder
+> you already have (a 0.1.x project or its venv).
+>
+> The dictionary is looked up in this order:
+>
+> 1. `venv/Lib/site-packages/sudachipy` + `sudachidict_core` in the library directory — the 0.1.x layout, still honoured;
+> 2. `sudachi/` in the library directory — downloaded, copied in from Settings, or carried over by migration;
+> 3. `resources/sudachi/` next to the executable — the installer doesn't ship one; only used if you put it there.
+>
+> Without it, playback, the Dictionaries page, search and mining still work.
 
 ### Anki
 
