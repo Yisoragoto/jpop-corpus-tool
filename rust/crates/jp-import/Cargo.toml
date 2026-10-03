@@ -16,9 +16,10 @@ unicode-normalization = "0.1"
 regex = "1"
 # .lrc 的编码回退（Shift-JIS / GBK）。已经在依赖树里，不多下一个包。
 encoding_rs = "0.8"
+# 网易云 .lrc 开头的 JSON 署名行。workspace 里各 crate 都在用，不多下一个包。
+serde_json.workspace = true
 rusqlite = { version = "0.40", features = ["bundled"] }
 jp-corpus = { path = "../jp-corpus" }
 jp-tokenizer = { path = "../jp-tokenizer" }
 
 [dev-dependencies]
-serde_json.workspace = true

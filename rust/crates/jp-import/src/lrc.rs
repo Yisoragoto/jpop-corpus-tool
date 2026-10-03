@@ -63,6 +63,8 @@ const OTHER_CREDIT_LABELS: &[&str] = &[
     "录音", "錄音", "录音师", "錄音師", "录音室", "錄音室",
     "和声", "和聲", "和声编写", "和聲編寫",
     "吉他", "贝斯", "貝斯", "鼓", "键盘", "鍵盤", "钢琴", "鋼琴", "弦乐", "弦樂",
+    // 网易云 JSON 署名行里实测到的
+    "小号", "小號", "长号", "長號", "萨克斯", "薩克斯",
     "OP", "SP", "ISRC",
     "Lyrics", "Music", "Arrangement", "Arranger", "Composer", "Lyricist",
     "Producer", "Produced by", "Mix", "Mixing", "Mixed by", "Mastering", "Mastered by",
@@ -152,6 +154,25 @@ pub fn parse(text: &str) -> ParsedLrc {
             continue;
         }
 
+        // 网易云客户端存的 .lrc 开头那几行 JSON 署名（`{"t":0,"c":[{"tx":"作词: "},…]}`）。
+        // 没有时间戳、以 { 开头的整行才算；拼出文字交给署名识别，
+        // 不是署名的、解析不了的都丢掉——它们无论如何都不是歌词。
+        let json_text;
+        let body = if stamps.is_empty() && body.starts_with('{') {
+            match netease_json_text(body) {
+                Some(text) => {
+                    json_text = text;
+                    if !matches!(parse_credit(&json_text), Some(CreditLine::Role(..))) {
+                        continue;
+                    }
+                    json_text.as_str()
+                }
+                None => continue,
+            }
+        } else {
+            body
+        };
+
         match parse_credit(body) {
             Some(CreditLine::Role(role, names)) => {
                 for name in names {
@@ -219,6 +240,26 @@ fn find_offset_sec(text: &str) -> f64 {
         }
     }
     0.0
+}
+
+/// 网易云 JSON 署名行 → 拼起来的文字。不是这个结构就返回 None。
+///
+/// 结构：`{"t":毫秒,"c":[{"tx":"作词: "},{"tx":"某人"},…]}`，`c` 里各段的 `tx`
+/// 按顺序拼起来就是一行「作词: 某人」。本机网易云下载目录里 271 行全是这个形状。
+fn netease_json_text(line: &str) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct Line {
+        c: Vec<Piece>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Piece {
+        #[serde(default)]
+        tx: String,
+    }
+    let parsed: Line = serde_json::from_str(line).ok()?;
+    let text: String = parsed.c.iter().map(|p| p.tx.as_str()).collect();
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 /// 剥掉增强型 LRC 的逐字时间戳 `<mm:ss>` / `<mm:ss.xx>` / `<mm:ss.xxx>`。
@@ -670,6 +711,37 @@ mod tests {
         let parsed = parse(lrc);
         assert!(parsed.credits.is_empty());
         assert_eq!(parsed.lines.len(), 6, "{:?}", parsed.lines);
+    }
+
+    /// 网易云客户端存下来的 .lrc 开头是 JSON 署名行（本机 117 份里 112 份有，共 271 行）。
+    /// 以前整行被当成没有时间戳的歌词入库。格式照抄真实文件，人名是编的。
+    #[test]
+    fn netease_json_credit_lines_become_credits_not_lyrics() {
+        let lrc = concat!(
+            "{\"t\":0,\"c\":[{\"tx\":\"作词: \"},{\"tx\":\"山田太郎\"}]}\n",
+            "{\"t\":1000,\"c\":[{\"tx\":\"作曲: \"},{\"tx\":\"山田太郎\"},{\"tx\":\"/\"},{\"tx\":\"鈴木花子\"}]}\n",
+            "{\"t\":2000,\"c\":[{\"tx\":\"小号: \"},{\"tx\":\"某人\"}]}\n",
+            "[00:04.16]\n",
+            "[00:12.14]青い空\n",
+        );
+        let parsed = parse(lrc);
+        let texts: Vec<&str> = parsed.lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, ["青い空"]);
+        let credits: Vec<(&str, &str)> =
+            parsed.credits.iter().map(|c| (c.role, c.name.as_str())).collect();
+        assert_eq!(
+            credits,
+            [("lyricist", "山田太郎"), ("composer", "山田太郎"), ("composer", "鈴木花子")]
+        );
+    }
+
+    /// 解析不了的 JSON 行一律丢掉；带时间戳、正文恰好以 { 开头的仍然是歌词
+    #[test]
+    fn a_json_line_that_does_not_parse_is_dropped_but_braced_lyrics_stay() {
+        let parsed = parse("{\"t\":0,\"c\":[{\"tx\":\"作词\n{broken\n{\"t\":0}\n[00:01.00]{笑}って\n");
+        let texts: Vec<&str> = parsed.lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, ["{笑}って"]);
+        assert!(parsed.credits.is_empty());
     }
 
     /// 尖括号里不是时间的，是正文
