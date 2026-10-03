@@ -115,6 +115,7 @@ pub fn parse(text: &str) -> ParsedLrc {
     let mut out = ParsedLrc::default();
     let mut seen_credits: Vec<(String, String)> = Vec::new();
     let format = detect_three_part_format(text);
+    let offset_sec = find_offset_sec(text);
 
     for raw in text.lines() {
         let (stamps, body) = split_timestamps_with(raw.trim(), format);
@@ -148,7 +149,7 @@ pub fn parse(text: &str) -> ParsedLrc {
         } else {
             for stamp in stamps {
                 out.lines.push(LyricLine {
-                    time_sec: Some(stamp),
+                    time_sec: Some((stamp - offset_sec).max(0.0)),
                     text: body.to_string(),
                 });
             }
@@ -163,6 +164,34 @@ pub fn parse(text: &str) -> ParsedLrc {
         (None, None) => std::cmp::Ordering::Equal,
     });
     out
+}
+
+/// `[offset:N]` 标签给出的整体偏移，换算成秒。没有、或者写得认不出来就是 0。
+///
+/// 按 LRC 惯例 N 是毫秒，**正值让歌词提前**：显示时刻 = 时间戳 − N/1000，不小于 0。
+///
+/// **这是一次有意的行为变化**：0.1.x 的 `gui.py::_parse_lrc` 和
+/// `scripts/02_parse_lrc_tokenize.py` 都没处理过 offset，标签被当成元数据整行丢掉，
+/// 时间轴于是整体偏一截。改之前查过：存量的 415 份 .lrc 里一份带 offset 的都没有，
+/// 所以这条只影响以后导入的歌词。
+fn find_offset_sec(text: &str) -> f64 {
+    for line in text.lines() {
+        let line = line.trim().trim_start_matches('\u{feff}');
+        let Some((inner, _)) = line.strip_prefix('[').and_then(|r| r.split_once(']')) else {
+            continue;
+        };
+        let Some((key, value)) = inner.split_once(':') else { continue };
+        if key.trim().eq_ignore_ascii_case("offset") {
+            // 只认第一个：同一份文件里写两个 offset 的，后一个多半是编辑残留
+            return value
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|ms| ms.is_finite())
+                .map_or(0.0, |ms| ms / 1000.0);
+        }
+    }
+    0.0
 }
 
 /// 剥掉行首所有 `[mm:ss.xx]`，返回 (秒数列表, 剩余文本)。
@@ -477,5 +506,34 @@ mod tests {
     fn hour_length_timestamps() {
         let parsed = parse("[1:02:03.50]長い曲\n");
         assert!((parsed.lines[0].time_sec.unwrap() - 3723.5).abs() < 1e-6);
+    }
+
+    /// `[offset:N]` 是毫秒，正值让歌词提前。以前被当成元数据整行吞掉，时间轴整体偏一截
+    #[test]
+    fn the_offset_tag_shifts_every_timestamp() {
+        let parsed = parse("[offset:500]\n[00:10.00]一\n[00:20.00]二\n");
+        assert_eq!(parsed.lines.len(), 2);
+        assert!((parsed.lines[0].time_sec.unwrap() - 9.5).abs() < 1e-6);
+        assert!((parsed.lines[1].time_sec.unwrap() - 19.5).abs() < 1e-6);
+
+        let later = parse("[offset:-1500]\n[00:10.00]一\n");
+        assert!((later.lines[0].time_sec.unwrap() - 11.5).abs() < 1e-6);
+
+        let signed = parse("[offset:+250]\n[00:10.00]一\n");
+        assert!((signed.lines[0].time_sec.unwrap() - 9.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn an_offset_never_pushes_a_line_below_zero() {
+        let parsed = parse("[offset:3000]\n[00:01.00]一\n");
+        assert_eq!(parsed.lines[0].time_sec, Some(0.0));
+    }
+
+    #[test]
+    fn a_garbled_offset_is_ignored_and_untimed_lines_stay_untimed() {
+        let parsed = parse("[offset:abc]\n[00:10.00]一\n裸行\n");
+        assert!((parsed.lines[0].time_sec.unwrap() - 10.0).abs() < 1e-6);
+        let parsed = parse("[offset:500]\n裸行\n");
+        assert_eq!(parsed.lines[0].time_sec, None);
     }
 }
