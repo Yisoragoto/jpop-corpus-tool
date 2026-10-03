@@ -48,17 +48,17 @@ type CmdResult<T> = Result<T, CommandError>;
 
 // ────────────────────────────── 曲库 ──────────────────────────────
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_tracks(state: State<'_, AppState>, limit: Option<i64>) -> CmdResult<Vec<Track>> {
     Ok(state.corpus().tracks(limit.unwrap_or(1000))?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_track(state: State<'_, AppState>, song_id: String) -> CmdResult<Option<Track>> {
     Ok(state.corpus().track(&song_id)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_albums(
     state: State<'_, AppState>,
     artist_key: Option<String>,
@@ -69,17 +69,17 @@ pub fn list_albums(
         .albums(artist_key.as_deref(), limit.unwrap_or(500))?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn album_tracks(state: State<'_, AppState>, album_id: i64) -> CmdResult<Vec<Track>> {
     Ok(state.corpus().album_tracks(album_id)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn track_credits(state: State<'_, AppState>, song_id: String) -> CmdResult<Vec<Credit>> {
     Ok(state.corpus().credits_for_track(&song_id)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn people_by_role(
     state: State<'_, AppState>,
     role: String,
@@ -88,12 +88,12 @@ pub fn people_by_role(
     Ok(state.corpus().people_by_role(&role, limit.unwrap_or(200))?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn works_by_person(state: State<'_, AppState>, person_id: i64) -> CmdResult<Vec<Track>> {
     Ok(state.corpus().works_by_person(person_id)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn collaborators(
     state: State<'_, AppState>,
     person_id: i64,
@@ -105,7 +105,7 @@ pub fn collaborators(
 }
 
 /// 一首歌的全部歌词行，带分词。整首歌只发 2 次查询。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lyrics(state: State<'_, AppState>, song_id: String) -> CmdResult<Vec<LyricLine>> {
     Ok(state.corpus().lyrics(&song_id)?)
 }
@@ -114,7 +114,7 @@ pub fn lyrics(state: State<'_, AppState>, song_id: String) -> CmdResult<Vec<Lyri
 ///
 /// 字体文件要让界面按文件加载，这里逐个放行进 asset 协议（只放行这几个文件，不放行目录）。
 /// 本机字体列不出来（非常少见）不算失败：照样给出字体文件，原因放进 `problems`。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn fonts_catalog<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -157,7 +157,7 @@ pub struct LineFurigana {
 
 /// 整首歌的振假名。和 Python 版 `_furigana_tokens` 一样现场用 Sudachi（SplitMode C）分词取读音，
 /// 全部 8443 行两种模式逐段对过账。一行约 0.02 ms，不入库。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lyrics_furigana(
     state: State<'_, AppState>,
     song_id: String,
@@ -192,7 +192,7 @@ pub async fn kwic<R: tauri::Runtime>(
     blocking(app, move |state| state.corpus().kwic(&query)).await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn search_lyrics(
     state: State<'_, AppState>,
     text: String,
@@ -203,17 +203,17 @@ pub fn search_lyrics(
 
 // ────────────────────────────── 语料 ──────────────────────────────
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
     Ok(state.corpus().overview()?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn timeline(state: State<'_, AppState>) -> CmdResult<Vec<YearStats>> {
     Ok(state.corpus().timeline()?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn word_frequency(
     state: State<'_, AppState>,
     pos: Option<String>,
@@ -225,7 +225,7 @@ pub fn word_frequency(
 }
 
 /// Research Mode 的核心：点歌词里一个词，看它在整个语料里的样子。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn word_in_corpus(
     state: State<'_, AppState>,
     lemma: String,
@@ -239,12 +239,12 @@ pub fn word_in_corpus(
 
 // ────────────────────────────── 播放历史 ──────────────────────────────
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn record_play(state: State<'_, AppState>, event: PlayEvent) -> CmdResult<()> {
     Ok(state.corpus().record_play(&event)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn recently_played(
     state: State<'_, AppState>,
     limit: Option<i64>,
@@ -252,7 +252,7 @@ pub fn recently_played(
     Ok(state.corpus().recently_played(limit.unwrap_or(20))?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn most_played(
     state: State<'_, AppState>,
     min_listened_sec: Option<f64>,
@@ -269,7 +269,7 @@ pub fn most_played(
 ///
 /// 已入库的歌词不要走这里——`lyrics` 直接带回库里的分词，
 /// 那份和语料统计是一致的。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn tokenize(state: State<'_, AppState>, text: String) -> CmdResult<Vec<jp_tokenizer::Token>> {
     match state.analyzer() {
         Some(analyzer) => Ok(analyzer.analyze(&text)?),
@@ -292,7 +292,7 @@ pub struct HealthReport {
     pub pitch_supported: bool,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn health(state: State<'_, AppState>) -> CmdResult<HealthReport> {
     let overview = state.corpus().overview()?;
     Ok(HealthReport {
@@ -326,7 +326,7 @@ fn audio_engine(state: &AppState) -> anyhow::Result<&jp_audio::AudioEngine> {
 ///
 /// 位置和播不播要一次传进来：设了变调而还没有缓存时要先渲染，渲染好才真正加载，
 /// 分开再发的 seek / pause 那时还落不到播放器上。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn audio_load(
     state: State<'_, AppState>,
     song_id: String,
@@ -415,7 +415,7 @@ pub async fn audio_seek<R: tauri::Runtime>(
 
 /// 变调，−6…+6 半音，0 是原调。全局生效：正在放的这首跟着换，之后打开的歌也按这个调。
 /// 没有缓存时在后台渲染（一首歌几秒），状态里 `pitchRendering` 为真；失败会退回原调，原因在 `pitchError`。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn audio_set_pitch(state: State<'_, AppState>, semitones: i32) -> CmdResult<()> {
     let deck = state
         .deck()
@@ -491,7 +491,7 @@ pub fn backfill_durations(
 ///
 /// 这些歌是在没有分词词典的时候入库的，表现是**点词查不了、也没有振假名**——
 /// 界面上这两件事都按 token 渲染。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn tokenize_missing_list(
     state: State<'_, AppState>,
 ) -> CmdResult<Vec<jp_import::maintain::Untokenized>> {
@@ -582,7 +582,7 @@ pub struct DictionaryReady {
 // ──────────────────────────── 补齐歌词 ────────────────────────────
 
 /// 库里还没有歌词的歌。音频旁边就有 .lrc 的会在 `siblingLrc` 里标出来。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lyrics_missing(state: State<'_, AppState>) -> CmdResult<Vec<crate::lyrics::MissingLyrics>> {
     Ok(crate::lyrics::missing(state.corpus().connection())?)
 }
@@ -590,7 +590,7 @@ pub fn lyrics_missing(state: State<'_, AppState>) -> CmdResult<Vec<crate::lyrics
 /// 批量补齐，后台跑。进度走 `lyrics://progress` 事件。
 ///
 /// `songIds` 省略就是「全库缺歌词的都补」。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lyrics_fill_start<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -756,7 +756,7 @@ pub async fn update_download<R: tauri::Runtime>(
 /// （见 [`crate::update::UpdateMemory`]）。路径由前端给的话，前端就能让程序执行任意 exe。
 ///
 /// 退出前把未结束的收听会话冲刷掉，不然这一段听歌记录会丢。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_install<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -846,7 +846,7 @@ pub async fn migrate_run<R: tauri::Runtime>(
 /// 一段纯文本：版本、库在哪、库里有多少、能力、最近的日志。
 ///
 /// **不联网、不自动上报**——攒出来给用户，发不发、发给谁他自己定。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn diagnostics_report<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -856,7 +856,7 @@ pub fn diagnostics_report<R: tauri::Runtime>(
 }
 
 /// 把那段文本存成文件。路径由前端的保存对话框给。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn diagnostics_save<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -872,7 +872,7 @@ pub fn diagnostics_save<R: tauri::Runtime>(
 // ──────────────────────────── 分词词典 ────────────────────────────
 
 /// 当前语料库目录里有没有 Sudachi 词典。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn tokenizer_status(state: State<'_, AppState>) -> CmdResult<crate::tokenizer::TokenizerStatus> {
     Ok(crate::tokenizer::status(&state.project_root()))
 }
@@ -920,14 +920,14 @@ pub async fn tokenizer_install<R: tauri::Runtime>(
 /// 名字里带 tick 是因为它**有副作用**：会把收听时长累加进会话，
 /// 并在换歌/停止时把上一段写进 `play_history`。
 /// `audio_state` 保持无副作用，给不想触发统计的场合用。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn audio_tick(state: State<'_, AppState>) -> CmdResult<jp_audio::PlaybackState> {
     Ok(state.tick())
 }
 
 // ────────────────────────────── 收藏 ──────────────────────────────
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn toggle_favorite(
     state: State<'_, AppState>,
     entity_type: String,
@@ -936,7 +936,7 @@ pub fn toggle_favorite(
     Ok(state.corpus().toggle_favorite(&entity_type, &entity_id)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn is_favorite(
     state: State<'_, AppState>,
     entity_type: String,
@@ -966,7 +966,7 @@ pub struct HomeSummary {
     pub top_words: Vec<WordFrequency>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn home_summary(state: State<'_, AppState>) -> CmdResult<HomeSummary> {
     let corpus = state.corpus();
     Ok(HomeSummary {
@@ -994,7 +994,7 @@ pub struct LibraryRootInfo {
 }
 
 /// 语料库目录的现状。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_root(state: State<'_, AppState>) -> CmdResult<LibraryRootInfo> {
     let (path, source) = crate::library_root::locate();
     Ok(LibraryRootInfo {
@@ -1015,7 +1015,7 @@ pub fn library_root(state: State<'_, AppState>) -> CmdResult<LibraryRootInfo> {
 ///
 /// **只写设置，不动这次运行**：数据库连接和 asset 放行范围都是启动时定下的，
 /// 半路换等于整个 AppState 重建。所以这里返回一句提示，由界面告诉用户重启。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_library_root(path: Option<String>) -> CmdResult<String> {
     let Some(path) = path.filter(|p| !p.trim().is_empty()) else {
         crate::library_root::remember(None)?;
@@ -1047,7 +1047,7 @@ pub fn set_library_root(path: Option<String>) -> CmdResult<String> {
 /// Cmd+K 的全局搜索。跨曲目 / 专辑 / 人物 / 词汇 / 歌词，分组返回。
 ///
 /// 分组而不是混排：跨类型的相关性分数没有可比性，硬凑的全局排序是假的。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn quick_search(
     state: State<'_, AppState>,
     query: String,
@@ -1057,7 +1057,7 @@ pub fn quick_search(
 }
 
 /// 按 id 取人。命令面板点一条人物结果时用它定位。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn person_by_id(
     state: State<'_, AppState>,
     person_id: i64,
@@ -1410,7 +1410,7 @@ pub async fn anki_mining_report<R: tauri::Runtime>(
 
 /// 把界面生成的文本（统计报告 TXT、检索结果 CSV、挖词报告 HTML）写到用户在保存对话框里选的位置。
 /// 只写这几种扩展名，免得被拿去覆盖别的文件。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_text(path: String, content: String) -> CmdResult<()> {
     let target = std::path::Path::new(&path);
     let ext = target
@@ -1428,7 +1428,7 @@ pub fn export_text(path: String, content: String) -> CmdResult<()> {
 // ────────────────────────────── 曲库维护 ──────────────────────────────
 
 /// 改曲目信息（歌名、歌手、年份、专辑、流派）。署名、专辑、分词校正跟着改，`metadata/songs.csv` 同步。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_edit_song(
     state: State<'_, AppState>,
     song_id: String,
@@ -1438,7 +1438,7 @@ pub fn library_edit_song(
 }
 
 /// 删一首歌：库里挂在它身上的都删（分词校正留着，重导时恢复），不删音频文件。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_delete_song(
     state: State<'_, AppState>,
     song_id: String,
@@ -1447,7 +1447,7 @@ pub fn library_delete_song(
 }
 
 /// 音频文件找不到的曲目。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_missing_audio(
     state: State<'_, AppState>,
 ) -> CmdResult<Vec<jp_import::maintain::MissingAudio>> {
@@ -1473,7 +1473,7 @@ pub async fn library_suggest_relinks<R: tauri::Runtime>(
 }
 
 /// 把这些歌的音频换成新文件。一首一个事务，逐首报结果。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn library_relink_audio(
     state: State<'_, AppState>,
     links: Vec<crate::library_admin::RelinkRequest>,
@@ -1523,7 +1523,7 @@ pub struct ReviewItem {
     pub explain: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_summary(state: State<'_, AppState>) -> CmdResult<jp_scraper::ScrapeSummary> {
     let corpus = state.corpus();
     let store = jp_scraper::ScrapeStore::new(corpus.connection());
@@ -1532,7 +1532,7 @@ pub fn scrape_summary(state: State<'_, AppState>) -> CmdResult<jp_scraper::Scrap
 }
 
 /// 复核队列。默认取需要人工确认的，也可以点名要别的状态。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_review_queue(
     state: State<'_, AppState>,
     statuses: Option<Vec<String>>,
@@ -1594,7 +1594,7 @@ pub fn scrape_review_queue(
 }
 
 /// 某个文件的尝试历史。「这首为什么反复失败」用它回答。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_attempts(
     state: State<'_, AppState>,
     file_path: String,
@@ -1607,13 +1607,13 @@ pub fn scrape_attempts(
 }
 
 /// 刮一首。同步跑，一两秒。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_track(
     state: State<'_, AppState>,
     song_id: String,
 ) -> CmdResult<jp_scraper::ScrapeSummary> {
-    let corpus = state.corpus();
-    let conn = corpus.connection();
+    // 要联网（识别 + 下封面），用自己的连接，见 `own_connection`
+    let conn = &own_connection(&state)?;
     let Some(track) = crate::scrape::track_file_for(conn, &song_id)? else {
         return Err(anyhow::anyhow!("库里没有 id={song_id} 这首歌").into());
     };
@@ -1632,7 +1632,7 @@ pub fn scrape_track(
 /// 批量刮削，后台跑。进度走 `scrape://progress` 事件。
 ///
 /// `only_missing` 为真（默认）时只刮还没成功过的，重跑幂等。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_start<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -1683,14 +1683,14 @@ pub fn scrape_is_running(state: State<'_, AppState>) -> CmdResult<bool> {
 ///
 /// 这是**人工决策**，所以状态直接置为 success 并留痕，
 /// 重跑刮削不会把它冲掉。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_accept(
     state: State<'_, AppState>,
     file_path: String,
     candidate_index: usize,
 ) -> CmdResult<crate::scrape::ManualApply> {
-    let corpus = state.corpus();
-    let conn = corpus.connection();
+    // 最后一步要下封面，用自己的连接，见 `own_connection`
+    let conn = &own_connection(&state)?;
     let store = jp_scraper::ScrapeStore::new(conn);
     let record = store
         .get(&file_path)?
@@ -1737,8 +1737,21 @@ pub fn scrape_accept(
     )?)
 }
 
+/// 会联网的命令用的连接：自己开一条，**不占共享的 `corpus()` 锁**。
+///
+/// 识别要走 MusicBrainz、封面一张十几秒。拿着共享锁联网的话，这段时间里翻曲库、
+/// 查词、播放统计全都排在它后面。后台刮削作业一直是这么做的（见 `scrape::spawn`）；
+/// 单首的这几个命令以前直接用了共享连接。WAL 下两条连接并发读写由 SQLite 协调，
+/// rusqlite 默认 5 秒 busy timeout。
+fn own_connection(state: &AppState) -> anyhow::Result<rusqlite::Connection> {
+    let conn = rusqlite::Connection::open(&state.db_path)
+        .map_err(|err| anyhow::anyhow!("打不开 {}：{err}", state.db_path.display()))?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+    Ok(conn)
+}
+
 /// 用户跳过。重跑时不再自动处理它。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_skip(
     state: State<'_, AppState>,
     file_path: String,
@@ -1751,7 +1764,7 @@ pub fn scrape_skip(
 }
 
 /// 把失败的打回待刮，供「重试全部失败」用。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_retry_failed(state: State<'_, AppState>) -> CmdResult<usize> {
     let corpus = state.corpus();
     let conn = corpus.connection();
@@ -1791,7 +1804,7 @@ pub struct ArtistRow {
 }
 
 /// 库里的歌手，连同已经刮到的资料。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn artist_roster(state: State<'_, AppState>) -> CmdResult<Vec<ArtistRow>> {
     use rusqlite::OptionalExtension;
     let corpus = state.corpus();
@@ -1840,14 +1853,15 @@ pub fn artist_roster(state: State<'_, AppState>) -> CmdResult<Vec<ArtistRow>> {
 }
 
 /// 刮一个歌手。同步，两三秒（MusicBrainz 限每秒一次）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_artist(
     state: State<'_, AppState>,
     name: String,
 ) -> CmdResult<crate::scrape::ArtistOutcome> {
-    let corpus = state.corpus();
+    // 要联网（查歌手、下照片），用自己的连接，见 `own_connection`
+    let conn = own_connection(&state)?;
     Ok(crate::scrape::scrape_artist_one(
-        corpus.connection(),
+        &conn,
         &state.artists_dir,
         &name,
     )?)
@@ -1855,7 +1869,7 @@ pub fn scrape_artist(
 
 /// 批量刮歌手，后台跑。和曲目刮削共用一个作业标志——
 /// 两边都要排 MusicBrainz 的队，同时跑只会互相拖慢。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn scrape_artists_start<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -1877,7 +1891,7 @@ pub fn scrape_artists_start<R: tauri::Runtime>(
 }
 
 /// 用曲目封面填 `albums.artwork_path`。不额外发网络请求。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn fill_album_artwork(state: State<'_, AppState>) -> CmdResult<usize> {
     let corpus = state.corpus();
     Ok(crate::scrape::fill_album_artwork(corpus.connection())?)
@@ -1903,13 +1917,13 @@ pub async fn scrape_backfill_covers<R: tauri::Runtime>(
 // ────────────────────────────── Anki ──────────────────────────────
 
 /// Anki 那边现在什么情况。连不上不是错误——界面该显示指引。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn anki_status(_state: State<'_, AppState>) -> CmdResult<crate::anki::AnkiStatus> {
     Ok(crate::anki::status())
 }
 
 /// 候选词表，按语料里的频次排，并标出 Anki 里已有 / 已学过的。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn anki_words(
     state: State<'_, AppState>,
     pos: Option<Vec<String>>,
@@ -1936,7 +1950,7 @@ pub fn anki_words(
 }
 
 /// 组一张卡看看。**不碰 Anki**，纯预览。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn anki_preview(
     state: State<'_, AppState>,
     lemma: String,
@@ -1958,14 +1972,14 @@ pub fn anki_preview(
 }
 
 /// 把「JPOP Corpus」笔记类型建好或更新到最新。返回是不是新建的。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn anki_ensure_note_type(_state: State<'_, AppState>) -> CmdResult<bool> {
     let anki = crate::anki::client();
     jp_anki::export::prepare(&anki).map_err(|e| anyhow::anyhow!("{}", e.advice()).into())
 }
 
 /// 批量导出，后台跑。进度走 `anki://progress` 事件。
-#[tauri::command]
+#[tauri::command(async)]
 #[allow(clippy::too_many_arguments)]
 pub fn anki_export_start<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
@@ -2008,13 +2022,13 @@ pub fn anki_is_running(state: State<'_, AppState>) -> CmdResult<bool> {
 }
 
 /// 有没有 ffmpeg。没有时界面把「音频片段」禁掉，和 Python 一样。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn anki_audio_available(state: State<'_, AppState>) -> CmdResult<bool> {
     Ok(crate::anki::audio_options(&state.db_path).is_some())
 }
 
 /// 更新选中的词：只重查读音、释义、JLPT、音高、词频、词性，不动例句和音频。后台跑。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn anki_update_start<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -2057,7 +2071,7 @@ pub async fn anki_refresh_preview(
 }
 
 /// 刷新旧牌组：范围内每张 JPOP Corpus 卡重查词典字段，不动例句和音频。后台跑。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn anki_refresh_start<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -2080,7 +2094,7 @@ pub fn anki_refresh_start<R: tauri::Runtime>(
 // ────────────────────────────── 分词校正 ──────────────────────────────
 
 /// 打开编辑器时取一行的分词。行不存在返回 null。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn token_correction(
     state: State<'_, AppState>,
     utterance_id: i64,
@@ -2089,7 +2103,7 @@ pub fn token_correction(
 }
 
 /// 保存校正：改写 tokens 并记下校正，下次检索立即生效。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_token_correction(
     state: State<'_, AppState>,
     utterance_id: i64,
@@ -2101,7 +2115,7 @@ pub fn save_token_correction(
 }
 
 /// 撤销校正，回到第一次校正前的分词。返回是否真的撤销了。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn revert_token_correction(state: State<'_, AppState>, utterance_id: i64) -> CmdResult<bool> {
     Ok(state.corpus().revert_token_correction(utterance_id)?)
 }
@@ -2109,7 +2123,7 @@ pub fn revert_token_correction(state: State<'_, AppState>, utterance_id: i64) ->
 // ---------------------------------------------------------------- 词典（Yomitan 格式）
 
 /// 已导入的词典，按界面顺序。还没导入过时返回空表（不新建库文件）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dict_list(state: State<'_, AppState>) -> CmdResult<Vec<jp_dict::store::DictionaryInfo>> {
     Ok(state
         .with_dictionaries(false, |store| store.dictionaries())?
@@ -2117,7 +2131,7 @@ pub fn dict_list(state: State<'_, AppState>) -> CmdResult<Vec<jp_dict::store::Di
 }
 
 /// 旧版（PyQt）登记过的词典包，给「从旧版迁移」用。只读 corpus.db。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dict_legacy_sources(
     state: State<'_, AppState>,
 ) -> CmdResult<Vec<crate::dict::LegacySource>> {
@@ -2130,7 +2144,7 @@ pub fn dict_legacy_sources(
 }
 
 /// 后台导入一批词典包（.zip 或解压开的目录）。进度走 `dict://progress`，结束发 `dict://done`。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dict_import_start<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
@@ -2168,7 +2182,7 @@ fn ensure_not_importing(state: &AppState, what: &str) -> CmdResult<()> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dict_set_enabled(state: State<'_, AppState>, id: i64, enabled: bool) -> CmdResult<()> {
     ensure_not_importing(&state, "启用或停用")?;
     state.with_dictionaries(false, |store| store.set_enabled(id, enabled))?;
@@ -2176,14 +2190,14 @@ pub fn dict_set_enabled(state: State<'_, AppState>, id: i64, enabled: bool) -> C
 }
 
 /// `ids` 是界面上从上到下的新顺序。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dict_set_order(state: State<'_, AppState>, ids: Vec<i64>) -> CmdResult<()> {
     ensure_not_importing(&state, "调整顺序")?;
     state.with_dictionaries(false, |store| store.set_order(&ids))?;
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dict_delete(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
     ensure_not_importing(&state, "删除")?;
     state.with_dictionaries(false, |store| store.delete(id))?;
@@ -2265,7 +2279,7 @@ pub async fn anki_model_names() -> CmdResult<Vec<String>> {
 }
 
 /// 词典里的图片，原样返回字节（前端按扩展名建 Blob，不走 JSON 数组）。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dict_media(
     state: State<'_, AppState>,
     dictionary: String,
@@ -2296,7 +2310,7 @@ pub struct DictionaryStyles {
 }
 
 /// 启用的词典自带的 styles.css。界面按词典名限定作用域后再注入，免得互相污染。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn dict_styles(state: State<'_, AppState>) -> CmdResult<Vec<DictionaryStyles>> {
     Ok(state
         .with_dictionaries(false, |store| {

@@ -504,3 +504,35 @@ fn update_download_ignores_whatever_asset_the_frontend_sends() {
     let err = invoke(f.w(), "update_download", forged).expect_err("下了没检查过的版本");
     assert!(err.to_string().contains("不是刚才检查到的"), "{err}");
 }
+
+// ──────────────────────────── 锁与网络 ────────────────────────────
+
+/// 会联网的刮削命令不能占着共享的 `corpus()` 锁：识别要走 MusicBrainz、封面一张十几秒，
+/// 这段时间里翻曲库、查词、播放统计全都排在后面。它们要像后台作业那样自己开连接。
+///
+/// 测法：测试线程自己攥住 `corpus()` 锁，再发命令。参数故意给成查不到的，
+/// 命令在联网之前就会报错返回——前提是它不去等那把锁。老代码会一直卡在锁上，
+/// 所以等 5 秒没回来就判红，而不是让整个测试挂死。
+#[test]
+fn network_scrape_commands_do_not_wait_on_the_shared_corpus_lock() {
+    use tauri::Manager;
+    let f = Fixture::new("scrape-lock");
+    let w = f.w();
+    let state = w.state::<AppState>();
+    let held = state.corpus();
+
+    for (cmd, args) in [
+        ("scrape_track", json!({ "songId": "不存在的歌" })),
+        ("scrape_accept", json!({ "filePath": "Z:/不存在.flac", "candidateIndex": 0 })),
+    ] {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(invoke(w, cmd, args).is_err());
+        });
+        match rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(failed) => assert!(failed, "{cmd} 用查不到的参数居然成功了"),
+            Err(_) => panic!("{cmd} 在等 corpus() 锁：联网的命令不该占着共享连接"),
+        }
+    }
+    drop(held);
+}
