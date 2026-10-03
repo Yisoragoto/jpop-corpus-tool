@@ -106,9 +106,13 @@ try {
     Good "起来了，pid $($proc.Id)"
 
     Step '问一遍界面和后端'
-    $json = & node (Join-Path $PSScriptRoot 'smoke.mjs') $Port
+    # **让 smoke.mjs 把 JSON 写成文件，这里读文件**。不要去读它的 stdout：
+    # Windows PowerShell 5.1 会把原生命令的输出按控制台宽度折行，
+    # 一条长路径中间被插进换行，ConvertFrom-Json 就报 ArgumentException。
+    $smokeOut = Join-Path $sandbox 'smoke.json'
+    & node (Join-Path $PSScriptRoot 'smoke.mjs') $Port $smokeOut | Out-Null
     if ($LASTEXITCODE -ne 0) { Bad "smoke.mjs 没跑通"; throw 'smoke 失败' }
-    $r = $json | ConvertFrom-Json
+    $r = Get-Content $smokeOut -Raw -Encoding UTF8 | ConvertFrom-Json
 
     if ($r.href -like 'http*') { Good "页面：$($r.href)" } else { Bad "页面没加载出来：$($r.href)" }
     if ($r.navButtons.Count -ge 8) { Good "左侧导航 $($r.navButtons.Count) 项" } else { Bad "导航只有 $($r.navButtons.Count) 项，界面没渲染全" }

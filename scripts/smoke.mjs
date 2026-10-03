@@ -1,13 +1,20 @@
 // 连上开着远程调试端口的 WebView2，调几个命令，把结果打成 JSON。
 // 只给 release-check.ps1 用；手头没有别的依赖，node 20 自带 fetch 和 WebSocket。
 //
-//   node scripts/smoke.mjs <调试端口>
+//   node scripts/smoke.mjs <调试端口> [输出文件]
+//
+// 给了输出文件就把 JSON 写进去。**调用方应当读那个文件而不是读 stdout**：
+// Windows PowerShell 5.1 会把原生命令的 stdout 按控制台宽度折行，
+// 一条长路径中间被插进换行，JSON 就废了（ConvertFrom-Json 报 ArgumentException）。
 //
 // 退出码：0 一切正常，1 连不上或命令失败。
 
+import { writeFileSync } from 'node:fs';
+
 const port = process.argv[2];
+const outFile = process.argv[3];
 if (!port) {
-  console.error('用法：node scripts/smoke.mjs <调试端口>');
+  console.error('用法：node scripts/smoke.mjs <调试端口> [输出文件]');
   process.exit(1);
 }
 
@@ -80,6 +87,8 @@ const out = await run(`(async () => {
   };
 })()`);
 
-console.log(JSON.stringify(out, null, 1));
+const json = JSON.stringify(out, null, 1);
+if (outFile) writeFileSync(outFile, json, 'utf8');
+console.log(json);
 ws.close();
 process.exit(0);
