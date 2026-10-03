@@ -47,6 +47,28 @@ const CREDIT_LABELS: &[(&str, &str)] = &[
     ("译词", "translator"),
 ];
 
+/// 其余的署名标签：认出来就整行丢掉，不当歌词、也不进 `credits`。
+///
+/// 出处：网易云、QQ 音乐歌词开头那一串「标签 : 人名」署名行。存量的 415 份 .lrc 里
+/// 实测出现过的只有作词 / 作曲 / 编曲 / 制作人（「制作人」13 行，以前被当成歌词入库）；
+/// 其余按两家常见的署名补齐，简体、繁体都收。英文标签比较时不分大小写。
+///
+/// 「词」「曲」「Lyrics」「Music」「Arrangement」虽然说的也是作词作曲编曲，
+/// 这里**只丢不收**：`credits` 的来源只认上面那张表的写法，不扩大。
+const OTHER_CREDIT_LABELS: &[&str] = &[
+    "词", "詞", "曲",
+    "制作人", "製作人", "制作", "製作", "监制", "監製", "出品", "出品人", "发行", "發行",
+    "统筹", "統籌", "企划", "企劃", "配唱制作人", "人声编辑", "人聲編輯",
+    "混音", "混音师", "混音師", "母带", "母帶", "母带工程师", "母帶工程師",
+    "录音", "錄音", "录音师", "錄音師", "录音室", "錄音室",
+    "和声", "和聲", "和声编写", "和聲編寫",
+    "吉他", "贝斯", "貝斯", "鼓", "键盘", "鍵盤", "钢琴", "鋼琴", "弦乐", "弦樂",
+    "OP", "SP", "ISRC",
+    "Lyrics", "Music", "Arrangement", "Arranger", "Composer", "Lyricist",
+    "Producer", "Produced by", "Mix", "Mixing", "Mixed by", "Mastering", "Mastered by",
+    "Recording", "Recorded by",
+];
+
 /// 三段时间戳超过这个秒数就认为不可能是 `h:mm:ss`。
 /// 没有哪首 J-Pop 有一小时长。
 const IMPLAUSIBLE_SONG_SEC: f64 = 3600.0;
@@ -130,15 +152,19 @@ pub fn parse(text: &str) -> ParsedLrc {
             continue;
         }
 
-        if let Some((role, names)) = parse_credit(body) {
-            for name in names {
-                let key = (role.to_string(), name.clone());
-                if !seen_credits.contains(&key) {
-                    seen_credits.push(key);
-                    out.credits.push(Credit { role, name });
+        match parse_credit(body) {
+            Some(CreditLine::Role(role, names)) => {
+                for name in names {
+                    let key = (role.to_string(), name.clone());
+                    if !seen_credits.contains(&key) {
+                        seen_credits.push(key);
+                        out.credits.push(Credit { role, name });
+                    }
                 }
+                continue;
             }
-            continue;
+            Some(CreditLine::Other) => continue,
+            None => {}
         }
 
         // 一行可以带多个时间戳（副歌复用），每个都算一行
@@ -296,27 +322,40 @@ fn is_metadata_tag(line: &str) -> bool {
     }
 }
 
-/// 「作词 : n-buna」→ ("lyricist", ["n-buna"])。
+/// 一行署名的两种去向。
+enum CreditLine {
+    /// 作词 / 作曲 / 编曲 / 译词：进 `credits`
+    Role(&'static str, Vec<String>),
+    /// 其余署名（制作人、混音、OP……）：不是歌词，也不进 `credits`，丢掉
+    Other,
+}
+
+/// 「作词 : n-buna」→ `Role("lyricist", ["n-buna"])`，「混音：某人」→ `Other`，
+/// 不是署名行 → None。
 ///
-/// 要求「标签 + 冒号」的结构，所以正文里含「作曲」二字的歌词
-/// （比如「作曲家になりたかった」）不会被误判。
-fn parse_credit(body: &str) -> Option<(&'static str, Vec<String>)> {
-    for (label, role) in CREDIT_LABELS {
-        let Some(rest) = body.strip_prefix(label) else { continue };
-        let rest = rest.trim_start();
-        let rest = rest.strip_prefix(':').or_else(|| rest.strip_prefix('：'))?;
+/// 要求「**标签表里的词** + 冒号 + 内容」的结构：冒号前的整段必须正好是表里的一个标签。
+/// 所以正文里含「作曲」二字的歌词（「作曲家になりたかった」）、碰巧带冒号的歌词
+/// （181 号存量歌词里的「目が開いてく4:30 A.M.」）都不会被误判。
+fn parse_credit(body: &str) -> Option<CreditLine> {
+    let colon = body.find([':', '：'])?;
+    let label = body[..colon].trim();
+    let rest = body[colon..].trim_start_matches([':', '：']).trim();
+    if label.is_empty() || rest.is_empty() {
+        return None;
+    }
+    if let Some((_, role)) = CREDIT_LABELS.iter().find(|(l, _)| *l == label) {
         let names: Vec<String> = rest
             // 斜杠是这个库里唯一可靠的合作分隔符
             .split(['/', '／'])
             .map(|n| n.trim().trim_matches(|c: char| " .,-".contains(c)).to_string())
             .filter(|n| !n.is_empty())
             .collect();
-        if names.is_empty() {
-            return None;
-        }
-        return Some((role, names));
+        return (!names.is_empty()).then_some(CreditLine::Role(role, names));
     }
-    None
+    OTHER_CREDIT_LABELS
+        .iter()
+        .any(|l| l.eq_ignore_ascii_case(label))
+        .then_some(CreditLine::Other)
 }
 
 /// 读文件并解析。编码按 UTF-8 → CP932 → GBK 依次尝试。
@@ -588,6 +627,49 @@ mod tests {
         let parsed = parse("[00:01.00]<00:01>あ<00:02.5>い<00:03.125> う \n[00:05.00]<00:05.00>\n");
         assert_eq!(parsed.lines.len(), 1);
         assert_eq!(parsed.lines[0].text, "あい う");
+    }
+
+    /// 作词作曲编曲译词以外的署名行（网易云 / QQ 音乐歌词头部那一串）不是歌词：丢掉，也不进 credits
+    #[test]
+    fn other_credit_lines_are_dropped_not_kept_as_lyrics() {
+        let lrc = "[00:00.00] 作词 : n-buna\n\
+                   [00:00.50] 制作人 : n-buna\n\
+                   [00:00.60] 词：某人\n\
+                   [00:00.70] 曲 : 某人\n\
+                   [00:01.00]混音：某人\n\
+                   [00:01.10]母帶 : 某人\n\
+                   [00:01.20]吉他：A/B\n\
+                   [00:01.30]鼓 : C\n\
+                   [00:01.40]OP : Some Publishing\n\
+                   [00:01.50]SP：Sub Publishing\n\
+                   [00:01.60]Lyrics: Someone\n\
+                   [00:01.70]Music : Someone\n\
+                   [00:01.80]Arrangement：Someone\n\
+                   [00:01.90]Producer: Someone\n\
+                   [00:02.00]Mix: Someone\n\
+                   [00:02.10]mastering : Someone\n\
+                   [00:10.00]歌詞\n";
+        let parsed = parse(lrc);
+        let texts: Vec<&str> = parsed.lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, ["歌詞"]);
+        // 只有作词进了 credits，其余丢弃
+        assert_eq!(parsed.credits.len(), 1);
+        assert_eq!(parsed.credits[0].role, "lyricist");
+    }
+
+    /// 结构判断仍然是「标签表里的词 + 冒号」：正文里碰巧有冒号、或以标签字开头的都不动
+    #[test]
+    fn lyrics_with_a_colon_or_a_label_like_start_are_not_credits() {
+        // 181 号存量歌词里真有这一行
+        let lrc = "[00:01.00]目が開いてく4:30 A.M.\n\
+                   [00:02.00]作曲家になりたかった\n\
+                   [00:03.00]曲がり角で\n\
+                   [00:04.00]Love: is all you need\n\
+                   [00:05.00]鼓動が鳴る\n\
+                   [00:06.00]制作人 :\n";
+        let parsed = parse(lrc);
+        assert!(parsed.credits.is_empty());
+        assert_eq!(parsed.lines.len(), 6, "{:?}", parsed.lines);
     }
 
     /// 尖括号里不是时间的，是正文
