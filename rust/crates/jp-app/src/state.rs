@@ -70,6 +70,8 @@ pub struct AppState {
     /// 导入作业。只用它的取消标志——导入跑在 `spawn_blocking` 里、
     /// 一首歌一个事务，中途停下来是安全的（见 `jp_import::execute_cancellable`）。
     import_job: std::sync::Arc<crate::job::Job>,
+    /// 更新器：这一轮下好、校验过的安装包。`update_install` 只认它
+    updates: crate::update::UpdateMemory,
 }
 
 impl AppState {
@@ -135,6 +137,7 @@ impl AppState {
             dict_job: std::sync::Arc::new(crate::dict::ImportJob::default()),
             lyrics_job: std::sync::Arc::new(crate::lyrics::LyricsJob::default()),
             import_job: std::sync::Arc::new(crate::job::Job::default()),
+            updates: Default::default(),
         })
     }
 
@@ -162,6 +165,11 @@ impl AppState {
 
     pub fn lyrics_job(&self) -> std::sync::Arc<crate::lyrics::LyricsJob> {
         self.lyrics_job.clone()
+    }
+
+    /// 更新器记住的东西（下好、校验过的安装包）
+    pub fn updates(&self) -> &crate::update::UpdateMemory {
+        &self.updates
     }
 
     pub fn import_job(&self) -> std::sync::Arc<crate::job::Job> {

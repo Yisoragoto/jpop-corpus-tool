@@ -579,8 +579,11 @@ export const api = {
   updateChangelog: (limit?: number) => call<ReleaseInfo[]>("update_changelog", { limit }),
   /** 下载安装包。进度走 update://progress 事件，返回落盘路径。 */
   updateDownload: (asset: UpdateAsset) => call<string>("update_download", { asset }),
-  /** 拉起安装程序并退出应用（NSIS 要替换正在运行的 exe）。 */
-  updateInstall: (path: string) => call<void>("update_install", { path }),
+  /**
+   * 拉起安装程序并退出应用（NSIS 要替换正在运行的 exe）。
+   * 不收路径：后端只启动它自己这一轮下好、校验过的那个文件。
+   */
+  updateInstall: () => call<void>("update_install", {}),
   /** 丢弃上一次扫描的结果。 */
   cancelImport: () => call<void>("cancel_import"),
 

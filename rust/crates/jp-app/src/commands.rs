@@ -709,6 +709,7 @@ pub async fn update_download<R: tauri::Runtime>(
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("updates");
     let handle = app.clone();
+    let expected = asset.sha256.clone().unwrap_or_default();
     let path = tauri::async_runtime::spawn_blocking(move || {
         crate::update::download_installer(&asset, &dir, |received, total| {
             let _ = handle.emit(
@@ -724,6 +725,10 @@ pub async fn update_download<R: tauri::Runtime>(
     })
     .await
     .map_err(|err| anyhow::anyhow!("下载线程出错：{err}"))??;
+    // 记下来：`update_install` 只认这一个文件
+    app.state::<AppState>()
+        .updates()
+        .remember_download(path.clone(), expected);
     let _ = app.emit(
         "update://progress",
         crate::update::DownloadProgress {
@@ -738,14 +743,17 @@ pub async fn update_download<R: tauri::Runtime>(
 
 /// 拉起安装程序并退出。**NSIS 要替换正在运行的 exe，所以必须先退。**
 ///
+/// **不收路径**：只启动 `update_download` 这一轮下好、校验过的那个文件
+/// （见 [`crate::update::UpdateMemory`]）。路径由前端给的话，前端就能让程序执行任意 exe。
+///
 /// 退出前把未结束的收听会话冲刷掉，不然这一段听歌记录会丢。
 #[tauri::command]
 pub fn update_install<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, AppState>,
-    path: String,
 ) -> CmdResult<()> {
-    crate::update::launch_installer(std::path::Path::new(&path))?;
+    let path = state.updates().installer_to_launch()?;
+    crate::update::launch_installer(&path)?;
     state.flush_session();
     app.exit(0);
     Ok(())

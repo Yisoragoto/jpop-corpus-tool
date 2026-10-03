@@ -78,10 +78,10 @@ export function UpdateCard({ icons, onError }: Props) {
     setNote("");
     setProgress(null);
     try {
-      const path = await api.updateDownload(asset);
+      await api.updateDownload(asset);
       setPhase("installing");
       setNote("校验通过，正在启动安装程序…应用会关闭。");
-      await api.updateInstall(path);
+      await api.updateInstall();
     } catch (err) {
       setPhase("");
       onError(err instanceof Error ? err.message : String(err));

@@ -435,3 +435,24 @@ fn an_unregistered_command_is_rejected() {
         "不存在的命令居然成功了，说明这组测试证明不了任何事"
     );
 }
+
+// ────────────────────────────── 更新器 ──────────────────────────────
+
+/// `update_install` 拉起的是一个 exe，**路径不能由前端决定**：
+/// 前端（或者任何能往 webview 里注入脚本的东西）传一个路径进来就能让程序执行它。
+/// 只该启动 `update_download` 这一轮亲手下好、校验过的那一个文件；没有就拒绝。
+#[test]
+fn update_install_never_runs_a_path_handed_in_by_the_frontend() {
+    let f = Fixture::new("update-install");
+    // 一个真实存在的文件：老代码会把它当安装包拉起来
+    let bait = f.dir().join("bait-setup.exe");
+    std::fs::write(&bait, b"not an installer").unwrap();
+
+    let err = invoke(f.w(), "update_install", json!({ "path": bait.display().to_string() }))
+        .expect_err("没下载过却拉起了安装程序");
+    let message = err.to_string();
+    assert!(message.contains("还没有下载好"), "拒绝的原因要说清楚：{message}");
+
+    let err = invoke(f.w(), "update_install", json!({})).expect_err("没下载过却拉起了安装程序");
+    assert!(err.to_string().contains("还没有下载好"), "{err}");
+}

@@ -314,6 +314,47 @@ pub fn download_installer(
     Ok(dest)
 }
 
+/// 更新器在这个进程里记住的东西。放在 `AppState` 里。
+///
+/// **为什么要记**：安装程序是一个要执行的 exe。如果「装哪个文件」由前端传进来，
+/// 那么前端（或者任何能往 webview 里注入脚本的东西）就能让程序执行任意路径。
+/// 所以只启动 `update_download` 这一轮亲手下好、校验过的那一个文件。
+#[derive(Debug, Default)]
+pub struct UpdateMemory {
+    downloaded: std::sync::Mutex<Option<Downloaded>>,
+}
+
+/// 下好并校验通过的安装包：路径 + 当时校验用的哈希。
+#[derive(Debug, Clone)]
+struct Downloaded {
+    path: PathBuf,
+    sha256: String,
+}
+
+impl UpdateMemory {
+    /// 记下一个刚刚落盘、而且校验通过的安装包。
+    pub fn remember_download(&self, path: PathBuf, sha256: String) {
+        *self.downloaded.lock().unwrap_or_else(|e| e.into_inner()) = Some(Downloaded { path, sha256 });
+    }
+
+    /// 要拉起的那个安装包。没下载过就报错。
+    ///
+    /// **启动前再算一遍哈希**：缓存目录谁都能写，从下完到点「安装」之间
+    /// 文件被换掉的话，这里拦住。
+    pub fn installer_to_launch(&self) -> Result<PathBuf> {
+        let Some(found) = self.downloaded.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+            bail!("还没有下载好安装包：先检查更新、下载，校验通过之后才能安装");
+        };
+        if !verified(&found.path, &found.sha256) {
+            bail!(
+                "安装包下好之后被改动过（或者已经不在了），已拒绝启动：{}；请重新下载",
+                found.path.display()
+            );
+        }
+        Ok(found.path)
+    }
+}
+
 /// 拉起安装程序。调用方随后退出应用——NSIS 要替换正在运行的 exe。
 pub fn launch_installer(path: &Path) -> Result<()> {
     anyhow::ensure!(path.is_file(), "找不到安装包：{}", path.display());
@@ -480,4 +521,25 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// 没下载过就没有可装的；下好之后文件被换掉也不能装
+    #[test]
+    fn only_the_file_this_process_downloaded_and_verified_can_be_launched() {
+        let memory = UpdateMemory::default();
+        let err = memory.installer_to_launch().unwrap_err();
+        assert!(format!("{err}").contains("还没有下载好"), "{err}");
+
+        let dir = std::env::temp_dir().join(format!("jp-update-memory-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("JPOP.Corpus.Tool_9.9.9_x64-setup.exe");
+        let body = b"pretend this is an installer";
+        std::fs::write(&path, body).unwrap();
+        memory.remember_download(path.clone(), format!("{:x}", Sha256::digest(body)));
+        assert_eq!(memory.installer_to_launch().unwrap(), path);
+
+        std::fs::write(&path, b"swapped after download").unwrap();
+        let err = memory.installer_to_launch().unwrap_err();
+        assert!(format!("{err}").contains("被改动过"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
