@@ -10,6 +10,11 @@
 rust/crates/jp-tokenizer/resources/* -text
 rust/crates/jp-anki/data/** -text
 
+# Python 在 Windows 上用文本模式写出来的逐字节副本：**CRLF 是内容的一部分**。
+# 报告测试拿它和 `report_text()` 的输出整段对比，归一成 LF 就永远对不上
+# （本机看不出来：工作区那份还是旧的 CRLF，只有干净签出的 CI 才会露馅）。
+rust/crates/jp-corpus/testdata/*_py.txt -text
+
 # 二进制
 *.png binary
 *.webp binary
