@@ -577,8 +577,11 @@ export const api = {
   updateCheck: () => call<UpdateStatus>("update_check"),
   /** 最近几次发布，给「查看更新日志」用。 */
   updateChangelog: (limit?: number) => call<ReleaseInfo[]>("update_changelog", { limit }),
-  /** 下载安装包。进度走 update://progress 事件，返回落盘路径。 */
-  updateDownload: (asset: UpdateAsset) => call<string>("update_download", { asset }),
+  /**
+   * 下载安装包。进度走 update://progress 事件，返回落盘路径。
+   * 只传版本号：下哪个文件、期望的哈希都由后端按它自己那次检查决定，且必须比当前版本新。
+   */
+  updateDownload: (version: string) => call<string>("update_download", { version }),
   /**
    * 拉起安装程序并退出应用（NSIS 要替换正在运行的 exe）。
    * 不收路径：后端只启动它自己这一轮下好、校验过的那个文件。
@@ -920,7 +923,7 @@ export const DICT_DOWNLOAD_BYTES = 45_128_544;
 /** 后端说「没有词典」时错误里一定有这一句，界面据此换成「下载」那条横幅 */
 export const NO_DICTIONARY = "找不到 Sudachi 词典";
 
-/** 一次发布里能装的那个文件（`update_check` 给的，原样传回 `update_download`）。 */
+/** 一次发布里能装的那个文件（`update_check` 给的，只用来显示；下载时只回传版本号）。 */
 export interface UpdateAsset {
   name: string;
   size: number;

@@ -1,14 +1,21 @@
 //! 检查更新。
 //!
 //! 版本就发在这个仓库的 Releases 里，所以更新也从那儿来：问一次 GitHub 的
-//! Releases API，比版本号，需要的话把安装程序下回来、**校验 SHA-256**、再拉起来。
+//! Releases API，比版本号，需要的话把安装程序下回来、校验 SHA-256、再拉起来。
 //!
 //! ## 几条守得住的线
 //!
-//! * **只认自己仓库的下载地址**（[`is_official_download_url`]）。要跑的是一个 exe，
-//!   地址从哪来就得由谁负责；接口返回里出现别的域名一律不碰。
-//! * **装之前校验哈希**。GitHub 的资产带 `digest: "sha256:…"`，下完当场算一遍对上才装。
-//!   对不上就删掉重来——宁可更新失败，也不执行一个来路不明的文件。
+//! * **下什么、装什么都由后端定**（[`UpdateMemory`]）。前端只说「下载 0.2.9」「安装」：
+//!   地址、文件名、期望的哈希都取自后端自己那次 `update_check` 拿到的发布；
+//!   安装只启动这一轮亲手下好、校验过的那个文件。
+//! * **只往前升**。要下的版本必须比正在跑的新（[`is_newer`]），旧版本的安装包一律不下，
+//!   免得被降级回有问题的旧版。
+//! * **只认自己仓库的下载地址**（[`is_official_download_url`]），文件名只许
+//!   `[A-Za-z0-9._-]` 且以 `-setup.exe` 结尾（[`check_asset_name`]）——它要拼进缓存目录。
+//! * **校验哈希**。GitHub 的资产带 `digest: "sha256:…"`，下完当场算一遍，对不上就删掉。
+//!   **它防的是传输损坏、断点续传拼错、缓存里的文件被换掉**，不是来源伪造：
+//!   哈希和安装包来自同一个 GitHub 发布，能改发布的人两个都能改。
+//!   **信任根是 GitHub 账号（发布权限）加 HTTPS**；安装包没有代码签名，这里也不验签。
 //! * **解析不出版本号就当没有新版**。宁可不提示，也不要因为一个奇怪的 tag 名天天弹窗。
 //! * 装不装由用户点。「下载后自动安装」默认关着，开了也会把每一步报出来。
 //!
@@ -20,7 +27,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 /// 版本发在哪
@@ -34,9 +41,10 @@ pub(crate) const USER_AGENT: &str = "jpop-corpus-tool-updater";
 
 /// 一次发布里能装的那个文件。
 ///
-/// 也会从前端传回来（下载时），所以要能反序列化——但**传回来的地址和哈希一样要核**，
-/// 见 `download_installer`：地址必须是本仓库的发布地址，哈希对不上就删掉。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// **只序列化、不反序列化**：它只从后端流向前端给人看。下载时前端只回传版本号，
+/// 资产从 [`UpdateMemory`] 里取——以前前端把整条资产传回来，期望的哈希就成了
+/// 调用方自己说了算，校验形同虚设。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetView {
     pub name: String,
@@ -103,6 +111,24 @@ pub fn pick_installer(assets: &[AssetView]) -> Option<AssetView> {
 /// 返回里混进别的域名，都在这里拦住。
 pub fn is_official_download_url(url: &str) -> bool {
     url.starts_with(DOWNLOAD_PREFIX) && !url.contains("..")
+}
+
+/// 安装包的文件名能不能用。
+///
+/// 它会拼进缓存目录（`dir.join(name)`），所以带路径分隔符、`..`、盘符的一律不要——
+/// 否则能写到缓存目录外面去。只许 `[A-Za-z0-9._-]`，且必须是 NSIS 的 `-setup.exe`。
+pub fn check_asset_name(name: &str) -> Result<()> {
+    let allowed = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+    let stem_ok = name
+        .to_ascii_lowercase()
+        .strip_suffix("-setup.exe")
+        .is_some_and(|stem| !stem.is_empty());
+    if !allowed || !stem_ok || name.contains("..") {
+        bail!("安装包文件名不合规，已拒绝：{name:?}（只允许字母数字和 . _ -，且以 -setup.exe 结尾）");
+    }
+    Ok(())
 }
 
 /// 解析 Releases API 的一条。草稿和解析不出版本号的跳过（返回 None）。
@@ -278,6 +304,7 @@ pub fn download_installer(
     dir: &Path,
     mut on_progress: impl FnMut(u64, u64),
 ) -> Result<PathBuf> {
+    check_asset_name(&asset.name)?;
     if !is_official_download_url(&asset.url) {
         bail!("下载地址不是本仓库的发布地址，已拒绝：{}", asset.url);
     }
@@ -321,6 +348,8 @@ pub fn download_installer(
 /// 所以只启动 `update_download` 这一轮亲手下好、校验过的那一个文件。
 #[derive(Debug, Default)]
 pub struct UpdateMemory {
+    /// 最近一次 `update_check` 拿到的最新发布
+    checked: std::sync::Mutex<Option<ReleaseView>>,
     downloaded: std::sync::Mutex<Option<Downloaded>>,
 }
 
@@ -332,6 +361,43 @@ struct Downloaded {
 }
 
 impl UpdateMemory {
+    /// 记下这次检查拿到的最新发布。下载只从这里取资产。
+    pub fn remember_check(&self, status: &UpdateStatus) {
+        *self.checked.lock().unwrap_or_else(|e| e.into_inner()) = status.latest.clone();
+    }
+
+    /// 要下载的那个安装包：必须是刚才检查到的那一次发布，而且比 `current` 新。
+    ///
+    /// 前端只给一个版本号——用来确认用户点的就是界面上显示的那一版，
+    /// 不是用来决定下什么。
+    pub fn installer_for(&self, current: &str, version: &str) -> Result<AssetView> {
+        let Some(release) = self.checked.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+            bail!("还没有检查过更新：先检查更新，再下载");
+        };
+        let wanted = version.trim().trim_start_matches(['v', 'V']);
+        if wanted != release.version {
+            bail!(
+                "要下载的版本 {version} 不是刚才检查到的 {}；请重新检查更新",
+                release.version
+            );
+        }
+        if !is_newer(current, &release.version) {
+            bail!(
+                "{} 不比正在用的 {current} 新，拒绝降级或重装",
+                release.version
+            );
+        }
+        let Some(asset) = release.installer else {
+            bail!("这次发布没有可直接安装的安装包，请到发布页手动下载");
+        };
+        // 地址还要落在这一版自己的 tag 下面：防的是接口返回里混进别的版本的文件
+        let own_prefix = format!("{DOWNLOAD_PREFIX}{}/", release.tag);
+        if !asset.url.starts_with(&own_prefix) {
+            bail!("安装包地址不在 {} 这一版下面，已拒绝：{}", release.tag, asset.url);
+        }
+        Ok(asset)
+    }
+
     /// 记下一个刚刚落盘、而且校验通过的安装包。
     pub fn remember_download(&self, path: PathBuf, sha256: String) {
         *self.downloaded.lock().unwrap_or_else(|e| e.into_inner()) = Some(Downloaded { path, sha256 });
@@ -541,5 +607,90 @@ mod tests {
         let err = memory.installer_to_launch().unwrap_err();
         assert!(format!("{err}").contains("被改动过"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn release(version: &str, name: &str) -> ReleaseView {
+        ReleaseView {
+            version: version.into(),
+            tag: format!("v{version}"),
+            name: version.into(),
+            notes: String::new(),
+            published_at: String::new(),
+            url: String::new(),
+            prerelease: false,
+            installer: Some(AssetView {
+                name: name.into(),
+                size: 10,
+                url: format!("{DOWNLOAD_PREFIX}v{version}/{name}"),
+                sha256: Some("ab".repeat(32)),
+            }),
+        }
+    }
+
+    fn checked(memory: &UpdateMemory, current: &str, latest: ReleaseView) {
+        memory.remember_check(&UpdateStatus {
+            current: current.into(),
+            update_available: is_newer(current, &latest.version),
+            latest: Some(latest),
+        });
+    }
+
+    /// 下载什么由后端自己检查到的那一次发布决定：没检查过就不下
+    #[test]
+    fn nothing_is_downloaded_before_a_check() {
+        let memory = UpdateMemory::default();
+        let err = memory.installer_for("0.2.8", "0.2.9").unwrap_err();
+        assert!(format!("{err}").contains("先检查更新"), "{err}");
+    }
+
+    /// 期望的哈希、地址都是检查时从 GitHub 拿到的那一份，调用方给不了
+    #[test]
+    fn the_asset_comes_from_the_check_not_from_the_caller() {
+        let memory = UpdateMemory::default();
+        let latest = release("0.2.9", "JPOP.Corpus.Tool_0.2.9_x64-setup.exe");
+        checked(&memory, "0.2.8", latest.clone());
+        let asset = memory.installer_for("0.2.8", "0.2.9").unwrap();
+        assert_eq!(Some(asset), latest.installer);
+        // 版本号对不上检查到的那一次：拒绝，而不是去拼一个地址
+        let err = memory.installer_for("0.2.8", "0.3.0").unwrap_err();
+        assert!(format!("{err}").contains("不是刚才检查到的"), "{err}");
+    }
+
+    /// 旧版本（或同一版本）的安装包一律不下：不然可以被降级到有漏洞的旧版
+    #[test]
+    fn an_older_or_equal_version_is_refused() {
+        let memory = UpdateMemory::default();
+        checked(&memory, "0.2.8", release("0.2.7", "JPOP.Corpus.Tool_0.2.7_x64-setup.exe"));
+        let err = memory.installer_for("0.2.8", "0.2.7").unwrap_err();
+        assert!(format!("{err}").contains("降级"), "{err}");
+        checked(&memory, "0.2.8", release("0.2.8", "JPOP.Corpus.Tool_0.2.8_x64-setup.exe"));
+        assert!(memory.installer_for("0.2.8", "0.2.8").is_err());
+    }
+
+    /// 文件名会拼进缓存目录：带路径的、绝对路径的、不是 setup.exe 的，在碰网络之前就拒绝
+    #[test]
+    fn an_asset_name_with_a_path_in_it_is_refused_before_any_network_call() {
+        for name in [
+            r"..\..\evil-setup.exe",
+            "../evil-setup.exe",
+            r"C:\Windows\evil-setup.exe",
+            "/tmp/evil-setup.exe",
+            "sub/dir-setup.exe",
+            "JPOP Corpus Tool-setup.exe",
+            "JPOP.Corpus.Tool_0.2.9_x64.msi",
+            "-setup.exe",
+            "",
+        ] {
+            let asset = AssetView {
+                name: name.into(),
+                size: 1,
+                url: format!("{DOWNLOAD_PREFIX}v0.2.9/x-setup.exe"),
+                sha256: Some("00".repeat(32)),
+            };
+            let dir = std::env::temp_dir().join(format!("jp-update-name-{}", std::process::id()));
+            let err = download_installer(&asset, &dir, |_, _| {}).unwrap_err();
+            assert!(format!("{err}").contains("文件名"), "{name:?} 没被拒：{err}");
+        }
+        assert!(check_asset_name("JPOP.Corpus.Tool_0.2.8_x64-setup.exe").is_ok());
     }
 }

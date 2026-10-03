@@ -94,7 +94,7 @@ export default function App() {
           }
           // 用户明确开过「下载后自动安装」才走到这里；装之前先说一声要关应用
           setNotice(`正在下载新版本 ${status.latest.version}，装好会自动重启应用`);
-          await api.updateDownload(asset);
+          await api.updateDownload(status.latest.version);
           if (!alive) return;
           await api.updateInstall();
         })

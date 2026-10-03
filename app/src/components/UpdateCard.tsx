@@ -69,8 +69,8 @@ export function UpdateCard({ icons, onError }: Props) {
   }, [onError]);
 
   const install = useCallback(async () => {
-    const asset = status?.latest?.installer;
-    if (!asset) {
+    const latest = status?.latest ?? null;
+    if (latest === null || latest.installer === null) {
       setNote("这次发布没有可直接安装的安装包，请到发布页手动下载。");
       return;
     }
@@ -78,7 +78,7 @@ export function UpdateCard({ icons, onError }: Props) {
     setNote("");
     setProgress(null);
     try {
-      await api.updateDownload(asset);
+      await api.updateDownload(latest.version);
       setPhase("installing");
       setNote("校验通过，正在启动安装程序…应用会关闭。");
       await api.updateInstall();

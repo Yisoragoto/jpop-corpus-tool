@@ -456,3 +456,51 @@ fn update_install_never_runs_a_path_handed_in_by_the_frontend() {
     let err = invoke(f.w(), "update_install", json!({})).expect_err("没下载过却拉起了安装程序");
     assert!(err.to_string().contains("还没有下载好"), "{err}");
 }
+
+/// 前端传回来的资产（地址、文件名、哈希）一概不认：下什么只由后端那次检查决定。
+/// 以前整条 `AssetView` 由前端回传——期望的哈希是调用方自己给的，地址可以指向旧版本，
+/// 文件名可以带 `..\` 写出缓存目录。
+#[test]
+fn update_download_ignores_whatever_asset_the_frontend_sends() {
+    use tauri::Manager;
+    let f = Fixture::new("update-download");
+    let forged = json!({
+        "version": "99.0.0",
+        "asset": {
+            "name": r"..\..\evil-setup.exe",
+            "size": 1,
+            "url": "https://github.com/Yisoragoto/jpop-corpus-tool/releases/download/v0.1.0/x-setup.exe",
+            "sha256": "00".repeat(32),
+        }
+    });
+    let err = invoke(f.w(), "update_download", forged.clone()).expect_err("没检查过更新却开始下载了");
+    assert!(err.to_string().contains("先检查更新"), "{err}");
+
+    // 检查到的最新版比正在跑的还旧：不下
+    let current = f.w().app_handle().package_info().version.to_string();
+    let old = jp_app_lib::update::ReleaseView {
+        version: "0.0.1".into(),
+        tag: "v0.0.1".into(),
+        name: "0.0.1".into(),
+        notes: String::new(),
+        published_at: String::new(),
+        url: String::new(),
+        prerelease: false,
+        installer: Some(jp_app_lib::update::AssetView {
+            name: "JPOP.Corpus.Tool_0.0.1_x64-setup.exe".into(),
+            size: 1,
+            url: format!("{}v0.0.1/JPOP.Corpus.Tool_0.0.1_x64-setup.exe", jp_app_lib::update::DOWNLOAD_PREFIX),
+            sha256: Some("00".repeat(32)),
+        }),
+    };
+    f.w().state::<AppState>().updates().remember_check(&jp_app_lib::update::UpdateStatus {
+        current: current.clone(),
+        latest: Some(old),
+        update_available: false,
+    });
+    let err = invoke(f.w(), "update_download", json!({ "version": "0.0.1" })).expect_err("降级了");
+    assert!(err.to_string().contains("降级"), "当前 {current}：{err}");
+    // 版本号对不上检查到的那一次
+    let err = invoke(f.w(), "update_download", forged).expect_err("下了没检查过的版本");
+    assert!(err.to_string().contains("不是刚才检查到的"), "{err}");
+}

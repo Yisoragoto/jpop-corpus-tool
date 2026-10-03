@@ -681,6 +681,8 @@ pub async fn update_check<R: tauri::Runtime>(
     let value = tauri::async_runtime::spawn_blocking(move || crate::update::check(&current))
         .await
         .map_err(|err| anyhow::anyhow!("检查更新线程出错：{err}"))??;
+    // 下载只从这里取资产，见 `update_download`
+    app.state::<AppState>().updates().remember_check(&value);
     Ok(value)
 }
 
@@ -694,15 +696,22 @@ pub async fn update_changelog(limit: Option<usize>) -> CmdResult<Vec<crate::upda
     Ok(value)
 }
 
-/// 下载安装包。进度走 `update://progress` 事件，返回落盘路径。
+/// 下载安装包。进度走 `update://progress` 事件，返回落盘路径（给人看的）。
 ///
-/// **地址和哈希都来自同一次 `update_check`**：前端把那条资产原样传回来，
-/// `download_installer` 再核一遍地址是不是本仓库的、哈希对不对。
+/// **前端只给版本号**。地址、文件名、期望的哈希都取自后端自己那次 `update_check`
+/// （[`crate::update::UpdateMemory::installer_for`]），并且要比正在跑的版本新。
+/// 以前前端把整条资产传回来：哈希由调用方自己说了算，地址可以指向旧版本，
+/// 文件名可以带 `..\` 写出缓存目录。
 #[tauri::command]
 pub async fn update_download<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
-    asset: crate::update::AssetView,
+    version: String,
 ) -> CmdResult<String> {
+    let current = app.package_info().version.to_string();
+    let asset = app
+        .state::<AppState>()
+        .updates()
+        .installer_for(&current, &version)?;
     let dir = app
         .path()
         .app_cache_dir()
