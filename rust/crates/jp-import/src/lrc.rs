@@ -204,6 +204,8 @@ pub fn parse(text: &str) -> ParsedLrc {
         }
     }
 
+    out.lines = drop_translation_lines(out.lines);
+
     // 按时间排序，没有时间戳的保持原顺序排在最后
     out.lines.sort_by(|a, b| match (a.time_sec, b.time_sec) {
         (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal),
@@ -240,6 +242,70 @@ fn find_offset_sec(text: &str) -> f64 {
         }
     }
     0.0
+}
+
+/// 去掉和日文原文挤在同一个时间戳下的中文翻译行。
+///
+/// 有的 .lrc 把翻译和原文写在同一个时间戳下（本机网易云下载目录里「言って。」
+/// 一份就有 50 行）。翻译不是日语语料：留着的话，分词会拿日文词典去切中文，
+/// 检索和词频里全是噪音。
+///
+/// **宁可漏删、不可错删**：规则只在 [`looks_like_translation`] 那三个条件同时满足时
+/// 才动，其余一律保留。纯汉字的日文短句（「春夏秋冬」）单独一行、或者同一时间戳下
+/// 没有带假名的行可对照时，都不会被删。没有时间戳的行不分组。
+fn drop_translation_lines(lines: Vec<LyricLine>) -> Vec<LyricLine> {
+    let siblings_of = |time: f64| -> Vec<&str> {
+        lines
+            .iter()
+            .filter(|l| l.time_sec == Some(time))
+            .map(|l| l.text.as_str())
+            .collect()
+    };
+    let keep: Vec<bool> = lines
+        .iter()
+        .map(|line| match line.time_sec {
+            Some(time) => !looks_like_translation(&line.text, &siblings_of(time)),
+            None => true,
+        })
+        .collect();
+    lines
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(line, keep)| keep.then_some(line))
+        .collect()
+}
+
+/// `text` 是不是挤在原文旁边的中文翻译。`siblings` 是同一时间戳下的所有行（含它自己）。
+///
+/// 三个条件同时满足才算：
+/// 1. 同一时间戳下不止一行；
+/// 2. 其中至少有一行带假名（那一行是日文原文）；
+/// 3. 这一行一个假名都没有，而且有汉字。
+///
+/// 「々」「〆」也算日文的证据：「人々」没有假名，但不会是中文。
+pub(crate) fn looks_like_translation(text: &str, siblings: &[&str]) -> bool {
+    siblings.len() > 1
+        && siblings.iter().any(|s| has_japanese_marker(s))
+        && !has_japanese_marker(text)
+        && text.chars().any(is_han)
+}
+
+/// 假名（平假名、片假名、长音、半角片假名）或日文专用的汉字记号。
+fn has_japanese_marker(text: &str) -> bool {
+    text.chars().any(|c| {
+        matches!(c,
+            '\u{3041}'..='\u{3096}' // 平假名
+            | '\u{30A1}'..='\u{30FA}' // 片假名
+            | '\u{30FC}' // 长音
+            | '\u{31F0}'..='\u{31FF}' // 片假名音标扩展
+            | '\u{FF66}'..='\u{FF9F}' // 半角片假名
+            | '\u{3005}' | '\u{3006}' // 々 〆
+        )
+    })
+}
+
+fn is_han(c: char) -> bool {
+    matches!(c, '\u{4E00}'..='\u{9FFF}' | '\u{3400}'..='\u{4DBF}' | '\u{F900}'..='\u{FAFF}')
 }
 
 /// 网易云 JSON 署名行 → 拼起来的文字。不是这个结构就返回 None。
@@ -742,6 +808,44 @@ mod tests {
         let texts: Vec<&str> = parsed.lines.iter().map(|l| l.text.as_str()).collect();
         assert_eq!(texts, ["{笑}って"]);
         assert!(parsed.credits.is_empty());
+    }
+
+    /// 同一时间戳下「日文原文 + 中文翻译」两行：翻译那行不是语料。
+    /// 本机网易云下载目录里「言って。」就是这样，50 行全是中文翻译。
+    #[test]
+    fn a_chinese_translation_under_the_same_timestamp_is_dropped() {
+        let parsed = parse("[00:24.05]あのね私実は気付いてるの\n[00:24.05]那个 其实 我早就注意到了\n[00:30.00]言って\n");
+        let texts: Vec<&str> = parsed.lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, ["あのね私実は気付いてるの", "言って"]);
+    }
+
+    /// 反例：规则只在「同一时间戳多行、其中有一行带假名、这一行没假名但有汉字」时才动
+    #[test]
+    fn the_translation_rule_leaves_everything_else_alone() {
+        let cases: &[(&str, usize)] = &[
+            // 只有一行的纯汉字日文短句
+            ("[00:01.00]春夏秋冬\n", 1),
+            // 同一时间戳两行都没有假名：没有「日文那一行」作对照，不判
+            ("[00:01.00]春夏秋冬\n[00:01.00]花鳥風月\n", 2),
+            // 另一行没有汉字（英文、罗马字）：不是中文翻译
+            ("[00:01.00]夜が明ける\n[00:01.00]The night is over\n", 2),
+            // 带「々」的是日文
+            ("[00:01.00]夜が明ける\n[00:01.00]人々\n", 2),
+            // 没有时间戳的行不分组
+            ("夜が明ける\n春夏秋冬\n", 2),
+            // 时间戳不同：各自独立
+            ("[00:01.00]夜が明ける\n[00:02.00]春夏秋冬\n", 2),
+        ];
+        for (lrc, expected) in cases {
+            assert_eq!(parse(lrc).lines.len(), *expected, "{lrc:?}");
+        }
+    }
+
+    #[test]
+    fn translation_detection_is_a_function_of_the_line_and_its_siblings() {
+        assert!(looks_like_translation("我早就注意到了", &["気付いてるの", "我早就注意到了"]));
+        assert!(!looks_like_translation("春夏秋冬", &["春夏秋冬"]));
+        assert!(!looks_like_translation("気付いてるの", &["気付いてるの", "我早就注意到了"]));
     }
 
     /// 尖括号里不是时间的，是正文
