@@ -45,6 +45,8 @@ pub struct AppState {
     audio: Option<std::sync::Arc<AudioEngine>>,
     /// 变调：渲染、缓存、换文件
     pitch: crate::pitch::PitchControl,
+    /// 变调缓存的目录和总量上限。渲染线程和设置页的命令看的是同一份
+    pitch_cache: std::sync::Arc<crate::pitch::PitchCache>,
     /// 频谱分析器持有 FFT 计划，构造不便宜，所以缓存下来复用。
     spectrum: Mutex<SpectrumAnalyzer>,
     /// 收听会话统计。由前端的轮询驱动（见 `commands::audio_tick`）。
@@ -106,6 +108,13 @@ impl AppState {
             }
         };
 
+        // 目录还是 Python 版用的那个；文件名已经不同了（见 `jp_audio::pitch`），两边各写各的。
+        // 上限先用默认值，前端启动后会把设置里记的那个数报过来（`pitch_cache_set_limit`）
+        let pitch_cache = std::sync::Arc::new(crate::pitch::PitchCache::new(
+            project_root.join("output").join("pitch_cache"),
+            jp_audio::pitch::DEFAULT_CACHE_LIMIT_BYTES,
+        ));
+
         Ok(Self {
             db_path,
             covers_dir,
@@ -117,12 +126,11 @@ impl AppState {
             analyzer: std::sync::RwLock::new(analyzer),
             audio,
             pitch: crate::pitch::PitchControl::new(std::sync::Arc::new(
-                crate::pitch::FfmpegRenderer {
-                    ffmpeg: jp_anki::audio::find_ffmpeg(project_root),
-                    // 和 Python 版同一个目录、同样的文件名，两边的缓存互用
-                    cache_dir: project_root.join("output").join("pitch_cache"),
+                crate::pitch::LibraryRenderer {
+                    cache: pitch_cache.clone(),
                 },
             )),
+            pitch_cache,
             spectrum: Mutex::new(SpectrumAnalyzer::new(
                 jp_audio::DEFAULT_WINDOW,
                 jp_audio::DEFAULT_BANDS,
@@ -242,6 +250,10 @@ impl AppState {
 
     pub fn pitch(&self) -> &crate::pitch::PitchControl {
         &self.pitch
+    }
+
+    pub fn pitch_cache(&self) -> &crate::pitch::PitchCache {
+        &self.pitch_cache
     }
 
     /// 引擎状态加上变调状态

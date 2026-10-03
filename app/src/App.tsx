@@ -75,6 +75,11 @@ export default function App() {
   }, []);
   const consumeStage = useCallback(() => setStageWanted(false), []);
 
+  // 变调缓存的上限记在这边的设置里，后端每次启动都从默认值开始：启动时、改了之后各报一次
+  useEffect(() => {
+    void api.pitchCacheSetLimit(settings.pitchCacheLimitMb).catch(() => undefined);
+  }, [settings.pitchCacheLimitMb]);
+
   // 启动时检查更新（设置里可关）。只问版本号；开了「下载后自动安装」才会接着下。
   // 放在这里而不是设置页：用户不进设置也该知道有新版。
   useEffect(() => {

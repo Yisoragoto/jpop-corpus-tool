@@ -9,8 +9,10 @@
 //! | `spectrum` | 加窗 + 实数 FFT + 对数频段 | ✅ |
 //! | `probe` | 读时长，不播放、不占设备 | ✅ |
 //! | `decode` | 整首 / 按时间段解码成 PCM，和播放同一个解码器 | ✅ |
+//! | `rubberband` | Rubber Band（`third_party/`）的封装：离线变调 | ✅ |
 //! | `limiter` | 前视限幅：变调后超出满幅的峰值压回去，不削平 | ✅ |
 //! | `wav` | 写 16 位 WAV | ✅ |
+//! | `pitch` | 变调的渲染、缓存命名、缓存上限 | ✅ |
 //! | `engine` | rodio 播放链、循环看门狗 | 需要声卡，无卡自动跳过 |
 //!
 //! **这一层不认识歌词。** 当前行由「位置 + 歌词时间轴」推导，
@@ -19,7 +21,7 @@
 //! **变速不变调**：走 WSOLA 时间伸缩，而不是 rodio 自带的 `set_speed`
 //! （那个是重采样，会把音高一起改掉）。见 `engine.rs`。
 //!
-//! **变调**：ffmpeg 的 rubberband 离线渲染整首、缓存成 FLAC 再播（和 Python 版一致），见 `pitch.rs`。
+//! **变调**：Rubber Band 离线渲染整首、缓存成 WAV 再播，见 `pitch.rs`。库是编进来的，不需要 ffmpeg。
 //! 引擎本身不变调，只播文件；什么时候渲染、换哪个文件由应用层决定。
 
 pub mod decode;
@@ -27,6 +29,7 @@ pub mod engine;
 pub mod limiter;
 pub mod pitch;
 pub mod probe;
+pub mod rubberband;
 pub mod spectrum;
 mod sha1;
 pub mod state;

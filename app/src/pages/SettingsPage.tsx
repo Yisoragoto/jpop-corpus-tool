@@ -26,8 +26,8 @@ import { UpdateCard } from "../components/UpdateCard";
 import { MigrateCard } from "../components/MigrateCard";
 import { SudachiCard } from "../components/SudachiCard";
 import { TokenizeCard } from "../components/TokenizeCard";
+import { PitchCacheCard } from "../components/PitchCacheCard";
 import { DiagnosticsCard } from "../components/DiagnosticsCard";
-import { ffmpegNote } from "../ffmpeg";
 import { SettingsToc, type TocItem } from "../components/SettingsToc";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
 import { lyricFontStack, useFontOptions } from "../fonts";
@@ -559,16 +559,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
           onError={onError}
         />
         <DiagnosticsCard icon={Icons.report} onError={onError} />
-        {health !== null && (
-          <>
-            <SettingCard title="FFmpeg（可选）" description="变调和 Anki 音频片段要用它，安装包里不带">
-              <span className={`small ${ffmpegNote(health).found ? "muted" : "warn"}`}>
-                {ffmpegNote(health).status}
-              </span>
-            </SettingCard>
-            <SettingNote>{ffmpegNote(health).detail}</SettingNote>
-          </>
-        )}
+        <PitchCacheCard icon={Icons.wave} onError={onError} />
       </SettingGroup>
 
       <SettingGroup title="关于" id="settings-about">
@@ -603,18 +594,13 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             </button>
           </SettingNote>
         )}
-        <SettingCard title="运行状态" description="分词器、音频设备、变调支持">
+        <SettingCard title="运行状态" description="分词器、音频设备">
           <span className="muted small">
             {health === null
               ? "—"
               : [
                   health.tokenizerReady ? "分词器就绪" : "分词器未就绪",
-                  health.audioReady ? "音频可用" : "无音频设备",
-                  health.pitchSupported
-                    ? "支持变调"
-                    : health.ffmpegPath === null
-                      ? "不支持变调（缺 ffmpeg）"
-                      : "不支持变调",
+                  health.audioReady ? "音频可用" : "无音频设备（不能播放、变调）",
                 ].join(" · ")}
           </span>
         </SettingCard>

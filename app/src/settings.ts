@@ -10,6 +10,8 @@
 
 import { useSyncExternalStore } from "react";
 
+import { PITCH_CACHE_LIMIT_RANGE } from "./pitchCache";
+
 export interface AppSettings {
   /** 全屏歌词的背景：封面虚化铺满，而不是从封面取一个纯色 */
   stageCoverBlur: boolean;
@@ -23,6 +25,8 @@ export interface AppSettings {
   autoCheckUpdates: boolean;
   /** 自动检查发现新版时，直接下载并装上（**会关掉应用**）。默认关：装更新要由人决定什么时候 */
   autoInstallUpdates: boolean;
+  /** 变调缓存最多占多少 MB，超了从最久没放的清起。启动时和改动时报给后端（见 `pitchCache.ts`） */
+  pitchCacheLimitMb: number;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
@@ -34,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   spectrum: true,
   autoCheckUpdates: true,
   autoInstallUpdates: false,
+  pitchCacheLimitMb: 1536,
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -57,6 +62,7 @@ export function parseSettings(raw: string | null): AppSettings {
         typeof parsed.autoCheckUpdates === "boolean" ? parsed.autoCheckUpdates : d.autoCheckUpdates,
       autoInstallUpdates:
         typeof parsed.autoInstallUpdates === "boolean" ? parsed.autoInstallUpdates : d.autoInstallUpdates,
+      pitchCacheLimitMb: clamp(parsed.pitchCacheLimitMb, PITCH_CACHE_LIMIT_RANGE, d.pitchCacheLimitMb),
     };
   } catch {
     return DEFAULT_SETTINGS;

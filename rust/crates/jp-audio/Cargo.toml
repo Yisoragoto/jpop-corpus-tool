@@ -13,6 +13,10 @@ rodio = "0.22"
 rodio-wsola = "0.2"
 realfft = "3"
 
+[build-dependencies]
+# 编 third_party/rubberband（变调）。依赖树里本来就有：rusqlite 的 bundled SQLite 靠它编
+cc = "1"
+
 [dev-dependencies]
 serde_json.workspace = true
 serde.workspace = true

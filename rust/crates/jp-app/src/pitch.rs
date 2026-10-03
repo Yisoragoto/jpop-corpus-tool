@@ -6,12 +6,13 @@
 //! - 打开一首歌时如果还没有这个调的缓存，**先渲染、渲染好再开播**，不先用原调放一段；
 //! - 正在播的时候换调，原来的继续放，渲染好后**接着当时的位置和播放状态**换过去
 //!   （Python 版是跳回点击时的位置，这里改成不跳）；
-//! - 渲染失败（没有 ffmpeg、ffmpeg 报错、超时）就退回原调并说明原因，不悄悄没声音。
+//! - 渲染失败（原文件解不开、缓存目录写不了）就退回原调并说明原因，不悄悄没声音；
+//! - 缓存目录有总量上限（设置里能改）：用到哪个缓存就记一笔，渲染完一个新的就把最久没用的清掉。
 //!
 //! 不跨重启保存：应用启动总是原调，和倍速一样。
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::Result;
@@ -51,12 +52,8 @@ impl Deck for jp_audio::AudioEngine {
     }
 }
 
-/// 渲染变调版本。应用里走 ffmpeg，测试里是假的。
+/// 渲染变调版本。应用里是编进来的 Rubber Band，测试里是假的。
 pub trait Renderer: Send + Sync {
-    /// 能不能渲染（应用里：本机有没有 ffmpeg）
-    fn available(&self) -> bool {
-        true
-    }
     fn cache_path(&self, source: &Path, semitones: i32) -> std::io::Result<PathBuf>;
     fn render(
         &self,
@@ -65,20 +62,60 @@ pub trait Renderer: Send + Sync {
         semitones: i32,
         cancel: &AtomicBool,
     ) -> Result<RenderOutcome>;
+    /// 这个缓存刚被拿去播了。应用里据此记「最近使用时间」，淘汰时按它排先后
+    fn used(&self, _cache: &Path) {}
 }
 
-pub struct FfmpegRenderer {
-    pub ffmpeg: Option<PathBuf>,
-    pub cache_dir: PathBuf,
+/// 变调缓存放哪、最多占多少。设置页改上限时改的就是这里的数，渲染线程下一次淘汰时生效。
+pub struct PitchCache {
+    pub dir: PathBuf,
+    limit_bytes: AtomicU64,
 }
 
-impl Renderer for FfmpegRenderer {
-    fn available(&self) -> bool {
-        self.ffmpeg.is_some()
+impl PitchCache {
+    pub fn new(dir: PathBuf, limit_bytes: u64) -> Self {
+        Self {
+            dir,
+            limit_bytes: AtomicU64::new(limit_bytes),
+        }
     }
 
+    pub fn limit_bytes(&self) -> u64 {
+        self.limit_bytes.load(Ordering::Relaxed)
+    }
+
+    pub fn set_limit_bytes(&self, bytes: u64) {
+        self.limit_bytes.store(bytes, Ordering::Relaxed);
+    }
+
+    pub fn usage(&self) -> jp_audio::pitch::CacheUsage {
+        jp_audio::pitch::cache_usage(&self.dir)
+    }
+
+    /// 压到上限以内。`keep` 是刚渲染好、马上要播的那个，不删
+    pub fn enforce(&self, keep: Option<&Path>) -> jp_audio::pitch::Evicted {
+        let evicted = jp_audio::pitch::enforce_limit(&self.dir, self.limit_bytes(), keep);
+        if evicted.files > 0 {
+            crate::log::info(format!(
+                "变调缓存超过上限，清掉最久没用的 {} 个（{} MB），还剩 {} 个（{} MB）",
+                evicted.files,
+                evicted.bytes / (1024 * 1024),
+                evicted.remaining.files,
+                evicted.remaining.bytes / (1024 * 1024),
+            ));
+        }
+        evicted
+    }
+}
+
+/// 用编进来的 Rubber Band 渲染（`jp_audio::pitch`）。
+pub struct LibraryRenderer {
+    pub cache: Arc<PitchCache>,
+}
+
+impl Renderer for LibraryRenderer {
     fn cache_path(&self, source: &Path, semitones: i32) -> std::io::Result<PathBuf> {
-        jp_audio::pitch::cache_path(&self.cache_dir, source, semitones)
+        jp_audio::pitch::cache_path(&self.cache.dir, source, semitones)
     }
 
     fn render(
@@ -88,11 +125,15 @@ impl Renderer for FfmpegRenderer {
         semitones: i32,
         cancel: &AtomicBool,
     ) -> Result<RenderOutcome> {
-        let ffmpeg = self
-            .ffmpeg
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("找不到 ffmpeg，变调不可用"))?;
-        jp_audio::pitch::render(ffmpeg, source, output, semitones, cancel)
+        let outcome = jp_audio::pitch::render(source, output, semitones, cancel)?;
+        if outcome == RenderOutcome::Rendered {
+            self.cache.enforce(Some(output));
+        }
+        Ok(outcome)
+    }
+
+    fn used(&self, cache: &Path) {
+        jp_audio::pitch::mark_used(cache);
     }
 }
 
@@ -163,10 +204,6 @@ impl PitchControl {
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    pub fn available(&self) -> bool {
-        self.renderer.available()
     }
 
     pub fn status(&self) -> PitchStatus {
@@ -265,7 +302,10 @@ impl PitchControl {
             Some(source.to_owned())
         } else {
             match self.renderer.cache_path(source, semitones) {
-                Ok(cache) if is_usable(&cache) => Some(cache),
+                Ok(cache) if is_usable(&cache) => {
+                    self.renderer.used(&cache);
+                    Some(cache)
+                }
                 Ok(_) => None,
                 Err(err) => {
                     inner.fail(format!("变调失败，按原调播放：读不到音频文件（{err}）"));
@@ -420,6 +460,7 @@ mod tests {
         dir: PathBuf,
         released: Mutex<HashMap<String, Result<(), String>>>,
         started: Mutex<Vec<(PathBuf, i32)>>,
+        used: Mutex<Vec<PathBuf>>,
     }
 
     impl Renderer for FakeRenderer {
@@ -454,6 +495,9 @@ mod tests {
                 }
             }
         }
+        fn used(&self, cache: &Path) {
+            self.used.lock().unwrap().push(cache.to_owned());
+        }
     }
 
     struct Fixture {
@@ -471,6 +515,7 @@ mod tests {
             dir: dir.clone(),
             released: Mutex::default(),
             started: Mutex::default(),
+            used: Mutex::default(),
         });
         Fixture {
             control: PitchControl::new(renderer.clone()),
@@ -573,6 +618,11 @@ mod tests {
             Some((f.dir.join("001_-3.flac"), "001".into(), 0.0, true))
         );
         assert!(f.renderer.started.lock().unwrap().is_empty());
+        // 拿缓存去播要记一笔：淘汰时按最近使用时间排，不记的话常听的那首反而先被清掉
+        assert_eq!(
+            *f.renderer.used.lock().unwrap(),
+            [f.dir.join("001_-3.flac")]
+        );
     }
 
     #[test]
@@ -644,7 +694,7 @@ mod tests {
             .load(f.deck(), "001", &f.song("001"), 8.0, true)
             .unwrap();
         f.wait_render_started(1);
-        f.release("001_-2.flac", Err("找不到 ffmpeg，变调不可用".into()));
+        f.release("001_-2.flac", Err("解码失败 001.flac".into()));
         f.wait_idle();
         assert_eq!(
             f.deck.last_load(),
@@ -655,9 +705,74 @@ mod tests {
         let (seq, message) = status.error.unwrap();
         assert_eq!(seq, 1);
         assert!(
-            message.contains("-2 半音") && message.contains("找不到 ffmpeg"),
+            message.contains("-2 半音") && message.contains("解码失败 001.flac"),
             "{message}"
         );
+    }
+
+    /// 真的渲染器（编进来的 Rubber Band），假的播放器：不需要声卡，也不需要 ffmpeg。
+    /// 渲染出来的是能解码的 WAV、和原曲一样长；再用到它时记一笔「刚用过」；
+    /// 缓存超过上限时清掉最久没用的，刚渲染的那个留着。
+    #[test]
+    fn the_built_in_renderer_renders_caches_and_evicts_without_ffmpeg() {
+        let dir = std::env::temp_dir().join(format!("jp-app-pitch-real-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let song = |name: &str, hz: f64| {
+            let rate = 22_050u32;
+            let samples: Vec<f32> = (0..rate as usize * 2)
+                .flat_map(|i| {
+                    let value = (0.4 * (2.0 * std::f64::consts::PI * hz * i as f64 / f64::from(rate)).sin()) as f32;
+                    [value, value]
+                })
+                .collect();
+            let path = dir.join(name);
+            jp_audio::wav::write_pcm16(&path, &jp_audio::Pcm { samples, channels: 2, rate }).unwrap();
+            path
+        };
+        let (first, second) = (song("001.wav", 440.0), song("002.wav", 330.0));
+
+        let cache = Arc::new(PitchCache::new(dir.join("cache"), jp_audio::pitch::DEFAULT_CACHE_LIMIT_BYTES));
+        let control = PitchControl::new(Arc::new(LibraryRenderer { cache: cache.clone() }));
+        let deck: Arc<FakeDeck> = Arc::default();
+        let wait_idle = || {
+            let started = Instant::now();
+            while control.status().rendering {
+                assert!(started.elapsed() < Duration::from_secs(60), "渲染没结束");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+
+        control.set_semitones(deck.clone(), 2).unwrap();
+        control.load(deck.clone(), "001", &first, 0.0, true).unwrap();
+        wait_idle();
+        assert_eq!(control.status().error, None);
+        let (rendered, id, _, _) = deck.last_load().expect("渲染好了要开播");
+        assert_eq!(id, "001");
+        assert_eq!(rendered, jp_audio::pitch::cache_path(&cache.dir, &first, 2).unwrap());
+        let decoded = jp_audio::decode_all(&rendered).unwrap();
+        assert_eq!((decoded.channels, decoded.rate, decoded.frames()), (2, 22_050, 44_100), "变调版要和原曲一样长");
+        assert_eq!(cache.usage().files, 1);
+
+        // 再打开同一首：直接用缓存，并把它的最近使用时间改成现在
+        let old = std::time::SystemTime::now() - Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&rendered).unwrap().set_modified(old).unwrap();
+        control.load(deck.clone(), "001", &first, 0.0, true).unwrap();
+        assert!(!control.status().rendering, "有缓存就不该再渲染");
+        let touched = std::fs::metadata(&rendered).unwrap().modified().unwrap();
+        assert!(touched > old + Duration::from_secs(1800), "用过的缓存要记一笔");
+
+        // 上限压到放不下两个：渲染第二首之后，第一首的缓存被清掉，刚渲染的留着
+        cache.set_limit_bytes(std::fs::metadata(&rendered).unwrap().len() + 1);
+        control.load(deck.clone(), "002", &second, 0.0, true).unwrap();
+        wait_idle();
+        assert_eq!(control.status().error, None);
+        let (latest, id, _, _) = deck.last_load().unwrap();
+        assert_eq!(id, "002");
+        assert!(latest.is_file(), "刚渲染好、正要播的缓存不能被清掉");
+        assert!(!rendered.exists(), "超过上限，最久没用的该清掉");
+        assert_eq!(cache.usage().files, 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

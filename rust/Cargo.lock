@@ -1942,6 +1942,7 @@ name = "jp-audio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cc",
  "realfft",
  "rodio",
  "rodio-wsola",

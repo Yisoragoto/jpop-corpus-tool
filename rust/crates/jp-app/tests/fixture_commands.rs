@@ -382,18 +382,39 @@ fn the_no_dictionary_wording_is_the_same_on_both_sides() {
 }
 
 /// 诊断信息是出事时唯一的线索，所以它自己不能出事。
-/// 设置页要说得出 ffmpeg 在哪、没有的话该放到哪——这两样都得从 health 里拿到
+/// 变调缓存的上限：设置页改了之后立刻按新上限清一遍，从最久没用的删起；
+/// 报回来的占用是清完之后的。缓存目录在语料库里，不是别处。
 #[test]
-fn health_says_where_ffmpeg_is_or_where_it_should_go() {
-    let f = Fixture::new("health-ffmpeg");
-    let health = ok(f.w(), "health", json!({}));
-    let found = &health["ffmpegPath"];
-    assert!(found.is_null() || found.is_string(), "{health}");
-    let expected = health["ffmpegExpected"].as_str().expect("要有 ffmpegExpected");
-    assert!(
-        std::path::Path::new(expected).starts_with(f.dir()),
-        "应该指向语料库目录里：{expected}"
-    );
+fn lowering_the_pitch_cache_limit_evicts_the_least_recently_used() {
+    let f = Fixture::new("pitch-cache");
+    let w = f.w();
+    let dir = f.dir().join("output").join("pitch_cache");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mb = 1024 * 1024;
+    // 三个 100 MB 的「缓存」（稀疏文件：只设长度，不真写 300 MB），最近使用时间一个比一个新
+    for (name, hours_ago) in [("a_+1_r3_00000000000000a1.wav", 3u64), ("b_+1_r3_00000000000000b2.wav", 2), ("c_-2_r3_00000000000000c3.wav", 1)] {
+        let file = std::fs::File::create(dir.join(name)).unwrap();
+        file.set_len(100 * mb).unwrap();
+        file.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(hours_ago * 3600)).unwrap();
+    }
+
+    let status = ok(w, "pitch_cache_status", json!({}));
+    assert_eq!(status["files"], json!(3), "{status}");
+    assert_eq!(status["bytes"], json!(300 * mb), "{status}");
+    assert_eq!(status["limitBytes"], json!(1536 * mb), "默认上限 1.5 GB：{status}");
+    assert!(Path::new(status["dir"].as_str().unwrap()).starts_with(f.dir()), "{status}");
+
+    // 上限最小只能设到 256 MB：300 MB 的缓存要清掉最旧的那一个
+    let status = ok(w, "pitch_cache_set_limit", json!({ "limitMb": 1 }));
+    assert_eq!(status["limitBytes"], json!(256 * mb), "低于下限的要夹到下限：{status}");
+    assert_eq!(status["files"], json!(2), "{status}");
+    assert_eq!(status["bytes"], json!(200 * mb), "{status}");
+    assert!(!dir.join("a_+1_r3_00000000000000a1.wav").exists(), "最久没用的该被清掉");
+    assert!(dir.join("b_+1_r3_00000000000000b2.wav").exists() && dir.join("c_-2_r3_00000000000000c3.wav").exists());
+
+    // 别的测试还要用这个库：上限放回默认，缓存清干净
+    ok(w, "pitch_cache_set_limit", json!({ "limitMb": 1536 }));
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

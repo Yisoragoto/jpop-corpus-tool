@@ -10,27 +10,10 @@
 //! **文件名和 Python 刻意不同**：Python 是 `jpop_{utterance_id}.mp3`，这里是
 //! `jpop_clip_{md5}.mp3`（见 [`clip_name`]）。原因写在那里。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::card::Example;
 use crate::connect::{AnkiConnect, AnkiError};
-
-/// 找 ffmpeg：先看 PATH，再看项目根目录下的可执行文件。
-///
-/// 切片已经不用它了；变调还在用（`jp-app` 的 `FfmpegRenderer`），等变调也换掉之后一起删。
-pub fn find_ffmpeg(project_root: &Path) -> Option<PathBuf> {
-    let exe = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
-    if let Some(paths) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(exe);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    let local = project_root.join(exe);
-    local.is_file().then_some(local)
-}
 
 /// 片段的「编码参数版本」，是文件名的一部分。
 ///
@@ -136,6 +119,7 @@ mod tests {
     use crate::mp3::inspect::info_tag;
     use jp_audio::Pcm;
     use serde_json::json;
+    use std::path::PathBuf;
     use std::sync::Arc;
 
     #[test]

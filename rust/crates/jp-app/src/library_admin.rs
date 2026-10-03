@@ -117,17 +117,13 @@ fn remove_app_cover(covers_dir: &Path, cover: &Path, song_id: &str) -> bool {
     named_by_id && file.starts_with(&dir) && std::fs::remove_file(&file).is_ok()
 }
 
-/// 变调缓存按「路径 + 修改时间 + 大小」命名，原曲还在才算得出来；不在就留着（没有别的歌能用到它）
+/// 变调缓存按「路径 + 修改时间 + 大小」命名，原曲还在才算得出来；不在就留着
+/// （没有别的歌能用到它，缓存超过上限时会被当成最久没用的清掉）。
+/// ffmpeg 时代留下的 `.flac` 旧缓存也一并删。
 fn remove_pitch_cache(state: &AppState, audio: &Path) -> usize {
-    let cache_dir = state
-        .db_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("output")
-        .join("pitch_cache");
-    (jp_audio::pitch::MIN_SEMITONES..=jp_audio::pitch::MAX_SEMITONES)
-        .filter(|&n| n != 0)
-        .filter_map(|n| jp_audio::pitch::cache_path(&cache_dir, audio, n).ok())
+    jp_audio::pitch::cache_paths_of(&state.pitch_cache().dir, audio)
+        .unwrap_or_default()
+        .into_iter()
         .filter(|path| std::fs::remove_file(path).is_ok())
         .count()
 }

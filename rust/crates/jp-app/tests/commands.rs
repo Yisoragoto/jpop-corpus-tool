@@ -335,6 +335,8 @@ fn every_registered_command_is_reachable() {
         ("people_by_role", json!({ "role": "composer", "limit": 1 })),
         // 只放只读的；保存和撤销会写库，在下面的临时副本上测
         ("token_correction", json!({ "utteranceId": 1 })),
+        // 只数一遍缓存目录，不写任何东西
+        ("pitch_cache_status", json!({})),
     ] {
         let result = invoke(&w, cmd, args);
         if let Err(err) = &result {
@@ -666,16 +668,15 @@ fn audio_ready(w: &tauri::WebviewWindow<MockRuntime>) -> bool {
 }
 
 #[test]
-fn health_reports_audio_and_pitch_capability() {
+fn health_reports_audio_capability_and_nothing_about_ffmpeg() {
     let w = app_or_skip!();
     let health = ok(&w, "health", json!({}));
-    assert!(health.get("audioReady").is_some());
-    // 变调要 ffmpeg：有引擎、项目根目录或 PATH 里有 ffmpeg 才报能用
-    let has_ffmpeg = jp_anki::audio::find_ffmpeg(&project_root()).is_some();
-    assert_eq!(
-        health["pitchSupported"],
-        json!(health["audioReady"] == json!(true) && has_ffmpeg)
-    );
+    assert!(health["audioReady"].is_boolean(), "{health}");
+    // 变调和 Anki 片段都在进程里做了：health 里不该再有「有没有 ffmpeg」这类字段，
+    // 前端也就没有理由再因为缺 ffmpeg 把哪个功能禁掉
+    for gone in ["pitchSupported", "ffmpegPath", "ffmpegExpected"] {
+        assert!(health.get(gone).is_none(), "health 里还有 {gone}：{health}");
+    }
 }
 
 #[test]

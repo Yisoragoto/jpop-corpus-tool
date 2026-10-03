@@ -78,6 +78,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::audio_set_volume,
             commands::audio_set_loop,
             commands::audio_set_pitch,
+            commands::pitch_cache_status,
+            commands::pitch_cache_set_limit,
             commands::lyrics_furigana,
             commands::fonts_catalog,
             commands::library_edit_song,

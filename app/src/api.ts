@@ -325,14 +325,17 @@ export interface HealthReport {
   lyricLines: number;
   /** false 时「实时分词」降级，其余功能正常。 */
   tokenizerReady: boolean;
-  /** 没有可用输出设备时为 false。UI 据此禁用播放，而不是给一个点了没反应的按钮。 */
+  /** 没有可用输出设备时为 false。UI 据此禁用播放，而不是给一个点了没反应的按钮。
+   *  变调不单独报：渲染用的库是编进程序里的，能播就能变调。 */
   audioReady: boolean;
-  /** 能不能变调：要有音频设备和 ffmpeg。为 false 时变调控件禁用。 */
-  pitchSupported: boolean;
-  /** 找到的 ffmpeg；null 时变调和 Anki 音频片段不可用 */
-  ffmpegPath: string | null;
-  /** 不想动 PATH 的话，ffmpeg 放到这儿就能被找到（语料库目录里） */
-  ffmpegExpected: string;
+}
+
+/** 变调缓存现在占了多少、上限是多少。和 `commands.rs` 的 `PitchCacheStatus` 对应 */
+export interface PitchCacheStatus {
+  dir: string;
+  files: number;
+  bytes: number;
+  limitBytes: number;
 }
 
 // ────────────────────────────── 播放 ──────────────────────────────
@@ -503,6 +506,10 @@ export const api = {
   audioLoad: (songId: string, opts: { positionSec?: number | null; autoplay?: boolean } = {}) =>
     kicked(call<void>("audio_load", { songId, positionSec: opts.positionSec ?? null, autoplay: opts.autoplay ?? true })),
   audioSetPitch: (semitones: number) => kicked(call<void>("audio_set_pitch", { semitones })),
+  /** 变调缓存的占用和上限。只读。 */
+  pitchCacheStatus: () => call<PitchCacheStatus>("pitch_cache_status"),
+  /** 改变调缓存的上限（MB），后端立刻按新上限清一遍，返回清完之后的占用。 */
+  pitchCacheSetLimit: (limitMb: number) => call<PitchCacheStatus>("pitch_cache_set_limit", { limitMb }),
   audioPlay: () => kicked(call<void>("audio_play")),
   audioPause: () => kicked(call<void>("audio_pause")),
   audioToggle: () => kicked(call<void>("audio_toggle")),

@@ -11,7 +11,6 @@
 //! `C:\Users\<名字>\…` 下面），这一点在界面上写明白了。
 
 use std::fmt::Write as _;
-use std::path::Path;
 
 use crate::state::AppState;
 
@@ -78,17 +77,16 @@ pub fn report(state: &AppState, version: &str, log_lines: usize) -> String {
         "音频输出    {}",
         if state.audio().is_some() { "有" } else { "没有" }
     );
-    for line in ffmpeg_lines(jp_anki::audio::find_ffmpeg(&root).as_deref(), &root) {
-        let _ = writeln!(out, "{line}");
-    }
+    // 变调和 Anki 音频片段都在进程里做（Rubber Band、LAME 是编进来的），不再依赖外部的 ffmpeg
+    let cache = state.pitch_cache();
+    let usage = cache.usage();
+    let _ = writeln!(out, "变调        {}", jp_audio::pitch::engine_tag(jp_audio::pitch::ENGINE));
     let _ = writeln!(
         out,
-        "变调        {}",
-        if state.pitch().available() {
-            "支持"
-        } else {
-            "不支持（缺 ffmpeg）"
-        }
+        "变调缓存    {} 个文件，{} MB（上限 {} MB）",
+        usage.files,
+        usage.bytes / (1024 * 1024),
+        cache.limit_bytes() / (1024 * 1024)
     );
     let _ = writeln!(
         out,
@@ -111,51 +109,4 @@ pub fn report(state: &AppState, version: &str, log_lines: usize) -> String {
         }
     }
     out
-}
-
-/// ffmpeg 的文件名（`find_ffmpeg` 找的就是它）
-pub const FFMPEG_EXE: &str = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
-
-/// 诊断信息里 ffmpeg 那几行。
-///
-/// ffmpeg 是可选的：0.2.x 的安装包不带它，`find_ffmpeg` 只查 PATH 和语料库目录。
-/// 缺了它，变调和 Anki 音频片段两样不可用——以前诊断里只有「变调 不支持（缺 ffmpeg）」，
-/// 既没提 Anki 那一样，也没说放到哪儿才找得到。
-pub fn ffmpeg_lines(found: Option<&Path>, library_root: &Path) -> Vec<String> {
-    match found {
-        Some(path) => vec![format!("ffmpeg      有：{}", path.display())],
-        None => vec![
-            "ffmpeg      没找到 → 变调和 Anki 音频片段不可用（其余功能不受影响）".to_string(),
-            format!(
-                "            放进 PATH 里的任一目录，或者放到 {}",
-                library_root.join(FFMPEG_EXE).display()
-            ),
-        ],
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 没找到 ffmpeg 时要说清楚**少了什么**和**放到哪儿能被找到**，
-    /// 而不是只有一句「不支持变调」——Anki 音频片段也靠它，以前诊断里完全没提
-    #[test]
-    fn a_missing_ffmpeg_says_what_is_lost_and_where_to_put_it() {
-        let root = std::path::Path::new(r"C:\Users\someone\AppData\Local\JPOP Corpus Tool");
-        let text = ffmpeg_lines(None, root).join("\n");
-        assert!(text.contains("没找到"), "{text}");
-        assert!(text.contains("变调") && text.contains("Anki 音频片段"), "{text}");
-        assert!(text.contains("PATH"), "{text}");
-        assert!(text.contains(&root.join(FFMPEG_EXE).display().to_string()), "{text}");
-    }
-
-    #[test]
-    fn a_found_ffmpeg_shows_which_one() {
-        let root = std::path::Path::new("/lib");
-        let found = std::path::Path::new("/usr/bin/ffmpeg");
-        let text = ffmpeg_lines(Some(found), root).join("\n");
-        assert!(text.contains("/usr/bin/ffmpeg"), "{text}");
-        assert!(!text.contains("不可用"), "{text}");
-    }
 }

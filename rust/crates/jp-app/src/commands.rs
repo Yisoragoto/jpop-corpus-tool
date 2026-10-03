@@ -286,14 +286,9 @@ pub struct HealthReport {
     pub lyric_lines: i64,
     /// 分词器是否可用。false 时「实时分词」降级，其余功能正常。
     pub tokenizer_ready: bool,
-    /// 没有可用输出设备时为 false，UI 据此禁用播放
+    /// 没有可用输出设备时为 false，UI 据此禁用播放。
+    /// 变调不再单独报：渲染用的 Rubber Band 是编进来的，能播就能变调
     pub audio_ready: bool,
-    /// 能不能变调：变调要 ffmpeg 渲染，本机没有 ffmpeg 时为 false，UI 据此禁用
-    pub pitch_supported: bool,
-    /// 找到的 ffmpeg。None 时变调和 Anki 音频片段不可用，设置页据此说明原因
-    pub ffmpeg_path: Option<String>,
-    /// 不想动 PATH 的话，ffmpeg 放到这儿就能被找到（语料库目录里）
-    pub ffmpeg_expected: String,
 }
 
 #[tauri::command(async)]
@@ -305,14 +300,6 @@ pub fn health(state: State<'_, AppState>) -> CmdResult<HealthReport> {
         lyric_lines: overview.lyric_lines,
         tokenizer_ready: state.analyzer().is_some(),
         audio_ready: state.audio().is_some(),
-        pitch_supported: state.audio().is_some() && state.pitch().available(),
-        ffmpeg_path: jp_anki::audio::find_ffmpeg(&state.project_root())
-            .map(|p| p.display().to_string()),
-        ffmpeg_expected: state
-            .project_root()
-            .join(crate::diagnostics::FFMPEG_EXE)
-            .display()
-            .to_string(),
     })
 }
 
@@ -425,7 +412,7 @@ pub async fn audio_seek<R: tauri::Runtime>(
 }
 
 /// 变调，−6…+6 半音，0 是原调。全局生效：正在放的这首跟着换，之后打开的歌也按这个调。
-/// 没有缓存时在后台渲染（一首歌几秒），状态里 `pitchRendering` 为真；失败会退回原调，原因在 `pitchError`。
+/// 没有缓存时在后台渲染（一首歌十几到三十几秒），状态里 `pitchRendering` 为真；失败会退回原调，原因在 `pitchError`。
 #[tauri::command(async)]
 pub fn audio_set_pitch(state: State<'_, AppState>, semitones: i32) -> CmdResult<()> {
     let deck = state
@@ -433,6 +420,47 @@ pub fn audio_set_pitch(state: State<'_, AppState>, semitones: i32) -> CmdResult<
         .ok_or_else(|| anyhow::anyhow!("音频引擎不可用（没有可用的输出设备）"))?;
     state.pitch().set_semitones(deck, semitones)?;
     Ok(())
+}
+
+/// 变调缓存现在占了多少、上限是多少。设置页显示用。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PitchCacheStatus {
+    pub dir: String,
+    pub files: usize,
+    pub bytes: u64,
+    pub limit_bytes: u64,
+}
+
+/// 上限能设的范围（MB）。下限够放五六首；上限只是防手滑多打几个零
+pub const PITCH_CACHE_LIMIT_MB: std::ops::RangeInclusive<u64> = 256..=102_400;
+
+fn pitch_cache_view(state: &AppState) -> PitchCacheStatus {
+    let cache = state.pitch_cache();
+    let usage = cache.usage();
+    PitchCacheStatus {
+        dir: cache.dir.display().to_string(),
+        files: usage.files,
+        bytes: usage.bytes,
+        limit_bytes: cache.limit_bytes(),
+    }
+}
+
+#[tauri::command(async)]
+pub fn pitch_cache_status(state: State<'_, AppState>) -> CmdResult<PitchCacheStatus> {
+    Ok(pitch_cache_view(&state))
+}
+
+/// 改变调缓存的上限，并立刻按新上限清一遍（从最久没用的删起）。
+///
+/// 上限记在前端的设置里（和别的偏好一样存 localStorage），每次启动报过来一次；
+/// 这边只管这次运行里用哪个数。
+#[tauri::command(async)]
+pub fn pitch_cache_set_limit(state: State<'_, AppState>, limit_mb: u64) -> CmdResult<PitchCacheStatus> {
+    let limit_mb = limit_mb.clamp(*PITCH_CACHE_LIMIT_MB.start(), *PITCH_CACHE_LIMIT_MB.end());
+    state.pitch_cache().set_limit_bytes(limit_mb * 1024 * 1024);
+    state.pitch_cache().enforce(None);
+    Ok(pitch_cache_view(&state))
 }
 
 /// 设置倍速。**不改变音高**（WSOLA 时间伸缩）。
