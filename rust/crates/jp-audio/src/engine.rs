@@ -613,38 +613,36 @@ impl Drop for AudioEngine {
 mod tests {
     use super::*;
 
-    /// **一次只许有一个引擎。**
+    /// 这台机器到底有没有音频输出设备。**整个进程只试一次。**
     ///
-    /// 原来每个测试各开一个输出设备，十来个并行跑，在 GitHub 的 Windows runner
-    /// 上把整个测试进程打成 STATUS_ACCESS_VIOLATION（跑两个就炸）。
-    /// 本机有声卡，跑得过，所以只有推上去才看得见。
+    /// 这一条是 CI 上查了三轮才落到的点：在没有设备的 Windows runner 上，
+    /// `open_default_sink()` 第一次老老实实返回 Err（于是测试正常跳过），
+    /// **第二次直接把进程打成 STATUS_ACCESS_VIOLATION**。
+    /// 日志里的样子是「跳过：打不开默认音频输出设备」、一个测试 ok、然后进程没了。
     ///
-    /// 排队也更贴近生产：**应用自始至终只建一个 `AudioEngine`**，
-    /// 「同时开十个输出设备」这个场景在真实使用里根本不存在。
-    static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// 独占的引擎。`engine` 声明在前，所以它先 drop、锁后放——
-    /// 设备彻底关掉了才让下一个测试进来。
-    struct Exclusive {
-        engine: AudioEngine,
-        _lock: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl std::ops::Deref for Exclusive {
-        type Target = AudioEngine;
-        fn deref(&self) -> &AudioEngine {
-            &self.engine
-        }
+    /// 所以：试一次，失败就记住，之后谁都别再试。
+    /// 这也正是生产的行为——`AppState::new` 只开一次，失败就把播放功能关掉，
+    /// 不会重试。
+    fn device_available() -> bool {
+        static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *AVAILABLE.get_or_init(|| match AudioEngine::new() {
+            Ok(_) => true,
+            Err(err) => {
+                eprintln!("[skip] 本机没有音频输出设备，引擎相关的用例全部跳过：{err}");
+                false
+            }
+        })
     }
 
     /// 没有声卡就跳过。CI 和无头环境都没有。
-    fn engine() -> Option<Exclusive> {
-        // 上一个测试 panic 过的话锁会中毒，但锁本身没坏，照用
-        let lock = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    fn engine() -> Option<AudioEngine> {
+        if !device_available() {
+            return None;
+        }
         match AudioEngine::new() {
-            Ok(engine) => Some(Exclusive { engine, _lock: lock }),
+            Ok(e) => Some(e),
             Err(err) => {
-                eprintln!("跳过：{err}");
+                eprintln!("[skip] 打不开音频设备：{err}");
                 None
             }
         }
