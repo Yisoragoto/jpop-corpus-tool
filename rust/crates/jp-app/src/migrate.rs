@@ -35,6 +35,8 @@ pub struct MigrateOutcome {
     pub sudachi_copied: bool,
     /// 分词词典多大（字节），没复制时是 0
     pub sudachi_bytes: u64,
+    /// 搬完之后顺手补的分词（当前库里有歌词、没分词的那些歌）
+    pub tokenized: jp_import::maintain::Tokenized,
     pub warnings: Vec<String>,
 }
 

@@ -2603,3 +2603,104 @@ fn the_diagnostics_report_answers_the_questions_i_always_have_to_ask() {
     assert!(on_disk.contains("── 能力 ──"), "存出来的文件不对");
     let _ = std::fs::remove_file(&out);
 }
+
+/// 词典一装上，「有歌词、没分词」的歌要顺手补好——不该等用户自己去「曲库维护」里找。
+///
+/// 真实发生过：新库在没词典时导了 16 首，后来迁移旧库，旧库里有分词的同名歌被判成
+/// 「已在库中」跳过，结果 16 首查不了词、没有振假名，修复按钮藏在设置深处。
+///
+/// 副本目录里没有 venv，一开始就是「没词典」；然后从项目目录复制一份装上。
+/// 只该写 `tokens`：歌词原文一个字都不能变。
+#[test]
+fn installing_the_dictionary_tokenizes_the_songs_left_without_tokens() {
+    use tauri::Manager;
+    let Some(scratch) = scratch_app("dict-backlog") else {
+        return;
+    };
+    let w = scratch.w();
+    let count = |value: &Value| value.as_array().map_or(0, Vec::len);
+    if jp_tokenizer::locate_sudachipy(&project_root()).is_none() {
+        eprintln!("[skip] 项目目录里没有 Sudachi 词典，装不了");
+        return;
+    }
+    assert_eq!(
+        ok(w, "health", json!({}))["tokenizerReady"],
+        json!(false),
+        "副本目录里本不该有词典"
+    );
+
+    // 造前提：挑两首有分词的歌，把分词删掉
+    let lyrics_of = |w: &tauri::WebviewWindow<MockRuntime>, ids: &[String]| -> Vec<String> {
+        let state = w.state::<AppState>();
+        let corpus = state.corpus();
+        let mut stmt = corpus
+            .connection()
+            .prepare("SELECT text FROM utterances WHERE song_id = ?1 ORDER BY line_idx, id")
+            .unwrap();
+        ids.iter()
+            .flat_map(|id| {
+                stmt.query_map([id], |row| row.get::<_, String>(0))
+                    .unwrap()
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap()
+            })
+            .collect()
+    };
+    let stripped: Vec<String> = {
+        let state = w.state::<AppState>();
+        let corpus = state.corpus();
+        let conn = corpus.connection();
+        let ids: Vec<String> = conn
+            .prepare(
+                "SELECT DISTINCT u.song_id FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
+                 ORDER BY u.song_id LIMIT 2",
+            )
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for id in &ids {
+            conn.execute(
+                "DELETE FROM tokens WHERE utterance_id IN (SELECT id FROM utterances WHERE song_id = ?1)",
+                [id],
+            )
+            .unwrap();
+        }
+        ids
+    };
+    assert_eq!(stripped.len(), 2);
+    let before_install = count(&ok(w, "tokenize_missing_list", json!({})));
+    assert!(before_install >= 2, "删掉分词的歌没进名单");
+    let text_before = lyrics_of(w, &stripped);
+
+    let done = ok(
+        w,
+        "tokenizer_install",
+        json!({ "path": project_root().display().to_string() }),
+    );
+    assert_eq!(done["tokenizeError"], json!(""), "{done}");
+    assert_eq!(done["tokenized"]["songs"].as_u64(), Some(before_install as u64), "{done}");
+    assert!(done["tokenized"]["tokens"].as_u64().unwrap() > 0, "{done}");
+    // 原来的字段还在（前端的 InstalledDict 读它们）
+    assert!(done["bytes"].as_u64().unwrap() > 0 && done["dir"].is_string(), "{done}");
+
+    assert_eq!(count(&ok(w, "tokenize_missing_list", json!({}))), 0, "补完了名单还不空");
+    for id in &stripped {
+        let lines = ok(w, "lyrics", json!({ "songId": id }));
+        let lines = lines.as_array().unwrap();
+        assert!(
+            lines.iter().any(|l| count(&l["tokens"]) > 0),
+            "{id} 补完还是没有分词"
+        );
+    }
+    assert_eq!(lyrics_of(w, &stripped), text_before, "补分词改动了歌词原文");
+
+    // 再装一次：没有要补的，什么都不写
+    let again = ok(
+        w,
+        "tokenizer_install",
+        json!({ "path": project_root().display().to_string() }),
+    );
+    assert_eq!(again["tokenized"]["songs"].as_u64(), Some(0), "{again}");
+}

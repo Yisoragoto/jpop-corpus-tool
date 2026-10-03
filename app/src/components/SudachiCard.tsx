@@ -14,6 +14,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 
 import { api, DICT_DOWNLOAD_BYTES, type DictProgress, type TokenizerStatus } from "../api";
+import { backfillNote } from "../backfill";
 import { retryFurigana } from "../lyricsDisplay";
 import { CommandButton } from "./CommandButton";
 import { SettingCard, SettingNote } from "./SettingCard";
@@ -70,7 +71,10 @@ export function SudachiCard({ icon, onError, onChanged }: Props) {
     setNote("正在复制…（207MB，要几秒）");
     try {
       const done = await api.tokenizerInstall(picked);
-      setNote(`装好了：${(done.bytes / MB).toFixed(0)} MB → ${done.dir}`);
+      setNote(
+        `装好了：${(done.bytes / MB).toFixed(0)} MB → ${done.dir}。${backfillNote(done.tokenized, done.tokenizeError)}`,
+      );
+      retryFurigana();
       refresh();
       onChanged();
     } catch (err) {
@@ -94,7 +98,9 @@ export function SudachiCard({ icon, onError, onChanged }: Props) {
     setProgress(null);
     try {
       const done = await api.tokenizerDownload();
-      setNote(`装好了：${(done.bytes / MB).toFixed(0)} MB → ${done.dir}`);
+      setNote(
+        `装好了：${(done.bytes / MB).toFixed(0)} MB → ${done.dir}。${backfillNote(done.tokenized, done.tokenizeError)}`,
+      );
       retryFurigana();
       refresh();
       onChanged();

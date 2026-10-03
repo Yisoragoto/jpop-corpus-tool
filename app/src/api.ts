@@ -861,6 +861,8 @@ export interface MigrateOutcome {
   /** 分词词典（振假名靠它）搬过来了没有 */
   sudachiCopied: boolean;
   sudachiBytes: number;
+  /** 搬完之后顺手补的分词（当前库里有歌词、没分词的那些歌） */
+  tokenized: Tokenized;
   warnings: string[];
 }
 
@@ -895,6 +897,10 @@ export interface TokenizerStatus {
 export interface InstalledDict {
   bytes: number;
   dir: string;
+  /** 词典装上之后顺手补的分词（有歌词、没分词的那些歌） */
+  tokenized: Tokenized;
+  /** 顺手补分词失败的原因；空串是没失败（包括没有要补的） */
+  tokenizeError: string;
 }
 
 /** 下词典的进度（`tokenizer://progress`）。 */

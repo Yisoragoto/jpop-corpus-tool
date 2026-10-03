@@ -13,6 +13,8 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 
 import { api, type MigrateOutcome, type MigratePlan } from "../api";
+import { backfillNote } from "../backfill";
+import { retryFurigana } from "../lyricsDisplay";
 import { CommandButton } from "./CommandButton";
 import { SettingCard, SettingNote } from "./SettingCard";
 
@@ -58,6 +60,7 @@ export function MigrateCard({ icon, onError, onChanged }: Props) {
       const result = await api.migrateRun(source, { dictionaries: withDicts, history: withHistory });
       setOutcome(result);
       setPlan(null);
+      if (result.tokenized.songs > 0) retryFurigana();
       onChanged();
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
@@ -155,7 +158,7 @@ export function MigrateCard({ icon, onError, onChanged }: Props) {
                 `、词典库 ${(outcome.dictionariesBytes / 1024 / 1024).toFixed(0)} MB`}
               {outcome.sudachiCopied &&
                 `、分词词典 ${(outcome.sudachiBytes / 1024 / 1024).toFixed(0)} MB（振假名已可用）`}
-              。
+              。{backfillNote(outcome.tokenized, "")}
               {outcome.warnings.length > 0 && <> 另有 {outcome.warnings.length} 条提醒：{outcome.warnings.join("；")}</>}
             </SettingNote>
           )}

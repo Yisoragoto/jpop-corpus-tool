@@ -26,7 +26,7 @@ import { SongEditor } from "../components/SongEditor";
 import { LyricsTools } from "../components/LyricsTools";
 import { LyricsFill } from "../components/LyricsFill";
 import { lyricFontStack, useLyricFontFiles } from "../fonts";
-import { useLyricsDisplay, useSongFurigana } from "../lyricsDisplay";
+import { retryFurigana, useLyricsDisplay, useSongFurigana } from "../lyricsDisplay";
 import { useAppSettings } from "../settings";
 import { csvProblem, describeDelete, describeEdit, libraryApi, type MissingAudio } from "../libraryAdmin";
 import { segmentLine, type Piece } from "../lyricSegments";
@@ -277,6 +277,31 @@ export function LibraryPage({
   }, [selected, onAudioError]);
 
   // 字体、字号、振假名等显示设置；振假名开着时取这首歌的注音；选了自带或导入的字体就按文件加载
+  // 有歌词、一个词都没分的歌：查不了词、没有振假名，而且看上去和别的歌没两样。
+  // 词典装好之后后端会顺手补，但没词典时入库、或者迁移时被当成「已在库中」跳过的歌，
+  // 用户只看得到症状——所以就在歌词上方说清楚，并给一个就地补的按钮。
+  const untokenized = !lyricsLoading && lyrics.length > 0 && lyrics.every((line) => line.tokens.length === 0);
+  const [tokenizing, setTokenizing] = useState(false);
+  const tokenizeNow = useCallback(async () => {
+    setTokenizing(true);
+    try {
+      await api.tokenizeMissingRun();
+      retryFurigana();
+      await actions.reloadLyrics();
+      onLibraryChanged();
+    } catch (err) {
+      onAudioError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTokenizing(false);
+    }
+  }, [actions, onLibraryChanged, onAudioError]);
+  // 歌词状态在外壳里，换页不清：在设置页补完分词回来，这首歌拿的还是补之前那份。
+  // 挂载时看一眼，没分词就重读一次（只有这种歌才多读这一次）。
+  useEffect(() => {
+    if (untokenized) void actions.reloadLyrics();
+    // 只在进这一页时看一次，所以依赖是空的
+  }, []);
+
   const display = useLyricsDisplay();
   const furigana = useSongFurigana(selected?.id, display.furigana, display.furiganaMode, onAudioError);
   useLyricFontFiles([display.fontFamily, display.fallbackFamily], onAudioError);
@@ -855,6 +880,14 @@ export function LibraryPage({
               </p>
             )}
 
+            {untokenized && (
+              <p className="warn small">
+                这首歌有歌词但还没分词，所以点不了词、也没有振假名（多半是在还没有分词词典时入库的）。
+                <button className="link-btn" onClick={() => void tokenizeNow()} disabled={tokenizing}>
+                  {tokenizing ? "分词中…" : "现在补分词"}
+                </button>
+              </p>
+            )}
             {lyricsLoading && <p className="muted pad">加载歌词…</p>}
             {!lyricsLoading && lyrics.length === 0 && (
               <div className="empty-state pad">

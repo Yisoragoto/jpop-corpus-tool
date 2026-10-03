@@ -507,21 +507,76 @@ pub async fn tokenize_missing_run<R: tauri::Runtime>(
 ) -> CmdResult<jp_import::maintain::Tokenized> {
     let handle = app.clone();
     blocking(app, move |state| {
-        let analyzer = state
-            .analyzer()
-            .ok_or_else(|| anyhow::anyhow!("没有分词词典，先在「分词词典」那一行下一份"))?;
-        let mut corpus = state.corpus();
-        let tx = corpus.connection_mut().transaction()?;
-        let report = jp_import::maintain::tokenize_missing(&tx, &analyzer, |song| {
-            let _ = handle.emit(
-                "tokenize://progress",
-                format!("{} · {}", song.artist, song.title),
-            );
-        })?;
-        tx.commit()?;
-        Ok(report)
+        anyhow::ensure!(
+            state.analyzer().is_some(),
+            "没有分词词典，先在「分词词典」那一行下一份"
+        );
+        tokenize_backlog(state, &handle)
     })
     .await
+}
+
+/// 有词典的话，把「有歌词、没分词」的歌补上分词；没词典或者没有缺的就什么都不做。
+///
+/// **为什么不只靠设置页那张卡**：没词典时入库的歌，词典装好以后不会自己好，
+/// 而那张卡藏在「曲库维护」里——实际发生过：迁移时旧库里有分词的同名歌被判成
+/// 「已在库中」跳过，留下的正好是没分词的那一份，16 首歌查不了词、没有振假名，
+/// 用户只看得到症状。所以词典一装上（下载、复制、迁移带过来）就顺手补。
+///
+/// 一个事务：中途出错整个回滚，库里还是原来那样，设置页那张卡还能再点。
+/// 只写 `tokens`（外加按原文套回分词校正），歌词和 metadata 一个字不动。
+fn tokenize_backlog<R: tauri::Runtime>(
+    state: &AppState,
+    handle: &tauri::AppHandle<R>,
+) -> anyhow::Result<jp_import::maintain::Tokenized> {
+    let Some(analyzer) = state.analyzer() else {
+        return Ok(Default::default());
+    };
+    let mut corpus = state.corpus();
+    if jp_import::maintain::untokenized_songs(corpus.connection())?.is_empty() {
+        return Ok(Default::default());
+    }
+    let tx = corpus.connection_mut().transaction()?;
+    let report = jp_import::maintain::tokenize_missing(&tx, &analyzer, |song| {
+        let _ = handle.emit(
+            "tokenize://progress",
+            format!("{} · {}", song.artist, song.title),
+        );
+    })?;
+    tx.commit()?;
+    if report.songs > 0 {
+        crate::log::info(format!(
+            "补齐分词：{} 首、{} 行、{} 个词",
+            report.songs, report.lines, report.tokens
+        ));
+    }
+    Ok(report)
+}
+
+/// 词典刚装上之后顺手补的分词。补失败不算装失败：词典确实装好了，
+/// 失败原因放进 `tokenize_error`，设置页「补齐缺失分词」那张卡还能再点。
+fn backlog_after_install<R: tauri::Runtime>(
+    state: &AppState,
+    handle: &tauri::AppHandle<R>,
+) -> (jp_import::maintain::Tokenized, String) {
+    match tokenize_backlog(state, handle) {
+        Ok(report) => (report, String::new()),
+        Err(err) => {
+            crate::log::warn(format!("词典装好了，但顺手补分词失败（已回滚）：{err:#}"));
+            (Default::default(), format!("{err:#}"))
+        }
+    }
+}
+
+/// 装词典的结果：装了什么 + 顺手补了多少首歌的分词。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryReady {
+    #[serde(flatten)]
+    pub installed: crate::tokenizer::Installed,
+    pub tokenized: jp_import::maintain::Tokenized,
+    /// 补分词失败的原因；空串表示没失败（包括「没有要补的」）
+    pub tokenize_error: String,
 }
 
 // ──────────────────────────── 补齐歌词 ────────────────────────────
@@ -752,7 +807,19 @@ pub async fn migrate_run<R: tauri::Runtime>(
         drop(corpus);
         // 搬过来的 sudachi/ 立刻生效，不用重启——振假名是用户马上会去看的东西
         state.reload_analyzer();
-        outcome
+        let mut outcome = outcome?;
+        // 当前库里没分词的那几首，旧库里的同名歌会被判成「已在库中」跳过，
+        // 分词不会跟着过来（两边的歌词往往也不是同一份，逐行对不上，不能硬搬）。
+        // 词典现在有了，就拿它们自己的歌词补上。
+        let _ = handle.emit("migrate://progress", "正在给没分词的歌补分词…".to_string());
+        let (tokenized, tokenize_error) = backlog_after_install(state, &handle);
+        outcome.tokenized = tokenized;
+        if !tokenize_error.is_empty() {
+            outcome
+                .warnings
+                .push(format!("补分词失败（已回滚，可在「补齐缺失分词」重试）：{tokenize_error}"));
+        }
+        Ok(outcome)
     })
     .await
 }
@@ -799,14 +866,15 @@ pub fn tokenizer_status(state: State<'_, AppState>) -> CmdResult<crate::tokenize
 #[tauri::command]
 pub async fn tokenizer_download<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
-) -> CmdResult<crate::tokenizer::Installed> {
+) -> CmdResult<DictionaryReady> {
     let handle = app.clone();
     blocking(app, move |state| {
         let installed = crate::tokenizer::download(&state.project_root(), |progress| {
             let _ = handle.emit("tokenizer://progress", progress);
         })?;
         anyhow::ensure!(state.reload_analyzer(), "下好了，但词典还是装不上");
-        Ok(installed)
+        let (tokenized, tokenize_error) = backlog_after_install(state, &handle);
+        Ok(DictionaryReady { installed, tokenized, tokenize_error })
     })
     .await
 }
@@ -818,12 +886,14 @@ pub async fn tokenizer_download<R: tauri::Runtime>(
 pub async fn tokenizer_install<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     path: String,
-) -> CmdResult<crate::tokenizer::Installed> {
+) -> CmdResult<DictionaryReady> {
+    let handle = app.clone();
     blocking(app, move |state| {
         let installed =
             crate::tokenizer::install(&state.project_root(), std::path::Path::new(&path))?;
         anyhow::ensure!(state.reload_analyzer(), "复制完了，但词典还是装不上");
-        Ok(installed)
+        let (tokenized, tokenize_error) = backlog_after_install(state, &handle);
+        Ok(DictionaryReady { installed, tokenized, tokenize_error })
     })
     .await
 }
