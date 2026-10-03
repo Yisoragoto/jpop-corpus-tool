@@ -119,6 +119,7 @@ pub fn parse(text: &str) -> ParsedLrc {
 
     for raw in text.lines() {
         let (stamps, body) = split_timestamps_with(raw.trim(), format);
+        let body = strip_word_timestamps(body);
         let body = body.trim();
         if body.is_empty() {
             continue;
@@ -192,6 +193,45 @@ fn find_offset_sec(text: &str) -> f64 {
         }
     }
     0.0
+}
+
+/// 剥掉增强型 LRC 的逐字时间戳 `<mm:ss>` / `<mm:ss.xx>` / `<mm:ss.xxx>`。
+///
+/// 这个库只要行级时间轴，逐字的那一层不用；留在正文里的话，分词会把
+/// `<00:12.34>` 切成一串符号 token，检索和制卡里都是噪音。
+/// 尖括号里不是时间的（`<愛>`）原样保留——那是正文。
+fn strip_word_timestamps(body: &str) -> std::borrow::Cow<'_, str> {
+    if !body.contains('<') {
+        return std::borrow::Cow::Borrowed(body);
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(open) = rest.find('<') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        match after.find('>') {
+            Some(close) if is_word_timestamp(&after[..close]) => rest = &after[close + 1..],
+            _ => {
+                out.push('<');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    std::borrow::Cow::Owned(out)
+}
+
+/// `mm:ss`，可选 `.` 加一到三位小数。分钟允许一到三位。
+fn is_word_timestamp(inner: &str) -> bool {
+    let Some((minutes, seconds)) = inner.split_once(':') else { return false };
+    let (whole, fraction) = match seconds.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (seconds, None),
+    };
+    let digits = |s: &str, range: std::ops::RangeInclusive<usize>| {
+        range.contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit())
+    };
+    digits(minutes, 1..=3) && digits(whole, 2..=2) && fraction.is_none_or(|f| digits(f, 1..=3))
 }
 
 /// 剥掉行首所有 `[mm:ss.xx]`，返回 (秒数列表, 剩余文本)。
@@ -535,5 +575,26 @@ mod tests {
         assert!((parsed.lines[0].time_sec.unwrap() - 10.0).abs() < 1e-6);
         let parsed = parse("[offset:500]\n裸行\n");
         assert_eq!(parsed.lines[0].time_sec, None);
+    }
+
+    /// 增强型 LRC 的逐字时间戳不是歌词正文：留着的话分词会把 `<00:12.34>` 切成一串符号
+    #[test]
+    fn word_level_timestamps_are_stripped_from_the_text() {
+        let parsed = parse("[00:12.00]<00:12.00>夜が<00:12.50>明ける<00:13.10>\n");
+        assert_eq!(parsed.lines[0].text, "夜が明ける");
+        assert!((parsed.lines[0].time_sec.unwrap() - 12.0).abs() < 1e-6);
+
+        // 三种精度都认；剥完只剩空白的整行不要
+        let parsed = parse("[00:01.00]<00:01>あ<00:02.5>い<00:03.125> う \n[00:05.00]<00:05.00>\n");
+        assert_eq!(parsed.lines.len(), 1);
+        assert_eq!(parsed.lines[0].text, "あい う");
+    }
+
+    /// 尖括号里不是时间的，是正文
+    #[test]
+    fn angle_brackets_that_are_not_timestamps_are_kept() {
+        let parsed = parse("[00:01.00]<愛>って何\n[00:02.00]a <b> c\n");
+        assert_eq!(parsed.lines[0].text, "<愛>って何");
+        assert_eq!(parsed.lines[1].text, "a <b> c");
     }
 }
