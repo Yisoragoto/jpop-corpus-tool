@@ -16,14 +16,39 @@ use serde::Serialize;
 
 use crate::filename::{folder_hints, parse_filename};
 
-/// 认得的音频扩展名。和 `jp-audio` 能解码的格式保持一致。
-pub const AUDIO_EXTS: &[&str] = &["flac", "mp3", "wav", "m4a", "ogg", "opus", "aac", "wma"];
+/// 能导入的音频扩展名：**`jp-audio` 真的解得开的那几种**。
+///
+/// 这里以前还有 `opus` 和 `wma`，但依赖树里没有这两种的解码器（拿和播放同一个入口
+/// 实测，报「认不出格式」）：它们能被导进库，却放不出声、也切不出 Anki 片段。
+/// 现在放到 [`UNSUPPORTED_AUDIO`]，扫得到、计划里说明原因、不入库。
+pub const AUDIO_EXTS: &[&str] = &["flac", "mp3", "wav", "m4a", "ogg", "aac"];
+
+/// 认得出是音频、但放不了的扩展名，和要告诉用户的话。
+///
+/// 不直接当成「不是音频」悄悄跳过：一个文件夹里十首歌只导进去七首，
+/// 用户得知道剩下三首是格式的问题，而不是去猜是不是没扫到。
+pub const UNSUPPORTED_AUDIO: &[(&str, &str)] = &[
+    ("opus", "不支持 Opus：播放器没有这种格式的解码器。转成 FLAC 或 MP3 再导入"),
+    ("wma", "不支持 WMA：播放器没有这种格式的解码器。转成 FLAC 或 MP3 再导入"),
+];
+
+fn lowercase_ext(path: &Path) -> Option<String> {
+    path.extension().and_then(|e| e.to_str()).map(str::to_lowercase)
+}
 
 pub fn is_audio_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| AUDIO_EXTS.contains(&e.to_lowercase().as_str()))
-        .unwrap_or(false)
+    lowercase_ext(path).is_some_and(|e| AUDIO_EXTS.contains(&e.as_str()))
+}
+
+/// 是音频但放不了时，返回原因；能放的、不是音频的都返回 None。
+pub fn unsupported_reason(path: &Path) -> Option<&'static str> {
+    let ext = lowercase_ext(path)?;
+    UNSUPPORTED_AUDIO.iter().find(|(e, _)| *e == ext).map(|(_, reason)| *reason)
+}
+
+/// 扫描要不要收这个文件：能放的，加上放不了但要向用户交代的。
+fn is_scannable(path: &Path) -> bool {
+    is_audio_file(path) || unsupported_reason(path).is_some()
 }
 
 /// 扫到的一个文件。原值和推断值都保留——
@@ -53,6 +78,8 @@ pub struct ScannedTrack {
     pub lyrics_path: Option<String>,
     /// 读 tag 时出的问题。为空表示一切正常。
     pub warning: Option<String>,
+    /// 这种格式放不了（见 [`UNSUPPORTED_AUDIO`]）。有值的条目不入库，也不当补音频的候选
+    pub unsupported: Option<String>,
 }
 
 impl ScannedTrack {
@@ -106,6 +133,7 @@ pub fn scan_file(path: &Path) -> ScannedTrack {
             .to_string(),
         size: std::fs::metadata(path).ok().map(|m| m.len()),
         lyrics_path: find_lyrics(path).map(|p| platform_path(&p)),
+        unsupported: unsupported_reason(path).map(str::to_owned),
         ..Default::default()
     };
 
@@ -195,7 +223,7 @@ fn find_lyrics(audio: &Path) -> Option<PathBuf> {
 pub fn scan_dir(root: &Path, max_depth: usize) -> Vec<ScannedTrack> {
     let mut out = Vec::new();
     if root.is_file() {
-        if is_audio_file(root) {
+        if is_scannable(root) {
             out.push(scan_file(root));
         }
         return out;
@@ -218,7 +246,7 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<ScannedTrack>) {
     for path in paths {
         if path.is_dir() {
             walk(&path, depth - 1, out);
-        } else if is_audio_file(&path) {
+        } else if is_scannable(&path) {
             out.push(scan_file(&path));
         }
     }
@@ -236,6 +264,31 @@ mod tests {
         for name in ["cover.jpg", "lyrics.lrc", "notes.txt", "noext"] {
             assert!(!is_audio_file(Path::new(name)), "{name}");
         }
+    }
+
+    /// opus 和 wma 没有解码器：不算「能导入的音频」，但扫描要收下并带上原因，
+    /// 这样导入计划里能告诉用户为什么没导，而不是让文件凭空消失。
+    #[test]
+    fn opus_and_wma_are_scanned_but_marked_unsupported() {
+        for name in ["a.opus", "a.OPUS", "a.wma", "a.Wma"] {
+            assert!(!is_audio_file(Path::new(name)), "{name} 放不了，不能算可导入");
+            let reason = unsupported_reason(Path::new(name)).unwrap_or_else(|| panic!("{name} 要有原因"));
+            assert!(reason.contains("不支持"), "{reason}");
+        }
+        for name in ["a.flac", "a.mp3", "cover.jpg", "noext"] {
+            assert_eq!(unsupported_reason(Path::new(name)), None, "{name}");
+        }
+
+        let dir = std::env::temp_dir().join(format!("jp-import-unsupported-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["one.opus", "two.wma", "three.flac", "cover.jpg"] {
+            std::fs::write(dir.join(name), b"not really audio").unwrap();
+        }
+        let found = scan_dir(&dir, 4);
+        let _ = std::fs::remove_dir_all(&dir);
+        let seen: Vec<(&str, bool)> = found.iter().map(|t| (t.file_name.as_str(), t.unsupported.is_some())).collect();
+        assert_eq!(seen, [("one.opus", true), ("three.flac", false), ("two.wma", true)]);
     }
 
     #[test]

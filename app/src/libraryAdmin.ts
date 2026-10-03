@@ -68,8 +68,8 @@ export interface RelinkBatch {
   csv: CsvSync;
 }
 
-/** 和 jp-import 的 AUDIO_EXTS 一致 */
-export const AUDIO_EXTENSIONS = ["flac", "mp3", "wav", "m4a", "ogg", "opus", "aac", "wma"];
+/** 和 jp-import 的 AUDIO_EXTS 一致：只列放得出声的。opus、wma 没有解码器，补音频时选了也会被后端拒掉 */
+export const AUDIO_EXTENSIONS = ["flac", "mp3", "wav", "m4a", "ogg", "aac"];
 
 export const FIELD_LABELS: Record<keyof SongEdit, string> = {
   title: "歌名",

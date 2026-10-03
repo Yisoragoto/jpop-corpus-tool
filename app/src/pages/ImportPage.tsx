@@ -40,9 +40,12 @@ interface Props {
 
 type Filter = "all" | ImportAction["kind"];
 
-/** 和 Rust 侧 `jp_import::scan::AUDIO_EXTS` 一致。只用来给文件选择框当筛选，
- *  真正算不算音频由后端判断——两边不一致时，后端会把选错的文件报在 `ignored` 里。 */
-const AUDIO_EXTENSIONS = ["flac", "mp3", "wav", "m4a", "ogg", "opus", "aac", "wma"];
+/** Rust 侧 `jp_import::scan` 的 `AUDIO_EXTS` 加上 `UNSUPPORTED_AUDIO`。只用来给文件选择框当筛选，
+ *  真正算不算音频由后端判断——两边不一致时，后端会把选错的文件报在 `ignored` 里。
+ *
+ *  opus 和 wma 放不了、不会入库，但**故意留在这里**：选得到，导入计划里才能告诉用户
+ *  「这种格式不支持」；筛掉的话文件在选择框里凭空消失，用户只会以为没扫到。 */
+const AUDIO_EXTENSIONS = ["flac", "mp3", "wav", "m4a", "ogg", "aac", "opus", "wma"];
 
 /** 路径只显示文件名。完整路径太长，一行塞不下，而用户认的是歌名。 */
 function fileName(path: string): string {

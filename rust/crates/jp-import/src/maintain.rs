@@ -362,7 +362,9 @@ pub struct RelinkSuggestion {
 /// 「夜」「春」这种短歌名会配错。已经被库里别的歌用着的文件也不建议。
 pub fn suggest_relinks(missing: &[MissingAudio], scanned: &[ScannedTrack], in_use: &[String]) -> Vec<RelinkSuggestion> {
     let used: BTreeSet<String> = in_use.iter().map(|p| path_key(p)).collect();
-    let files: Vec<&ScannedTrack> = scanned.iter().filter(|t| !used.contains(&path_key(&t.path))).collect();
+    // 放不了的格式（opus、wma）不当候选：换过去只是把「找不到文件」变成「放不出声」
+    let files: Vec<&ScannedTrack> =
+        scanned.iter().filter(|t| t.unsupported.is_none() && !used.contains(&path_key(&t.path))).collect();
 
     let mut proposals: Vec<(usize, usize, &'static str)> = Vec::new();
     for (mi, song) in missing.iter().enumerate() {
@@ -661,6 +663,19 @@ pub(crate) mod tests {
         let suggestions = suggest_relinks(&songs, &files, &used);
         let got: Vec<(&str, &str)> = suggestions.iter().map(|s| (s.song_id.as_str(), s.path.as_str())).collect();
         assert_eq!(got, [("001", "F:/a/ヨルシカ - 夜.flac"), ("003", "F:/raw/audio/YOASOBI/003.flac")]);
+    }
+
+    /// 放不了的格式不当候选：唯一对得上的文件是 opus 时，宁可不建议
+    #[test]
+    fn an_unplayable_file_is_never_suggested_as_the_new_audio() {
+        let songs = [missing("001", "夜", "ヨルシカ"), missing("002", "春", "ヨルシカ")];
+        let opus = ScannedTrack { unsupported: Some("不支持 Opus".into()), ..scanned("F:/a/夜.opus", "夜", "ヨルシカ") };
+        // 「春」有一个 flac 一个 wma：wma 不算数，flac 就是唯一的匹配
+        let wma = ScannedTrack { unsupported: Some("不支持 WMA".into()), ..scanned("F:/a/春.wma", "春", "ヨルシカ") };
+        let files = [opus, wma, scanned("F:/a/春.flac", "春", "ヨルシカ")];
+        let suggestions = suggest_relinks(&songs, &files, &[]);
+        let got: Vec<(&str, &str)> = suggestions.iter().map(|s| (s.song_id.as_str(), s.path.as_str())).collect();
+        assert_eq!(got, [("002", "F:/a/春.flac")]);
     }
 }
 

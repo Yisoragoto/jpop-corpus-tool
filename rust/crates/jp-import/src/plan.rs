@@ -219,12 +219,19 @@ pub fn plan(tracks: &[ScannedTrack], index: &LibraryIndex) -> ImportPlan {
     let mut batch_identities: HashMap<(String, String), String> = HashMap::new();
 
     for track in tracks {
-        let action = if !track.has_identity() {
+        let pkey = path_key(&track.path);
+        // 放不了的格式不入库。但旧版本导进去过的那些照实报「已在库中」——
+        // 它确实在库里，说「跳过」反而是错的
+        let unsupported = track.unsupported.as_ref().filter(|_| !index.by_path.contains_key(&pkey));
+        let action = if let Some(reason) = unsupported {
+            Action::Skipped {
+                reason: reason.clone(),
+            }
+        } else if !track.has_identity() {
             Action::Skipped {
                 reason: "没有曲名，tag 和文件名都定不出".into(),
             }
         } else {
-            let pkey = path_key(&track.path);
             // 路径相同是最硬的证据，优先于曲名歌手
             if let Some(id) = index.by_path.get(&pkey) {
                 Action::AlreadyImported {
@@ -429,6 +436,26 @@ mod tests {
         let plan = plan(&[scanned("D:/a/1.flac", "", "")], &LibraryIndex::empty());
         assert!(matches!(plan.items[0].action, Action::Skipped { .. }));
         assert_eq!(plan.summary().skipped, 1);
+    }
+
+    /// 放不了的格式（opus、wma）不入库，计划里写明原因；曲名歌手齐全也一样。
+    /// 旧版本已经导进去的那些照实报「已在库中」。
+    #[test]
+    fn an_unsupported_format_is_skipped_with_its_reason() {
+        let unsupported = |path: &str| ScannedTrack {
+            unsupported: Some("不支持 Opus：播放器没有这种格式的解码器".into()),
+            ..scanned(path, "夜行", "ヨルシカ")
+        };
+        let index = LibraryIndex::from_tracks(&[existing("007", "D:/old/旧.opus", "旧", "某人")]);
+        let plan = plan(&[unsupported("D:/a/夜行.opus"), unsupported("D:/old/旧.opus"), scanned("D:/a/夜行.flac", "夜行", "ヨルシカ")], &index);
+        assert_eq!(
+            plan.items[0].action,
+            Action::Skipped { reason: "不支持 Opus：播放器没有这种格式的解码器".into() }
+        );
+        assert_eq!(plan.items[1].action, Action::AlreadyImported { song_id: "007".into() });
+        // 被跳过的那个不能占住「夜行 / ヨルシカ」，后面同名的 FLAC 照常导入
+        assert_eq!(plan.items[2].action, Action::New { song_id: "008".into() });
+        assert_eq!(plan.to_import().count(), 1);
     }
 
     #[test]
