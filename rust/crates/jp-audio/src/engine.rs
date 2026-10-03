@@ -257,6 +257,9 @@ pub struct AudioEngine {
     shared: Arc<Shared>,
     tap: Arc<TapBuffer>,
     watcher_stop: Arc<AtomicBool>,
+    /// 看门狗线程的句柄。**必须留着**：drop 的时候要等它真的停下来，
+    /// 见 `impl Drop`。
+    watcher: Mutex<Option<std::thread::JoinHandle<()>>>,
     /// 当前这首的文件和 id。播完之后队列是空的，要重播就得照这个重新装一次
     current: Mutex<Option<(PathBuf, String)>>,
 }
@@ -286,6 +289,7 @@ impl AudioEngine {
             shared,
             tap: TapBuffer::new(tap_capacity),
             watcher_stop: Arc::new(AtomicBool::new(false)),
+            watcher: Mutex::new(None),
             current: Mutex::new(None),
         };
         engine.spawn_loop_watcher();
@@ -300,11 +304,18 @@ impl AudioEngine {
         let player = Arc::clone(&self.player);
         let shared = Arc::clone(&self.shared);
         let stop = Arc::clone(&self.watcher_stop);
-        std::thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .name("jp-audio-loop".into())
             .spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
-                    std::thread::sleep(LOOP_POLL);
+                    // 分片睡：`Drop` 要 join 这条线程，一口气睡满 LOOP_POLL
+                    // 会让每次 drop 都多等一拍
+                    for _ in 0..4 {
+                        if stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        std::thread::sleep(LOOP_POLL / 4);
+                    }
                     // 必须先把区间取出来再放锁：持锁去做 seek 会挡住
                     // UI 线程的 set_loop。（drop(region) 是无效的——
                     // LoopRegion 是 Copy，drop 掉的是副本不是 guard。）
@@ -325,6 +336,9 @@ impl AudioEngine {
                 }
             })
             .expect("spawn loop watcher");
+        if let Ok(mut slot) = self.watcher.lock() {
+            *slot = Some(handle);
+        }
     }
 
     /// 加载并开始播放。会替换当前正在播的内容。
@@ -576,9 +590,22 @@ impl AudioEngine {
 }
 
 impl Drop for AudioEngine {
+    /// 停掉看门狗**并等它真的停下来**，然后才让 `_device` 析构。
+    ///
+    /// 只置标志不 join 是不够的：看门狗线程拿着 `player`（它建自
+    /// `device.mixer()`），而 `_device` 一 drop 音频流就关了。标志置上到线程
+    /// 下一次醒来之间，它可能正好在 `player.try_seek()` 里——设备已经没了，
+    /// 于是访问越界。
+    ///
+    /// 这不是只在测试里才会发生：应用退出时 `AppState` drop，走的是同一条路。
+    /// 之所以先在 CI 上炸出来，是因为那边并行建了十个引擎又十个一起拆。
     fn drop(&mut self) {
-        // 不停看门狗的话，引擎 drop 之后线程还在空转
         self.watcher_stop.store(true, Ordering::Relaxed);
+        let handle = self.watcher.lock().ok().and_then(|mut slot| slot.take());
+        if let Some(handle) = handle {
+            // join 失败只说明看门狗自己 panic 过，那就没什么可等的了
+            let _ = handle.join();
+        }
     }
 }
 
@@ -614,6 +641,27 @@ mod tests {
         assert_eq!(state.song_id, "");
         assert_eq!(state.rate, 1.0);
         assert!(state.loop_region.is_none());
+    }
+
+    /// `drop` 返回时看门狗线程必须**已经退出**。
+    ///
+    /// 看门狗拿着 `player`（建自 `device.mixer()`），而 `_device` 一 drop
+    /// 音频流就关了。只置停止标志不等它，就会有一段时间线程还在对着
+    /// 已经没了的设备做 `try_seek`——CI 上十个引擎一起拆时炸成了
+    /// STATUS_ACCESS_VIOLATION。
+    ///
+    /// 用 `Arc` 的强引用数来验：线程退出时会放掉它那一份，
+    /// drop 之后还剩 2 份就说明没等。
+    #[test]
+    fn dropping_the_engine_waits_for_the_loop_watcher() {
+        let e = engine_or_skip!();
+        let flag = Arc::clone(&e.watcher_stop);
+        drop(e);
+        assert_eq!(
+            Arc::strong_count(&flag),
+            1,
+            "drop 返回时看门狗线程还活着，它正拿着已经关掉的设备"
+        );
     }
 
     #[test]
