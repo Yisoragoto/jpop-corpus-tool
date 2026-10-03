@@ -367,16 +367,15 @@ fn clip_line(
         return Ok(Err(format!("音频文件不在了：{}", song.audio_path)));
     }
     let _ = std::fs::create_dir_all(&audio.work_dir);
-    let name = audio::clip_name(utterance_id);
-    let out = audio.work_dir.join(&name);
+    let out = audio.work_dir.join(format!("jpop_work_{utterance_id}.mp3"));
     if !audio::clip(&audio.ffmpeg, Path::new(song.audio_path), start, end_sec, &out) {
         return Ok(Err("ffmpeg 切音频失败".into()));
     }
     let bytes = std::fs::read(&out);
     let _ = std::fs::remove_file(&out);
     let Ok(bytes) = bytes else { return Ok(Err("读不到切好的音频".into())) };
-    anki.store_media_file(&name, &bytes)?;
-    Ok(Ok(name))
+    // 按内容起名、用 Anki 实际存下的名字，见 `audio::clip_name` 和 `store_media_file`
+    Ok(Ok(anki.store_media_file(&audio::clip_name(&bytes), &bytes)?))
 }
 
 pub fn mine(
@@ -420,8 +419,8 @@ pub fn mine(
     let mut files = HashMap::new();
     for (dictionary, path) in missing {
         if let Some(bytes) = (assets.media)(&dictionary, &path) {
-            let name = dictionary_media_name(&dictionary, &path);
-            anki.store_media_file(&name, &bytes)?;
+            // 同一本词典换了版本、同一路径的图变了时，Anki 会改名而不是覆盖旧卡的图
+            let name = anki.store_media_file(&dictionary_media_name(&dictionary, &path), &bytes)?;
             files.insert((dictionary, path), name);
         }
     }
@@ -454,8 +453,8 @@ pub fn mine(
         && !song.cover_path.is_empty()
         && let Ok(bytes) = std::fs::read(song.cover_path)
     {
-        let name = cover_media_name(song.cover_path);
-        anki.store_media_file(&name, &bytes)?;
+        // 封面重新刮削过、同一路径换了图时，Anki 会改名而不是覆盖旧卡的图
+        let name = anki.store_media_file(&cover_media_name(song.cover_path), &bytes)?;
         set_field(&mut fields, "Picture", format!("<img src=\"{name}\">"));
     }
 

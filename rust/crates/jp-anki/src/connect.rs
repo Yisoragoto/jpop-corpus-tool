@@ -229,12 +229,25 @@ impl AnkiConnect {
             .unwrap_or(true))
     }
 
-    /// 把一个媒体文件放进 Anki 的媒体文件夹。
-    pub fn store_media_file(&self, filename: &str, bytes: &[u8]) -> Result<()> {
+    /// 把一个媒体文件放进 Anki 的媒体文件夹，返回**实际存下的文件名**。卡片里必须用这个名字。
+    ///
+    /// **`deleteExisting: false`**：AnkiConnect 默认是 true，同名就先删再写——
+    /// 别的卡片引用着的那个文件会悄悄换成另一段内容。传 false 之后，Anki 遇到同名
+    /// 不同内容会改名再存（`MediaManager.write_data`：「renaming if not unique.
+    /// Returns possibly-renamed filename」），内容相同则直接复用。
+    /// 老版本 AnkiConnect 不回名字时，就当它用了我们要的名字。
+    pub fn store_media_file(&self, filename: &str, bytes: &[u8]) -> Result<String> {
         use base64::Engine as _;
         let data = base64::engine::general_purpose::STANDARD.encode(bytes);
-        self.call("storeMediaFile", json!({ "filename": filename, "data": data }))?;
-        Ok(())
+        let stored = self.call(
+            "storeMediaFile",
+            json!({ "filename": filename, "data": data, "deleteExisting": false }),
+        )?;
+        Ok(stored
+            .as_str()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(filename)
+            .to_string())
     }
 
     pub fn update_note_fields(
@@ -449,6 +462,23 @@ mod tests {
     fn a_successful_call_returns_the_result_field() {
         let fake = Arc::new(FakeAnki::new(&[("version", json!(6))]));
         assert_eq!(client(fake).ping().unwrap(), 6);
+    }
+
+    /// 不许覆盖 Anki 里已有的同名文件：AnkiConnect 的 deleteExisting 默认是 true，
+    /// 同名就先删再写——别的卡片引用着的那个文件会悄悄换成另一段内容。
+    /// 传 false 之后，Anki 遇到同名不同内容会改名并把实际的名字返回来，必须用那个名字。
+    #[test]
+    fn storing_media_never_replaces_an_existing_file_and_uses_the_name_anki_chose() {
+        let fake = Arc::new(FakeAnki::new(&[("storeMediaFile", json!("jpop_clip_ab-1.mp3"))]));
+        let stored = client(fake.clone()).store_media_file("jpop_clip_ab.mp3", b"mp3").unwrap();
+        assert_eq!(stored, "jpop_clip_ab-1.mp3", "Anki 改了名，要用它给的名字");
+        let params = fake.params_of("storeMediaFile").unwrap();
+        assert_eq!(params["deleteExisting"], json!(false), "{params}");
+        assert_eq!(params["filename"], "jpop_clip_ab.mp3");
+
+        // 老版本的 AnkiConnect 不回名字（null）：就用我们要的那个
+        let quiet = Arc::new(FakeAnki::new(&[("storeMediaFile", json!(null))]));
+        assert_eq!(client(quiet).store_media_file("x.mp3", b"mp3").unwrap(), "x.mp3");
     }
 
     #[test]

@@ -1,9 +1,9 @@
 //! 例句音频片段：用 ffmpeg 从原曲里切出那一句，放进 Anki 的媒体文件夹。
 //!
-//! 参数和 Python `gui._clip_audio` 一致（开头提前 0.3 秒、结尾多留 0.5 秒、libmp3lame、`-q:a 5`），
-//! 文件名 `jpop_{utterance_id}.mp3` 也一致——同一句在两边导出是同一个文件名，Anki 里不会有两份。
+//! 参数和 Python `gui._clip_audio` 一致（开头提前 0.3 秒、结尾多留 0.5 秒、libmp3lame、`-q:a 5`）。
 //!
-//! 用户现有的 1046 张 JPOP Corpus 卡里 1045 张带音频，这是在用的功能。
+//! **文件名和 Python 刻意不同**：Python 是 `jpop_{utterance_id}.mp3`，这里按内容起名
+//! （见 [`clip_name`]）。两种名字不会撞，Python 版照旧写它的、引用旧名字的卡照常能放。
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -28,9 +28,23 @@ pub fn find_ffmpeg(project_root: &Path) -> Option<PathBuf> {
     local.is_file().then_some(local)
 }
 
-/// 放进 Anki 的文件名。
-pub fn clip_name(utterance_id: i64) -> String {
-    format!("jpop_{utterance_id}.mp3")
+/// 放进 Anki 的文件名：`jpop_clip_{切出来的 mp3 的 md5}.mp3`。
+///
+/// **按内容起名，不按歌词行号。** 以前是 `jpop_{utterance_id}.mp3`，而行号在重建库、
+/// 换库、迁移之后会从头分配：用户真实的 Anki 里 84 个被引用的旧片段中，15 个的行号
+/// 在现在的库里已经是另一句歌词，再给那一行制卡就会把旧卡的音频悄悄换掉。
+/// 按内容起名，不同的音频不会同名，同一段音频重复制卡自然复用。
+///
+/// md5 只用来起名、不防恶意碰撞；用的是 `card.rs` 里现成的那份，不为此多一个依赖。
+/// 旧的 `jpop_{数字}.mp3` 一个不动——引用它们的旧卡照常能放，新版也不会再写这种名字。
+pub fn clip_name(mp3: &[u8]) -> String {
+    let hash: String = crate::card::md5(mp3).iter().map(|b| format!("{b:02x}")).collect();
+    format!("jpop_clip_{hash}.mp3")
+}
+
+/// ffmpeg 切片的临时文件名。按行号起没问题：它只活到传给 Anki 为止
+fn work_name(utterance_id: i64) -> String {
+    format!("jpop_work_{utterance_id}.mp3")
 }
 
 /// ffmpeg 的 (起点, 终点)，单位秒。
@@ -98,16 +112,16 @@ pub fn attach(anki: &AnkiConnect, audio: &AudioOptions, examples: &[Example]) ->
         if example.audio_path.is_empty() {
             continue;
         }
-        let name = clip_name(example.utterance_id);
-        let out = audio.work_dir.join(&name);
+        let out = audio.work_dir.join(work_name(example.utterance_id));
         if !clip(&audio.ffmpeg, Path::new(&example.audio_path), start, example.end_sec, &out) {
             continue;
         }
-        let Ok(bytes) = std::fs::read(&out) else { continue };
-        let stored = anki.store_media_file(&name, &bytes);
+        let bytes = std::fs::read(&out);
         let _ = std::fs::remove_file(&out);
-        match stored {
-            Ok(()) => refs.push(format!("[sound:{name}]")),
+        let Ok(bytes) = bytes else { continue };
+        match anki.store_media_file(&clip_name(&bytes), &bytes) {
+            // 用 Anki 实际存下的名字（同名不同内容时它会改名）
+            Ok(stored) => refs.push(format!("[sound:{stored}]")),
             Err(err) if err.is_not_running() => return Err(err),
             Err(_) => {}
         }
@@ -133,7 +147,22 @@ mod tests {
         assert!(close(clip_window(10.0, Some(10.3)), (9.7, 16.5)));
         // 开头不会是负数
         assert!(close(clip_window(0.1, Some(3.0)), (0.0, 3.5)));
-        assert_eq!(clip_name(42), "jpop_42.mp3");
+    }
+
+    /// 片段的名字由**切出来的音频内容**决定，不再是歌词行号。
+    ///
+    /// 行号在重建库、换库、迁移之后会从头分配：用户真实的 Anki 里 84 个被引用的
+    /// `jpop_{行号}.mp3` 中，15 个的行号在现在的库里已经是另一句歌词了，再给那一行制卡
+    /// 就会覆盖掉旧卡的音频。内容哈希下，不同的音频不会同名，同一段音频天然复用。
+    #[test]
+    fn clip_names_come_from_the_audio_not_the_line_number() {
+        let a = clip_name(b"first clip");
+        assert_eq!(a, clip_name(b"first clip"), "同一段音频要同名");
+        assert_ne!(a, clip_name(b"second clip"), "不同的音频不能同名");
+        let hash = a.strip_prefix("jpop_clip_").and_then(|r| r.strip_suffix(".mp3")).expect(&a);
+        assert_eq!(hash.len(), 32, "{a}");
+        // 前缀 jpop_clip_ 和旧规则 jpop_{数字}.mp3 永远不会撞名
+        assert!(hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()), "{a}");
     }
 
     #[test]
@@ -176,24 +205,28 @@ mod tests {
             end_sec: Some(2.0),
             utterance_id: 7,
         };
-        let fake = Arc::new(FakeAnki::new(&[("storeMediaFile", json!("jpop_7.mp3"))]));
+        // Anki 那边恰好有同名文件、给它改了名：卡片里要用改过的那个名字
+        let fake = Arc::new(FakeAnki::new(&[("storeMediaFile", json!("renamed-by-anki.mp3"))]));
         let options = AudioOptions {
             ffmpeg,
             work_dir: dir.join("clips"),
         };
         let field = attach(&client(fake.clone()), &options, &[example]).unwrap();
-        assert_eq!(field, "[sound:jpop_7.mp3]");
+        assert_eq!(field, "[sound:renamed-by-anki.mp3]");
 
         let params = fake.params_of("storeMediaFile").unwrap();
-        assert_eq!(params["filename"], "jpop_7.mp3");
         let data = params["data"].as_str().unwrap();
         use base64::Engine as _;
         let bytes = base64::engine::general_purpose::STANDARD.decode(data).unwrap();
+        // 请求的名字是这段音频内容的哈希，不是行号 7
+        assert_eq!(params["filename"], clip_name(&bytes));
+        assert_eq!(params["deleteExisting"], json!(false));
         // 一句约 1.8 秒的 mp3，至少几 KB；更重要的是它确实是 mp3（ID3 头或帧同步字）
         assert!(bytes.len() > 2_000, "切出来只有 {} 字节", bytes.len());
         assert!(bytes.starts_with(b"ID3") || (bytes[0] == 0xFF && bytes[1] & 0xE0 == 0xE0));
         // 临时文件传完就删
-        assert!(!options.work_dir.join("jpop_7.mp3").exists());
+        let left: Vec<_> = std::fs::read_dir(&options.work_dir).unwrap().collect();
+        assert!(left.is_empty(), "临时文件没删：{left:?}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
