@@ -382,6 +382,20 @@ fn the_no_dictionary_wording_is_the_same_on_both_sides() {
 }
 
 /// 诊断信息是出事时唯一的线索，所以它自己不能出事。
+/// 设置页要说得出 ffmpeg 在哪、没有的话该放到哪——这两样都得从 health 里拿到
+#[test]
+fn health_says_where_ffmpeg_is_or_where_it_should_go() {
+    let f = Fixture::new("health-ffmpeg");
+    let health = ok(f.w(), "health", json!({}));
+    let found = &health["ffmpegPath"];
+    assert!(found.is_null() || found.is_string(), "{health}");
+    let expected = health["ffmpegExpected"].as_str().expect("要有 ffmpegExpected");
+    assert!(
+        std::path::Path::new(expected).starts_with(f.dir()),
+        "应该指向语料库目录里：{expected}"
+    );
+}
+
 #[test]
 fn the_diagnostics_report_describes_this_library() {
     let f = Fixture::new("diagnostics");

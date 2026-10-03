@@ -290,6 +290,10 @@ pub struct HealthReport {
     pub audio_ready: bool,
     /// 能不能变调：变调要 ffmpeg 渲染，本机没有 ffmpeg 时为 false，UI 据此禁用
     pub pitch_supported: bool,
+    /// 找到的 ffmpeg。None 时变调和 Anki 音频片段不可用，设置页据此说明原因
+    pub ffmpeg_path: Option<String>,
+    /// 不想动 PATH 的话，ffmpeg 放到这儿就能被找到（语料库目录里）
+    pub ffmpeg_expected: String,
 }
 
 #[tauri::command(async)]
@@ -302,6 +306,13 @@ pub fn health(state: State<'_, AppState>) -> CmdResult<HealthReport> {
         tokenizer_ready: state.analyzer().is_some(),
         audio_ready: state.audio().is_some(),
         pitch_supported: state.audio().is_some() && state.pitch().available(),
+        ffmpeg_path: jp_anki::audio::find_ffmpeg(&state.project_root())
+            .map(|p| p.display().to_string()),
+        ffmpeg_expected: state
+            .project_root()
+            .join(crate::diagnostics::FFMPEG_EXE)
+            .display()
+            .to_string(),
     })
 }
 

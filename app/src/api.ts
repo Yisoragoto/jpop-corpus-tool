@@ -327,8 +327,12 @@ export interface HealthReport {
   tokenizerReady: boolean;
   /** 没有可用输出设备时为 false。UI 据此禁用播放，而不是给一个点了没反应的按钮。 */
   audioReady: boolean;
-  /** 变调尚未实现。为 false 时不要显示变调控件。 */
+  /** 能不能变调：要有音频设备和 ffmpeg。为 false 时变调控件禁用。 */
   pitchSupported: boolean;
+  /** 找到的 ffmpeg；null 时变调和 Anki 音频片段不可用 */
+  ffmpegPath: string | null;
+  /** 不想动 PATH 的话，ffmpeg 放到这儿就能被找到（语料库目录里） */
+  ffmpegExpected: string;
 }
 
 // ────────────────────────────── 播放 ──────────────────────────────

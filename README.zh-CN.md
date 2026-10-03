@@ -148,6 +148,19 @@ Releases 取，装之前校验 SHA-256。自动安装默认关着。
 AnkiConnect 默认只监听本机地址（`http://127.0.0.1:8765`），本工具不会把你的语料或 Anki 数据传到任何地方。
 制卡**只追加不覆盖**：同一个词再制一次会跳过，不会动你已有的卡片。
 
+### FFmpeg（可选）
+
+安装包里不带 FFmpeg。没有它时只有两样不可用：**变调**（倍速不需要它）和 **Anki 卡片里的音频片段**，
+其余功能照常。
+
+`ffmpeg.exe` 的查找顺序：
+
+1. `PATH` 里的每一个目录；
+2. 语料库目录，也就是 `corpus.db` 所在的目录（默认 `%LOCALAPPDATA%\JPOP Corpus Tool`）。
+
+**程序的安装目录不会被查找。**找没找到、应该放到哪个具体路径，「设置 → 系统 → FFmpeg」和诊断信息里都写着。
+放好之后重启应用。从 [ffmpeg.org/download](https://ffmpeg.org/download.html) 下任一较新的 Windows 构建即可。
+
 ## 从源码运行
 
 ### 需要
@@ -229,7 +242,7 @@ raw/           本地音频和歌词目录，Git 默认忽略内容
 | [Lapis](https://github.com/donkuri/lapis) | 自带「Lyrics」笔记类型的底本 | GPL-3.0 |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | 词典存储设计（未复制代码） | GPL-3.0-or-later |
 | [Klee One](https://fonts.google.com/specimen/Klee+One) · [霞鹜文楷](https://github.com/lxgw/LxgwWenKai) | 随软件分发的字体 | SIL OFL 1.1 |
-| [FFmpeg](https://ffmpeg.org/) | 可选二进制，用于切片导出和变调 | 见发布包里的 `FFMPEG_BUILD_INFO.txt` |
+| [FFmpeg](https://ffmpeg.org/) | 可选，**不随安装包分发**：变调和 Anki 音频片段（[放在哪儿](#ffmpeg可选)） | LGPL-2.1+ 或 GPL-2.0+，取决于你下的那个构建 |
 
 逐文件的出处写在各文件头部，完整说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
