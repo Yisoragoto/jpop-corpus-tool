@@ -275,18 +275,28 @@ mod tests {
         assert!(track.has_identity());
     }
 
+    /// 只在 Windows 上成立：`\` 只有在 Windows 上才是分隔符，Linux / macOS 上它是
+    /// 文件名里的普通字符，「两种分隔符混着写」这件事根本不存在。
+    /// 别的平台上的同一条不变量见下面的 `stored_paths_are_normalized`。
+    #[cfg(windows)]
     #[test]
     fn stored_paths_use_one_separator() {
         // 调用方混着写也不该漏进库
         let track = scan_file(Path::new(r"D:\jp_corpus\raw/audio\歌手\001.flac"));
-        if cfg!(windows) {
-            assert_eq!(track.path, r"D:\jp_corpus\raw\audio\歌手\001.flac");
-        }
+        assert_eq!(track.path, r"D:\jp_corpus\raw\audio\歌手\001.flac");
         assert!(
             !(track.path.contains('/') && track.path.contains('\\')),
             "两种分隔符混在一个路径里：{}",
             track.path
         );
+    }
+
+    /// 同一条不变量在 Unix 上的样子：多余的 `/` 和 `.` 不该漏进库
+    #[cfg(not(windows))]
+    #[test]
+    fn stored_paths_are_normalized() {
+        let track = scan_file(Path::new("/music//歌手/./001.flac"));
+        assert_eq!(track.path, "/music/歌手/001.flac");
     }
 
     #[test]
