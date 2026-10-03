@@ -23,3 +23,12 @@ rust/crates/jp-corpus/testdata/*_py.txt -text
 *.icns binary
 *.dic binary
 *.xz binary
+# 解码测试的夹具（rust/crates/jp-app/tests/data/formats/）
+*.flac binary
+*.mp3 binary
+*.wav binary
+*.m4a binary
+*.ogg binary
+*.aac binary
+*.opus binary
+*.wma binary
