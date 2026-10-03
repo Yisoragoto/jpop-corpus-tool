@@ -507,6 +507,103 @@ mod tests {
         conn
     }
 
+    /// 写一首歌：每行歌词配一个占位 token（这条测试不需要真分词器）。返回各行的 utterance_id。
+    fn write_song(conn: &Connection, id: &str, lines: &[(Option<f64>, &str)]) -> Vec<i64> {
+        conn.execute(
+            "INSERT INTO songs (id, title, artist) VALUES (?1, '夜明け', '誰か')",
+            [id],
+        )
+        .unwrap();
+        lines
+            .iter()
+            .enumerate()
+            .map(|(idx, (time, text))| {
+                conn.execute(
+                    "INSERT INTO utterances (song_id, line_idx, time_sec, text) VALUES (?1,?2,?3,?4)",
+                    rusqlite::params![id, idx as i64, time, text],
+                )
+                .unwrap();
+                let utterance = conn.last_insert_rowid();
+                conn.execute(
+                    "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) VALUES (?1,0,?2,?2,'X')",
+                    rusqlite::params![utterance, text],
+                )
+                .unwrap();
+                utterance
+            })
+            .collect()
+    }
+
+    /// 新解析规则让行数和 `line_idx` 都变了（署名、JSON、翻译行不再入库，逐字时间戳被剥掉）。
+    /// 校正按「歌手 + 曲名 + 原文」套回，不看行号，所以重导之后仍要恢复。
+    /// 见 docs/token-corrections.md「删歌再导入时恢复」。
+    #[test]
+    fn corrections_survive_a_reimport_under_the_new_lrc_rules() {
+        let conn = test_db();
+        // 旧规则入库的样子：署名、JSON、翻译都当成了歌词，「夜が明ける」排在第 4 行
+        let old = write_song(
+            &conn,
+            "001",
+            &[
+                (None, "{\"t\":0,\"c\":[{\"tx\":\"作词: \"},{\"tx\":\"誰か\"}]}"),
+                (Some(0.5), "制作人 : 誰か"),
+                (Some(10.0), "我早就注意到了"),
+                (Some(10.0), "夜が明ける"),
+                (Some(20.0), "まだ眠い"),
+            ],
+        );
+        let corrected = old[3];
+        jp_corpus::corrections::save(
+            &conn,
+            corrected,
+            &[
+                jp_corpus::corrections::TokenEdit { surface: "夜".into(), lemma: "夜".into(), pos: "NOUN".into() },
+                jp_corpus::corrections::TokenEdit { surface: "が".into(), lemma: "が".into(), pos: "ADP".into() },
+                jp_corpus::corrections::TokenEdit { surface: "明ける".into(), lemma: "明ける".into(), pos: "VERB".into() },
+            ],
+        )
+        .unwrap();
+
+        // 删歌：和 song_manager.py::_delete 一样只删这三张，校正行留下
+        conn.execute_batch(
+            "DELETE FROM tokens WHERE utterance_id IN (SELECT id FROM utterances WHERE song_id='001');
+             DELETE FROM utterances WHERE song_id='001';
+             DELETE FROM songs WHERE id='001';",
+        )
+        .unwrap();
+
+        // 按新规则重新解析同一首歌
+        let parsed = crate::lrc::parse(concat!(
+            "{\"t\":0,\"c\":[{\"tx\":\"作词: \"},{\"tx\":\"誰か\"}]}\n",
+            "[offset:0]\n",
+            "[00:00.50]制作人 : 誰か\n",
+            "[00:10.00]<00:10.00>夜が<00:10.40>明ける\n",
+            "[00:10.00]我早就注意到了\n",
+            "[00:20.00]まだ眠い\n",
+        ));
+        let texts: Vec<&str> = parsed.lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, ["夜が明ける", "まだ眠い"], "前提：新规则把行数从 5 变成 2");
+        let lines: Vec<(Option<f64>, &str)> =
+            parsed.lines.iter().map(|l| (l.time_sec, l.text.as_str())).collect();
+        let new = write_song(&conn, "001", &lines);
+
+        let restored = jp_corpus::corrections::restore_for_song(&conn, "001", "誰か", "夜明け").unwrap();
+        assert_eq!(restored, 1);
+        let surfaces: Vec<String> = conn
+            .prepare("SELECT surface FROM tokens WHERE utterance_id=?1 ORDER BY token_idx")
+            .unwrap()
+            .query_map([new[0]], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(surfaces, ["夜", "が", "明ける"], "校正没套回去");
+        let pointed: i64 = conn
+            .query_row("SELECT utterance_id FROM token_corrections", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(pointed, new[0], "校正行要改指向新的那一行");
+        assert_ne!(new[0], corrected);
+    }
+
     /// 写一个带歌词的临时目录，返回 (音频路径, lrc 路径)。
     fn with_lyrics(dir: &std::path::Path, stem: &str, lrc_body: &str) -> (String, String) {
         let audio = dir.join(format!("{stem}.flac"));
