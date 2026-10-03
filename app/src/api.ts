@@ -418,6 +418,18 @@ function isCommandError(value: unknown): value is CommandError {
  * Tauri 的 invoke 在 command 返回 Err 时 reject 的是**序列化后的对象**，
  * 不是 Error 实例——直接扔给 React 会得到 "[object Object]"。
  */
+/**
+ * 播放控制命令完成时发的信号：播放状态的轮询听到就立刻补拉一次（见 `usePlaybackState`）。
+ *
+ * 闲着（暂停、停止）的时候轮询降到 1Hz；没有这一下，点了「播放」要等最多一秒
+ * 进度条才动。用 window 事件而不是直接调 hook：api 不该反过来依赖 hook。
+ */
+export const PLAYBACK_KICK = "jpop:playback-kick";
+
+function kicked<T>(pending: Promise<T>): Promise<T> {
+  return pending.finally(() => window.dispatchEvent(new Event(PLAYBACK_KICK)));
+}
+
 export async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   try {
     return await invoke<T>(cmd, args);
@@ -485,18 +497,18 @@ export const api = {
   // 播放
   /** 位置和播不播一次传：设了变调时要先渲染，渲染好才真正加载 */
   audioLoad: (songId: string, opts: { positionSec?: number | null; autoplay?: boolean } = {}) =>
-    call<void>("audio_load", { songId, positionSec: opts.positionSec ?? null, autoplay: opts.autoplay ?? true }),
-  audioSetPitch: (semitones: number) => call<void>("audio_set_pitch", { semitones }),
-  audioPlay: () => call<void>("audio_play"),
-  audioPause: () => call<void>("audio_pause"),
-  audioToggle: () => call<void>("audio_toggle"),
-  audioStop: () => call<void>("audio_stop"),
-  audioSeek: (positionSec: number) => call<void>("audio_seek", { positionSec }),
-  audioSetRate: (rate: number) => call<void>("audio_set_rate", { rate }),
-  audioSetVolume: (volume: number) => call<void>("audio_set_volume", { volume }),
+    kicked(call<void>("audio_load", { songId, positionSec: opts.positionSec ?? null, autoplay: opts.autoplay ?? true })),
+  audioSetPitch: (semitones: number) => kicked(call<void>("audio_set_pitch", { semitones })),
+  audioPlay: () => kicked(call<void>("audio_play")),
+  audioPause: () => kicked(call<void>("audio_pause")),
+  audioToggle: () => kicked(call<void>("audio_toggle")),
+  audioStop: () => kicked(call<void>("audio_stop")),
+  audioSeek: (positionSec: number) => kicked(call<void>("audio_seek", { positionSec })),
+  audioSetRate: (rate: number) => kicked(call<void>("audio_set_rate", { rate })),
+  audioSetVolume: (volume: number) => kicked(call<void>("audio_set_volume", { volume })),
   /** 返回 false 表示区间太短被拒绝。两个参数都省略 = 取消循环。 */
   audioSetLoop: (startSec?: number, endSec?: number) =>
-    call<boolean>("audio_set_loop", { startSec, endSec }),
+    kicked(call<boolean>("audio_set_loop", { startSec, endSec })),
   /** 无副作用的状态读取。 */
   audioState: () => call<PlaybackState>("audio_state"),
   /**

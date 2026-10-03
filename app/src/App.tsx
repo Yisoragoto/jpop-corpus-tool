@@ -34,7 +34,7 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { useLibrary } from "./useLibrary";
 import { useHotkeys } from "./useHotkeys";
-import { usePlaybackState, useSpectrum } from "./usePlayback";
+import { usePlaybackState } from "./usePlayback";
 
 type Route = "home" | "kwic" | "library" | "explorer" | "analytics" | "import" | "scrape" | "anki" | "dict" | "settings";
 
@@ -67,8 +67,6 @@ export default function App() {
   const settings = useAppSettings();
   const audioReady = health?.audioReady ?? false;
   const playback = usePlaybackState(audioReady);
-  // 频谱关掉时连轮询一起停：没人看的东西不值得每 50ms 问一次引擎
-  const spectrum = useSpectrum(audioReady && settings.spectrum, playback.playState === "playing");
   /** 「进全屏歌词」的请求。曲库页收到之后自己清掉（和跨页跳转同一个路子） */
   const [stageWanted, setStageWanted] = useState(false);
   const openStage = useCallback(() => {
@@ -449,7 +447,6 @@ export default function App() {
 
       <Player
         state={playback}
-        spectrum={spectrum}
         title={library.selected?.title ?? ""}
         artist={library.selected?.artist ?? ""}
         coverPath={library.selected?.coverPath}

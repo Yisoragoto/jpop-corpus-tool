@@ -19,20 +19,20 @@ import { useEffect, useRef, useState } from "react";
 import { api, formatDuration, PITCH_STEPS, pitchLabel, RATE_STEPS, type PlaybackState } from "../api";
 import { Cover } from "./Cover";
 import { Flyout } from "./Flyout";
+import { useSpectrum } from "../usePlayback";
 
 /** 前进 / 后退一步的秒数。听写歌词时反复倒回来的那一小段 */
 const STEP_SEC = 5;
 
 interface Props {
   state: PlaybackState;
-  spectrum: number[];
   title: string;
   artist: string;
   /** 正在放的这首的封面，`songs.cover_path`。没选歌时是 undefined。 */
   coverPath?: string | null | undefined;
   /** 引擎不可用时整条禁用，并说明原因 */
   disabled: boolean;
-  /** 频谱条开不开（设置里可关）。关掉时连采样轮询一起停，由上层决定 */
+  /** 频谱条开不开（设置里可关）。关掉时组件不挂载，采样轮询也就跟着停了 */
   showSpectrum: boolean;
   /** 点左下角这首歌：进全屏歌词。没有选中曲目时传 null，卡片就不可点 */
   onOpenStage: (() => void) | null;
@@ -41,7 +41,6 @@ interface Props {
 
 export function Player({
   state,
-  spectrum,
   title,
   artist,
   coverPath,
@@ -108,7 +107,7 @@ export function Player({
 
   return (
     <footer className={`player ${disabled ? "off" : ""}`}>
-      {showSpectrum && <Spectrum bands={spectrum} active={playing} />}
+      {showSpectrum && <Spectrum enabled={!disabled} active={playing} />}
 
       <div className="seek-row">
         <span className="time">{formatDuration(position)}</span>
@@ -256,8 +255,13 @@ export function Player({
   );
 }
 
-/** 频谱条。没有数据时画一条静默的基线，而不是留空。 */
-function Spectrum({ bands, active }: { bands: number[]; active: boolean }) {
+/**
+ * 频谱条。没有数据时画一条静默的基线，而不是留空。
+ *
+ * 采样在这里拉，不在 App 上：它播放时每秒变 20 次，挂在顶层整棵树都要跟着重渲染。
+ */
+function Spectrum({ enabled, active }: { enabled: boolean; active: boolean }) {
+  const bands = useSpectrum(enabled, active);
   const values = bands.length ? bands : new Array(48).fill(0);
   return (
     <div className={`spectrum ${active ? "on" : ""}`} aria-hidden="true">

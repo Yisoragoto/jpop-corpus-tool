@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { api, type LyricLine, type PlaybackState } from "./api";
+import { api, PLAYBACK_KICK, type LyricLine, type PlaybackState } from "./api";
 
 /** 状态轮询间隔。10Hz 足够驱动进度条和歌词跟随，且开销可忽略。 */
 const STATE_INTERVAL = 100;
@@ -32,37 +32,95 @@ const EMPTY_STATE: PlaybackState = {
   pitchError: null,
 };
 
+/** 闲着（暂停、播完、没加载）时的轮询间隔：状态不会自己变，1Hz 足够 */
+const IDLE_INTERVAL = 1000;
+
+/**
+ * 两份快照是不是同一个状态。
+ *
+ * 每拍从 IPC 回来的都是新对象。这份状态挂在 `App` 顶层，`setState` 一个新对象，
+ * 整棵组件树就重渲染一遍——暂停时什么都没变，也照样每秒白渲染 10 次。
+ * 字段一样时把旧对象原样还给 React，它会直接跳过这次渲染。
+ */
+export function samePlayback(a: PlaybackState, b: PlaybackState): boolean {
+  return (
+    a.songId === b.songId &&
+    a.playState === b.playState &&
+    a.positionSec === b.positionSec &&
+    a.durationSec === b.durationSec &&
+    a.rate === b.rate &&
+    a.volume === b.volume &&
+    a.loopRegion?.startSec === b.loopRegion?.startSec &&
+    a.loopRegion?.endSec === b.loopRegion?.endSec &&
+    a.pitchSemitones === b.pitchSemitones &&
+    a.pitchRendering === b.pitchRendering &&
+    a.pitchError?.id === b.pitchError?.id &&
+    a.pitchError?.message === b.pitchError?.message
+  );
+}
+
+/**
+ * 下一拍隔多久。在播、或者变调正在渲染（渲染完会自己开始播）时 10Hz，其余 1Hz。
+ *
+ * 闲着时状态只会因为用户操作而变，而播放控制命令完成时会发 `PLAYBACK_KICK`
+ * 让这里立刻补拉一次，所以降频不会让按钮显得迟钝。
+ */
+export function pollDelay(state: PlaybackState): number {
+  return state.playState === "playing" || state.pitchRendering ? STATE_INTERVAL : IDLE_INTERVAL;
+}
+
 export function usePlaybackState(enabled: boolean): PlaybackState {
   const [state, setState] = useState<PlaybackState>(EMPTY_STATE);
 
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // 用 setTimeout 链而不是 setInterval：间隔要跟着状态变（在播 10Hz、闲着 1Hz）
     const tick = async () => {
+      clearTimeout(timer);
+      let delay = STATE_INTERVAL;
       try {
         // 用 tick 而不是 state：它顺带走收听统计，首页的最近播放靠它
         const next = await api.audioTick();
-        if (alive) setState(next);
+        if (!alive) return;
+        setState((prev) => (samePlayback(prev, next) ? prev : next));
+        delay = pollDelay(next);
       } catch {
         // 轮询失败不该刷屏报错——下一拍会再试
       }
+      if (alive) timer = setTimeout(() => void tick(), delay);
     };
+    const kick = () => void tick();
+    window.addEventListener(PLAYBACK_KICK, kick);
     void tick();
-    const timer = setInterval(() => void tick(), STATE_INTERVAL);
     return () => {
       alive = false;
-      clearInterval(timer);
+      clearTimeout(timer);
+      window.removeEventListener(PLAYBACK_KICK, kick);
     };
   }, [enabled]);
 
   return state;
 }
 
+/**
+ * 频谱。**由画频谱的那个组件自己调用**，不要挂到 `App` 上：
+ * 它在播放时每秒变 20 次，挂在顶层的话整棵树跟着重渲染 20 次。
+ * 组件没挂载（设置里关了频谱）就不拉；页面不可见时也不拉。
+ */
 export function useSpectrum(enabled: boolean, active: boolean): number[] {
   const [bands, setBands] = useState<number[]>([]);
+  const [visible, setVisible] = useState(() => document.visibilityState === "visible");
 
   useEffect(() => {
-    if (!enabled || !active) {
+    const onChange = () => setVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!enabled || !active || !visible) {
       // 停播时衰减到静默，而不是把最后一帧永远留在屏幕上
       setBands((prev) => (prev.length ? prev.map(() => 0) : prev));
       return;
@@ -82,7 +140,7 @@ export function useSpectrum(enabled: boolean, active: boolean): number[] {
       alive = false;
       clearInterval(timer);
     };
-  }, [enabled, active]);
+  }, [enabled, active, visible]);
 
   return bands;
 }

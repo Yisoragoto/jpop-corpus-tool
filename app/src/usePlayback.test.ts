@@ -5,8 +5,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { pickLine, timedLines } from "./usePlayback";
-import type { LyricLine } from "./api";
+import { pickLine, pollDelay, samePlayback, timedLines } from "./usePlayback";
+import type { LyricLine, PlaybackState } from "./api";
 
 function lines(...times: (number | null)[]): LyricLine[] {
   return times.map((timeSec, i) => ({
@@ -50,5 +50,65 @@ describe("pickLine", () => {
     expect(pickLine(timed, null)).toBe(-1);
     // 对照：同样的位置，若当成属于这份歌词，点亮的是最后一行
     expect(pickLine(timed, 218)).toBe(3);
+  });
+});
+
+const base: PlaybackState = {
+  songId: "159",
+  playState: "playing",
+  positionSec: 12.3,
+  durationSec: 640,
+  rate: 1,
+  volume: 0.8,
+  loopRegion: null,
+  pitchSemitones: 0,
+  pitchRendering: false,
+  pitchError: null,
+};
+
+describe("samePlayback：状态没变就不 setState", () => {
+  it("每拍都是新对象，但字段一样就算没变——不然暂停时 App 每秒白渲染 10 次", () => {
+    expect(samePlayback(base, { ...base })).toBe(true);
+    expect(samePlayback(base, { ...base, loopRegion: null })).toBe(true);
+    expect(
+      samePlayback(
+        { ...base, loopRegion: { startSec: 1, endSec: 2 }, pitchError: { id: 3, message: "x" } },
+        { ...base, loopRegion: { startSec: 1, endSec: 2 }, pitchError: { id: 3, message: "x" } },
+      ),
+    ).toBe(true);
+  });
+
+  it("任何一个字段变了都要更新", () => {
+    const changes: Partial<PlaybackState>[] = [
+      { songId: "160" },
+      { playState: "paused" },
+      { positionSec: 12.4 },
+      { durationSec: null },
+      { rate: 1.5 },
+      { volume: 0 },
+      { loopRegion: { startSec: 1, endSec: 2 } },
+      { pitchSemitones: -2 },
+      { pitchRendering: true },
+      { pitchError: { id: 1, message: "失败" } },
+    ];
+    for (const change of changes) {
+      expect(samePlayback(base, { ...base, ...change }), JSON.stringify(change)).toBe(false);
+    }
+    expect(
+      samePlayback({ ...base, pitchError: { id: 1, message: "a" } }, { ...base, pitchError: { id: 2, message: "a" } }),
+    ).toBe(false);
+  });
+});
+
+describe("pollDelay：闲着的时候少问", () => {
+  it("在播、或者正在渲染变调时 10Hz", () => {
+    expect(pollDelay(base)).toBe(100);
+    expect(pollDelay({ ...base, playState: "paused", pitchRendering: true })).toBe(100);
+  });
+
+  it("暂停、播完、什么都没加载时 1Hz", () => {
+    for (const playState of ["paused", "ended", "empty"] as const) {
+      expect(pollDelay({ ...base, playState })).toBe(1000);
+    }
   });
 });
