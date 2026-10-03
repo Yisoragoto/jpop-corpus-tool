@@ -211,8 +211,10 @@ impl ZipArchive {
         }
         self.file.seek(SeekFrom::Start(data_start))?;
 
+        // 预分配只信到 64 MiB：声明大小是文件自己写的，不能让它一句话就要走 1 GB。
+        // 真比这大的条目照样读得完，只是边读边长。
         let capacity = usize::try_from(entry.uncompressed_size).context("文件太大")?;
-        let mut out = Vec::with_capacity(capacity.min(1 << 30));
+        let mut out = Vec::with_capacity(capacity.min(64 << 20));
         let raw = (&mut self.file).take(entry.compressed_size);
         match entry.method {
             0 => {
@@ -220,9 +222,19 @@ impl ZipArchive {
                 raw.read_to_end(&mut out)?;
             }
             8 => {
+                // 解压炸弹：几 KB 的 deflate 流能解出几 GB。最多只读「声明大小 + 1」字节，
+                // 多出来的那一个字节就足以说明它在撒谎——不能全解完再比长度，那时内存已经没了。
                 DeflateDecoder::new(raw)
+                    .take(entry.uncompressed_size.saturating_add(1))
                     .read_to_end(&mut out)
                     .with_context(|| format!("解压 {} 失败，词典包可能已损坏", entry.name))?;
+                if out.len() as u64 > entry.uncompressed_size {
+                    bail!(
+                        "{} 解压出来的内容超过声明的大小（{} 字节），词典包已损坏或是恶意构造的，已停止",
+                        entry.name,
+                        entry.uncompressed_size
+                    );
+                }
             }
             m => bail!("{} 用了不支持的压缩方法 {m}", entry.name),
         }
@@ -385,5 +397,27 @@ mod tests {
         assert_eq!(CP437_HIGH.chars().count(), 128);
         assert_eq!(decode_name(&[0x80, b'a', 0xE1, 0xFF], false).unwrap(), "Çaß\u{a0}");
         assert_eq!(decode_name("一".as_bytes(), true).unwrap(), "一");
+    }
+
+    /// 解压炸弹：目录里声明解压后很小，实际 deflate 流能解出几 MB。
+    /// 必须在**读到超过声明大小的那一刻**就停下报错，而不是全解完再比长度——
+    /// 真正的炸弹是几 KB 解出几 GB，全解完再比，内存早就没了。
+    #[test]
+    fn an_entry_that_inflates_past_its_declared_size_is_stopped_early() {
+        let big = vec![0u8; 8 << 20];
+        let mut bytes = build(&[Item { name: b"term_bank_1.json", data: &big, deflate: true, utf8_flag: false }], false);
+        // 把本地头（偏移 22）和中央目录（偏移 24）里的「解压后大小」都改成 16 字节
+        let declared = 16u32.to_le_bytes();
+        bytes[22..26].copy_from_slice(&declared);
+        let central = (0..bytes.len() - 4)
+            .find(|&i| bytes[i..i + 4] == CENTRAL_SIG.to_le_bytes())
+            .unwrap();
+        bytes[central + 24..central + 28].copy_from_slice(&declared);
+
+        let tmp = TempFile::new("bomb", &bytes);
+        let mut zip = ZipArchive::open(&tmp.0).unwrap();
+        assert_eq!(zip.entries()[0].uncompressed_size, 16);
+        let err = zip.read("term_bank_1.json").unwrap_err();
+        assert!(err.to_string().contains("超过声明的大小"), "{err}");
     }
 }
