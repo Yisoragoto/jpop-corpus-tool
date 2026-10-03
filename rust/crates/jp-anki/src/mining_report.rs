@@ -108,8 +108,9 @@ pub fn parse_source(raw: &str) -> (String, String) {
 ///
 /// `deck_filter` 非空时只算牌组名里含这个子串的（不分大小写）。`jlpt_of` 给 Lyrics 卡查 JLPT。
 pub fn load(collection: &Path, deck_filter: &str, jlpt_of: &dyn Fn(&str) -> Option<String>) -> Result<MinedCollection> {
-    let (_guard, snapshot_path) = snapshot(collection)?;
-    let conn = Connection::open_with_flags(&snapshot_path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI)
+    let snap = snapshot(collection)?;
+    let snapshot_path = snap.path();
+    let conn = Connection::open_with_flags(snapshot_path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI)
         .with_context(|| format!("打不开 {}", snapshot_path.display()))?;
     register_unicase(&conn)?;
 

@@ -3,9 +3,9 @@
 //! 为什么不走 AnkiConnect：要的是「这个词学到什么程度」，
 //! 一个词一次请求的话几千个词就是几千次往返。直接读库一次拿完。
 //!
-//! **必须先复制再读。** Anki 运行时握着这个库，而且开着 WAL；
-//! 直接连上去可能读到写了一半的状态，最坏情况是把用户的复习记录弄坏。
-//! 复制的时候 `-wal` 和 `-shm` 也要一起带上，否则快照缺最近的事务。
+//! **必须先复制再读。** Anki 运行时以独占模式握着这个库（别的进程连只读都打不开），
+//! 而且开着 WAL；复制时 `-wal` 也要带上，否则快照缺最近的事务。
+//! 复制怎么防撕裂、怎么缓存，见 [`snapshot`]。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -102,27 +102,128 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// 一份读得放心的副本。持有它的时候临时目录不会被删。
+#[derive(Clone)]
+pub(crate) struct Snapshot {
+    _dir: std::sync::Arc<tempdir::TempDir>,
+    path: PathBuf,
+}
+
+impl Snapshot {
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+/// 「这份库变没变」的指纹：主文件和 `-wal` 的大小、修改时间，加上主文件头里的
+/// 变更计数（偏移 24，回滚日志模式下每个事务加一；修改时间在 Windows 上可能更新得晚）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Fingerprint {
+    main: (u64, Option<std::time::SystemTime>),
+    change_counter: [u8; 4],
+    wal: Option<(u64, Option<std::time::SystemTime>)>,
+}
+
+fn fingerprint(source: &Path) -> Result<Fingerprint> {
+    use std::io::Read;
+    let stat = |p: &Path| std::fs::metadata(p).map(|m| (m.len(), m.modified().ok()));
+    let main = stat(source).with_context(|| format!("读不到 {}", source.display()))?;
+    let mut header = [0u8; 28];
+    std::fs::File::open(source)
+        .and_then(|mut f| f.read_exact(&mut header))
+        .with_context(|| format!("读不到 {} 的文件头", source.display()))?;
+    let mut change_counter = [0u8; 4];
+    change_counter.copy_from_slice(&header[24..28]);
+    let wal = stat(&with_suffix(source, "-wal")).ok();
+    Ok(Fingerprint { main, change_counter, wal })
+}
+
 /// 复制一份再读。**不要直接连用户的库。**
 ///
-/// 返回临时目录（析构时删掉）和副本路径。
-pub(crate) fn snapshot(source: &Path) -> Result<(tempdir::TempDir, PathBuf)> {
-    let dir = tempdir::TempDir::new("jpop-anki-state")?;
+/// ## 为什么是复制文件，而不是 SQLite 的 backup / `VACUUM INTO`
+///
+/// Anki 用 `locking_mode=exclusive` 打开 collection：它开着的时候，别的进程哪怕只读打开
+/// 也是「database is locked」（2026-10-04 在用户真实的 Anki 上实测，`-shm` 都不存在）。
+/// 而读学习状态的时候 Anki 多半正开着（AnkiConnect 要它开着），所以只能复制文件。
+///
+/// ## 怎么保证复制出来的不是撕裂的
+///
+/// 主文件和 `-wal` 分两次复制，中间 Anki 可能做了 checkpoint 或者提交了事务。
+/// 所以复制前后各取一次 [`Fingerprint`]，对不上就丢掉重来（见 [`copy_stable`]）。
+///
+/// ## 缓存
+///
+/// 用户真实的 collection 75 MB，以前每次 `anki_words` 都整库复制一遍。
+/// 现在按指纹缓存：Anki 没写过就直接用上一份。每个 collection 只留一份。
+pub(crate) fn snapshot(source: &Path) -> Result<Snapshot> {
+    use std::collections::HashMap;
+    use std::sync::{LazyLock, Mutex};
+    static CACHE: LazyLock<Mutex<HashMap<PathBuf, (Fingerprint, Snapshot)>>> =
+        LazyLock::new(Default::default);
+
+    // 缓存挂在 static 上，进程退出时不会析构，临时目录删不掉。
+    // 所以每个进程第一次用的时候，把以前的进程留下的快照清掉（正被别的进程开着的删不动，跳过）
+    static SWEPT: std::sync::Once = std::sync::Once::new();
+    SWEPT.call_once(tempdir::sweep_stale);
+
+    let current = fingerprint(source)?;
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((seen, snap)) = cache.get(source)
+        && *seen == current
+        && snap.path().is_file()
+    {
+        return Ok(snap.clone());
+    }
+    let (snap, _) = copy_stable(source, &|| {})?;
+    // 记的是复制开始前的指纹：复制期间要是又变了，下次自然会重拍
+    cache.insert(source.to_path_buf(), (current, snap.clone()));
+    Ok(snap)
+}
+
+/// 复制前后指纹一致才算数，最多试这么多次
+const COPY_ATTEMPTS: usize = 4;
+
+/// 复制主文件和 `-wal`，前后指纹不一致就重来。返回快照和用了几次。
+///
+/// `between` 在两次复制之间调用，只给测试模拟「复制途中 Anki 写了库」用。
+///
+/// 复制完用读写方式打开**副本**做一次 checkpoint，把 `-wal` 并进主文件：
+/// 之后只读打开副本不再依赖 `-wal` / `-shm`。`-shm` 不复制——那是 Anki 进程里的
+/// 内存索引，拷过来的旧索引反而可能对不上；没有它 SQLite 会从 `-wal` 重建。
+fn copy_stable(source: &Path, between: &dyn Fn()) -> Result<(Snapshot, usize)> {
     let name = source
         .file_name()
         .map(|n| n.to_owned())
         .unwrap_or_else(|| "collection.anki2".into());
-    let target = dir.path().join(&name);
-    std::fs::copy(source, &target)
-        .with_context(|| format!("复制 {} 失败", source.display()))?;
-
-    // WAL 和 SHM 一起带上，否则快照缺最近的事务
-    for suffix in ["-wal", "-shm"] {
-        let sidecar = with_suffix(source, suffix);
-        if sidecar.is_file() {
-            let _ = std::fs::copy(&sidecar, with_suffix(&target, suffix));
+    for attempt in 1..=COPY_ATTEMPTS {
+        let before = fingerprint(source)?;
+        let dir = tempdir::TempDir::new(tempdir::PREFIX)?;
+        let target = dir.path().join(&name);
+        std::fs::copy(source, &target)
+            .with_context(|| format!("复制 {} 失败", source.display()))?;
+        between();
+        let wal = with_suffix(source, "-wal");
+        if wal.is_file() {
+            std::fs::copy(&wal, with_suffix(&target, "-wal"))
+                .with_context(|| format!("复制 {} 失败", wal.display()))?;
         }
+        if fingerprint(source)? != before {
+            // 复制途中变了：这份可能是撕裂的。稍等一下再来，给 Anki 写完的时间
+            drop(dir);
+            std::thread::sleep(std::time::Duration::from_millis(50 * attempt as u64));
+            continue;
+        }
+        let conn = Connection::open(&target)
+            .with_context(|| format!("打不开快照 {}", target.display()))?;
+        conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .with_context(|| format!("快照 {} 合并 WAL 失败", target.display()))?;
+        drop(conn);
+        return Ok((Snapshot { _dir: std::sync::Arc::new(dir), path: target }, attempt));
     }
-    Ok((dir, target))
+    anyhow::bail!(
+        "Anki 正在写 {}（连着复制 {COPY_ATTEMPTS} 次，文件都在中途变了），稍后再试",
+        source.display()
+    )
 }
 
 fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
@@ -139,10 +240,11 @@ pub fn load(collection: Option<&Path>, deck_filter: &str) -> Result<LearningStat
         Some(p) => p.to_path_buf(),
         None => find_collection().context("找不到 Anki 的 collection.anki2")?,
     };
-    let (_guard, snapshot_path) = snapshot(&path)?;
+    let snap = snapshot(&path)?;
+    let snapshot_path = snap.path();
 
     let conn = Connection::open_with_flags(
-        &snapshot_path,
+        snapshot_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
     )
     .with_context(|| format!("打不开 {}", snapshot_path.display()))?;
@@ -261,7 +363,26 @@ fn unescape_entities(text: &str) -> String {
 pub(crate) mod tempdir {
     use std::path::{Path, PathBuf};
 
+    /// 快照目录的前缀：`{PREFIX}-{进程号}-{序号}`
+    pub const PREFIX: &str = "jpop-anki-state";
+
     pub struct TempDir(PathBuf);
+
+    /// 删掉别的进程留下的快照目录。
+    ///
+    /// 快照缓存在 static 上，进程退出时不析构，目录就留在 %TEMP% 里——一份 75 MB，
+    /// 不清的话每启动一次多一份。只动带本前缀、进程号不是自己的；
+    /// 另一个还开着的实例正在读的那份，Windows 上删不动，失败就算了。
+    pub fn sweep_stale() {
+        let own = format!("{PREFIX}-{}-", std::process::id());
+        let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else { return };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(&format!("{PREFIX}-")) && !name.starts_with(&own) {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
 
     impl TempDir {
         pub fn new(prefix: &str) -> std::io::Result<Self> {
@@ -330,6 +451,102 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// 没变就不再整库复制：用户真实的 collection 75 MB，以前每调一次 anki_words 复制一遍
+    #[test]
+    fn a_snapshot_is_reused_until_the_collection_changes() {
+        let dir = tmp("cache");
+        let path = fake_collection(&dir);
+        add_note(&path, 1, "夜", 10, &[1]);
+
+        let first = snapshot(&path).unwrap();
+        let second = snapshot(&path).unwrap();
+        assert_eq!(first.path(), second.path(), "没变却又复制了一份");
+
+        add_note(&path, 2, "朝", 10, &[1]);
+        let third = snapshot(&path).unwrap();
+        assert_ne!(first.path(), third.path(), "变了却还在用旧快照");
+        assert!(load(Some(&path), "").unwrap().words.contains_key("朝"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 复制主文件和 -wal 之间 Anki 写了库：这份快照可能是撕裂的，要丢掉重来
+    #[test]
+    fn a_copy_taken_while_the_collection_changes_is_retried() {
+        let dir = tmp("torn");
+        let path = fake_collection(&dir);
+        add_note(&path, 1, "夜", 10, &[1]);
+
+        let writes = std::cell::Cell::new(0);
+        let (snap, attempts) = copy_stable(&path, &|| {
+            // 只在第一次复制的间隙写一次
+            if writes.get() == 0 {
+                add_note(&path, 2, "朝", 10, &[1]);
+            }
+            writes.set(writes.get() + 1);
+        })
+        .unwrap();
+        assert_eq!(attempts, 2, "文件在复制中途变了却没有重来");
+        let conn = Connection::open(snap.path()).unwrap();
+        let notes: i64 = conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0)).unwrap();
+        assert_eq!(notes, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 一直在变（Anki 在大量写）：试几次放弃，并说清楚原因，而不是交出一份撕裂的快照
+    #[test]
+    fn a_collection_that_never_holds_still_is_an_error_not_a_torn_copy() {
+        let dir = tmp("busy");
+        let path = fake_collection(&dir);
+        let n = std::cell::Cell::new(10);
+        let err = copy_stable(&path, &|| {
+            add_note(&path, n.get(), "夜", 10, &[1]);
+            n.set(n.get() + 1);
+        })
+        .err()
+        .expect("文件一直在变却交出了快照");
+        assert!(format!("{err}").contains("正在写"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 缓存的快照进程退出时不析构：下一个进程要把它清掉，别在 %TEMP% 里一次攒一份
+    #[test]
+    fn snapshots_left_by_other_processes_are_swept() {
+        let temp = std::env::temp_dir();
+        let stale = temp.join(format!("{}-999999999-0", tempdir::PREFIX));
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::write(stale.join("collection.anki2"), b"old").unwrap();
+        let own = tempdir::TempDir::new(tempdir::PREFIX).unwrap();
+        let unrelated = temp.join(format!("jp-anki-learn-{}-unrelated", std::process::id()));
+        std::fs::create_dir_all(&unrelated).unwrap();
+
+        tempdir::sweep_stale();
+        assert!(!stale.exists(), "别的进程留下的快照没清掉");
+        assert!(own.path().exists(), "把自己正在用的删了");
+        assert!(unrelated.exists(), "删了不是快照的目录");
+        let _ = std::fs::remove_dir_all(&unrelated);
+    }
+
+    /// Anki 开着 WAL：最近的事务还在 -wal 里没回写，快照里也要看得到
+    #[test]
+    fn transactions_still_in_the_wal_are_in_the_snapshot() {
+        let dir = tmp("wal");
+        let path = fake_collection(&dir);
+        let holder = Connection::open(&path).unwrap();
+        holder
+            .execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;")
+            .unwrap();
+        holder
+            .execute("INSERT INTO notes VALUES (7, 1, ?1)", ["鳥\u{1f}とり\u{1f}鸟"])
+            .unwrap();
+        holder.execute("INSERT INTO cards VALUES (700, 7, 10, 2)", []).unwrap();
+        assert!(with_suffix(&path, "-wal").metadata().unwrap().len() > 0, "前提：数据还在 WAL 里");
+
+        let state = load(Some(&path), "").unwrap();
+        assert!(state.words["鳥"].studied);
+        drop(holder);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
