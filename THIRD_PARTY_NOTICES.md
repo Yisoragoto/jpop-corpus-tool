@@ -18,7 +18,7 @@
 
 ## 安装包里的程序组件
 
-`jp-app.exe` 链接了 246 个第三方 Rust crate（另有 9 个是本项目自己的 `jp-*`），界面打包了 5 个 npm 包。
+`jp-app.exe` 链接了 248 个第三方 Rust crate（另有 9 个是本项目自己的 `jp-*`）和两个从源码编进来的 C / C++ 库（见下一节），界面打包了 5 个 npm 包。
 主要的几个：
 
 | 组件 | 用途 | 许可证 |
@@ -27,6 +27,7 @@
 | [webview2-com](https://github.com/wravery/webview2-rs) | 调用系统的 WebView2。**WebView2 运行时本身不随安装包分发**，用的是系统里的那一份 | MIT |
 | [React 19](https://react.dev/)（`react`、`react-dom`、`scheduler`） | 界面 | MIT |
 | [sudachi.rs](https://github.com/WorksApplications/sudachi.rs) v0.6.11 | 日语分词 | Apache-2.0 |
+| [mp3lame-encoder](https://github.com/DoumanAsh/mp3lame-encoder)、[mp3lame-sys](https://github.com/DoumanAsh/mp3lame-sys) | LAME 的 Rust 绑定（LAME 本身见下一节） | LGPL-3.0 |
 | [rodio](https://github.com/RustAudio/rodio)、[cpal](https://github.com/RustAudio/cpal)、`rodio-wsola` | 播放、音频输出、变速不变调 | rodio：MIT OR Apache-2.0；cpal、rodio-wsola：Apache-2.0 |
 | [Symphonia](https://github.com/pdeljanov/Symphonia)（FLAC、MP3、AAC、PCM、Vorbis、MP4、Ogg、RIFF 各模块） | 音频解码 | **MPL-2.0**（文件级弱 copyleft；本项目未修改其源码，源码见 crates.io） |
 | [rusqlite](https://github.com/rusqlite/rusqlite) + 内置的 [SQLite](https://sqlite.org/) | 语料库和词典库 | rusqlite：MIT；SQLite：公有领域 |
@@ -36,7 +37,7 @@
 | [flate2](https://github.com/rust-lang/flate2-rs)、[lzma-rs](https://github.com/gendx/lzma-rs)、[encoding_rs](https://github.com/hsivonen/encoding_rs) | 解压词典包和词典、歌词编码回退 | flate2：MIT OR Apache-2.0；lzma-rs：MIT；encoding_rs：(Apache-2.0 OR MIT) AND BSD-3-Clause |
 | ICU4X（`icu_*`、`zerovec` 等 15 个） | 经 `url` → `idna` 间接引入，解析网址里的国际化域名 | Unicode-3.0 |
 
-全部 255 个 crate 的许可证字段（`cargo tree` 原样输出，未合并同义写法）：
+全部 257 个 crate 的许可证字段（`cargo tree` 原样输出，未合并同义写法）：
 
 | 许可证 | 个数 | | 许可证 | 个数 |
 |---|---|---|---|---|
@@ -52,7 +53,7 @@
 | Apache-2.0 | 4 | | Apache-2.0 OR BSL-1.0 | 1 |
 | ISC | 3 | | Apache-2.0 AND MIT | 1 |
 | BSD-3-Clause | 3 | | Apache-2.0 AND ISC | 1 |
-| | | | Apache-2.0 / MIT | 1 |
+| LGPL-3.0 | 2 | | Apache-2.0 / MIT | 1 |
 | | | | 0BSD OR MIT OR Apache-2.0 | 1 |
 | | | | (Apache-2.0 OR MIT) AND BSD-3-Clause | 1 |
 
@@ -69,19 +70,30 @@ cd app && npm ls --omit=dev --all
   安装包不带词典。用到分词时，程序从本仓库 `sudachi-dict-core` 发布下载 `system.dic.xz`，校验 SHA-256 后解压到语料库目录的 `sudachi/`，
   内容就是 `sudachidict_core` 20260116 里的 `system.dic`，未做修改。
 
-## FFmpeg
+## 编进程序的 C / C++ 库
 
-0.2.x 的安装包**不带** FFmpeg。它是可选依赖，由用户自己放到 PATH 或语料库目录里（见 README 的「FFmpeg（可选）」一节），
-用于变调和 Anki 音频片段。FFmpeg 是独立程序，不适用本项目的协议，其许可证（LGPL-2.1+ 或 GPL-2.0+）取决于用户所下载的构建。
+这两个库不是 Rust crate，是从源码编译、静态链接进 `jp-app.exe` 的。它们是 copyleft 许可证，
+随二进制分发时要能拿到对应的源码：本项目整体是 GPL-3.0-or-later、源码公开，两个库的源码也都能从下面的位置原样取得。
 
-- 项目与源码：[https://ffmpeg.org/](https://ffmpeg.org/)
-- 下载：[https://ffmpeg.org/download.html](https://ffmpeg.org/download.html)
+- **Rubber Band Library** 4.0.0：Copyright 2007-2024 Particular Programs Ltd，**GPL-2.0-or-later**
+  （[https://breakfastquay.com/rubberband/](https://breakfastquay.com/rubberband/)，[https://github.com/breakfastquay/rubberband](https://github.com/breakfastquay/rubberband)）。用于变调。
+  源码放在本仓库的 `third_party/rubberband/`，取自上游 `v4.0.0` 标签（提交号记在同一目录的 `RUBBERBAND_COMMIT`），
+  许可证原文是同一目录的 `COPYING`。只取了单文件构建用得到的部分：`single/`、`rubberband/`（头文件）、
+  `src/` 下的 `common/`、`faster/`、`finer/` 和顶层的三个文件；没有取 `src/ext/`（KissFFT、Speex、pommier 等可选后端）、
+  命令行程序、LADSPA / LV2 / Vamp 插件和各语言绑定。**未修改任何文件**。
+  编译方式是上游的 `single/RubberBandSingle.cpp`（内置 FFT、内置重采样器，不依赖其它库），见 `rust/crates/jp-audio/build.rs`。
+  上游另有商业许可证；本项目用的是 GPL。
+- **LAME** 3.100：Copyright (c) 1999-2011 The LAME Project，**LGPL-2.0-or-later**（[https://lame.sourceforge.io/](https://lame.sourceforge.io/)）。
+  用于把 Anki 卡片上的例句音频片段编成 MP3。源码随 `mp3lame-sys` 0.1.11 这个 crate 一起发布（crates.io 上的包里有完整的
+  `lame-3.100/` 目录和它的 `COPYING`），构建时从那里编译，未修改。只编了编码器，没有编解码器（mpglib）。
+
+0.2.8 及更早的版本不含这两个库，变调和音频片段靠用户自己安装的 FFmpeg；现在程序不再调用 FFmpeg。
 
 ## 许可证原文怎么提供
 
 **现状**：安装包里没有附带上面这些组件的许可证原文，本文件也不在安装包里；它们在本仓库（本文件、`assets/fonts/` 下的 OFL 原文、
-`rust/crates/jp-anki/data/lyrics/LICENSE-Lapis`）和各组件的发布页（crates.io、npm）上。`sudachi-dict-core` 那个发布里也只有
-`system.dic.xz`，没有附 Apache-2.0 原文。MIT、BSD、Apache-2.0、MPL-2.0 等都要求随二进制分发时附上许可证文本或声明，
+`rust/crates/jp-anki/data/lyrics/LICENSE-Lapis`、`third_party/rubberband/COPYING`）和各组件的发布页（crates.io、npm）上。`sudachi-dict-core` 那个发布里也只有
+`system.dic.xz`，没有附 Apache-2.0 原文。MIT、BSD、Apache-2.0、MPL-2.0、GPL、LGPL 都要求随二进制分发时附上许可证文本或声明，
 所以这是一个已知的、待补的缺口。
 
 ## 旧版（0.1.x）
@@ -90,3 +102,4 @@ cd app && npm ls --omit=dev --all
 
 - 冻结后的程序包含 `requirements.txt` 中列出的 Python 运行依赖，各依赖保留其原有许可证。
 - Windows 发布包可能附带 `ffmpeg.exe`，每个发布包里的 `FFMPEG_BUILD_INFO.txt` 记录了所附二进制的版本、构建参数和许可证声明。
+  FFmpeg 是独立程序（[https://ffmpeg.org/](https://ffmpeg.org/)），许可证是 LGPL-2.1+ 或 GPL-2.0+，取决于构建。

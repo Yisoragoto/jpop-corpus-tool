@@ -50,7 +50,7 @@ in the repository for reference, and `corpus.db` works with both.
 
 - Library grouped by artist, as a list or a cover grid; the grid starts with an artist wall you can drill into.
 - Lyrics follow playback line by line; click a line to jump there, or loop a single line.
-- Speed changes go through WSOLA time-stretching (**pitch stays put**); key changes render through FFmpeg and are cached.
+- Speed changes go through WSOLA time-stretching (**pitch stays put**); key changes are rendered once per song by the built-in Rubber Band library and cached.
 - Full-screen lyrics with the cover art blurred to fill the background, and the player floating on top as frosted glass.
 - Furigana over kanji only or over whole words; font, size, line height and letter spacing are all adjustable.
 
@@ -166,26 +166,12 @@ install directory, so uninstalling never takes your songs and corpus with it.
 AnkiConnect listens on `http://127.0.0.1:8765` only, and this tool sends your corpus or Anki data nowhere.
 Mining **only appends**: a word you already made a card for is skipped, never overwritten.
 
-### FFmpeg (optional)
-
-The installer does not include FFmpeg. Without it, two things are unavailable: **key changes** (speed changes
-don't need it) and **audio clips on Anki cards**. Everything else works.
-
-`ffmpeg.exe` is looked up in this order:
-
-1. every directory on `PATH`;
-2. the library directory, i.e. the one holding `corpus.db` (by default `%LOCALAPPDATA%\JPOP Corpus Tool`).
-
-The folder the program is installed in is **not** searched. **Settings → System → FFmpeg** and the diagnostics
-report show whether it was found and the exact path to put it at. Restart the app after adding it.
-Any recent Windows build from [ffmpeg.org/download](https://ffmpeg.org/download.html) works.
-
 ## Development
 
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 20+
-- [Rust](https://rustup.rs/) stable
+- [Rust](https://rustup.rs/) stable, with the MSVC C++ build tools (SQLite, LAME and Rubber Band are compiled from source)
 - Windows 10/11 with the WebView2 runtime
 
 ### Run
@@ -263,7 +249,8 @@ the old version during the port.
 | [Lapis](https://github.com/donkuri/lapis) | Basis for the bundled **Lyrics** note type | GPL-3.0 |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | Dictionary storage design (no code copied) | GPL-3.0-or-later |
 | [Klee One](https://fonts.google.com/specimen/Klee+One) · [LXGW WenKai](https://github.com/lxgw/LxgwWenKai) | Bundled fonts | SIL OFL 1.1 |
-| [FFmpeg](https://ffmpeg.org/) | Optional, **not bundled**: key changes and Anki audio clips ([where to put it](#ffmpeg-optional)) | LGPL-2.1+ or GPL-2.0+, depending on the build you download |
+| [Rubber Band Library](https://breakfastquay.com/rubberband/) | Key changes. Source in [`third_party/rubberband/`](third_party/rubberband/), compiled into the app | GPL-2.0-or-later |
+| [LAME](https://lame.sourceforge.io/) | MP3 encoding of the audio clips on Anki cards, compiled into the app | LGPL-2.0-or-later |
 
 Per-file provenance is noted in the file headers; the full statement is in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
