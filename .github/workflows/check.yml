@@ -36,9 +36,19 @@ jobs:
 
       # 音频测试在没有输出设备的机器上会自己跳过（engine_or_skip!），
       # 要真实语料库的那些标了 #[ignore]。两类都会在日志里说一声。
+      #
+      # jp-audio 单独先跑一遍：单线程 + 不吞输出。
+      # 它在这台 runner 上会把进程打成 STATUS_ACCESS_VIOLATION，而默认的并行 +
+      # 捕获输出根本看不出是哪个用例、引擎到底开没开。
+      - name: Tests (jp-audio, verbose)
+        working-directory: rust
+        run: cargo test -p jp-audio --lib -- --test-threads=1 --nocapture
+
+      # --no-fail-fast：一个 crate 崩掉不该把后面所有 crate 的结果一起藏起来。
+      # jp-audio 这个崩溃被 jp-app 的一个失败挡了八次 CI 没人看见，就是因为没有它。
       - name: Tests
         working-directory: rust
-        run: cargo test --workspace
+        run: cargo test --workspace --no-fail-fast
 
       - name: Clippy
         working-directory: rust
