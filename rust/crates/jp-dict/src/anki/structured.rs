@@ -14,19 +14,23 @@ use super::dom::{Element, Node, dataset_key, js_number, js_string};
 use crate::furigana::downstep_positions;
 use crate::text::is_code_point_japanese;
 
-/// Handlebars `escapeExpression`
+/// Handlebars `escapeExpression`：[`crate::html::escape`] 的五个字符，再加 `` ` `` 和 `=`。
+///
+/// 多出来的两个**不能为了整齐省掉**：
+/// - Yomitan 的模板就是这么转义的，制卡的输出和 Yomitan 逐字对过账，省掉就不再一致；
+/// - 查重是拿「卡上存的形式」去 Anki 里找 Expression（`jp-app` 的 `mine.rs`）。
+///   已有的卡——不管是 Yomitan 做的还是这个程序做的——存的都是七个字符的形式，
+///   改成五个之后带这两个字符的词会查不到，重复的卡就加进去了。
 pub fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#x27;"),
             '`' => out.push_str("&#x60;"),
             '=' => out.push_str("&#x3D;"),
-            _ => out.push(c),
+            _ => match crate::html::entity(c) {
+                Some(entity) => out.push_str(entity),
+                None => out.push(c),
+            },
         }
     }
     out
@@ -517,6 +521,19 @@ mod tests {
 
     fn no_media() -> HashMap<(String, String), String> {
         HashMap::new()
+    }
+
+    #[test]
+    fn the_template_escape_is_the_shared_five_plus_backtick_and_equals() {
+        // 右边是 Handlebars 4 `Utils.escapeExpression` 的输出
+        assert_eq!(
+            escape("<a href=\"x\">it's `b` & c</a>"),
+            "&lt;a href&#x3D;&quot;x&quot;&gt;it&#x27;s &#x60;b&#x60; &amp; c&lt;/a&gt;"
+        );
+        // 前五个和共用的那份是同一张表：不含这两个字符的文字，两边的输出必须一样
+        for text in ["<b>&\"x\"</b>", "it's", "夜に駆ける", ""] {
+            assert_eq!(escape(text), crate::html::escape(text));
+        }
     }
 
     #[test]

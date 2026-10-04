@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
+use jp_dict::html::escape;
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 
@@ -186,22 +187,6 @@ pub fn load(collection: &Path, deck_filter: &str, jlpt_of: &dyn Fn(&str) -> Opti
     Ok(out)
 }
 
-/// Python `html.escape`
-fn esc(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#x27;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
 /// Python 的 `f"{n:,}"`
 fn grouped(n: usize) -> String {
     let digits = n.to_string();
@@ -248,7 +233,7 @@ fn bar_row(out: &mut String, label_html: &str, title: Option<&str>, studied: usi
     let pct_bar = total as f64 / max_total as f64 * 100.0;
     let pct_unstudied = (total - studied) as f64 / max_total as f64 * 100.0;
     let pct_done = studied as f64 / total as f64 * 100.0;
-    let title = title.map(|t| format!(" title=\"{}\"", esc(t))).unwrap_or_default();
+    let title = title.map(|t| format!(" title=\"{}\"", escape(t))).unwrap_or_default();
     let _ = write!(
         out,
         "<div class=\"bar-row\"><span class=\"bar-label\"{title}>{label_html}</span><span class=\"bar-track\">\
@@ -268,7 +253,7 @@ fn render_progress_bars(rows: &[ProgressRow]) -> String {
     let max_total = rows.iter().map(|r| r.2).max().unwrap_or(0).max(1);
     let mut out = String::new();
     for (label, studied, total) in rows {
-        bar_row(&mut out, &esc(label), Some(label), *studied, *total, max_total);
+        bar_row(&mut out, &escape(label), Some(label), *studied, *total, max_total);
     }
     out
 }
@@ -301,7 +286,7 @@ fn render_jlpt_bars(cards: &[MinedCard]) -> String {
         if totals[i] == 0 {
             continue;
         }
-        let label = format!("<span class=\"dot\" style=\"background:{}\"></span>{}", jlpt_color(level), esc(level));
+        let label = format!("<span class=\"dot\" style=\"background:{}\"></span>{}", jlpt_color(level), escape(level));
         bar_row(&mut rows, &label, None, studied[i], totals[i], max_total);
     }
     format!("<div class=\"jlpt-stack\">{segments}</div><div class=\"bar-list\" style=\"margin-top:12px\">{rows}</div>")
@@ -334,21 +319,21 @@ fn render_word_table(cards: &[MinedCard]) -> String {
         let badge = if card.jlpt.is_empty() {
             "<span style=\"color:var(--muted)\">—</span>".to_owned()
         } else {
-            format!("<span class=\"badge\" style=\"background:{}\">{}</span>", jlpt_color(&card.jlpt), esc(&card.jlpt))
+            format!("<span class=\"badge\" style=\"background:{}\">{}</span>", jlpt_color(&card.jlpt), escape(&card.jlpt))
         };
         let status = if card.studied { "✅" } else { "⬜" };
         let blob = format!("{} {} {} {} {status}", card.expression, card.jlpt, card.artist, card.song).to_lowercase();
-        let freq = if card.freq.is_empty() { "—".to_owned() } else { esc(&card.freq) };
+        let freq = if card.freq.is_empty() { "—".to_owned() } else { escape(&card.freq) };
         let _ = write!(
             out,
             "<tr data-s=\"{}\"><td class=\"lem\">{}</td><td class=\"cen\">{status}</td><td class=\"cen\">{badge}</td>\
              <td class=\"num\">{freq}</td><td class=\"src\">{}</td><td class=\"src\">{}</td>\
              <td class=\"src\" style=\"color:var(--muted)\">{}</td></tr>",
-            esc(&blob),
-            esc(&card.expression),
-            esc(&card.artist),
-            esc(&card.song),
-            esc(&card.deck),
+            escape(&blob),
+            escape(&card.expression),
+            escape(&card.artist),
+            escape(&card.song),
+            escape(&card.deck),
         );
     }
     out
@@ -422,8 +407,8 @@ pub fn render_html(collection: &MinedCollection, now: &str) -> String {
     let note_types = if s.note_types.is_empty() { crate::model::NOTE_TYPE.to_owned() } else { s.note_types.join("、") };
     let values = HashMap::from([
         ("css", CSS.to_owned()),
-        ("note_types", esc(&note_types)),
-        ("source", esc(&collection.collection_path.display().to_string())),
+        ("note_types", escape(&note_types)),
+        ("source", escape(&collection.collection_path.display().to_string())),
         ("now", now.to_owned()),
         ("summary", summary),
         ("artist_bars", artist_bars),

@@ -213,7 +213,7 @@ fn modern_defs(
                     let shown = if prefix.is_empty() {
                         html
                     } else {
-                        format!("<div class='ym-term-ref'>{}</div>{html}", escape_html(&prefix))
+                        format!("<div class='ym-term-ref'>{}</div>{html}", jp_dict::html::escape(&prefix))
                     };
                     let key = if text.is_empty() { shown.clone() } else { text };
                     vec![(shown, true, key)]
@@ -377,22 +377,6 @@ pub(crate) fn clean_text(text: &str) -> String {
         }
     }
     out.trim().to_string()
-}
-
-/// HTML 转义。用户词典里出现尖括号不该变成注入。
-pub fn escape_html(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#x27;"),
-            _ => out.push(ch),
-        }
-    }
-    out
 }
 
 /// 去重用的键。和 Python 的 `_definition_dedupe_text` 一致：空白折叠成一个，**不删除**。
@@ -826,14 +810,6 @@ mod tests {
         assert_eq!(parts.len(), 3, "{parts:?}");
         assert!(parts[0].starts_with('①'));
         assert!(parts[1].starts_with('②'));
-    }
-
-    #[test]
-    fn html_is_escaped_where_it_should_be() {
-        assert_eq!(
-            escape_html("<b>&\"x\"</b>"),
-            "&lt;b&gt;&amp;&quot;x&quot;&lt;/b&gt;"
-        );
     }
 
     #[test]

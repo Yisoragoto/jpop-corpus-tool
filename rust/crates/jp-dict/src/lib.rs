@@ -10,6 +10,7 @@
 pub mod anki;
 pub mod deinflect;
 pub mod furigana;
+pub mod html;
 pub mod import;
 pub mod occurrence;
 pub mod media;
