@@ -162,17 +162,19 @@ pub fn sentence_html(examples: &[Example], lemma: &str) -> String {
         } else {
             lemma
         };
-        let escaped = escape(&example.text);
-        let escaped_target = escape(target);
-        // 只高亮第一次出现的，和 PyQt 版一致
-        let highlighted = if escaped_target.is_empty() {
-            escaped.clone()
-        } else {
-            escaped.replacen(
-                &escaped_target,
-                &format!(r#"<b style="color:#c0392b">{escaped_target}</b>"#),
-                1,
-            )
+        // 只高亮第一次出现的，和 PyQt 版一致。
+        //
+        // **在原文里找，找到之后三段各自转义。** 以前是先把整句转义、再去转义后的文本里找转义后的词：
+        // 「'」变成 `&#x27;` 之后，找「7」「x」「27」会先碰到实体里的那几个字符，高亮插进实体中间，
+        // 卡片上是一串拆坏的乱码；词不在这一行里时，也可能在 `&amp;` 里「找到」一个 amp。
+        let found = if target.is_empty() { None } else { example.text.find(target) };
+        let highlighted = match found {
+            Some(at) => {
+                let (before, rest) = example.text.split_at(at);
+                let (hit, after) = rest.split_at(target.len());
+                format!(r#"{}<b style="color:#c0392b">{}</b>{}"#, escape(before), escape(hit), escape(after))
+            }
+            None => escape(&example.text),
         };
         out.push_str(&format!(
             r#"<div class="sent">{highlighted}<span class="sent-src">{}{}</span></div>"#,
@@ -766,6 +768,44 @@ mod tests {
         assert!(html.contains("&amp;"), "{html}");
         // 高亮标签本身是我们加的，要保留
         assert!(html.contains(r#"<b style="color:#c0392b">夜</b>"#), "{html}");
+    }
+
+    fn line(text: &str, surface: &str) -> Example {
+        Example {
+            song_id: "001".into(),
+            artist: "A".into(),
+            title: "T".into(),
+            time_sec: None,
+            text: text.into(),
+            surface: surface.into(),
+            audio_path: String::new(),
+            end_sec: None,
+            utterance_id: 0,
+        }
+    }
+
+    #[test]
+    fn the_highlight_never_lands_inside_an_entity() {
+        // 以前是先转义、再去转义后的文本里找词。「'」转成 `&#x27;` 之后，找「7」先碰到的是
+        // 实体里的那个 7：高亮把实体拆成两半，卡片上显示出一串乱码，真正的那个词反而没标上
+        let html = sentence_html(&[line("It's 7 o'clock", "7")], "7");
+        assert!(html.contains(r#"It&#x27;s <b style="color:#c0392b">7</b> o&#x27;clock"#), "{html}");
+        assert_eq!(html.matches("<b style").count(), 1);
+
+        let html = sentence_html(&[line("R&B amp", "amp")], "amp");
+        assert!(html.contains(r#"R&amp;B <b style="color:#c0392b">amp</b>"#), "{html}");
+
+        // 词本身带要转义的字符：整个词在高亮里，转义的是词，不是高亮标签
+        let html = sentence_html(&[line("say \"a<b\" again", "a<b")], "a<b");
+        assert!(html.contains(r#"say &quot;<b style="color:#c0392b">a&lt;b</b>&quot; again"#), "{html}");
+    }
+
+    #[test]
+    fn a_word_that_is_not_in_the_line_is_not_found_inside_an_entity() {
+        // 这一行里既没有表层形也没有词典形：不高亮。以前会在 `&amp;` 里找到「amp」
+        let html = sentence_html(&[line("A & B", "")], "amp");
+        assert_eq!(html.matches("<b style").count(), 0, "{html}");
+        assert!(html.contains("A &amp; B"), "{html}");
     }
 
     #[test]
