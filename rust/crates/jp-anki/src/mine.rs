@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use jp_dict::anki::{EntryKind, MediaResolver, NoteContext, NoteRenderer};
+use jp_dict::html::escape;
 use jp_dict::translator::TermDictionaryEntry;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -127,10 +128,6 @@ pub enum MineOutcome {
     Duplicate { note_ids: Vec<i64> },
 }
 
-fn escape_text(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
-}
-
 /// 文字按字符范围加粗，其余转义
 fn highlighted(text: &str, ranges: &[(usize, usize)]) -> String {
     let chars: Vec<char> = text.chars().collect();
@@ -143,13 +140,13 @@ fn highlighted(text: &str, ranges: &[(usize, usize)]) -> String {
         if start < pos {
             continue;
         }
-        out.push_str(&escape_text(&String::from_iter(&chars[pos..start])));
+        out.push_str(&escape(&String::from_iter(&chars[pos..start])));
         out.push_str("<b>");
-        out.push_str(&escape_text(&String::from_iter(&chars[start..end])));
+        out.push_str(&escape(&String::from_iter(&chars[start..end])));
         out.push_str("</b>");
         pos = end;
     }
-    out.push_str(&escape_text(&String::from_iter(&chars[pos..])));
+    out.push_str(&escape(&String::from_iter(&chars[pos..])));
     out
 }
 
@@ -225,9 +222,9 @@ pub fn lapis_fields(
     if sentence.is_some() {
         sentences.push(format!(
             "{}<b>{}</b>{}",
-            escape_text(&marker("cloze-prefix")),
-            escape_text(&marker("cloze-body")),
-            escape_text(&marker("cloze-suffix"))
+            escape(&marker("cloze-prefix")),
+            escape(&marker("cloze-body")),
+            escape(&marker("cloze-suffix"))
         ));
     }
     sentences.extend(other_lines.iter().map(|l| highlighted(l.text, l.highlights)));
@@ -239,7 +236,7 @@ pub fn lapis_fields(
     let misc = source
         .map(|s| {
             let time = sentence.and_then(|l| l.time_sec).map(|t| format!(" {}", clock(t))).unwrap_or_default();
-            escape_text(&format!("{}「{}」{time}", s.artist, s.title))
+            escape(&format!("{}「{}」{time}", s.artist, s.title))
         })
         .unwrap_or_default();
 
@@ -266,9 +263,9 @@ pub fn lapis_fields(
         ("Frequency", frequency),
         ("FreqSort", freq_sort),
         ("MiscInfo", misc),
-        ("SongTitle", source.map(|s| escape_text(s.title)).unwrap_or_default()),
-        ("Artist", source.map(|s| escape_text(s.artist)).unwrap_or_default()),
-        ("Album", source.map(|s| escape_text(s.album)).unwrap_or_default()),
+        ("SongTitle", source.map(|s| escape(s.title)).unwrap_or_default()),
+        ("Artist", source.map(|s| escape(s.artist)).unwrap_or_default()),
+        ("Album", source.map(|s| escape(s.album)).unwrap_or_default()),
     ];
     if let Some(flag) = options.kind.flag_field()
         && let Some((_, value)) = fields.iter_mut().find(|(name, _)| *name == flag)
@@ -551,6 +548,36 @@ mod tests {
         assert_eq!(get("Album"), "負け犬にアンコールはいらない");
         assert_eq!(get("FreqSort"), "3");
         assert!(get("MainDefinition").contains("<li data-dictionary="), "{}", get("MainDefinition"));
+    }
+
+    #[test]
+    fn quotes_in_the_sentence_and_the_song_are_escaped_too() {
+        // 这几个字段以前只转义 & < >，引号原样写进卡片；例句卡和报告那边是五个都转义。
+        // 现在是同一个函数（`jp_dict::html::escape`），所以这里也是五个
+        let (_store, entry) = lookup("打ち込んでいませんでした");
+        let line = MineSentence {
+            text: "もう打ち込んでいませんでした\"ね'",
+            offset: 2,
+            utterance_id: 7,
+            time_sec: Some(64.5),
+            end_sec: None,
+        };
+        let song = MineSource { artist: "B'z", title: "\"月\"", album: "A&B", audio_path: "", cover_path: "" };
+        let others = [MineLine { text: "打ち込んで 'また'", highlights: &[(0, 5)], utterance_id: 9, time_sec: None, end_sec: None }];
+        let (fields, _) =
+            lapis_fields(&entry, Some(&line), &others, Some(&song), &options(), &HashMap::new(), &HashMap::new());
+        let get = |name: &str| fields.iter().find(|(n, _)| n == name).unwrap().1.clone();
+        assert_eq!(
+            get("Sentence"),
+            "もう<b>打ち込んでいませんでした</b>&quot;ね&#x27;<br><b>打ち込んで</b> &#x27;また&#x27;"
+        );
+        assert_eq!(get("Artist"), "B&#x27;z");
+        assert_eq!(get("SongTitle"), "&quot;月&quot;");
+        assert_eq!(get("Album"), "A&amp;B");
+        assert_eq!(get("MiscInfo"), "B&#x27;z「&quot;月&quot;」 1:04");
+        // 读回来的那一侧两种写法都认：报告和学习状态拿到的还是原文
+        assert_eq!(crate::learning::plain_field(&get("Artist")), "B'z");
+        assert_eq!(crate::learning::plain_field(&get("SongTitle")), "\"月\"");
     }
 
     #[test]

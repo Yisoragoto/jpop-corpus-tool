@@ -11,7 +11,9 @@ use anyhow::Result;
 use rusqlite::{Connection, params_from_iter};
 use serde::Serialize;
 
-use crate::dict::{Definition, escape_html};
+use jp_dict::html::escape;
+
+use crate::dict::Definition;
 
 /// UPOS → 日文词性标签。和 PyQt 版一致，卡片上显示的就是这个。
 pub fn pos_label(upos: &str) -> &'static str {
@@ -160,8 +162,8 @@ pub fn sentence_html(examples: &[Example], lemma: &str) -> String {
         } else {
             lemma
         };
-        let escaped = escape_html(&example.text);
-        let escaped_target = escape_html(target);
+        let escaped = escape(&example.text);
+        let escaped_target = escape(target);
         // 只高亮第一次出现的，和 PyQt 版一致
         let highlighted = if escaped_target.is_empty() {
             escaped.clone()
@@ -174,7 +176,7 @@ pub fn sentence_html(examples: &[Example], lemma: &str) -> String {
         };
         out.push_str(&format!(
             r#"<div class="sent">{highlighted}<span class="sent-src">{}{}</span></div>"#,
-            escape_html(&example.source_label()),
+            escape(&example.source_label()),
             {
                 let stamp = example.timestamp();
                 if stamp.is_empty() {
@@ -214,7 +216,7 @@ pub fn meaning_html(definitions: &[Definition]) -> String {
             let (class, style) = header_style(source);
             out.push_str(&format!(
                 "<span class='dict-hdr {class}'{style}>{}</span>",
-                escape_html(source)
+                escape(source)
             ));
         }
         out.push_str("<div class='meaning'>");
@@ -241,7 +243,7 @@ pub fn prefix_lookup_term(meaning: &str, expression: &str, lookup_term: &str) ->
         return meaning.to_string();
     }
     const OPEN: &str = "<div class='defs'>";
-    let note = format!("<div class='ym-term-ref'>辞書形：{}</div>", escape_html(lookup_term));
+    let note = format!("<div class='ym-term-ref'>辞書形：{}</div>", escape(lookup_term));
     match meaning.strip_prefix(OPEN) {
         Some(rest) => format!("{OPEN}{note}{rest}"),
         None => format!("{note}{meaning}"),
@@ -366,7 +368,7 @@ fn render_plain(raw: &str) -> String {
     static NOTE: std::sync::LazyLock<regex::Regex> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"^(\[[^\]]+\])(.*)$").unwrap());
 
-    let text = escape_html(&crate::dict::clean_text(raw));
+    let text = escape(&crate::dict::clean_text(raw));
     if let Some(m) = SENSE.captures(&text) {
         let prefix = m.get(1).map_or("", |g| g.as_str());
         let tag = m.get(3).map_or("", |g| g.as_str());
