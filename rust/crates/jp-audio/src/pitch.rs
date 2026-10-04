@@ -3,7 +3,7 @@
 //! 以前是起一个 ffmpeg 子进程、用它的 `rubberband` 滤镜渲染成 FLAC。安装包不带 ffmpeg，
 //! 没装的人变调就不可用。现在 Rubber Band 直接编进程序里（见 `rubberband.rs`），
 //! 解码用播放的那个解码器（`decode.rs`），写 WAV 不用编码器（`wav.rs`）。
-//! 变调后超出满幅的峰值怎么办见 [`Overs`]。
+//! 变调后超出满幅的峰值写成 16 位时夹到满幅，理由见下面「超幅」一节。
 //!
 //! - −6 … +6 半音，比例 2^(n/12)，时长不变，歌词时间轴照用；
 //! - 缓存 `<缓存目录>/<文件名>_<±n>_<引擎>_<sha1 前 16 位>.wav`，sha1 的原文是
@@ -18,6 +18,23 @@
 //! 格式也从 FLAC 换成了 WAV。旧名字的算法留在 [`legacy_cache_path`]，只用来认出并清理旧缓存。
 //!
 //! 不做实时变调：WSOLA 变调在音乐上金属感很重。
+//!
+//! # 超幅
+//!
+//! 变调后的浮点样本会超出 ±1.0：流行歌的母带本来就压在 0 dB 附近，变调改变了各频率的相位关系，
+//! 被压平的峰值重新冒出来。写成 16 位时**夹到满幅（硬削）**，不做限幅、不整首压低。
+//! 这是量过之后定的（R3，升 3 个半音，两首不同歌手的歌，数字相近；下面是其中一首 4 分 17 秒的）：
+//!
+//! - 峰值 +5.6 dB，但超幅的样本只有 0.37%，分成两万七千多处，**每处中位 2 个样本（0.05 毫秒）**，
+//!   95% 不超过 8 个样本，最长 61 个（1.4 毫秒）；超出量中位 +0.7 dB。削掉的是极短的尖峰；
+//! - 硬削：整首 RMS 变化 −0.06 dB，按 0.4 秒一段看响度最多变 0.3 dB；和没削的信号相比误差 −29 dB；
+//! - 前视限幅（5 ms 前视，释放 20 / 50 / 100 ms 都试了）：峰值附近要把增益压下去再慢慢放回来，
+//!   整首 RMS 轻 1.1–1.6 dB，5% 的 0.4 秒段被压低 2 dB 以上、最深 3 dB——一阵一阵变轻；
+//!   误差 −23 dB，比硬削还大；
+//! - 整首按峰值压低：不失真，但整首轻 5.6 dB，换调时音量会跳。
+//!
+//! ffmpeg 渲染的缓存一直也是硬削的（它把浮点转成整数时就是夹住）。
+//! 不会回绕成爆音：`wav::quantize` 夹在 16 位范围内。重新量：`a_real_song_renders_to_the_same_length`。
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -27,40 +44,20 @@ use anyhow::{Context, Result};
 
 use crate::rubberband::{self, Engine};
 use crate::sha1::sha1_hex;
-use crate::{decode, limiter, wav};
+use crate::{decode, wav};
 
 pub const MIN_SEMITONES: i32 = -6;
 pub const MAX_SEMITONES: i32 = 6;
 
-/// 现在用哪个引擎渲染。改这一个常量就换引擎，缓存名跟着变，不用手工清缓存。
+/// 用哪个引擎渲染：R3。拿同一段歌的 ±3、±6 半音样本和 R2 对比着听过之后选的，
+/// 代价是渲染慢三倍左右（一首歌 20–40 秒，R2 是 7–11 秒）。
+///
+/// 改这一个常量就换引擎，缓存名跟着变，不用手工清缓存。
 pub const ENGINE: Engine = Engine::R3;
 
-/// 变调后超出满幅的峰值怎么处理（实测一首歌升 3 个半音，峰值 +5.6 dB，0.37% 的样本超幅）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Overs {
-    /// 夹到满幅（硬削）。ffmpeg 渲染的缓存一直就是这样：响度不变，削过的地方有失真
-    Clamp,
-    /// 前视限幅（`limiter.rs`）：峰值附近把增益平滑地压下去，不削平；整首 RMS 轻 1.6 dB 左右
-    Limit,
-}
-
-impl Overs {
-    fn tag(self) -> &'static str {
-        match self {
-            Overs::Clamp => "clamp",
-            Overs::Limit => "limit",
-        }
-    }
-}
-
-/// 现在用哪种。和 [`ENGINE`] 一样，改这个常量缓存名跟着变。
-///
-/// 默认是硬削：这是变调功能一直以来的声音，换成限幅是会改变听感的决定，要先听过再换。
-pub const OVERS: Overs = Overs::Clamp;
-
 /// 渲染方式的版本。**改了会影响输出的任何东西都要加一**：传给 Rubber Band 的选项、
-/// 限幅器的参数、输出的位深……加一之后旧缓存不再被认作这一版的。
-/// （换引擎、换削波的处理方式不用加：它们各自已经在缓存名里。）
+/// 超幅的处理方式、输出的位深……加一之后旧缓存不再被认作这一版的。
+/// （换引擎不用加：引擎已经在缓存名里。）
 const RENDER_VERSION: u32 = 1;
 
 /// 缓存总量上限的默认值：1.5 GB，约 33 首 4 分钟的歌（一首 16 位立体声 WAV 约 45 MB）。
@@ -73,13 +70,9 @@ pub fn clamp_semitones(semitones: i32) -> i32 {
     semitones.clamp(MIN_SEMITONES, MAX_SEMITONES)
 }
 
-/// 编进缓存名里的「是谁、怎么渲染的」，例如 `rubberband-4.0.0-r3-clamp-v1`。
+/// 编进缓存名里的「是谁、怎么渲染的」，例如 `rubberband-4.0.0-r3-v1`。
 pub fn engine_tag(engine: Engine) -> String {
-    render_tag(engine, OVERS)
-}
-
-fn render_tag(engine: Engine, overs: Overs) -> String {
-    format!("rubberband-{}-{}-{}-v{RENDER_VERSION}", rubberband::LIBRARY_VERSION, engine.tag(), overs.tag())
+    format!("rubberband-{}-{}-v{RENDER_VERSION}", rubberband::LIBRARY_VERSION, engine.tag())
 }
 
 /// 这首歌升降 `semitones` 个半音后的缓存文件位置（当前引擎）。读不到原文件时报错。
@@ -188,17 +181,10 @@ pub enum RenderOutcome {
 
 /// 用当前引擎渲染到 `output`。`cancel` 置位后尽快停下。
 pub fn render(source: &Path, output: &Path, semitones: i32, cancel: &AtomicBool) -> Result<RenderOutcome> {
-    render_with(ENGINE, OVERS, source, output, semitones, cancel)
+    render_with(ENGINE, source, output, semitones, cancel)
 }
 
-pub fn render_with(
-    engine: Engine,
-    overs: Overs,
-    source: &Path,
-    output: &Path,
-    semitones: i32,
-    cancel: &AtomicBool,
-) -> Result<RenderOutcome> {
+pub fn render_with(engine: Engine, source: &Path, output: &Path, semitones: i32, cancel: &AtomicBool) -> Result<RenderOutcome> {
     if is_usable(output) {
         return Ok(RenderOutcome::Cached);
     }
@@ -213,15 +199,11 @@ pub fn render_with(
     if pcm.frames() == 0 {
         anyhow::bail!("{} 里没有解出音频", source.display());
     }
-    let Some(mut shifted) = rubberband::shift_pitch(&pcm, f64::from(semitones), engine, cancel)? else {
+    let Some(shifted) = rubberband::shift_pitch(&pcm, f64::from(semitones), engine, cancel)? else {
         return Ok(RenderOutcome::Cancelled);
     };
     drop(pcm);
-    // 变调后的峰值会超出满幅（实测 +4 到 +6 dB）。硬削的话什么都不用做：
-    // 写 16 位时本来就夹在范围内（`wav::quantize`），不会回绕
-    if overs == Overs::Limit {
-        limiter::limit(&mut shifted);
-    }
+    // 变调后的峰值会超出满幅；写 16 位时夹住（见模块注释的「超幅」一节）
 
     // 临时文件名每次不同：被取消的那次渲染可能还没退出，不能和新的一次写同一个文件
     static SERIAL: AtomicU64 = AtomicU64::new(0);
@@ -418,10 +400,7 @@ mod tests {
         assert_ne!(digest(&r3), digest(&r2));
         assert_ne!(digest(&r3), digest(&legacy_cache_file_name(&id.path, id.mtime_ns, id.size, 2, &id.stem)));
 
-        assert_eq!(render_tag(Engine::R3, Overs::Clamp), format!("rubberband-{}-r3-clamp-v{RENDER_VERSION}", rubberband::LIBRARY_VERSION));
-        // 削波的处理方式也在里面：硬削和限幅渲染出来的不是同一个声音，不能共用缓存
-        assert_ne!(render_tag(Engine::R3, Overs::Clamp), render_tag(Engine::R3, Overs::Limit));
-        assert_eq!(engine_tag(ENGINE), render_tag(ENGINE, OVERS));
+        assert_eq!(engine_tag(Engine::R3), format!("rubberband-{}-r3-v{RENDER_VERSION}", rubberband::LIBRARY_VERSION));
         // 原曲变了（大小、修改时间）或半音数变了，名字都要变
         assert_ne!(r3, cache_file_name(&identity(&id.path, id.mtime_ns, id.size + 1, "001"), 2, Engine::R3));
         assert_ne!(r3, cache_file_name(&identity(&id.path, id.mtime_ns + 1, id.size, "001"), 2, Engine::R3));
@@ -476,45 +455,52 @@ mod tests {
                     pcm.seconds() as usize,
                     seconds_with_overs
                 );
-                let started = std::time::Instant::now();
-                let mut limited = shifted.clone();
-                let stats = limiter::limit(&mut limited);
-                let after = limited.samples.iter().fold(0.0f32, |peak, s| peak.max(s.abs()));
-                // 限幅前后的响度（整首 RMS）差多少：差得越少，说明只动了峰值
-                let rms = |samples: &[f32]| (samples.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / samples.len() as f64).sqrt();
-                println!(
-                    "    限幅用时 {:?}：峰值 {after:.4}，压过增益的帧 {:.2}%，RMS 变化 {:+.3} dB",
-                    started.elapsed(),
-                    100.0 * stats.frames_reduced as f64 / limited.frames() as f64,
-                    20.0 * (rms(&limited.samples) / rms(&shifted.samples)).log10()
-                );
-                assert!(after <= 1.0);
-
-                // 试听样本：`JP_PITCH_SAMPLES=目录`，可选 `JP_PITCH_SAMPLE_WINDOW=62,77`（秒）。
-                // 同一段分别按硬削、限幅、整首按峰值压低写出来——三种处理的差别只能靠耳朵判断
-                if let Ok(dir) = std::env::var("JP_PITCH_SAMPLES") {
+                // 硬削削掉的是什么样的东西：每一处连着削了多少个样本、超出多少
+                {
                     let width = usize::from(pcm.channels);
-                    let second = pcm.rate as usize * width;
-                    // 没指定就挑超幅最多的 15 秒：差别在那里最明显
-                    let window = std::env::var("JP_PITCH_SAMPLE_WINDOW").unwrap_or_else(|_| {
-                        let per_second: Vec<usize> =
-                            shifted.samples.chunks(second).map(|s| s.iter().filter(|v| v.abs() > 1.0).count()).collect();
-                        let start = (0..per_second.len().saturating_sub(15)).max_by_key(|i| per_second[*i..*i + 15].iter().sum::<usize>()).unwrap_or(0);
-                        format!("{start},{}", start + 15)
-                    });
-                    let (from, to) = window.split_once(',').expect("JP_PITCH_SAMPLE_WINDOW=起点,终点");
-                    let frame = |sec: &str| (sec.trim().parse::<f64>().unwrap() * f64::from(pcm.rate)) as usize * width;
-                    let (a, b) = (frame(from), frame(to));
-                    let piece = |samples: &[f32]| Pcm { samples: samples[a..b].to_vec(), channels: pcm.channels, rate: pcm.rate };
-                    let scaled: Vec<f32> = shifted.samples.iter().map(|s| s / peak.max(1.0)).collect();
-                    let overs_here = shifted.samples[a..b].iter().filter(|s| s.abs() > 1.0).count() as f64 / (b - a) as f64;
-                    println!("    样本段 {from}–{to} 秒：超幅样本 {:.4}%", 100.0 * overs_here);
-                    let label = format!("{}{semitones:+}", engine.tag().to_uppercase());
-                    for (name, samples) in [("A_硬削_现在的做法", &shifted.samples), ("B_限幅", &limited.samples), ("C_整首按峰值压低", &scaled)] {
-                        let path = Path::new(&dir).join(format!("超幅处理_{label}_{from}-{to}秒_{name}.wav"));
-                        wav::write_pcm16(&path, &piece(samples)).unwrap();
+                    let mut runs: Vec<usize> = Vec::new();
+                    for channel in 0..width {
+                        let mut run = 0usize;
+                        for sample in shifted.samples.iter().skip(channel).step_by(width) {
+                            if sample.abs() > 1.0 {
+                                run += 1;
+                            } else if run > 0 {
+                                runs.push(run);
+                                run = 0;
+                            }
+                        }
                     }
+                    runs.sort_unstable();
+                    let mut depth: Vec<f32> = shifted.samples.iter().filter(|s| s.abs() > 1.0).map(|s| 20.0 * s.abs().log10()).collect();
+                    depth.sort_by(|a, b| a.total_cmp(b));
+                    let ms = |n: usize| n as f64 * 1000.0 / f64::from(pcm.rate);
+                    println!(
+                        "    超幅 {} 处：连续长度 中位 {} 个样本（{:.2} ms），95% 分位 {}（{:.2} ms），最长 {}（{:.2} ms）；超出量 中位 {:+.2} dB，95% 分位 {:+.2} dB",
+                        runs.len(),
+                        runs[runs.len() / 2], ms(runs[runs.len() / 2]),
+                        runs[runs.len() * 95 / 100], ms(runs[runs.len() * 95 / 100]),
+                        runs[runs.len() - 1], ms(runs[runs.len() - 1]),
+                        depth[depth.len() / 2],
+                        depth[depth.len() * 95 / 100],
+                    );
                 }
+
+                // 硬削之后响度变了多少：整首，和按 0.4 秒一段看最多变多少
+                let rms = |samples: &[f32]| (samples.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / samples.len().max(1) as f64).sqrt().max(1e-9);
+                let clamped: Vec<f32> = shifted.samples.iter().map(|s| s.clamp(-1.0, 1.0)).collect();
+                let block = (f64::from(pcm.rate) * 0.4) as usize * usize::from(pcm.channels);
+                let deepest = clamped
+                    .chunks(block)
+                    .zip(shifted.samples.chunks(block))
+                    .map(|(a, b)| 20.0 * (rms(a) / rms(b)).log10())
+                    .fold(0.0f64, f64::min);
+                let error: f64 = clamped.iter().zip(&shifted.samples).map(|(a, b)| f64::from(a - b).powi(2)).sum::<f64>() / clamped.len() as f64;
+                println!(
+                    "    硬削：整首 RMS {:+.2} dB，0.4 秒段最多 {:+.2} dB，误差 {:.1} dB",
+                    20.0 * (rms(&clamped) / rms(&shifted.samples)).log10(),
+                    deepest,
+                    10.0 * (error / rms(&shifted.samples).powi(2)).log10()
+                );
             }
         }
     }
@@ -580,8 +566,8 @@ mod tests {
 
         for engine in [Engine::R2, Engine::R3] {
             let output = cache_path_for(&cache, &source, 2, engine).unwrap();
-            assert_eq!(render_with(engine, OVERS, &source, &output, 2, &cancel).unwrap(), RenderOutcome::Rendered);
-            assert_eq!(render_with(engine, OVERS, &source, &output, 2, &cancel).unwrap(), RenderOutcome::Cached);
+            assert_eq!(render_with(engine, &source, &output, 2, &cancel).unwrap(), RenderOutcome::Rendered);
+            assert_eq!(render_with(engine, &source, &output, 2, &cancel).unwrap(), RenderOutcome::Cached);
 
             let rendered = decode::decode_all(&output).unwrap();
             assert_eq!((rendered.channels, rendered.rate), (2, 44_100));
@@ -608,10 +594,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 变调后超幅的音频写成 16 位：两种处理方式都不能回绕成爆音。
-    /// 测试音是满幅的方波叠正弦——变调会把它的峰值推到满幅以上。
+    /// 变调后超幅的音频写成 16 位：超出的部分夹在满幅上，不能回绕成爆音。
+    /// 测试音是接近满幅的方波叠正弦——变调会把它的峰值推到满幅以上。
     #[test]
-    fn overs_never_wrap_whichever_way_they_are_handled() {
+    fn overs_are_clamped_to_full_scale_and_never_wrap() {
         let dir = scratch("overs");
         let source = dir.join("loud.wav");
         let rate = 44_100u32;
@@ -629,20 +615,18 @@ mod tests {
         let shifted = rubberband::shift_pitch(&decode::decode_all(&source).unwrap(), 3.0, Engine::R2, &AtomicBool::new(false)).unwrap().unwrap();
         let peak = shifted.samples.iter().fold(0.0f32, |peak, s| peak.max(s.abs()));
         assert!(peak > 1.05, "测试音变调后峰值只有 {peak}，没超幅");
+        let over = shifted.samples.iter().filter(|s| s.abs() > 1.0).count();
 
-        for overs in [Overs::Clamp, Overs::Limit] {
-            let output = dir.join(format!("{overs:?}.wav"));
-            assert_eq!(render_with(Engine::R2, overs, &source, &output, 3, &AtomicBool::new(false)).unwrap(), RenderOutcome::Rendered);
-            let rendered = decode::decode_all(&output).unwrap();
-            // 回绕的话相邻两个样本会从正满幅直接跳到负满幅：差接近 2.0。正常波形在这个测试音上差不到 1.7
-            let worst_jump = rendered.samples.as_chunks::<2>().0.iter().map(|f| f[0]).collect::<Vec<_>>().windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
-            assert!(worst_jump < 1.9, "{overs:?}：相邻样本跳了 {worst_jump}，像是回绕");
-            let pinned = rendered.samples.iter().filter(|s| s.abs() >= 0.9999).count() as f64 / rendered.samples.len() as f64;
-            match overs {
-                Overs::Clamp => assert!(pinned > 0.001, "硬削应该有样本贴在满幅上，实际 {pinned}"),
-                Overs::Limit => assert!(pinned < 0.001, "限幅不该削平，却有 {pinned} 的样本贴在满幅上"),
-            }
-        }
+        let output = dir.join("shifted.wav");
+        assert_eq!(render_with(Engine::R2, &source, &output, 3, &AtomicBool::new(false)).unwrap(), RenderOutcome::Rendered);
+        let rendered = decode::decode_all(&output).unwrap();
+        // 回绕的话相邻两个样本会从正满幅直接跳到负满幅：差接近 2.0。正常波形在这个测试音上差不到 1.7
+        let left: Vec<f32> = rendered.samples.as_chunks::<2>().0.iter().map(|f| f[0]).collect();
+        let worst_jump = left.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+        assert!(worst_jump < 1.9, "相邻样本跳了 {worst_jump}，像是回绕");
+        // 超幅的那些样本，一个不少都贴在满幅上；别的样本没有被连带压低
+        let pinned = rendered.samples.iter().filter(|s| s.abs() >= 0.9999).count();
+        assert!(pinned >= over, "超幅 {over} 个样本，贴在满幅上的只有 {pinned} 个");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -10,7 +10,6 @@
 //! | `probe` | 读时长，不播放、不占设备 | ✅ |
 //! | `decode` | 整首 / 按时间段解码成 PCM，和播放同一个解码器 | ✅ |
 //! | `rubberband` | Rubber Band（`third_party/`）的封装：离线变调 | ✅ |
-//! | `limiter` | 前视限幅：变调后超出满幅的峰值压回去，不削平 | ✅ |
 //! | `wav` | 写 16 位 WAV | ✅ |
 //! | `pitch` | 变调的渲染、缓存命名、缓存上限 | ✅ |
 //! | `engine` | rodio 播放链、循环看门狗 | 需要声卡，无卡自动跳过 |
@@ -26,7 +25,6 @@
 
 pub mod decode;
 pub mod engine;
-pub mod limiter;
 pub mod pitch;
 pub mod probe;
 pub mod rubberband;
