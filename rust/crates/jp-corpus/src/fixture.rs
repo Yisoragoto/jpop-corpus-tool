@@ -1,9 +1,10 @@
 //! 一个**小而真形状**的语料库，给测试用。
 //!
-//! **为什么需要**：`jp-app/tests/commands.rs`（81 个测试）和
-//! `jp-corpus/tests/real_corpus.rs`（36 个）都挂在作者本机那个 991MB 的
-//! `corpus.db` 上，找不到就整组静默跳过**并算通过**。于是 CI 上这 117 个
-//! 测试一行断言都没执行——「测试全绿」在 CI 的含义比在本机弱得多。
+//! **为什么需要**：`jp-app/tests/commands.rs` 和 `jp-corpus/tests/real_corpus.rs` 挂在作者本机
+//! 那个 991MB 的 `corpus.db` 上，找不到就整组静默跳过**并算通过**。曾经有 117 个测试是这样，
+//! CI 上一行断言都没执行——「测试全绿」在 CI 的含义比在本机弱得多。
+//! 现在不依赖具体数据的断言都对着这里跑（`jp-corpus/tests/fixture_corpus.rs`、
+//! `jp-app/tests/fixture_commands.rs`、`fixture_flows.rs`），真库那两套只留真的要真实数据的。
 //!
 //! 这里补的是「**永远跑得了**」的那一半：四首歌、十三行歌词、五十来个 token，
 //! 建在内存里或临时目录里，不需要任何外部文件。
