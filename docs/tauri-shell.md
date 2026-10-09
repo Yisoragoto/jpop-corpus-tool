@@ -48,7 +48,9 @@ rust/
       src/lyrics.rs               补齐歌词：音频旁边的 .lrc / 在线搜 / 用户自己的文件
       src/state.rs                Mutex<Corpus> + 可选 Analyzer / AudioEngine
       tauri.conf.json
-      tests/commands.rs           走真实 IPC 通道的集成测试
+      tests/fixture_commands.rs   走真实 IPC 通道的集成测试，合成库，哪台机器都跑
+      tests/fixture_flows.rs      同上，会往库里加歌改歌的流程（另一个进程、另一个库）
+      tests/commands.rs           只留真的要真实语料库的那几条，没有库时跳过
 ```
 
 前端和后端分处两个目录，是因为 Rust 侧是一个 workspace（`jp-app` 要按路径
@@ -169,8 +171,9 @@ command 层签名不用动。
 
 ## 集成测试测什么
 
-`tests/commands.rs` 用 `tauri::test::mock_builder()` 装配**同一份
-`register()`**（不是另抄一份 command 清单），走真实 IPC 通道：
+`tests/fixture_commands.rs`、`tests/fixture_flows.rs` 用 `tauri::test::mock_builder()` 装配**同一份
+`register()`**（不是另抄一份 command 清单），走真实 IPC 通道。数据是 `jp_corpus::fixture` 那个合成库，
+所以在 CI 上也真的跑；`tests/commands.rs` 只留真的要真实语料库的那几条：
 
 | 测的东西 | 为什么只能在这一层测 |
 |---|---|
