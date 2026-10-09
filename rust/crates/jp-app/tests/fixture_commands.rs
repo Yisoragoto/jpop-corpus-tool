@@ -4,7 +4,7 @@
 //! 代价是它在找不到那个 991MB 的 `corpus.db` 时整组跳过**并算通过**——
 //! CI 上 81 个测试里 78 个一行断言都没跑。
 //!
-//! 这一组补的是另一半：数据来自 `jp_corpus::fixture`（三首歌，建在临时目录里），
+//! 这一组补的是另一半：数据来自 `jp_corpus::fixture`（四首歌，建在临时目录里），
 //! 所以**在任何机器上都真的跑**。它测的不是数量，是「这条路通不通」：
 //!
 //! * command 有没有真的注册上（名字写错编译期不报错，运行时才 404）；
@@ -154,7 +154,7 @@ fn the_library_commands_all_answer_on_a_fresh_fixture_library() {
     assert_eq!(ok(w, "get_track", json!({ "songId": "001" }))["title"], "街の灯");
     assert!(ok(w, "get_track", json!({ "songId": "没有这首" })).is_null());
 
-    assert_eq!(len(&ok(w, "list_albums", json!({}))), 2);
+    assert_eq!(len(&ok(w, "list_albums", json!({}))) as i64, fixture::ALBUMS);
     assert_eq!(len(&ok(w, "album_tracks", json!({ "albumId": 1 }))), 2);
     assert_eq!(len(&ok(w, "track_credits", json!({ "songId": "001" }))), 3);
     assert_eq!(len(&ok(w, "lyrics", json!({ "songId": "001" }))), 4);
@@ -239,10 +239,10 @@ fn toggling_a_favorite_goes_both_ways() {
     let w = f.w();
 
     // 001 在 fixture 里本来就是收藏的
-    assert_eq!(ok(w, "is_favorite", json!({ "entityType": "track", "entityId": "001" })), json!(true));
-    assert_eq!(ok(w, "toggle_favorite", json!({ "entityType": "track", "entityId": "001" })), json!(false));
-    assert_eq!(ok(w, "is_favorite", json!({ "entityType": "track", "entityId": "001" })), json!(false));
-    assert_eq!(ok(w, "toggle_favorite", json!({ "entityType": "track", "entityId": "001" })), json!(true));
+    assert_eq!(ok(w, "is_favorite", json!({ "entityType": "song", "entityId": "001" })), json!(true));
+    assert_eq!(ok(w, "toggle_favorite", json!({ "entityType": "song", "entityId": "001" })), json!(false));
+    assert_eq!(ok(w, "is_favorite", json!({ "entityType": "song", "entityId": "001" })), json!(false));
+    assert_eq!(ok(w, "toggle_favorite", json!({ "entityType": "song", "entityId": "001" })), json!(true));
 }
 
 #[test]
