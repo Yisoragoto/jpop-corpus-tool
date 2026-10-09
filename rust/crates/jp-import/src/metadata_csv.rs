@@ -1,7 +1,7 @@
 //! `metadata/songs.csv`：Python 版一直和 `songs` 表同步维护的曲目清单（`id,title,artist,year,album,genre,audio_path`）。
 //!
-//! Python 版加歌、改歌、删歌、修复音频路径时都会改它（`gui.py` 的 `AddSongWorker`、`RepairAudioDialog`，
-//! `song_manager._edit` / `_delete`），`scripts/03_build_db.py` 重建库时以它为准。这里照同样的时机、同样的粒度改：
+//! Python 版加歌、改歌、删歌、修复音频路径时都会改它（`legacy/gui.py` 的 `AddSongWorker`、`RepairAudioDialog`，
+//! `song_manager._edit` / `_delete`），`legacy/scripts/03_build_db.py` 重建库时以它为准。这里照同样的时机、同样的粒度改：
 //! **只改动到的那几行**，改动的值取数据库里的当前值；其余行一个字节不动。
 //!
 //! 格式和 Python `csv` 模块（`utf-8-sig`、`DictWriter`、默认 `excel` 方言）逐字节一致：开头 BOM，行尾 CRLF，

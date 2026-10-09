@@ -2,7 +2,7 @@
 //!
 //! 两处相对旧实现的改动：
 //!
-//! **1. 干掉 N+1。** `gui.py` 的 SearchWorker 每条结果都要再发一次
+//! **1. 干掉 N+1。** `legacy/gui.py` 的 SearchWorker 每条结果都要再发一次
 //! `SELECT surface FROM tokens WHERE utterance_id=?` 来重建整行，
 //! 开了 cross_line 还要再发两次。搜一个常见词（500 条结果）就是
 //! 500~1500 次额外查询。这里改成：命中一次查、行内 token 一次查、

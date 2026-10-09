@@ -5,7 +5,7 @@
 //!
 //! Schema 的事实来源是 `schema.sql`（从迁移完成的真实库里导出来的），
 //! 结构版本和前向迁移在 [`migrations`]：`PRAGMA user_version` 由那个模块
-//! 统一维护，编号和 Python 侧 `scripts/migrate_db.py` 共用一套，
+//! 统一维护，编号和 Python 侧 `legacy/scripts/migrate_db.py` 共用一套，
 //! 两边建出来的库才不会互相看成「另一版」。
 //!
 //! ```no_run
@@ -138,7 +138,7 @@ impl Corpus {
                 rusqlite::params![table],
                 |row| row.get(0),
             )?;
-            // 不要再提 `python scripts/migrate_db.py`：装了的用户手上只有 jp-app.exe，
+            // 不要再提 `python legacy/scripts/migrate_db.py`：装了的用户手上只有 jp-app.exe，
             // 没有 Python，也没有仓库。能走到这儿说明建表那步失败了。
             anyhow::ensure!(
                 exists > 0,

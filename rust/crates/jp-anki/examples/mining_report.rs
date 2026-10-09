@@ -1,4 +1,4 @@
-//! 挖词报告写成 HTML，和 Python 版 `generate_report.py` 对账。
+//! 挖词报告写成 HTML，和 Python 版 `legacy/generate_report.py` 对账。
 //!
 //! ```text
 //! cargo run -p jp-anki --example mining_report -- <collection.anki2> <输出.html> "<生成时间>" [牌组名包含]

@@ -6,8 +6,8 @@
 
 | 不做 | 谁做 |
 |---|---|
-| 分词、词频、KWIC | corpus pipeline（`scripts/02_parse_lrc_tokenize.py`、GiNZA） |
-| 弹窗、进度条、列表刷新 | `dialogs/`、`gui.py` |
+| 分词、词频、KWIC | corpus pipeline（`legacy/scripts/02_parse_lrc_tokenize.py`、GiNZA） |
+| 弹窗、进度条、列表刷新 | `legacy/dialogs/`、`legacy/gui.py` |
 | 除状态表外的数据库读写 | 调用方（导入流程） |
 
 因此整个包可以离线、无 GUI 地测试。
@@ -95,7 +95,7 @@ provider 一旦返回限流，`resolver` 就把它拉黑到本次解析结束—
 迁移：
 
 ```bash
-python scripts/migrate_db.py
+python legacy/scripts/migrate_db.py
 ```
 
 幂等，可反复执行；默认先备份到 `backups/`。
@@ -124,7 +124,7 @@ class YourProvider(MetadataProvider):
 
 `cover_scraper.py` 保留了原有的全部函数签名和返回结构（候选是 dict，
 键为 `track / artist / album / year / genre / artwork_url / thumb_url /
-match_score`），`dialogs/song_manager.py` 一行不改就能继续跑。
+match_score`），`legacy/dialogs/song_manager.py` 一行不改就能继续跑。
 新代码请直接用 `scraper` 包。
 
 ## 跑测试

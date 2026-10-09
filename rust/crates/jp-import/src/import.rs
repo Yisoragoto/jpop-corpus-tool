@@ -21,8 +21,8 @@
 //!
 //! `tokens.dep` / `tokens.head` 留空。那是 GiNZA 依存分析的产物，
 //! sudachi.rs 只做分词，没有依存分析。实测这两列全库 100% 填满但
-//! **只写不读**——除了 `scripts/04_export_processed_from_db.py` 那个
-//! 导出脚本，Rust 侧、前端、gui.py 的查询都没引用过。
+//! **只写不读**——除了 `legacy/scripts/04_export_processed_from_db.py` 那个
+//! 导出脚本，Rust 侧、前端、legacy/gui.py 的查询都没引用过。
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};

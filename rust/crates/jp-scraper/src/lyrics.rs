@@ -1,6 +1,6 @@
 //! 在线找歌词。
 //!
-//! 0.1.x 的歌词是 `scripts/01_fetch_lrc.py` 用 `syncedlyrics` 下回来的，
+//! 0.1.x 的歌词是 `legacy/scripts/01_fetch_lrc.py` 用 `syncedlyrics` 下回来的，
 //! 存成 `raw/lyrics_lrc/{song_id}.lrc`；新版导入只认本地已有的 .lrc，
 //! 于是从别处导进来的歌（旁边没有 .lrc）就一行歌词都没有。这个模块把那一步补回来。
 //!

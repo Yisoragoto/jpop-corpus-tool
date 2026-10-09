@@ -42,7 +42,7 @@ an update for you — the installer is pulled from this repository's Releases an
 before anything is run. Automatic installing is off by default.
 
 Since 0.2.0 the desktop app is Tauri 2 + React + Rust (0.1.x was PyQt6). The old Python code is still
-in the repository for reference, and `corpus.db` works with both.
+in the repository under `legacy/` for reference, and `corpus.db` works with both.
 
 ## Features
 
@@ -218,8 +218,8 @@ rust/          Rust workspace
   jp-import/     Scan, plan, write
   jp-normalize/  Title / artist normalisation
 docs/          Design notes and reconciliation records per subsystem
-dialogs/       0.1.x PyQt UI modules (kept for reference)
-scripts/       0.1.x metadata and database scripts
+legacy/        The 0.1.x PyQt app, kept for reference: gui.py, dialogs/, scripts/, packaging/
+scripts/       Release self-check (release-check.ps1)
 assets/fonts/  Bundled OFL fonts and their licences
 examples/      Data-format samples with no copyrighted content
 raw/           Local audio and lyrics; contents are git-ignored

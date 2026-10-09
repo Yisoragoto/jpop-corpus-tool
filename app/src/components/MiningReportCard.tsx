@@ -2,7 +2,7 @@
  * 挖词报告。对应 PyQt 版菜单「报告 → 生成挖词报告…」。
  *
  * 读 Anki 的 collection（复制一份再读，不需要 Anki 开着），按歌手、歌曲、JLPT 统计已挖的词和复习进度，
- * 写成 `output/corpus_report.html` 用浏览器打开。页面和 Python 版 `generate_report.py` 写出的一样，
+ * 写成 `output/corpus_report.html` 用浏览器打开。页面和 Python 版 `legacy/generate_report.py` 写出的一样，
  * 只是多算了一键制卡做的 Lyrics 卡。
  */
 

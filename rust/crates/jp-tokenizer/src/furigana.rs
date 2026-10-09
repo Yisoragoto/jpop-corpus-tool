@@ -1,6 +1,6 @@
 //! 歌词振假名：把一行歌词切成（原文, 读音）段，读音为空表示这一段不用注。
 //!
-//! 照 Python 版 `dialogs/song_manager.py` 的 `_furigana_tokens` / `_kanji_only_furigana` 逐行移植
+//! 照 Python 版 `legacy/dialogs/song_manager.py` 的 `_furigana_tokens` / `_kanji_only_furigana` 逐行移植
 //! （SplitMode C、`reading_form()`、片假名转平假名），两种模式：
 //!
 //! - `Kanji`（默认）：只给汉字那几个字注。一个词里汉字和假名交替时，按词里的假名在读音里定位，切出每段汉字的读音；

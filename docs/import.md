@@ -184,8 +184,8 @@ PART → ADP    360
 
 那是 GiNZA 依存分析的产物，sudachi.rs 只做分词。
 实测这两列全库 100% 填满但**只写不读**——除了
-`scripts/04_export_processed_from_db.py` 那个导出脚本，
-Rust 侧、前端、`gui.py` 的查询都没引用过。
+`legacy/scripts/04_export_processed_from_db.py` 那个导出脚本，
+Rust 侧、前端、`legacy/gui.py` 的查询都没引用过。
 
 ### 存量语料里的脏数据
 

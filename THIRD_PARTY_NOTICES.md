@@ -100,6 +100,6 @@ cd app && npm ls --omit=dev --all
 
 0.1.x 是用 PyInstaller 冻结的 Python 程序，和 0.2.x 不是同一套代码：
 
-- 冻结后的程序包含 `requirements.txt` 中列出的 Python 运行依赖，各依赖保留其原有许可证。
+- 冻结后的程序包含 `legacy/requirements.txt` 中列出的 Python 运行依赖，各依赖保留其原有许可证。
 - Windows 发布包可能附带 `ffmpeg.exe`，每个发布包里的 `FFMPEG_BUILD_INFO.txt` 记录了所附二进制的版本、构建参数和许可证声明。
   FFmpeg 是独立程序（[https://ffmpeg.org/](https://ffmpeg.org/)），许可证是 LGPL-2.1+ 或 GPL-2.0+，取决于构建。

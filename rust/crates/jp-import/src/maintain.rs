@@ -1,6 +1,6 @@
 //! 曲库维护：编辑曲目信息、删除曲目、音频文件丢了之后重新链接。
 //!
-//! 对应 Python 版的 `song_manager._edit` / `_delete` 和 `gui.py` 的 `RepairAudioDialog`。
+//! 对应 Python 版的 `song_manager._edit` / `_delete` 和 `legacy/gui.py` 的 `RepairAudioDialog`。
 //! Python 版只动 `songs` / `utterances` / `tokens` / 全文索引；这里连带把派生表一起维护对：
 //!
 //! - **删除**：新曲目的 id 是「现有最大 id + 1」（Python 和 `plan.rs` 都这样），删掉最后一首后下一首会**复用这个 id**。

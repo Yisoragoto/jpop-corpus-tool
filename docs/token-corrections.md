@@ -6,8 +6,8 @@
 
 ## 和 Python 版共用一张表
 
-`token_corrections` 的表结构和 `scripts/migrate_db.py::_ensure_token_corrections` 逐字一致，
-JSON 形状和 `gui.py::_apply_token_correction` 一致：
+`token_corrections` 的表结构和 `legacy/scripts/migrate_db.py::_ensure_token_corrections` 逐字一致，
+JSON 形状和 `legacy/gui.py::_apply_token_correction` 一致：
 
 ```json
 [{"surface": "夜が", "lemma": "夜", "pos": "NOUN"}, {"surface": "明ける", "lemma": "明ける", "pos": "VERB"}]
@@ -27,7 +27,7 @@ JSON 形状和 `gui.py::_apply_token_correction` 一致：
 
 ## 删歌再导入时恢复
 
-删歌不删校正（`dialogs/song_manager.py::_delete` 只删 utterances、tokens、songs），
+删歌不删校正（`legacy/dialogs/song_manager.py::_delete` 只删 utterances、tokens、songs），
 校正行留下来，`utterance_id` 指向已经不存在的行。重新导入同一首歌时（`jp-import` 的 `import_one`，
 歌词和分词写完之后、同一个事务里）：
 
@@ -52,7 +52,7 @@ JSON 形状和 `gui.py::_apply_token_correction` 一致：
 两个版本共用一个库，真正会发生的场景是：**在 PyQt 里校正、在 PyQt 里删歌、在 Tauri 里重新导入。**
 单元测试只能证明 Rust 自己存、自己读是对的，所以另外在库的临时副本上跑了一遍：
 
-1. 调 `gui.py` 自己的 `_apply_token_correction` 存校正（真 Python 代码，不是仿写）
+1. 调 `legacy/gui.py` 自己的 `_apply_token_correction` 存校正（真 Python 代码，不是仿写）
 2. 用 `song_manager.py::_delete` 里一模一样的四条 SQL 删歌
 3. 用 `cargo run --release -p jp-import --example reimport_song -- <副本> <音频>` 重新导入
 4. 照抄 `token_correction.py::_load_tokens` 的读法读回来

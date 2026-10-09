@@ -1,6 +1,6 @@
 //! LRC 歌词解析。
 //!
-//! 移植自 Python 侧（`gui.py` 的 `_parse_lrc` + `scripts/02_parse_lrc_tokenize.py`），
+//! 移植自 Python 侧（`legacy/gui.py` 的 `_parse_lrc` + `legacy/scripts/02_parse_lrc_tokenize.py`），
 //! 但修了那边的一个缺陷：**信用行不再被当成噪音丢掉**。
 //!
 //! 旧实现用子串判断 `any(kw in lyric for kw in SKIP_KEYWORDS)`，
@@ -220,8 +220,8 @@ pub fn parse(text: &str) -> ParsedLrc {
 ///
 /// 按 LRC 惯例 N 是毫秒，**正值让歌词提前**：显示时刻 = 时间戳 − N/1000，不小于 0。
 ///
-/// **这是一次有意的行为变化**：0.1.x 的 `gui.py::_parse_lrc` 和
-/// `scripts/02_parse_lrc_tokenize.py` 都没处理过 offset，标签被当成元数据整行丢掉，
+/// **这是一次有意的行为变化**：0.1.x 的 `legacy/gui.py::_parse_lrc` 和
+/// `legacy/scripts/02_parse_lrc_tokenize.py` 都没处理过 offset，标签被当成元数据整行丢掉，
 /// 时间轴于是整体偏一截。改之前查过：存量的 415 份 .lrc 里一份带 offset 的都没有，
 /// 所以这条只影响以后导入的歌词。
 fn find_offset_sec(text: &str) -> f64 {

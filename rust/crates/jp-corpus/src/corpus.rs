@@ -58,7 +58,7 @@ pub(crate) fn timeline(conn: &Connection) -> Result<Vec<YearStats>> {
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
-/// 词频表。排除标点/符号，和 `gui.py` 的 StatsWorker 规则一致。
+/// 词频表。排除标点/符号，和 `legacy/gui.py` 的 StatsWorker 规则一致。
 pub(crate) fn word_frequency(
     conn: &Connection,
     pos: Option<&str>,

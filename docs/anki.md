@@ -324,11 +324,11 @@ Python 在本地词典全都查不到时会去问在线的 Jotoba / Jisho——*
 
 ## 挖词报告
 
-PyQt 版菜单「报告 → 生成挖词报告…」调的是 `generate_report.py`：读 collection 里的卡，按歌手、歌曲、JLPT
+PyQt 版菜单「报告 → 生成挖词报告…」调的是 `legacy/generate_report.py`：读 collection 里的卡，按歌手、歌曲、JLPT
 统计已挖的词和复习进度，写成一个自带搜索和排序的 HTML，用浏览器打开。Rust 在 `mining_report`，
 应用层（查 JLPT、写文件、开浏览器）在 `jp-app/src/anki_report.rs`，界面是 Anki 页的「挖词报告」卡片。
 
-页面骨架、CSS、JS **不是手抄的**：用 Python 从 `generate_report.py` 里原样抽成 `jp-anki/data/mining_report/`，
+页面骨架、CSS、JS **不是手抄的**：用 Python 从 `legacy/generate_report.py` 里原样抽成 `jp-anki/data/mining_report/`，
 拼接逻辑逐行照搬。在合成的 collection 上（160 张卡：并列、超过 25 个歌手、实体、标签、非法 JLPT、重复词、字段不够长的旧笔记）
 和 Python 写出的文件比：**除了「来源」「生成时间」两栏和「词频」表头，逐字节相同**，换行也一样是 CRLF
 （Python 的 `write_text` 在 Windows 上文本模式写）。
@@ -354,7 +354,7 @@ PyQt 版菜单「报告 → 生成挖词报告…」调的是 `generate_report.p
 
 ```bash
 # 和 Python 对账：同一个 collection 分别生成，再比
-python generate_report.py --db <collection.anki2> --output py.html
+python legacy/generate_report.py --db <collection.anki2> --output py.html
 cargo run -p jp-anki --example mining_report -- <collection.anki2> rs.html "<生成时间>"
 ```
 

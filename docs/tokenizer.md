@@ -135,8 +135,8 @@ lemma 一致率 99.41% 说明重跑对词元的影响极小，所以「全库重
 
 ## 交互路径的 POS 词表 bug（已修复）
 
-`dialogs/song_manager.py` 的交互路径（点歌词查词、振假名）走 SudachiPy，
-返回**日语词性**；而 `gui.py` 的 `_lookup_candidates` 按 **UPOS** 分支：
+`legacy/dialogs/song_manager.py` 的交互路径（点歌词查词、振假名）走 SudachiPy，
+返回**日语词性**；而 `legacy/gui.py` 的 `_lookup_candidates` 按 **UPOS** 分支：
 
 ```python
 if pos == "VERB":            # 传进来的是「動詞」，永远不成立
