@@ -5,17 +5,17 @@
 //!
 //! ## 和 Python 版共用一张表
 //!
-//! 表结构和 `scripts/migrate_db.py::_ensure_token_corrections` 逐字一致，JSON 形状和
-//! `gui.py::_apply_token_correction` 一致（`surface` / `lemma` / `pos`）。
+//! 表结构和 `legacy/scripts/migrate_db.py::_ensure_token_corrections` 逐字一致，JSON 形状和
+//! `legacy/gui.py::_apply_token_correction` 一致（`surface` / `lemma` / `pos`）。
 //! 任何一边存的校正，另一边都读得出来。
 //!
 //! ## 删歌再导入时恢复
 //!
-//! 删歌不会删校正：Python 的 `dialogs/song_manager.py::_delete` 只删 utterances、
+//! 删歌不会删校正：Python 的 `legacy/dialogs/song_manager.py::_delete` 只删 utterances、
 //! tokens、songs。校正行会留下来，`utterance_id` 指向已经不存在的行。重新导入同一首歌时，
 //! 按 `(歌手, 曲名)` 取出这些校正，逐行比对文本：先精确匹配，再用 NFKC + 去首尾空白兜底。
 //! 对上了就把校正套回去，并把校正行改指向新的 `utterance_id`。
-//! 规则照抄 `gui.py` 导入线程里的那段（`corr_exact` / `corr_norm`）。
+//! 规则照抄 `legacy/gui.py` 导入线程里的那段（`corr_exact` / `corr_norm`）。
 //!
 //! ## 和 Python 刻意不同的一处：撤销
 //!
@@ -56,7 +56,7 @@ pub struct CorrectionView {
     pub corrected: bool,
 }
 
-/// 和 `scripts/migrate_db.py::_ensure_token_corrections` 逐字一致。
+/// 和 `legacy/scripts/migrate_db.py::_ensure_token_corrections` 逐字一致。
 /// 只在第一次保存时用得上——没校正过的库不需要这张表。
 const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS token_corrections (
@@ -82,7 +82,7 @@ pub(crate) fn table_exists(conn: &Connection) -> Result<bool> {
     )?)
 }
 
-/// 只经过 `gui.py::_ensure_token_corrections_table` 建的表没有 `updated_at`。
+/// 只经过 `legacy/gui.py::_ensure_token_corrections_table` 建的表没有 `updated_at`。
 fn has_updated_at(conn: &Connection) -> Result<bool> {
     let mut stmt = conn.prepare("PRAGMA table_info(token_corrections)")?;
     let names = stmt.query_map([], |r| r.get::<_, String>(1))?;
@@ -404,7 +404,7 @@ mod tests {
         vec![tok("君", "君", "PRON"), tok("を", "を", "ADP"), tok("待つ", "待つ", "VERB")]
     }
 
-    /// Python 删歌只删这几张表（dialogs/song_manager.py::_delete），校正行留着。
+    /// Python 删歌只删这几张表（legacy/dialogs/song_manager.py::_delete），校正行留着。
     fn python_style_delete(conn: &Connection) {
         conn.execute_batch("DELETE FROM tokens; DELETE FROM utterances; DELETE FROM songs;")
             .unwrap();

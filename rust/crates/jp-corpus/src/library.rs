@@ -135,7 +135,7 @@ pub(crate) fn credits_for_track(conn: &Connection, song_id: &str) -> Result<Vec<
 
 /// 歌手照片那一列的 SQL 表达式。
 ///
-/// `artists` 表是刮削时才建的（`scripts/migrate_db.py`），`check_schema` 并不要求它——
+/// `artists` 表是刮削时才建的（`legacy/scripts/migrate_db.py`），`check_schema` 并不要求它——
 /// 没刮削过的库照样能用。硬 JOIN 会让人物页在这种库上直接报 "no such table"，
 /// 所以先看表在不在，不在就给空串。每次查询都看一眼而不是开库时缓存：
 /// 用户可能开着程序去刮削，表是中途才出现的。

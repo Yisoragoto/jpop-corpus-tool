@@ -13,7 +13,7 @@ rust/
 
 ## 谁拥有 schema
 
-**Python 侧拥有**（`scripts/migrate_db.py` + `library/schema.py` + `scraper/store.py`）。
+**Python 侧拥有**（`legacy/scripts/migrate_db.py` + `library/schema.py` + `scraper/store.py`）。
 `jp-corpus` **只读不建表**，缺表时 `check_schema()` 给出可操作的提示，
 而不是让调用方撞上一个 `no such table`。
 
@@ -23,7 +23,7 @@ rust/
 
 ### 1. KWIC 的 N+1
 
-`gui.py` 的 `SearchWorker` 每条结果都要再发一次
+`legacy/gui.py` 的 `SearchWorker` 每条结果都要再发一次
 `SELECT surface FROM tokens WHERE utterance_id=?` 来重建整行，开了 cross_line
 还要再发两次。搜一个常见词（128 条结果）就是 128~384 次额外查询。
 

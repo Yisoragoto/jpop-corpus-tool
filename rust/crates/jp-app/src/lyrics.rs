@@ -2,7 +2,7 @@
 //!
 //! ## 为什么需要这一层
 //!
-//! 0.1.x 的歌词是 `scripts/01_fetch_lrc.py` 用 `syncedlyrics` 下回来的，
+//! 0.1.x 的歌词是 `legacy/scripts/01_fetch_lrc.py` 用 `syncedlyrics` 下回来的，
 //! 存成 `raw/lyrics_lrc/{song_id}.lrc`，然后 `02_parse_lrc_tokenize.py` 才入库。
 //! Tauri 版的导入**只认已经在磁盘上的 .lrc**（扫描时在音频旁边找），
 //! 于是从别处拷进来的歌——音乐 App 的下载目录里只有音频——导进来是一行歌词都没有。

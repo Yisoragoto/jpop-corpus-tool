@@ -39,7 +39,7 @@
 「设置 → 系统」里可以检查更新、看更新日志，也可以直接下载安装新版本——安装包只从本仓库的
 Releases 取，装之前校验 SHA-256。自动安装默认关着。
 
-0.2.0 起桌面端换成了 Tauri 2 + React + Rust（0.1.x 是 PyQt6）。旧版 Python 代码仍留在仓库里作参考，
+0.2.0 起桌面端换成了 Tauri 2 + React + Rust（0.1.x 是 PyQt6）。旧版 Python 代码仍留在仓库的 `legacy/` 下作参考，
 数据库 `corpus.db` 两版通用。
 
 ## 核心功能
@@ -208,8 +208,8 @@ rust/          Rust workspace
   jp-import/     扫描、计划、写库
   jp-normalize/  曲名 / 歌手名归一化
 docs/          每个子系统的设计与对账记录
-dialogs/       0.1.x 的 PyQt 界面模块（旧版，保留作参考）
-scripts/       0.1.x 的元数据与建库脚本
+legacy/        0.1.x 的 PyQt 版，保留作参考：gui.py、dialogs/、scripts/、packaging/
+scripts/       发版前的自检脚本（release-check.ps1）
 assets/fonts/  随软件分发的 OFL 字体及许可证
 examples/      不含版权内容的数据格式示例
 raw/           本地音频和歌词目录，Git 默认忽略内容

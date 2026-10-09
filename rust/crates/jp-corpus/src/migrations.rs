@@ -3,7 +3,7 @@
 //! **为什么需要**：发出去的程序原来一点 schema 演进能力都没有。
 //! `ensure_schema` 只跑 `CREATE TABLE IF NOT EXISTS`——它能补上缺的**表**，
 //! 但对已经存在的表**加不了一列**。加列的逻辑只存在于 Python 侧
-//! （`library/schema.py` 的 `ADDED_COLUMNS`、`scripts/migrate_db.py`），
+//! （`library/schema.py` 的 `ADDED_COLUMNS`、`legacy/scripts/migrate_db.py`），
 //! 而安装目录里只有 `jp-app.exe`，用户手上没有 Python。
 //! 于是下一次任何功能需要一个新列，装了的用户就会在某个查询上撞见 `no such column`。
 //!
@@ -27,7 +27,7 @@ use rusqlite::Connection;
 
 /// 当前结构版本。`schema.sql` 建出来的就是这一版。
 ///
-/// 这个数字沿用 Python 侧 `scripts/migrate_db.py` 的 `SCHEMA_USER_VERSION`，
+/// 这个数字沿用 Python 侧 `legacy/scripts/migrate_db.py` 的 `SCHEMA_USER_VERSION`，
 /// 因为两边建出来的东西**逐表逐列逐索引完全一致**（26 表 26 索引，对过）。
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///

@@ -14,7 +14,7 @@ pub const DEFAULT_UPOS: &str = "X";
 /// 所以「是否属于这一组」比「具体是哪个 UPOS」重要得多。
 pub const CONTENT_POS: [&str; 5] = ["NOUN", "PROPN", "VERB", "ADJ", "ADV"];
 
-/// 统计时一律排除的类别，和 `gui.py` 的 `StatsWorker` 规则一致。
+/// 统计时一律排除的类别，和 `legacy/gui.py` 的 `StatsWorker` 规则一致。
 pub const IGNORED_POS: [&str; 4] = ["PUNCT", "SYM", "SPACE", "X"];
 
 /// 日语词性 → UPOS。

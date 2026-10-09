@@ -284,7 +284,7 @@ export default function App() {
           <h2>启动失败</h2>
           <p>{status.message}</p>
           <p className="muted">
-            先跑 <code>python scripts/migrate_db.py</code> 和{" "}
+            先跑 <code>python legacy/scripts/migrate_db.py</code> 和{" "}
             <code>python scripts/backfill_library.py</code>
           </p>
         </div>

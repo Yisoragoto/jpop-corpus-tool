@@ -21,7 +21,7 @@ use serde::Serialize;
 use crate::models::{ResolvedTrack, TrackFile, utc_now};
 use crate::status::{ErrorType, ScrapeStatus};
 
-/// 表结构本身不带版本号：版本由 `scripts/migrate_db.py` 的
+/// 表结构本身不带版本号：版本由 `legacy/scripts/migrate_db.py` 的
 /// `PRAGMA user_version` 统一管理，避免两处各记一套、互相打架。
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS scrape_state (

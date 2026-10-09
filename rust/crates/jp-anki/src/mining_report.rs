@@ -1,7 +1,7 @@
 //! 挖词报告：读 Anki collection 里已经挖出来的卡，按歌手、歌曲、JLPT 统计学习进度，
-//! 写成一个自带搜索和排序的 HTML。对应 PyQt 版菜单「生成挖词报告…」调用的 `generate_report.py`。
+//! 写成一个自带搜索和排序的 HTML。对应 PyQt 版菜单「生成挖词报告…」调用的 `legacy/generate_report.py`。
 //!
-//! 页面骨架、CSS、JS 是从 `generate_report.py` 原样抽出来的（`data/mining_report/`），
+//! 页面骨架、CSS、JS 是从 `legacy/generate_report.py` 原样抽出来的（`data/mining_report/`），
 //! 拼接逻辑逐行照搬；在合成的 collection 上和 Python 写出的文件逐字节对过（`examples/mining_report.rs`）。
 //!
 //! 有意不同的几处：

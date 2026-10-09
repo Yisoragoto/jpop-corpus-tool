@@ -231,7 +231,7 @@ JLPT 只查本地的 `jlpt_cache`（10,090 个词元）；Python 查不到的会
 **语料报告**：TTR、STTR、Hapax、平均每曲词汇量、平均每行 token、词性分布、Top-N 覆盖率、高频词元 Top 20。
 「导出 TXT」写的内容由后端和报告一起生成，所以导出的就是界面上看到的那份。
 
-和 Python 对账（`jp-corpus/examples/stats_report.rs` 和 gui.py 里原样抽出来的 worker，真实 corpus.db）：
+和 Python 对账（`jp-corpus/examples/stats_report.rs` 和 legacy/gui.py 里原样抽出来的 worker，真实 corpus.db）：
 
 | 项 | 结果 |
 |---|---|
@@ -705,7 +705,7 @@ cargo run -p jp-app --example backfill_durations   # 命令行
 
 **症状**：从音乐 App 的下载目录导进来的歌，一行歌词都没有；0.1.x 导完就有。
 
-**原因**不在导入，而在上一步。0.1.x 的歌词是 `scripts/01_fetch_lrc.py` 用
+**原因**不在导入，而在上一步。0.1.x 的歌词是 `legacy/scripts/01_fetch_lrc.py` 用
 `syncedlyrics` **下回来的**，存成 `raw/lyrics_lrc/{song_id}.lrc`，
 `02_parse_lrc_tokenize.py` 再入库。Tauri 版的导入只认**已经在磁盘上**的
 .lrc（扫描时在音频旁边找），下载这一步整个没有移植过来。

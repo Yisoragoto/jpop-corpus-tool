@@ -1,6 +1,6 @@
 //! 挖词报告的应用层：查本地 JLPT、写 `output/corpus_report.html`、用浏览器打开。
 //!
-//! 统计和页面都在 `jp_anki::mining_report`（和 Python 版 `generate_report.py` 逐字节对过）。
+//! 统计和页面都在 `jp_anki::mining_report`（和 Python 版 `legacy/generate_report.py` 逐字节对过）。
 //! 输出位置和 PyQt 版一样是项目根目录下的 `output/corpus_report.html`，每次覆盖——这是生成物，不是用户数据。
 
 use std::collections::HashMap;

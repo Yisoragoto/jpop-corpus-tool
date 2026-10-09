@@ -1,4 +1,4 @@
-//! 统计页的词频表和语料统计报告。对应 Python 版 `gui.py` 的 `StatsWorker` 和 `CorpusReportWorker`。
+//! 统计页的词频表和语料统计报告。对应 Python 版 `legacy/gui.py` 的 `StatsWorker` 和 `CorpusReportWorker`。
 //!
 //! 不筛选时和 Python 逐项相同（`jp-corpus/examples/stats_report.rs` 对账）。两处刻意不同：
 //!
@@ -483,7 +483,7 @@ mod tests {
             coverage: vec![Coverage { n: 100, pct: 45.25 }, Coverage { n: 1000, pct: 80.0 }],
             top_words: vec![("夜".into(), 1234)],
         };
-        // 夹具是 gui.py 原样的 _export_report_txt 对同一份报告写出的文件（Windows 文本模式，CRLF、无 BOM）。
+        // 夹具是 legacy/gui.py 原样的 _export_report_txt 对同一份报告写出的文件（Windows 文本模式，CRLF、无 BOM）。
         // 里面有几处正好一半的舍入：150.5 → "150"、12.25 → "12.2"、24.25 → "24.2"、45.25 → "45.2"
         let python = include_str!("../testdata/report_synthetic_py.txt");
         assert_eq!(report_text(&report, &[], false), python);

@@ -1,4 +1,4 @@
-//! 把学习状态导成 JSON，用来和 Python 的 `anki_learning.py` 逐词对账。
+//! 把学习状态导成 JSON，用来和 Python 的 `legacy/anki_learning.py` 逐词对账。
 //!
 //!     cargo run -p jp-anki --example dump_learning -- <out.json>
 
