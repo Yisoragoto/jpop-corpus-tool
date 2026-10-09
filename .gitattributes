@@ -6,6 +6,11 @@
 # 一直红着没人看的。代码本身也已经在比较和拼接时归一化，这里是第一道。
 * text=auto eol=lf
 
+# 批处理文件例外：工作区里必须是 CRLF。cmd.exe 读 LF 结尾的 .bat 时，`goto` / `call :label`
+# 会按字节偏移找标签而找错位置；现在这几个文件碰巧没有标签，但这是那种一加就坏、坏了很难查的事。
+# 上面那条规则加进来的时候把它们一起归一成了 LF。
+*.bat text eol=crlf
+
 # 第三方解析器按字节读的，别碰
 rust/crates/jp-tokenizer/resources/* -text
 rust/crates/jp-anki/data/** -text

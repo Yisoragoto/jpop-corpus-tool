@@ -1,9 +1,11 @@
 @echo off
 cd /d "%~dp0"
 
+rem This file lives in legacy\. The virtual environment stays at the repository root.
+set "ROOT=%~dp0..\"
 set "PY="
-if exist "%~dp0.venv\Scripts\python.exe" set "PY=%~dp0.venv\Scripts\python.exe"
-if not defined PY if exist "%~dp0venv\Scripts\python.exe" set "PY=%~dp0venv\Scripts\python.exe"
+if exist "%ROOT%.venv\Scripts\python.exe" set "PY=%ROOT%.venv\Scripts\python.exe"
+if not defined PY if exist "%ROOT%venv\Scripts\python.exe" set "PY=%ROOT%venv\Scripts\python.exe"
 if not defined PY (
     where python >nul 2>nul
     if %errorlevel% equ 0 set "PY=python"
@@ -20,7 +22,7 @@ if not defined PY (
 if %errorlevel% neq 0 (
     echo [ERROR] Required Python packages are missing.
     echo Run setup_windows.bat first, or install dependencies manually:
-    echo   python -m pip install -r requirements.txt
+    echo   python -m pip install -r legacy\requirements.txt
     pause
     exit /b 1
 )

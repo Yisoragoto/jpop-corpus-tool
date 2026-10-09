@@ -10,10 +10,23 @@ import pathlib
 import sys
 
 
+def _source_root() -> pathlib.Path:
+    """Project root when running from source.
+
+    The 0.1.x code now lives in ``legacy/`` while the corpus (``corpus.db``,
+    ``raw/``, ``metadata/``, ``output/``) and ``assets/`` stay at the repository
+    root, shared with the 0.2.x app. So when this file sits in a directory named
+    ``legacy``, the root is one level up; in any other layout it is this
+    directory, as before.
+    """
+    here = pathlib.Path(__file__).resolve().parent
+    return here.parent if here.name == "legacy" else here
+
+
 def _default_data_dir() -> pathlib.Path:
     """Return a writable data directory for source and frozen builds."""
     if not getattr(sys, "frozen", False):
-        return pathlib.Path(__file__).resolve().parent
+        return _source_root()
 
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
@@ -48,4 +61,4 @@ def app_dir() -> pathlib.Path:
     """Directory that contains the source entry point or frozen executable."""
     if getattr(sys, "frozen", False):
         return pathlib.Path(sys.executable).resolve().parent
-    return pathlib.Path(__file__).resolve().parent
+    return _source_root()

@@ -441,7 +441,10 @@ class AnkiExportDialog(QDialog):
             from project_paths import app_dir
             _local_ff = (app_dir() / "ffmpeg.exe").exists()
         except Exception:
-            _local_ff = (pathlib.Path(__file__).resolve().parents[1] / "ffmpeg.exe").exists()
+            _root = pathlib.Path(__file__).resolve().parents[1]
+            if _root.name == "legacy":
+                _root = _root.parent
+            _local_ff = (_root / "ffmpeg.exe").exists()
         _has_ff = bool(_sh.which("ffmpeg")) or _local_ff
         self.chk_clip_audio.setChecked(_has_ff)
         self.chk_clip_audio.setEnabled(_has_ff)

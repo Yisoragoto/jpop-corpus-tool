@@ -9,8 +9,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# $Root is legacy\ (the 0.1.x code, and where dist\ goes); $Repo is the repository root
+# (the virtual environment, README, LICENSE, examples\ and assets\).
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
+$Repo = Resolve-Path (Join-Path $Root "..")
+$VenvPython = Join-Path $Repo ".venv\Scripts\python.exe"
 $DistDir = Join-Path $Root "dist\JpopCorpusTool"
 $ZipPath = Join-Path $Root "dist\JpopCorpusTool-$Version-windows-portable.zip"
 $SetupPath = Join-Path $Root "dist\JpopCorpusTool-$Version-windows-setup.exe"
@@ -21,9 +24,9 @@ if (-not (Test-Path $VenvPython)) {
     Write-Host "Creating .venv ..."
     $py = Get-Command py -ErrorAction SilentlyContinue
     if ($py) {
-        & py -3.12 -m venv .venv
+        & py -3.12 -m venv (Join-Path $Repo ".venv")
     } else {
-        & python -m venv .venv
+        & python -m venv (Join-Path $Repo ".venv")
     }
 }
 
@@ -56,9 +59,9 @@ foreach ($dir in @(
     New-Item -ItemType Directory -Path (Join-Path $DistDir $dir) -Force | Out-Null
 }
 
-Copy-Item README.md (Join-Path $DistDir "README.md") -Force
-Copy-Item LICENSE (Join-Path $DistDir "LICENSE") -Force
-Copy-Item THIRD_PARTY_NOTICES.md (Join-Path $DistDir "THIRD_PARTY_NOTICES.md") -Force
+Copy-Item (Join-Path $Repo "README.md") (Join-Path $DistDir "README.md") -Force
+Copy-Item (Join-Path $Repo "LICENSE") (Join-Path $DistDir "LICENSE") -Force
+Copy-Item (Join-Path $Repo "THIRD_PARTY_NOTICES.md") (Join-Path $DistDir "THIRD_PARTY_NOTICES.md") -Force
 
 function Copy-CleanDirectory([string]$Source, [string]$Name) {
     $destination = Join-Path $DistDir $Name
@@ -73,9 +76,9 @@ function Copy-CleanDirectory([string]$Source, [string]$Name) {
     Copy-Item $Source $destinationFull -Recurse -Force
 }
 
-Copy-CleanDirectory "examples" "examples"
+Copy-CleanDirectory (Join-Path $Repo "examples") "examples"
 Copy-CleanDirectory "scripts" "scripts"
-Copy-CleanDirectory "assets" "assets"
+Copy-CleanDirectory (Join-Path $Repo "assets") "assets"
 
 $BundledDb = Join-Path $DistDir "corpus.db"
 if (Test-Path $BundledDb) {

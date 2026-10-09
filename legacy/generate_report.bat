@@ -1,9 +1,11 @@
 @echo off
 cd /d "%~dp0"
 
+rem This file lives in legacy\. The virtual environment stays at the repository root.
+set "ROOT=%~dp0..\"
 set "PY="
-if exist "%~dp0.venv\Scripts\python.exe" set "PY=%~dp0.venv\Scripts\python.exe"
-if not defined PY if exist "%~dp0venv\Scripts\python.exe" set "PY=%~dp0venv\Scripts\python.exe"
+if exist "%ROOT%.venv\Scripts\python.exe" set "PY=%ROOT%.venv\Scripts\python.exe"
+if not defined PY if exist "%ROOT%venv\Scripts\python.exe" set "PY=%ROOT%venv\Scripts\python.exe"
 if not defined PY (
     where python >nul 2>nul
     if %errorlevel% equ 0 set "PY=python"
@@ -18,7 +20,7 @@ if not defined PY (
 
 "%PY%" "%~dp0generate_report.py" %*
 if %errorlevel% equ 0 (
-    start "" "%~dp0output\corpus_report.html"
+    start "" "%ROOT%output\corpus_report.html"
 ) else (
     pause
 )
