@@ -1,5 +1,6 @@
 @echo off
-cd /d "%~dp0"
+rem This file lives in legacy\. The virtual environment is created at the repository root.
+cd /d "%~dp0.."
 
 set "PY_BOOT="
 where py >nul 2>nul
@@ -34,7 +35,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
+".venv\Scripts\python.exe" -m pip install -r legacy\requirements.txt
 if %errorlevel% neq 0 (
     echo [ERROR] Dependency installation failed.
     pause
@@ -43,5 +44,5 @@ if %errorlevel% neq 0 (
 
 echo.
 echo Setup complete.
-echo You can now run run_gui.bat.
+echo You can now run legacy\run_gui.bat.
 pause

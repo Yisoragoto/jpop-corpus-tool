@@ -14,7 +14,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 NOTE_TYPE   = "JPOP Corpus"
-OUTPUT_PATH = Path(__file__).parent / "output" / "corpus_report.html"
+# This script lives in legacy/; the report goes to output/ at the repository root.
+_HERE = Path(__file__).resolve().parent
+OUTPUT_PATH = (_HERE.parent if _HERE.name == "legacy" else _HERE) / "output" / "corpus_report.html"
 
 # Field indices in our note type (see _ensure_anki_model in gui.py)
 F_EXPRESSION = 0

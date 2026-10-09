@@ -5723,7 +5723,9 @@ class MainWindow(QMainWindow):
     def _generate_report(self):
         import subprocess, pathlib as _pl
         script = _pl.Path(__file__).parent / "generate_report.py"
-        out    = _pl.Path(__file__).parent / "output" / "corpus_report.html"
+        # Same rule as OUTPUT_PATH in generate_report.py: output/ is at the repository root.
+        here   = _pl.Path(__file__).resolve().parent
+        out    = (here.parent if here.name == "legacy" else here) / "output" / "corpus_report.html"
         import sys as _sys
         try:
             result = subprocess.run(

@@ -27,7 +27,11 @@ import argparse
 import migrate_db
 
 # ---------- 路径配置 ----------
-BASE_DIR    = pathlib.Path(__file__).resolve().parents[1]
+# In the repository these scripts live in legacy/scripts/ and the corpus is at the
+# repository root, one level above legacy/. In a 0.1.x release package they sit in
+# <app>/scripts/ with no legacy/ level.
+_SCRIPTS_PARENT = pathlib.Path(__file__).resolve().parents[1]
+BASE_DIR    = _SCRIPTS_PARENT.parent if _SCRIPTS_PARENT.name == "legacy" else _SCRIPTS_PARENT
 CSV_PATH    = BASE_DIR / "metadata" / "songs.csv"
 JSONL_PATH  = BASE_DIR / "processed" / "utterances.jsonl"
 DB_PATH     = BASE_DIR / "corpus.db"

@@ -8,7 +8,11 @@ import re
 from mutagen import File as MutagenFile
 
 # ============ 配置 ============
-PROJECT_ROOT = Path(__file__).parent.parent
+# In the repository these scripts live in legacy/scripts/ and the corpus is at the
+# repository root, one level above legacy/. In a 0.1.x release package they sit in
+# <app>/scripts/ with no legacy/ level.
+_SCRIPTS_PARENT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = _SCRIPTS_PARENT.parent if _SCRIPTS_PARENT.name == "legacy" else _SCRIPTS_PARENT
 AUDIO_DIR = PROJECT_ROOT / "raw" / "audio"
 CSV_PATH = PROJECT_ROOT / "metadata" / "songs.csv"
 
