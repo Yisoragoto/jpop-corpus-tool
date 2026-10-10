@@ -8,6 +8,7 @@
 //! | `lrc` | LRC 解析（歌词行 + 作词作曲信用） | ✅ |
 //! | `scan` | 遍历目录、读 tag → ScannedTrack | ✅（构造数据） |
 //! | `plan` | 和现有曲库比对 → 每个文件打算怎么处置 | ✅ |
+//! | `watch` | 库里的歌都在哪些文件夹 → 那里还有哪些文件没导入 | ✅（临时目录） |
 //! | `import` | 执行计划，写库 | ✅（内存库） |
 //!
 //! 前三层**只读取和推断，不写库**，所以能在没有数据库的情况下完整测试；
@@ -21,6 +22,7 @@ pub mod migrate;
 pub mod metadata_csv;
 pub mod plan;
 pub mod scan;
+pub mod watch;
 
 pub use lrc::{ParsedLrc, parse_file as parse_lrc_file};
 pub use import::{
@@ -28,4 +30,5 @@ pub use import::{
     execute_cancellable, execute_with_progress, get_or_create_person,
 };
 pub use plan::{Action, ImportPlan, LibraryIndex, PlanSummary, PlannedTrack, plan};
-pub use scan::{ScannedTrack, is_audio_file, scan_dir, scan_file};
+pub use scan::{ArtistSource, ScannedTrack, is_audio_file, list_audio, scan_dir, scan_file, scan_file_path};
+pub use watch::{UnknownAudio, WatchReason, WatchedFolder, unknown_audio, watched_folders};

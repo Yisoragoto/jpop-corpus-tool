@@ -127,6 +127,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::scan_files,
             commands::run_import,
             commands::cancel_import,
+            commands::library_new_audio,
             // 刮削：识别 / 补 metadata / 封面
             commands::scrape_summary,
             commands::scrape_review_queue,

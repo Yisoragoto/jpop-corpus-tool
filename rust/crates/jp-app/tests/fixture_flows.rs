@@ -175,6 +175,225 @@ fn rescanning_what_was_just_imported_plans_nothing_and_writes_nothing() {
     assert_eq!(track_count(&f), before, "曲目数被改动了");
 }
 
+// ────────────────────────── 语料库文件夹里的新歌 ──────────────────────────
+//
+// 这一组用自己的目录（`watched/…`），不用上面的 `downloads/…`：那边哪些文件夹里有库里的歌
+// 取决于别的测试跑没跑，「上一级过半就整个看」的判断会跟着变。
+
+/// 这个测试自己的一片地方，同样建在语料库目录下面。
+///
+/// 多套一层（`watched/{name}/here`）：几个测试的文件夹要是并排放，其中两个里有了库里的歌，
+/// 它们的上一级就会被整个看起来，各个测试就互相看得见了。
+fn watched_dir(f: &Fixture, name: &str) -> PathBuf {
+    let dir = f.dir().join("watched").join(name).join("here");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn new_audio(f: &Fixture, args: Value) -> Value {
+    ok(f.w(), "library_new_audio", args)
+}
+
+/// 结果里落在 `dir` 下面的那些条目
+fn items_under(result: &Value, dir: &Path) -> Vec<Value> {
+    let prefix = dir.display().to_string();
+    result["scan"]["items"]
+        .as_array()
+        .expect("scan.items 应当是数组")
+        .iter()
+        .filter(|item| item["path"].as_str().is_some_and(|p| p.starts_with(&prefix)))
+        .cloned()
+        .collect()
+}
+
+fn folder_entry(result: &Value, dir: &Path) -> Option<Value> {
+    let wanted = dir.display().to_string();
+    result["folders"]
+        .as_array()
+        .expect("folders 应当是数组")
+        .iter()
+        .find(|folder| folder["path"].as_str() == Some(wanted.as_str()))
+        .cloned()
+}
+
+/// 整条链：往一个已经导入过的文件夹里放新文件 → 查得到、说得清在哪儿 →
+/// 照常扫描导入 → 归到歌手名下 → 再查就不算新的了。
+#[test]
+fn a_file_dropped_into_a_library_folder_is_found_imported_and_filed_under_its_artist() {
+    let f = Fixture::new("new-audio");
+    let w = f.w();
+    let dir = watched_dir(&f, "found");
+    let existing = fake_audio(&dir, "見つかる歌手 - 入っている曲.flac");
+    import_files(&f, &[&existing]);
+
+    // 没放新文件时：这个文件夹在看，里面没有库外的东西
+    let quiet = new_audio(&f, json!({}));
+    has_keys(&quiet, "library_new_audio", &["folders", "scan"]);
+    let folder = folder_entry(&quiet, &dir).unwrap_or_else(|| panic!("有库里的歌的文件夹应当在看：{quiet}"));
+    has_keys(&folder, "folders[]", &["path", "reason", "depth", "songs", "unknown", "new"]);
+    assert_eq!(folder["depth"].as_i64(), Some(1), "有歌的文件夹只看它自己这一层");
+    assert_eq!(folder["reason"], "libraryAudio");
+    assert_eq!(folder["songs"].as_i64(), Some(1));
+    assert_eq!(folder["unknown"].as_i64(), Some(0));
+    assert!(items_under(&quiet, &dir).is_empty(), "{quiet}");
+
+    // 放进去：一首新歌、同一首歌的另一个文件、一个放不了的格式、一个不是音频的
+    let fresh = fake_audio(&dir, "見つかる歌手 - 新しい曲.flac");
+    fake_audio(&dir, "見つかる歌手 - 入っている曲.mp3");
+    fake_audio(&dir, "見つかる歌手 - 放不了.opus");
+    fake_audio(&dir, "メモ.txt");
+
+    // 另有一批扫出来等着确认的：查新歌不能把它顶掉
+    let pending = fake_audio(&drop_dir(&f, "new-audio-pending"), "待ち歌手 - 待っている曲.flac");
+    ok(w, "scan_files", json!({ "paths": [pending.display().to_string()] }));
+    let before = track_count(&f);
+
+    let found = new_audio(&f, json!({}));
+    let folder = folder_entry(&found, &dir).expect("文件夹还在看");
+    assert_eq!(folder["unknown"].as_i64(), Some(3), "三个音频文件库里没有：{found}");
+    assert_eq!(folder["new"].as_i64(), Some(1), "只有一个算新歌：{found}");
+    let items = items_under(&found, &dir);
+    let kind_of = |file: &str| -> String {
+        let item = items
+            .iter()
+            .find(|item| item["fileName"] == file)
+            .unwrap_or_else(|| panic!("结果里没有 {file}：{items:?}"));
+        item["action"]["kind"].as_str().unwrap().to_string()
+    };
+    assert_eq!(kind_of("見つかる歌手 - 新しい曲.flac"), "new");
+    assert_eq!(kind_of("見つかる歌手 - 入っている曲.mp3"), "possibleDuplicate", "曲名歌手对得上的不算新歌");
+    assert_eq!(kind_of("見つかる歌手 - 放不了.opus"), "skipped");
+    assert_eq!(items.len(), 3, "库里已有的那个和 .txt 都不该出现：{items:?}");
+    let item = items.iter().find(|item| item["action"]["kind"] == "new").unwrap();
+    has_keys(
+        item,
+        "scan.items[]",
+        &["path", "fileName", "title", "artist", "artistSource", "album", "durationSec", "hasLyrics", "warning", "action"],
+    );
+    assert_eq!(item["title"], "新しい曲");
+    assert_eq!(item["artist"], "見つかる歌手");
+    assert_eq!(item["artistSource"], "fileName", "歌手是文件名里写的");
+    assert_eq!(track_count(&f), before, "查新歌是只读的");
+
+    // 等着确认的还是原来那一批，一首不多一首不少
+    let report = ok(w, "run_import", json!({ "tokenize": false }));
+    let imported: Vec<&str> =
+        report["tracks"].as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap()).collect();
+    assert_eq!(imported, ["待っている曲"], "查新歌把待确认的那一批换掉了：{report}");
+
+    // 界面的「导入」：拿查到的路径走平常的扫描 → 导入
+    let ids = import_files(&f, &[&fresh]);
+    let track = ok(w, "get_track", json!({ "songId": ids[0] }));
+    assert_eq!(track["title"], "新しい曲");
+    assert_eq!(track["artist"], "見つかる歌手");
+    let credits = ok(w, "track_credits", json!({ "songId": ids[0] }));
+    assert!(
+        credits.to_string().contains("見つかる歌手"),
+        "导进来的歌要挂在歌手名下：{credits}"
+    );
+
+    // 导完就不是新的了；疑似重复和放不了的还在，但不算新歌
+    let after = new_audio(&f, json!({}));
+    let folder = folder_entry(&after, &dir).expect("文件夹还在看");
+    assert_eq!(folder["songs"].as_i64(), Some(2));
+    assert_eq!(folder["unknown"].as_i64(), Some(2), "{after}");
+    assert_eq!(folder["new"].as_i64(), Some(0), "{after}");
+}
+
+/// 「别再提这个文件」「别再看这个文件夹」是界面记着、每次传回来的。
+/// 参数名是 camelCase，传不到的话两样都不生效，而且不会报错。
+#[test]
+fn ignored_files_and_folders_are_left_out_of_the_check() {
+    let f = Fixture::new("new-audio-ignored");
+    let dir = watched_dir(&f, "ignored");
+    let existing = fake_audio(&dir, "無視歌手 - 入っている曲.flac");
+    import_files(&f, &[&existing]);
+    let keep = fake_audio(&dir, "無視歌手 - 要る曲.flac");
+    let skip = fake_audio(&dir, "無視歌手 - 要らない曲.flac");
+
+    let all = new_audio(&f, json!({}));
+    assert_eq!(items_under(&all, &dir).len(), 2, "{all}");
+
+    let some = new_audio(&f, json!({ "ignoredFiles": [skip.display().to_string()] }));
+    let left: Vec<Value> = items_under(&some, &dir);
+    assert_eq!(left.len(), 1, "ignoredFiles 没传到：{some}");
+    assert_eq!(left[0]["path"].as_str(), Some(keep.display().to_string().as_str()));
+    assert_eq!(folder_entry(&some, &dir).expect("文件夹还在看")["new"].as_i64(), Some(1));
+
+    let none = new_audio(&f, json!({ "ignoredFolders": [dir.display().to_string()] }));
+    assert!(folder_entry(&none, &dir).is_none(), "ignoredFolders 没传到：{none}");
+    assert!(items_under(&none, &dir).is_empty(), "{none}");
+}
+
+/// 上一级整个在看的时候排除它下面的一个文件夹：那个文件夹里的不再报，旁边的照报。
+/// 排除清单要同时管「看哪些文件夹」和「往下翻的时候绕开谁」，只接上前一半的话这条会红。
+#[test]
+fn an_ignored_folder_stays_ignored_under_a_shelf_that_is_checked_as_a_whole() {
+    let f = Fixture::new("new-audio-ignored-child");
+    let shelf = watched_dir(&f, "ignored-child");
+    let mut seeded = Vec::new();
+    for artist in ["除外の歌手A", "除外の歌手B"] {
+        let dir = shelf.join(artist);
+        std::fs::create_dir_all(&dir).unwrap();
+        seeded.push(fake_audio(&dir, &format!("{artist} - 入っている曲.flac")));
+    }
+    import_files(&f, &seeded.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+    let muted = shelf.join("除外の歌手A");
+    fake_audio(&muted, "除外の歌手A - 要らない曲.flac");
+    fake_audio(&shelf.join("除外の歌手B"), "除外の歌手B - 要る曲.flac");
+
+    let all = new_audio(&f, json!({}));
+    assert_eq!(folder_entry(&all, &shelf).expect("上一级整个在看")["new"].as_i64(), Some(2), "{all}");
+
+    let some = new_audio(&f, json!({ "ignoredFolders": [muted.display().to_string()] }));
+    let titles: Vec<&str> = some["scan"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["path"].as_str().is_some_and(|p| p.starts_with(&shelf.display().to_string())))
+        .map(|item| item["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(titles, ["要る曲"], "{some}");
+}
+
+/// 一个歌手一个文件夹的那种目录：上一级整个在看，新建的歌手文件夹和直接丢在上一级的文件都找得到，
+/// 文件夹名当歌手线索用。
+#[test]
+fn a_shelf_of_artist_folders_is_checked_as_a_whole() {
+    let f = Fixture::new("new-audio-shelf");
+    let shelf = watched_dir(&f, "shelf");
+    let mut seeded = Vec::new();
+    for artist in ["棚の歌手A", "棚の歌手B"] {
+        let dir = shelf.join(artist);
+        std::fs::create_dir_all(&dir).unwrap();
+        seeded.push(fake_audio(&dir, &format!("{artist} - 入っている曲.flac")));
+    }
+    import_files(&f, &seeded.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+
+    let newcomer = shelf.join("棚の歌手C");
+    std::fs::create_dir_all(&newcomer).unwrap();
+    fake_audio(&newcomer, "フォルダだけが頼りの曲.flac");
+    fake_audio(&shelf, "棚の歌手A - 散らかった曲.flac");
+
+    let found = new_audio(&f, json!({}));
+    let folder = folder_entry(&found, &shelf).unwrap_or_else(|| panic!("上一级应当整个在看：{found}"));
+    assert_eq!(folder["reason"], "parent");
+    assert_eq!(folder["songs"].as_i64(), Some(2));
+    assert_eq!(folder["new"].as_i64(), Some(2), "{found}");
+    assert!(folder_entry(&found, &shelf.join("棚の歌手A")).is_none(), "并上去之后不用再单列：{found}");
+
+    let items = items_under(&found, &shelf);
+    // 文件名里没有歌手的那个：歌手只能从文件夹名猜，要标出来——界面靠这个标记不让它直接导
+    let by_folder = items
+        .iter()
+        .find(|item| item["title"] == "フォルダだけが頼りの曲")
+        .expect("新歌手文件夹里的要找得到");
+    assert_eq!(by_folder["artistSource"], "folder", "{by_folder}");
+    let by_name = items.iter().find(|item| item["title"] == "散らかった曲").expect("丢在上一级的要找得到");
+    assert_eq!(by_name["artist"], "棚の歌手A");
+    assert_eq!(by_name["artistSource"], "fileName");
+}
+
 // ───────────────────────── 单曲导入 + 补歌词 ──────────────────────
 
 /// 走完整条链：选一个文件 → 导入 → 给它导一份歌词 → 读回来 → 搜得到。

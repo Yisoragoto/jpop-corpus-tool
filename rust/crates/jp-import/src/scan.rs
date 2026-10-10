@@ -82,6 +82,16 @@ pub struct ScannedTrack {
     pub unsupported: Option<String>,
 }
 
+/// 有效歌手是从哪儿来的，按可信程度从高到低。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ArtistSource {
+    Tag,
+    FileName,
+    Folder,
+    None,
+}
+
 impl ScannedTrack {
     /// 有效曲名：tag 优先，其次文件名。
     pub fn title(&self) -> &str {
@@ -105,6 +115,23 @@ impl ScannedTrack {
             }
         }
         ""
+    }
+
+    /// [`Self::artist`] 用的是哪一个来源。
+    ///
+    /// 「歌手 - 曲名.flac」这种文件名和内嵌 tag 都是文件自己说的；文件夹名只是它恰好放在哪儿
+    /// （`MyMusic/新歌手/曲.flac` 会被读成歌手 MyMusic、专辑 新歌手）。界面拿它决定
+    /// 这一条能不能不经复核直接导。
+    pub fn artist_source(&self) -> ArtistSource {
+        if !self.tag_artist.trim().is_empty() || !self.tag_album_artist.trim().is_empty() {
+            ArtistSource::Tag
+        } else if !self.guess_artist.trim().is_empty() {
+            ArtistSource::FileName
+        } else if !self.folder_artist.trim().is_empty() {
+            ArtistSource::Folder
+        } else {
+            ArtistSource::None
+        }
     }
 
     pub fn album(&self) -> &str {
@@ -199,6 +226,11 @@ fn platform_path(path: &Path) -> String {
     path.components().collect::<PathBuf>().display().to_string()
 }
 
+/// [`scan_file`] 会给这个文件记下的 `path`。拿扫描结果反过来找原来那个文件时用它对。
+pub fn scan_file_path(path: &Path) -> String {
+    platform_path(path)
+}
+
 /// 找同名的 .lrc。先看同目录，再看 `raw/lyrics_lrc/{stem}.lrc`
 /// （本项目自己的布局）。
 fn find_lyrics(audio: &Path) -> Option<PathBuf> {
@@ -221,20 +253,37 @@ fn find_lyrics(audio: &Path) -> Option<PathBuf> {
 ///
 /// `max_depth` 防止在符号链接成环时无限下去。
 pub fn scan_dir(root: &Path, max_depth: usize) -> Vec<ScannedTrack> {
-    let mut out = Vec::new();
-    if root.is_file() {
-        if is_scannable(root) {
-            out.push(scan_file(root));
-        }
-        return out;
-    }
-    walk(root, max_depth, &mut out);
-    // 稳定顺序：同一个目录扫两次结果一致，UI 里也不会跳
+    let mut out: Vec<ScannedTrack> =
+        list_audio(root, max_depth).iter().map(|path| scan_file(path)).collect();
+    // 按存进库的那个路径串排，和拆出 `list_audio` 之前一样：计划按这个顺序分配 id
     out.sort_by(|a, b| a.path.cmp(&b.path));
     out
 }
 
-fn walk(dir: &Path, depth: usize, out: &mut Vec<ScannedTrack>) {
+/// 扫描会收的那些文件，**只列路径，不读 tag**。顺序稳定：同一个目录列两次结果一致。
+///
+/// 和 [`scan_dir`] 分开是因为「启动时看看有没有新歌」每次都要过一遍整个曲库的目录，
+/// 而其中绝大多数文件早就在库里了——按路径就能排除，犯不着把几百个文件的 tag 再读一遍。
+pub fn list_audio(root: &Path, max_depth: usize) -> Vec<PathBuf> {
+    list_audio_where(root, max_depth, &|_| true)
+}
+
+/// 同 [`list_audio`]，但 `enter` 说不进的子目录整个跳过（`root` 自己不问）。
+pub fn list_audio_where(root: &Path, max_depth: usize, enter: &dyn Fn(&Path) -> bool) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if root.is_file() {
+        if is_scannable(root) {
+            out.push(root.to_path_buf());
+        }
+        return out;
+    }
+    walk(root, max_depth, enter, &mut out);
+    // 稳定顺序：同一个目录扫两次结果一致，UI 里也不会跳
+    out.sort();
+    out
+}
+
+fn walk(dir: &Path, depth: usize, enter: &dyn Fn(&Path) -> bool, out: &mut Vec<PathBuf>) {
     if depth == 0 {
         return;
     }
@@ -245,9 +294,11 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<ScannedTrack>) {
     paths.sort();
     for path in paths {
         if path.is_dir() {
-            walk(&path, depth - 1, out);
+            if enter(&path) {
+                walk(&path, depth - 1, enter, out);
+            }
         } else if is_scannable(&path) {
-            out.push(scan_file(&path));
+            out.push(path);
         }
     }
 }
@@ -318,6 +369,27 @@ mod tests {
         assert_eq!(track.artist(), "FromName");
     }
 
+    /// 来源要和 `artist()` 取的那一个对得上：界面靠它判断这个歌手名信不信得过。
+    #[test]
+    fn the_artist_source_names_the_field_the_artist_came_from() {
+        let all = ScannedTrack {
+            tag_artist: "Tag".into(),
+            guess_artist: "FromName".into(),
+            folder_artist: "FromFolder".into(),
+            ..Default::default()
+        };
+        assert_eq!((all.artist(), all.artist_source()), ("Tag", ArtistSource::Tag));
+        let album_artist = ScannedTrack { tag_album_artist: "AlbumArtist".into(), ..all.clone() };
+        let album_artist = ScannedTrack { tag_artist: "  ".into(), ..album_artist };
+        assert_eq!((album_artist.artist(), album_artist.artist_source()), ("AlbumArtist", ArtistSource::Tag));
+        let name = ScannedTrack { tag_artist: String::new(), ..all.clone() };
+        assert_eq!((name.artist(), name.artist_source()), ("FromName", ArtistSource::FileName));
+        let folder = ScannedTrack { guess_artist: String::new(), ..name };
+        assert_eq!((folder.artist(), folder.artist_source()), ("FromFolder", ArtistSource::Folder));
+        let nothing = ScannedTrack::default();
+        assert_eq!((nothing.artist(), nothing.artist_source()), ("", ArtistSource::None));
+    }
+
     #[test]
     fn a_track_without_any_title_is_flagged() {
         assert!(!ScannedTrack::default().has_identity());
@@ -361,7 +433,7 @@ mod tests {
     fn depth_limit_is_respected() {
         // depth 0 表示不进入任何目录
         let mut out = Vec::new();
-        walk(Path::new("."), 0, &mut out);
+        walk(Path::new("."), 0, &|_| true, &mut out);
         assert!(out.is_empty());
     }
 }

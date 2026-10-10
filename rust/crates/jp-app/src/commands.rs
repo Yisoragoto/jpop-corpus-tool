@@ -1120,6 +1120,8 @@ pub struct PlanItemView {
     pub has_lyrics: bool,
     /// 读 tag 时出的问题。为空表示一切正常。
     pub warning: Option<String>,
+    /// 歌手是从 tag、文件名还是文件夹名定出来的。从文件夹名来的只是猜，界面不让它不经复核就导
+    pub artist_source: jp_import::ArtistSource,
     pub action: jp_import::Action,
 }
 
@@ -1216,8 +1218,23 @@ fn plan_targets(
     tracks.sort_by(|a, b| a.path.cmp(&b.path));
 
     let index = jp_import::LibraryIndex::from_corpus(&state.corpus())?;
-    let plan = jp_import::plan(&tracks, &index);
+    let result = review(state, &tracks, &index, ignored);
 
+    // 记下扫描结果，等确认。存扫描结果而不是计划：导入时会重新算，
+    // 免得扫描之后库变了导致 id 分配失效。
+    *state.pending_scan() = tracks;
+
+    Ok(result)
+}
+
+/// 扫描结果 → 给界面复核的那份计划。**只算，不记**：记成待导入的一批是调用方的事。
+fn review(
+    state: &AppState,
+    tracks: &[jp_import::ScannedTrack],
+    index: &jp_import::LibraryIndex,
+    ignored: Vec<String>,
+) -> ScanResult {
+    let plan = jp_import::plan(tracks, index);
     let items = plan
         .items
         .iter()
@@ -1230,21 +1247,123 @@ fn plan_targets(
             duration_sec: item.track.duration_sec,
             has_lyrics: item.track.lyrics_path.is_some(),
             warning: item.track.warning.clone(),
+            artist_source: item.track.artist_source(),
             action: item.action.clone(),
         })
         .collect();
-    let summary = plan.summary();
-
-    // 记下扫描结果，等确认。存扫描结果而不是计划：导入时会重新算，
-    // 免得扫描之后库变了导致 id 分配失效。
-    *state.pending_scan() = tracks;
-
-    Ok(ScanResult {
-        summary,
+    ScanResult {
+        summary: plan.summary(),
         items,
         tokenizer_ready: state.analyzer().is_some(),
         ignored,
+    }
+}
+
+/// 去看的一个文件夹，和在里面找到了多少。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchedFolderView {
+    pub path: String,
+    pub reason: jp_import::WatchReason,
+    /// 往下看几层。1 是只看直接放在这里的文件
+    pub depth: usize,
+    /// 库里有多少首歌在它下面
+    pub songs: usize,
+    /// 里面库里没有的音频文件数
+    pub unknown: usize,
+    /// 其中会被当成新歌导入的（其余是疑似重复、放不了的格式、读不出曲名）
+    pub new: usize,
+}
+
+/// 语料库文件夹里还没导入的音频（`library_new_audio`）。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewAudio {
+    /// 去看了哪些文件夹。要原样端给界面——「为什么这个文件没被发现」只能靠它回答
+    pub folders: Vec<WatchedFolderView>,
+    /// 库里没有的那些文件的计划，和导入页扫出来的是同一种东西
+    pub scan: ScanResult,
+}
+
+/// 看看语料库的文件夹里有没有还没导入的音频：库里的歌所在的那些文件夹，加上语料库目录自己
+/// （范围怎么定见 `jp_import::watch`）。启动时界面调一次，导入页上也能手动再查。
+///
+/// **只读，而且不记成待导入的一批**——和 `scan_folder` 不同。它是启动时自己跑的，
+/// 不能顶掉用户在导入页扫出来、正等着确认的那一批。要导的话，界面拿这里的路径再调 `scan_files`。
+///
+/// `ignoredFolders` / `ignoredFiles` 是用户说过「别再看 / 别再提」的，清单由界面记着。
+// 要翻好几个目录、给没见过的文件读 tag，不能占着主线程
+#[tauri::command]
+pub async fn library_new_audio<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    ignored_folders: Option<Vec<String>>,
+    ignored_files: Option<Vec<String>>,
+) -> CmdResult<NewAudio> {
+    blocking(app, move |state| {
+        // 库的锁只在读这两样的时候拿着：翻目录、读 tag 可能要好几秒，期间别的查询不该排队
+        let (index, audio_paths) = {
+            let corpus = state.corpus();
+            let index = jp_import::LibraryIndex::from_corpus(&corpus)?;
+            let mut stmt = corpus
+                .connection()
+                .prepare("SELECT audio_path FROM songs WHERE audio_path IS NOT NULL AND audio_path <> ''")?;
+            let paths = stmt
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            (index, paths)
+        };
+
+        let ignored_folders = ignored_folders.unwrap_or_default();
+        let folders = jp_import::watched_folders(&state.project_root(), &audio_paths, &ignored_folders);
+        let unknown = jp_import::unknown_audio(
+            &folders,
+            &index,
+            &ignored_files.unwrap_or_default(),
+            &ignored_folders,
+        );
+
+        let mut tracks: Vec<jp_import::ScannedTrack> =
+            unknown.iter().map(|file| jp_import::scan_file(&file.path)).collect();
+        tracks.sort_by(|a, b| a.path.cmp(&b.path));
+        let scan = review(state, &tracks, &index, Vec::new());
+
+        // 每个文件夹里有几个、其中几个是新歌。计划里的路径是 `scan_file` 统一过分隔符的，
+        // 所以这边也拿同一个函数算键，不直接比 `file.path`
+        let folder_of: std::collections::HashMap<String, usize> = unknown
+            .iter()
+            .map(|file| (jp_import::scan_file_path(&file.path), file.folder))
+            .collect();
+        let mut views: Vec<WatchedFolderView> = folders
+            .iter()
+            .map(|folder| WatchedFolderView {
+                // 分隔符统一成一种：界面拿它和计划里的路径比前缀，也原样显示给用户
+                path: jp_import::scan_file_path(&folder.path),
+                reason: folder.reason,
+                depth: folder.depth,
+                songs: folder.songs,
+                unknown: 0,
+                new: 0,
+            })
+            .collect();
+        for item in &scan.items {
+            if let Some(view) = folder_of.get(&item.path).and_then(|at| views.get_mut(*at)) {
+                view.unknown += 1;
+                if item.action.writes() {
+                    view.new += 1;
+                }
+            }
+        }
+
+        // 只记数：日志里不放路径和歌名
+        crate::log::info(format!(
+            "查新歌：看了 {} 个文件夹，{} 个文件不在库里，其中 {} 首会当成新歌",
+            views.len(),
+            scan.summary.total,
+            scan.summary.new
+        ));
+        Ok(NewAudio { folders: views, scan })
     })
+    .await
 }
 
 /// 一次导入的进度。`import://progress` 事件。
