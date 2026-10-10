@@ -12,10 +12,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { api, NO_DICTIONARY, type HealthReport, type Overview, type QuickHit } from "./api";
+import { api, NO_DICTIONARY, type HealthReport, type NewAudio, type Overview, type QuickHit } from "./api";
 import { messageOf } from "./errors";
 import { CommandPalette, type PaletteCommand, type PaletteMode } from "./components/CommandPalette";
 import { NavIcon } from "./components/NavIcons";
+import { NewSongsBanner } from "./components/NewSongsBanner";
 import { invalidatePerformers } from "./components/PerformerPicker";
 import { Player } from "./components/Player";
 import { SudachiBanner } from "./components/SudachiBanner";
@@ -24,7 +25,8 @@ import { useAppSettings } from "./settings";
 import { Stat } from "./components/Stat";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { HomePage } from "./pages/HomePage";
-import { ImportPage } from "./pages/ImportPage";
+import { ImportPage, type ImportRequest } from "./pages/ImportPage";
+import { currentIgnores, newItems, setIgnores, withIgnored } from "./newSongs";
 import { AnkiPage } from "./pages/AnkiPage";
 import { DictionaryPage } from "./pages/DictionaryPage";
 import { ScrapePage } from "./pages/ScrapePage";
@@ -111,6 +113,35 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 启动时看一眼语料库的文件夹里有没有还没导入的音频（设置里可关）。只读；发现了出一条横幅，
+  // 导不导由人决定。放在这里而不是导入页：用户往文件夹里丢了歌，不该还得记着去导入页点一下。
+  const [newAudio, setNewAudio] = useState<NewAudio | null>(null);
+  const ready = status.kind === "ready";
+  useEffect(() => {
+    if (!ready || !settings.autoCheckNewSongs) return;
+    let alive = true;
+    // 等首屏的几个查询先走完：翻目录和它们抢的是同一把库锁的开头那一小段
+    const timer = setTimeout(() => {
+      const ignored = currentIgnores();
+      void api
+        .libraryNewAudio(ignored.folders, ignored.files)
+        .then((found) => {
+          if (alive && newItems(found.scan).length > 0) setNewAudio(found);
+        })
+        // 查不了（盘没插、目录没权限）不该在启动时打扰用户；导入页上手动查的时候会报出来
+        .catch((err: unknown) => console.warn("启动时查新歌失败", err));
+    }, 1500);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+    // 开关改了之后不重新跑：这一轮已经查过了
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+  // 横幅上点「查看」：带着那几个文件去导入页，导入页用掉后清空
+  const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
+  const consumeImportRequest = useCallback(() => setImportRequest(null), []);
+
   // 字体探测很贵（本机 401 个名字冷着跑 1.8 秒），空闲时先备好，
   // 免得用户点开「显示」面板或设置页时卡在那里。结果会存进 localStorage。
   useEffect(warmFontOptions, []);
@@ -182,13 +213,17 @@ export default function App() {
       .catch((err: unknown) => setNotice(`读不出语料总览：${messageOf(err)}`));
   }, []);
 
-  // 导入之后曲库和语料统计都变了，两个都得重拉
+  // 导入之后曲库和语料统计都变了，两个都得重拉。
+  // 版本号是给「自己拉数据、而且导入时可能正开着」的页面看的：以前导入只发生在导入页，
+  // 别的页面切过去时自然会重新拉；现在启动横幅上就能导，人多半还停在首页。
+  const [libraryVersion, setLibraryVersion] = useState(0);
   const onImported = useCallback(() => {
     api
       .listTracks()
       .then(actions.setTracks)
       .catch((err: unknown) => setNotice(`读不出曲库：${messageOf(err)}`));
     refreshOverview();
+    setLibraryVersion((v) => v + 1);
   }, [actions, refreshOverview]);
 
   // 面板里选中一条结果 → 跳到对应的地方。
@@ -377,6 +412,23 @@ export default function App() {
             {notice}（点击关闭）
           </div>
         )}
+        {newAudio !== null && (
+          <NewSongsBanner
+            found={newAudio}
+            onImported={onImported}
+            onReview={(paths) => {
+              setImportRequest({ paths, nonce: Date.now() });
+              setRoute("import");
+              setNewAudio(null);
+            }}
+            onIgnore={(paths) => {
+              setIgnores(withIgnored(currentIgnores(), { files: paths }));
+              setNewAudio(null);
+            }}
+            onDismiss={() => setNewAudio(null)}
+            onError={onError}
+          />
+        )}
 
         <div className="body">
         {route === "home" && (
@@ -385,6 +437,7 @@ export default function App() {
             onNavigate={setRoute}
             onError={onError}
             playbackSongId={playback.songId}
+            libraryVersion={libraryVersion}
           />
         )}
         {route === "kwic" && (
@@ -410,6 +463,8 @@ export default function App() {
         )}
         {route === "explorer" && (
           <ExplorerPage
+            // 人物和合作关系是这一页自己拉的：库变了就整页重来
+            key={libraryVersion}
             actions={actions}
             onNavigate={goLibrary}
             onError={onError}
@@ -418,7 +473,12 @@ export default function App() {
           />
         )}
         {route === "import" && (
-          <ImportPage onError={onError} onImported={onImported} />
+          <ImportPage
+            onError={onError}
+            onImported={onImported}
+            request={importRequest}
+            onRequestConsumed={consumeImportRequest}
+          />
         )}
         {route === "scrape" && (
           <ScrapePage onError={onError} onChanged={onImported} />
@@ -430,6 +490,7 @@ export default function App() {
         {route === "dict" && <DictionaryPage onError={onError} onOpenSettings={() => setRoute("settings")} />}
         {route === "analytics" && (
           <AnalyticsPage
+            key={libraryVersion}
             overview={overview}
             onOverviewChanged={refreshOverview}
             actions={actions}

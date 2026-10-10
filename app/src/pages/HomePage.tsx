@@ -34,9 +34,11 @@ interface Props {
   onError: (message: string) => void;
   /** 播放状态变了就刷新——听完一首之后「最近播放」应当立刻反映 */
   playbackSongId: string;
+  /** 库里的歌变了就加一（启动横幅上直接导入新歌时，人还停在这一页） */
+  libraryVersion: number;
 }
 
-export function HomePage({ actions, onNavigate, onError, playbackSongId }: Props) {
+export function HomePage({ actions, onNavigate, onError, playbackSongId, libraryVersion }: Props) {
   const [home, setHome] = useState<HomeSummary | null>(null);
 
   const load = useCallback(() => {
@@ -46,7 +48,7 @@ export function HomePage({ actions, onNavigate, onError, playbackSongId }: Props
       .catch((e) => onError(String(e.message ?? e)));
   }, [onError]);
 
-  useEffect(load, [load]);
+  useEffect(load, [load, libraryVersion]);
   // 换歌时重新拉一次：上一首的收听记录这时候刚落库
   useEffect(() => {
     if (playbackSongId) load();

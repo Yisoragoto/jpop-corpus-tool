@@ -1296,6 +1296,31 @@ button.chip:hover { color: var(--fg); }
 .sudachi-close { flex: 0 0 auto; color: inherit; opacity: .7; padding: 0 2px; }
 .sudachi-close:hover { opacity: 1; }
 
+/* ── 启动时查到新歌的横幅：是个好消息，用强调色，不用警告的黄和报错的红 ── */
+.banner.new-songs {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--fg); background: var(--accent-soft);
+}
+.new-songs-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.new-songs-text strong { color: var(--accent); font-weight: 600; }
+.new-songs-go {
+  flex: 0 0 auto; padding: 4px 12px; border-radius: 6px; font-size: 12px;
+  background: var(--accent); color: var(--accent-ink); font-weight: 600;
+}
+.new-songs-go:hover:not(:disabled) { filter: brightness(1.1); }
+.new-songs-go:disabled { opacity: .6; }
+.banner.new-songs .link-btn { flex: 0 0 auto; }
+.new-songs-close { flex: 0 0 auto; color: inherit; opacity: .7; padding: 0 2px; }
+.new-songs-close:hover { opacity: 1; }
+
+/* ── 导入页：语料库文件夹 ── */
+.watched-folders { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.watched-folders li { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.watched-folders .watched-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watched-folders .muted { flex: 0 0 auto; }
+.watched-folders .link-btn { flex: 0 0 auto; margin-left: auto; }
+.watched-folders li.off .watched-path { color: var(--muted); text-decoration: line-through; }
+
 /* ── 数据迁移：预览、两个勾选、一个开始 ── */
 .migrate-panel { display: flex; flex-direction: column; gap: 10px; padding: 4px 4px 10px; }
 .migrate-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

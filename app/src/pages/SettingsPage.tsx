@@ -538,6 +538,17 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             disabled={busy !== null}
           />
         </SettingCard>
+        <SettingCard
+          icon={Icons.lyrics}
+          title="启动时检查新歌"
+          description="看看语料库的文件夹里有没有还没导入的音频，有就提示。只读，不会自己导入；看哪些文件夹在「导入」页"
+        >
+          <Switch
+            checked={settings.autoCheckNewSongs}
+            onChange={(v) => updateSettings({ autoCheckNewSongs: v })}
+            label="启动时检查新歌"
+          />
+        </SettingCard>
         <TokenizeCard icon={Icons.lyrics} onError={onError} onChanged={onChanged} />
         <MigrateCard icon={Icons.db} onError={onError} onChanged={onChanged} />
         <SettingCard

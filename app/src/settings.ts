@@ -27,6 +27,8 @@ export interface AppSettings {
   autoInstallUpdates: boolean;
   /** 变调缓存最多占多少 MB，超了从最久没放的清起。启动时和改动时报给后端（见 `pitchCache.ts`） */
   pitchCacheLimitMb: number;
+  /** 启动时看一眼语料库的文件夹里有没有还没导入的音频（只读，发现了只提示） */
+  autoCheckNewSongs: boolean;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
@@ -39,6 +41,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoCheckUpdates: true,
   autoInstallUpdates: false,
   pitchCacheLimitMb: 1536,
+  autoCheckNewSongs: true,
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -63,6 +66,8 @@ export function parseSettings(raw: string | null): AppSettings {
       autoInstallUpdates:
         typeof parsed.autoInstallUpdates === "boolean" ? parsed.autoInstallUpdates : d.autoInstallUpdates,
       pitchCacheLimitMb: clamp(parsed.pitchCacheLimitMb, PITCH_CACHE_LIMIT_RANGE, d.pitchCacheLimitMb),
+      autoCheckNewSongs:
+        typeof parsed.autoCheckNewSongs === "boolean" ? parsed.autoCheckNewSongs : d.autoCheckNewSongs,
     };
   } catch {
     return DEFAULT_SETTINGS;

@@ -556,6 +556,12 @@ export const api = {
     call<ScanResult>("scan_files", { paths, maxDepth }),
   /** 执行上一次扫描的结果。写库就在这一步。 */
   runImport: (tokenize?: boolean) => call<ImportReport>("run_import", { tokenize }),
+  /**
+   * 语料库的文件夹里有没有还没导入的音频。只读，**不记成待导入的一批**——
+   * 要导的话拿结果里的路径再调 `scanFiles`。两个参数是用户说过「别再看 / 别再提」的（见 `newSongs.ts`）。
+   */
+  libraryNewAudio: (ignoredFolders: string[] = [], ignoredFiles: string[] = []) =>
+    call<NewAudio>("library_new_audio", { ignoredFolders, ignoredFiles }),
 
   // 歌词：补齐 / 自己导入
   /** 库里还没有歌词的歌。 */
@@ -769,6 +775,8 @@ export interface PlanItem {
   hasLyrics: boolean;
   /** 读 tag 时出的问题。null 表示一切正常。 */
   warning: string | null;
+  /** 歌手是从哪儿定出来的。`folder` 只是猜（文件恰好放在哪个文件夹里），`none` 是定不出 */
+  artistSource: "tag" | "fileName" | "folder" | "none";
   action: ImportAction;
 }
 
@@ -788,6 +796,27 @@ export interface ScanResult {
   tokenizerReady: boolean;
   /** 选中了但不是音频、因此没进计划的文件名（.lrc、封面图这些）。 */
   ignored: string[];
+}
+
+/** 查新歌时去看的一个文件夹（`library_new_audio`）。 */
+export interface WatchedFolder {
+  path: string;
+  /** library：语料库目录自己；libraryAudio：库里有歌直接放在这儿；parent：它的子文件夹大多是库里的 */
+  reason: "library" | "libraryAudio" | "parent";
+  /** 往下看几层。1 是只看直接放在这里的文件 */
+  depth: number;
+  /** 库里有多少首歌在它下面 */
+  songs: number;
+  /** 里面库里没有的音频文件数 */
+  unknown: number;
+  /** 其中会被当成新歌导入的 */
+  new: number;
+}
+
+/** 语料库文件夹里还没导入的音频。`scan` 只含库里没有的文件，和导入页扫出来的是同一种东西 */
+export interface NewAudio {
+  folders: WatchedFolder[];
+  scan: ScanResult;
 }
 
 /** 还没有歌词的一首歌（`lyrics_missing`）。 */

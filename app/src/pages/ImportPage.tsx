@@ -19,6 +19,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { CommandButton } from "../components/CommandButton";
+import { WatchedFolders } from "../components/WatchedFolders";
 
 import {
   ACTION_LABELS,
@@ -32,10 +33,19 @@ import {
 } from "../api";
 import { Stat } from "../components/Stat";
 
+/** 「带着这几个文件来复核」：启动横幅上点「查看」时由外壳发过来。`nonce` 让同一批文件能再发一次 */
+export interface ImportRequest {
+  paths: string[];
+  nonce: number;
+}
+
 interface Props {
   onError: (message: string) => void;
   /** 导入完成后通知外面刷新曲库 */
   onImported: () => void;
+  /** 外面要这一页直接扫的文件。用掉之后调 `onRequestConsumed` 清空 */
+  request?: ImportRequest | null;
+  onRequestConsumed?: () => void;
 }
 
 type Filter = "all" | ImportAction["kind"];
@@ -53,7 +63,7 @@ function fileName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-export function ImportPage({ onError, onImported }: Props) {
+export function ImportPage({ onError, onImported, request = null, onRequestConsumed }: Props) {
   const [path, setPath] = useState("");
   /** 选中的具体文件。非空时扫这些，忽略上面的路径框。 */
   const [files, setFiles] = useState<string[]>([]);
@@ -63,6 +73,8 @@ export function ImportPage({ onError, onImported }: Props) {
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [tokenize, setTokenize] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
+  /** 导完一批加一：语料库文件夹那张卡片跟着重新查 */
+  const [importedCount, setImportedCount] = useState(0);
 
   const pick = useCallback(async () => {
     try {
@@ -94,25 +106,49 @@ export function ImportPage({ onError, onImported }: Props) {
     }
   }, [onError]);
 
+  /** 扫这些文件（`chosen` 非空）或者这个目录，把计划摆出来等复核 */
+  const scanTargets = useCallback(
+    async (chosen: string[], folder: string) => {
+      setBusy("scanning");
+      setReport(null);
+      try {
+        const result = chosen.length > 0 ? await api.scanFiles(chosen) : await api.scanFolder(folder);
+        setScan(result);
+        setFilter(result.summary.new > 0 ? "new" : "all");
+      } catch (e) {
+        setScan(null);
+        onError(String((e as { message?: string })?.message ?? e));
+      } finally {
+        setBusy("");
+      }
+    },
+    [onError],
+  );
+
   const doScan = useCallback(async () => {
     const target = path.trim();
     if (files.length === 0 && target === "") {
       onError("先选一个目录，或者选几个音频文件");
       return;
     }
-    setBusy("scanning");
-    setReport(null);
-    try {
-      const result = files.length > 0 ? await api.scanFiles(files) : await api.scanFolder(target);
-      setScan(result);
-      setFilter(result.summary.new > 0 ? "new" : "all");
-    } catch (e) {
-      setScan(null);
-      onError(String((e as { message?: string })?.message ?? e));
-    } finally {
-      setBusy("");
-    }
-  }, [path, files, onError]);
+    await scanTargets(files, target);
+  }, [path, files, onError, scanTargets]);
+
+  /** 别处交过来的一批文件（启动横幅的「查看」、上面那张卡片的「查看这几首」）：当成选中的单曲，直接扫 */
+  const reviewFiles = useCallback(
+    (paths: string[]) => {
+      if (paths.length === 0) return;
+      setFiles(paths);
+      setPath("");
+      void scanTargets(paths, "");
+    },
+    [scanTargets],
+  );
+  useEffect(() => {
+    if (request === null) return;
+    reviewFiles(request.paths);
+    onRequestConsumed?.();
+  }, [request, reviewFiles, onRequestConsumed]);
 
   // 导入要好几分钟，进度走 `import://progress` 事件
   useEffect(() => {
@@ -133,6 +169,8 @@ export function ImportPage({ onError, onImported }: Props) {
       const csv = result.csv;
       if (csv !== undefined && !["updated", "noFile", "unchanged"].includes(csv)) onError(csv);
       setScan(null);
+      setFiles([]);
+      setImportedCount((n) => n + 1);
       onImported();
     } catch (e) {
       onError(String((e as { message?: string })?.message ?? e));
@@ -167,6 +205,13 @@ export function ImportPage({ onError, onImported }: Props) {
       <p className="page-lead">
         选一个装着音频的目录，或者直接选几首歌。扫描只读取，不写库；看过计划再决定导不导。
       </p>
+
+      <WatchedFolders
+        onReview={reviewFiles}
+        onError={onError}
+        disabled={busy !== ""}
+        refreshKey={importedCount}
+      />
 
       <div className="card">
         <div className="toolbar">
@@ -421,8 +466,14 @@ function PlanTable({ items }: { items: PlanItem[] }) {
 function explain(item: PlanItem): string {
   const a = item.action;
   switch (a.kind) {
-    case "new":
-      return `将写入 id ${a.songId}`;
+    case "new": {
+      // 新歌要写库，拿不准的地方在这里说出来：复核看的就是这几句
+      const notes = [`将写入 id ${a.songId}`];
+      if (item.warning !== null) notes.push(item.warning);
+      if (item.artistSource === "folder") notes.push("歌手是从文件夹名猜的");
+      if (item.artistSource === "none") notes.push("定不出歌手");
+      return notes.join(" · ");
+    }
     case "alreadyImported":
       return `已经是库里的 ${a.songId}`;
     case "possibleDuplicate":

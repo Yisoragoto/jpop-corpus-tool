@@ -102,6 +102,9 @@ to add cards through. That is how cards get made here — **local only, nothing 
 
 - Import a folder **or individual songs**; scanning is read-only, nothing is written until you have reviewed the plan;
   **the original metadata in your files is never overwritten**.
+- Drop new audio into a folder your library already uses and the app notices on the next start: a banner lists the
+  new songs and imports them in one click (or sends you to the plan when a file's tags can't be read). The check is
+  read-only, never imports on its own, and the **Import** page shows which folders it looks at.
 - Lyrics: an `.lrc` sitting next to the audio is picked up on import. When there is none —
   - **Settings → Library maintenance → Fill in missing lyrics** does the whole library: it looks next to the audio
     first, then searches online (NetEase).
