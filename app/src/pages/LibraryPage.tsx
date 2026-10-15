@@ -1,7 +1,9 @@
 /**
- * 曲库页：Library → Track → Lyrics → 点词 → Corpus。
+ * 资料库：原来的「曲库」和「人物」合成一页。Library → 人 / 专辑 / 歌 → Lyrics → 点词 → Corpus。
  *
- * 三栏。中栏的歌词跟随播放，实词可点；右栏是该词在全语料里的样子，
+ * 三栏。左栏四种找法（音乐人、幕后、专辑、歌曲，见 `LibraryBrowser`）。
+ * 中栏看的是一个人的档案、一张专辑，或者一首歌的歌词——歌词跟随播放，实词可点；
+ * 右栏跟着中栏变：看人时是合作者，看歌时是该词在全语料里的样子，
  * 点例句可以跳到另一首歌——这就是要求书第十八条那条回路。
  */
 
@@ -13,13 +15,15 @@ import {
   formatDuration,
   POS_LABELS,
   ROLE_LABELS,
+  type Album,
   type PlaybackState,
   type Track,
 } from "../api";
 import { Stat } from "../components/Stat";
 import { useArtistPhotos } from "../components/PerformerPicker";
+import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
+import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
 import { Cover } from "../components/Cover";
-import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
 import { LyricsStage } from "../components/LyricsStage";
 import { SongEditor } from "../components/SongEditor";
@@ -27,9 +31,9 @@ import { LyricsTools } from "../components/LyricsTools";
 import { LyricsFill } from "../components/LyricsFill";
 import { lyricFontStack, useLyricFontFiles } from "../fonts";
 import { retryFurigana, useLyricsDisplay, useSongFurigana } from "../lyricsDisplay";
-import { useAppSettings } from "../settings";
 import { csvProblem, describeDelete, describeEdit, libraryApi, type MissingAudio } from "../libraryAdmin";
 import { segmentLine, type Piece } from "../lyricSegments";
+import { albumOwner, sameView, type LibraryView } from "../libraryIndex";
 import { morph } from "../motion";
 import type { LibraryActions, LibraryState } from "../useLibrary";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
@@ -87,29 +91,6 @@ function readStoredTab(): CorpusTab {
   }
 }
 
-/** 列表还是网格、收起了哪些歌手：只关乎这台机器上的这个用户，存 localStorage */
-const VIEW_KEY = "jp.library.view";
-const COLLAPSED_KEY = "jp.library.collapsed";
-
-function IconList() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-      <path d="M4 7h16M4 12h16M4 17h16" />
-    </svg>
-  );
-}
-
-function IconGrid() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="4" width="7" height="7" rx="1.5" />
-      <rect x="13" y="4" width="7" height="7" rx="1.5" />
-      <rect x="4" y="13" width="7" height="7" rx="1.5" />
-      <rect x="13" y="13" width="7" height="7" rx="1.5" />
-    </svg>
-  );
-}
-
 interface Props {
   library: LibraryState;
   actions: LibraryActions;
@@ -118,6 +99,11 @@ interface Props {
   onAudioError: (message: string) => void;
   /** 删歌、改歌之后总览的数字要重拉 */
   onLibraryChanged: () => void;
+  /** 导入、刮削之后加一：音乐人和专辑列表要重拉 */
+  libraryVersion: number;
+  /** 从命令面板跳过来时要看的人。消费掉就清空 */
+  focusPersonId: number | null;
+  onFocusConsumed: () => void;
   /** 外面（播放条左下角那张卡片）请求打开全屏歌词 */
   stageWanted?: boolean;
   /** 收到了，把请求清掉 */
@@ -131,13 +117,14 @@ export function LibraryPage({
   audioReady,
   onAudioError,
   onLibraryChanged,
+  libraryVersion,
+  focusPersonId,
+  onFocusConsumed,
   stageWanted = false,
   onStageConsumed,
 }: Props) {
   const { tracks, selected, lyrics, credits, lyricsLoading, word, wordLoading, activeLemma } =
     library;
-  const [filter, setFilter] = useState("");
-  const [favorite, setFavorite] = useState(false);
   const lyricsRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLParagraphElement>(null);
   const [lookup, setLookup] = useState<LyricLookup | null>(null);
@@ -194,32 +181,12 @@ export function LibraryPage({
     };
   }, [lookupResult, mineSettings.model]);
 
-  // 列表 / 网格，以及收起了哪些歌手。都记在 localStorage，下次打开还是这样
-  const [view, setView] = useState<"list" | "grid">(() => (localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "list"));
-  // 两边的宽度可以拖，并且记住。网格视图左边本来就该宽一些，所以两套各记各的。
+  // 两边的宽度可以拖，并且记住
+  // 大屏（27 寸、2560 宽）第一次打开时两边给宽一点；拖过的照记住的来
   const columns = useColumnWidths(
-    view === "grid" ? "library-grid" : "library",
-    view === "grid" ? { left: 420, right: 320 } : { left: 260, right: 320 },
+    "library",
+    window.innerWidth >= 1900 ? { left: 320, right: 400 } : { left: 260, right: 320 },
   );
-  useEffect(() => {
-    try {
-      localStorage.setItem(VIEW_KEY, view);
-    } catch {
-      // 存不了就只在这次会话里生效
-    }
-  }, [view]);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem(COLLAPSED_KEY);
-      return new Set(raw === null ? [] : (JSON.parse(raw) as string[]));
-    } catch {
-      return new Set();
-    }
-  });
-  // 网格里点开的那位歌手（`gridByArtist` 开着时）。只活在这次会话里：
-  // 下次打开还是从歌手墙开始，和 Spotify 的「艺人」一样
-  const [gridArtist, setGridArtist] = useState<string | null>(null);
-  const settings = useAppSettings();
   const artistPhotos = useArtistPhotos();
 
   // 曲库维护：编辑、删除（两步确认，不弹窗）、找回丢了的音频
@@ -261,21 +228,6 @@ export function LibraryPage({
     lookupSeq.current++;
     setLookup(null);
   }, [selected?.id]);
-
-  // 换歌时重新查收藏状态
-  useEffect(() => {
-    if (!selected) return setFavorite(false);
-    api.isFavorite("song", selected.id).then(setFavorite).catch(() => setFavorite(false));
-  }, [selected]);
-
-  const toggleFavorite = useCallback(async () => {
-    if (!selected) return;
-    try {
-      setFavorite(await api.toggleFavorite("song", selected.id));
-    } catch (err) {
-      onAudioError(err instanceof Error ? err.message : String(err));
-    }
-  }, [selected, onAudioError]);
 
   // 字体、字号、振假名等显示设置；振假名开着时取这首歌的注音；选了自带或导入的字体就按文件加载
   // 有歌词、一个词都没分的歌：查不了词、没有振假名，而且看上去和别的歌没两样。
@@ -445,54 +397,6 @@ export function LibraryPage({
     );
   };
 
-  const visible = useMemo(() => {
-    // 限定了专辑就只在那张专辑里筛
-    const source = library.albumFilter?.tracks ?? tracks;
-    const q = filter.trim().toLowerCase();
-    if (!q) return source;
-    return source.filter(
-      (t) => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q),
-    );
-  }, [tracks, filter, library.albumFilter]);
-
-  /** 按歌手分组，组内保持原来的顺序；组按曲数多的在前，同数按歌手名 */
-  const groups = useMemo(() => {
-    const byArtist = new Map<string, Track[]>();
-    for (const track of visible) {
-      const key = track.artist || "（未知歌手）";
-      const list = byArtist.get(key);
-      if (list === undefined) byArtist.set(key, [track]);
-      else list.push(track);
-    }
-    return [...byArtist.entries()]
-      .map(([artist, list]) => ({ artist, tracks: list }))
-      .sort((a, b) => b.tracks.length - a.tracks.length || a.artist.localeCompare(b.artist, "ja"));
-  }, [visible]);
-
-  const toggleGroup = useCallback((artist: string) => {
-    setCollapsed((current) => {
-      const next = new Set(current);
-      if (next.has(artist)) next.delete(artist);
-      else next.add(artist);
-      try {
-        localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
-      } catch {
-        // 存不了就只在这次会话里生效
-      }
-      return next;
-    });
-  }, []);
-
-  /**
-   * 网格视图先显示歌手墙，点一位进去看他的歌（设置里可以关）。
-   *
-   * `drilled` 是点开的那一位；筛选把他滤掉了就当作没点开，不至于空白一片。
-   * 列表视图不参与——那边是可折叠的分组，本来就看得见全部。
-   */
-  const byArtist = view === "grid" && settings.gridByArtist;
-  const drilled = byArtist && gridArtist !== null ? (groups.find((g) => g.artist === gridArtist) ?? null) : null;
-  const artistWall = byArtist && drilled === null;
-
   /**
    * 歌手照片。合作署名（`ずっと真夜中でいいのに。/森カリオペ`）退到第一位演唱者：
    * 信用表本来就是按 `/` 拆的，第一位是主唱，和封面目录的约定一致。
@@ -504,71 +408,120 @@ export function LibraryPage({
     [artistPhotos],
   );
 
-  /** 打开一首歌：封面从左栏飞到歌词栏的标题旁（共享元素过渡） */
+  // ── 中栏在看什么 ──
+  //
+  // 来的路记在一个栈里，左上角的返回按钮一层层退回去。歌本身在 `selected` 里（外壳持有，换页不丢）。
+  const data = useDirectory(libraryVersion, onAudioError);
+  const [view, setView] = useState<LibraryView | null>(() =>
+    focusPersonId !== null ? { kind: "person", id: focusPersonId } : selected !== null ? { kind: "song" } : null,
+  );
+  const trail = useRef<LibraryView[]>([]);
+  const [canBack, setCanBack] = useState(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const go = useCallback((next: LibraryView) => {
+    const current = viewRef.current;
+    // 同一个人、只换了要定位的专辑：不进栈
+    if (current !== null && !sameView(current, next)) {
+      trail.current = [...trail.current.slice(-30), current];
+      setCanBack(true);
+    }
+    viewRef.current = next;
+    setView(next);
+  }, []);
+  const back = useCallback(() => {
+    const previous = trail.current.pop();
+    setCanBack(trail.current.length > 0);
+    if (previous !== undefined) setView(previous);
+  }, []);
+
+  // 什么都没看时（第一次进来、没选过歌），先打开排第一的音乐人——中栏空着像没加载出来
+  useEffect(() => {
+    if (view !== null || data === null) return;
+    const first = data.dir.musicians[0];
+    if (first !== undefined) setView({ kind: "person", id: first.entry.id });
+  }, [view, data]);
+
+  // 别处（命令面板、首页、检索）打开了一首歌：切到歌
+  const lastSongId = useRef(selected?.id ?? null);
+  useEffect(() => {
+    const id = selected?.id ?? null;
+    if (id === lastSongId.current) return;
+    lastSongId.current = id;
+    if (id !== null) go({ kind: "song" });
+  }, [selected?.id, go]);
+
+  // 命令面板点了一个人
+  useEffect(() => {
+    if (focusPersonId === null) return;
+    go({ kind: "person", id: focusPersonId });
+    onFocusConsumed();
+  }, [focusPersonId, go, onFocusConsumed]);
+
+  /** 专辑：对得上演唱者就去他的档案并定位到这一张，对不上就单独看这张专辑 */
+  const openAlbum = useCallback(
+    (album: Album) => {
+      const owner = albumOwner(album.albumArtist);
+      const who = data?.dir.musicians.find((m) => m.entry.name === owner);
+      if (who !== undefined) go({ kind: "person", id: who.entry.id, albumId: album.id });
+      else go({ kind: "album", albumId: album.id, title: album.title });
+    },
+    [data, go],
+  );
+
+  // 命令面板点了一张专辑（经由 useLibrary 的 albumFilter 传过来）
+  useEffect(() => {
+    const wanted = library.albumFilter;
+    if (wanted === null || data === null) return;
+    const album = data.albums.find((a) => a.id === wanted.albumId);
+    if (album !== undefined) openAlbum(album);
+    else go({ kind: "album", albumId: wanted.albumId, title: wanted.title });
+    void actions.setAlbumFilter(null);
+  }, [library.albumFilter, data, openAlbum, go, actions]);
+
+  /** 打开一个人：头像从点的地方飞到档案头 */
+  const openPerson = useCallback(
+    (id: number, from?: HTMLElement) => {
+      if (view?.kind === "person" && view.id === id) return;
+      morph(() => go({ kind: "person", id }), {
+        name: "person-photo",
+        from: from?.querySelector(".avatar"),
+        to: () => document.querySelector(".profile-photo .avatar"),
+      });
+    },
+    [view, go],
+  );
+
+  /** 打开一首歌：封面从点的地方飞到歌词栏的标题旁（共享元素过渡） */
   const openWithMorph = (track: Track, button: HTMLElement) => {
-    if (selected?.id === track.id) return;
-    morph(() => void actions.openTrack(track), {
-      name: "track-cover",
-      from: button.querySelector(".cover"),
-      to: () => document.querySelector(".lyrics .track-head .cover"),
-    });
-  };
-
-  /** 歌手墙 ↔ 某位歌手的歌：头像在两屏之间飞过去 */
-  const drillInto = (artist: string, card: HTMLElement) =>
-    morph(() => setGridArtist(artist), {
-      name: "artist-photo",
-      from: card.querySelector(".artist-photo"),
-      to: () => document.querySelector(".artist-head .artist-photo"),
-    });
-  const drillOut = () => {
-    const leaving = gridArtist;
-    morph(() => setGridArtist(null), {
-      name: "artist-photo",
-      from: document.querySelector(".artist-head .artist-photo"),
-      to: () =>
-        leaving === null
-          ? null
-          : document.querySelector(`.artist-card[data-artist="${CSS.escape(leaving)}"] .artist-photo`),
-    });
-  };
-
-  /** 一首歌在左栏里的样子：网格是封面卡片，列表是一行 */
-  const trackButton = (track: Track, index: number) =>
-    view === "grid" ? (
-      <button
-        key={track.id}
-        className={`track-card ${selected?.id === track.id ? "active" : ""}`}
-        style={{ ["--i" as string]: Math.min(index, 24) }}
-        onClick={(e) => openWithMorph(track, e.currentTarget)}
-        title={`${track.title} · ${track.artist}`}
-      >
-        <Cover path={track.coverPath} size={118} rounded={8} />
-        <span className="track-title">{track.title}</span>
-        <span className="track-meta">
-          {track.durationSec !== null && formatDuration(track.durationSec)}
-          {track.lineCount === 0 && <em className="warn"> · 无歌词</em>}
-          {missingIds.has(track.id) && <em className="warn"> · 音频丢失</em>}
-        </span>
-      </button>
-    ) : (
-      <button
-        key={track.id}
-        className={`track with-cover ${selected?.id === track.id ? "active" : ""}`}
-        onClick={(e) => openWithMorph(track, e.currentTarget)}
-      >
-        <Cover path={track.coverPath} size={36} />
-        <span className="track-lines">
-          <span className="track-title">{track.title}</span>
-          <span className="track-meta">
-            {track.artist}
-            {track.durationSec !== null && ` · ${formatDuration(track.durationSec)}`}
-            {track.lineCount === 0 && <em className="warn"> · 无歌词</em>}
-            {missingIds.has(track.id) && <em className="warn"> · 音频丢失</em>}
-          </span>
-        </span>
-      </button>
+    if (selected?.id === track.id) {
+      go({ kind: "song" });
+      return;
+    }
+    morph(
+      () => {
+        go({ kind: "song" });
+        lastSongId.current = track.id;
+        void actions.openTrack(track);
+      },
+      {
+        name: "track-cover",
+        from: button.querySelector(".cover"),
+        to: () => document.querySelector(".lyrics .track-head .cover"),
+      },
     );
+  };
+
+  const playAll = useCallback(
+    (list: Track[]) => {
+      const first = list.find((t) => t.audioPath) ?? list[0];
+      if (first === undefined) return;
+      lastSongId.current = first.id;
+      go({ kind: "song" });
+      void actions.openTrack(first, { autoPlay: true });
+    },
+    [actions, go],
+  );
 
   // 「词典」这一页的内容。标题行只说查的是哪几个字——折叠交给上面的标签页
   const dictionarySection = lookup !== null && (
@@ -690,130 +643,77 @@ export function LibraryPage({
     </>
   );
 
+  const backButton = canBack && (
+    <button className="nav-back" onClick={back} title="返回" aria-label="返回">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="m14 7-5 5 5 5" />
+      </svg>
+    </button>
+  );
+  const songView = view?.kind === "song" || view === null;
+
   return (
-    <div
-      className={`columns ${view === "grid" ? "wide-library" : ""}`}
-      style={columns.style}
-      ref={columns.container}
-    >
-      <aside className="pane library">
-        {library.albumFilter && (
-          <button
-            className="album-chip"
-            onClick={() => void actions.setAlbumFilter(null)}
-            title="点击显示全部曲目"
-          >
-            <span>{library.albumFilter.title}</span>
-            <em>✕</em>
-          </button>
-        )}
-        {missing.length > 0 && (
-          <button className="missing-banner" onClick={() => setPanel("repair")} title="扫文件夹或逐首选文件找回">
-            ⚠ {missing.length} 首找不到音频文件 · 找回
-          </button>
-        )}
-        <div className="library-bar">
-          <input
-            className="search"
-            placeholder={library.albumFilter ? "在这张专辑里筛选" : "筛选曲目 / 歌手"}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-          <div className="segmented view-toggle">
-            <button
-              className={view === "list" ? "on" : ""}
-              onClick={() => setView("list")}
-              title="列表"
-              aria-label="列表视图"
-            >
-              <IconList />
+    <div className="columns library-page" style={columns.style} ref={columns.container}>
+      <LibraryBrowser
+        data={data}
+        tracks={tracks}
+        view={view ?? { kind: "song" }}
+        selectedSongId={selected?.id ?? null}
+        missingIds={missingIds}
+        onOpenPerson={openPerson}
+        onOpenAlbum={openAlbum}
+        onOpenTrack={openWithMorph}
+        banner={
+          missing.length > 0 && (
+            <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title="扫文件夹或逐首选文件找回">
+              ⚠ {missing.length} 首找不到音频文件 · 找回
             </button>
-            <button
-              className={view === "grid" ? "on" : ""}
-              onClick={() => setView("grid")}
-              title="封面网格"
-              aria-label="网格视图"
-            >
-              <IconGrid />
-            </button>
-          </div>
-        </div>
-
-        <div className={`list ${view === "grid" ? "as-grid" : ""}`}>
-          {artistWall && (
-            <div className="artist-wall">
-              {groups.map((group, i) => (
-                <button
-                  key={group.artist}
-                  className="artist-card"
-                  data-artist={group.artist}
-                  style={{ ["--i" as string]: Math.min(i, 24) }}
-                  onClick={(e) => drillInto(group.artist, e.currentTarget)}
-                  title={`${group.artist} · ${group.tracks.length} 首`}
-                >
-                  <span className="artist-photo">
-                    <Avatar path={photoOf(group.artist)} name={group.artist} size={118} />
-                  </span>
-                  <span className="artist-name">{group.artist}</span>
-                  <span className="artist-count">{group.tracks.length} 首</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {drilled !== null && (
-            <>
-              <div className="artist-head">
-                <button className="artist-back" onClick={drillOut} title="回到所有歌手" aria-label="回到所有歌手">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="m14 8-4 4 4 4" />
-                  </svg>
-                </button>
-                <span className="artist-photo">
-                  <Avatar path={photoOf(drilled.artist)} name={drilled.artist} size={44} />
-                </span>
-                <span className="artist-head-text">
-                  <b>{drilled.artist}</b>
-                  <span className="muted small">{drilled.tracks.length} 首</span>
-                </span>
-              </div>
-              <div className="group-body">{drilled.tracks.map(trackButton)}</div>
-            </>
-          )}
-
-          {!byArtist &&
-            groups.map((group) => {
-              const folded = collapsed.has(group.artist);
-              return (
-                <section className="track-group" key={group.artist}>
-                  <button
-                    className={`group-head ${folded ? "folded" : ""}`}
-                    onClick={() => toggleGroup(group.artist)}
-                    title={folded ? "展开" : "收起"}
-                  >
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="m8 10 4 4 4-4" />
-                    </svg>
-                    <span className="group-name">{group.artist}</span>
-                    <span className="group-count">{group.tracks.length}</span>
-                  </button>
-                  {!folded && <div className="group-body">{group.tracks.map(trackButton)}</div>}
-                </section>
-              );
-            })}
-          {visible.length === 0 && <p className="muted pad">没有匹配的曲目</p>}
-        </div>
-      </aside>
+          )
+        }
+      />
 
       <ColumnSplitter
         edge="left"
-        label="曲库栏宽度"
+        label="资料库左栏宽度"
         onDrag={columns.drag}
         onNudge={columns.nudge}
         onReset={columns.reset}
       />
 
-      <main className={`pane lyrics ${furigana !== null ? "with-furigana" : ""}`} ref={lyricsRef} style={lyricsStyle}>
+      {view !== null && view.kind !== "song" && (
+        <main className="pane profile-pane" key={view.kind === "person" ? `p${view.id}` : `a${view.albumId}`}>
+          {backButton}
+          {view.kind === "person" ? (
+            <PersonProfile
+              personId={view.id}
+              data={data}
+              focusAlbumId={view.albumId ?? null}
+              playingSongId={playback.songId}
+              onOpenPerson={openPerson}
+              onOpenTrack={openWithMorph}
+              onPlayAll={playAll}
+              onError={onAudioError}
+            />
+          ) : (
+            <AlbumView
+              album={data?.albums.find((a) => a.id === view.albumId) ?? null}
+              title={view.title}
+              playingSongId={playback.songId}
+              onOpenTrack={openWithMorph}
+              onPlayAll={playAll}
+              onError={onAudioError}
+            />
+          )}
+        </main>
+      )}
+
+      {/* 歌词栏一直挂着、看人时只是藏起来：回到这首歌时滚动位置还在 */}
+      <main
+        className={`pane lyrics ${furigana !== null ? "with-furigana" : ""} ${songView ? "" : "is-hidden"}`}
+        ref={lyricsRef}
+        style={lyricsStyle}
+      >
+        {backButton}
         {panel === "repair" && (
           <AudioRepair
             missing={missing}
@@ -827,22 +727,13 @@ export function LibraryPage({
           />
         )}
         {panel !== "repair" && note && !selected && <p className="maintain-note">{note}</p>}
-        {panel !== "repair" && !selected && <p className="muted pad">从左侧选一首歌</p>}
+        {panel !== "repair" && !selected && <p className="muted pad">从左侧选一位音乐人、一张专辑或一首歌</p>}
         {panel !== "repair" && selected && (
           <>
             <div className="track-head track-head-row">
               <Cover path={selected.coverPath} size={96} alt="" rounded={6} />
               <div className="track-head-text">
-                <h1>
-                {selected.title}
-                <button
-                  className={`fav-btn ${favorite ? "on" : ""}`}
-                  onClick={() => void toggleFavorite()}
-                  title={favorite ? "取消收藏" : "收藏"}
-                >
-                  {favorite ? "♥" : "♡"}
-                </button>
-              </h1>
+                <h1>{selected.title}</h1>
               <p className="muted">
                 {selected.artist}
                 {selected.album && ` · ${selected.album}`}
@@ -996,7 +887,11 @@ export function LibraryPage({
       />
 
       <aside className="pane corpus">
-        {corpusContent}
+        {view?.kind === "person" ? (
+          <PersonSide personId={view.id} data={data} onOpenPerson={openPerson} onError={onAudioError} />
+        ) : (
+          corpusContent
+        )}
       </aside>
 
       {stageOpen && selected && (

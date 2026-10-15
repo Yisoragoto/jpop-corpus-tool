@@ -6,7 +6,7 @@
 
 use jp_corpus::{
     Album, Collaborator, Credit, KwicHit, KwicQuery, LyricHit, LyricLine, Overview,
-    PersonSummary, PlayEvent, PlayedTrack, QuickSearchResults, Track, WordFrequency, WordInCorpus,
+    DirectoryEntry, PersonSummary, PersonWork, PlayEvent, PlayedTrack, QuickSearchResults, Track, WordFrequency, WordInCorpus,
     YearStats,
 };
 use serde::Serialize;
@@ -86,6 +86,16 @@ pub fn people_by_role(
     limit: Option<i64>,
 ) -> CmdResult<Vec<PersonSummary>> {
     Ok(state.corpus().people_by_role(&role, limit.unwrap_or(200))?)
+}
+
+#[tauri::command(async)]
+pub fn people_directory(state: State<'_, AppState>) -> CmdResult<Vec<DirectoryEntry>> {
+    Ok(state.corpus().people_directory()?)
+}
+
+#[tauri::command(async)]
+pub fn person_works(state: State<'_, AppState>, person_id: i64) -> CmdResult<Vec<PersonWork>> {
+    Ok(state.corpus().person_works(person_id)?)
 }
 
 #[tauri::command(async)]

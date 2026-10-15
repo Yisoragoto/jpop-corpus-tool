@@ -177,6 +177,16 @@ impl Corpus {
         library::credits_for_track(&self.conn, song_id)
     }
 
+    /// 所有署过名的人和各角色的作品数（资料库左栏）
+    pub fn people_directory(&self) -> Result<Vec<DirectoryEntry>> {
+        library::people_directory(&self.conn)
+    }
+
+    /// 档案页的作品：署过名的 + 所属乐队演唱的，带角色和演唱者
+    pub fn person_works(&self, person_id: i64) -> Result<Vec<PersonWork>> {
+        library::person_works(&self.conn, person_id)
+    }
+
     pub fn people_by_role(&self, role: &str, limit: i64) -> Result<Vec<PersonSummary>> {
         library::people_by_role(&self.conn, role, limit)
     }

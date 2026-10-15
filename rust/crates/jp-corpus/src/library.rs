@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
-use crate::models::{Album, Collaborator, Credit, FacetCount, LineToken, LyricLine, Person, PersonSummary, Track};
+use crate::models::{Album, Collaborator, Credit, DirectoryEntry, FacetCount, PersonWork, LineToken, LyricLine, Person, PersonSummary, Track};
 use crate::search::placeholders;
 
 /// 每首曲目都要带歌词行数，UI 靠它区分「没有歌词」和「还没加载」。
@@ -174,6 +174,106 @@ pub(crate) fn people_by_role(conn: &Connection, role: &str, limit: i64) -> Resul
             role: role.to_string(),
             track_count: row.get(2)?,
             image_path: row.get(3)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// 所有署过名的人，带各角色的作品数。资料库左栏一次拿全。
+pub(crate) fn people_directory(conn: &Connection) -> Result<Vec<DirectoryEntry>> {
+    let has_artists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='artists')",
+        [],
+        |row| row.get(0),
+    )?;
+    // 没刮削过的库没有 artists 表，照片、类型、解散时间都给空串
+    let (join, image, kind, ended) = if has_artists {
+        (
+            "LEFT JOIN artists ar ON ar.name = p.name",
+            "COALESCE(ar.image_path, '')",
+            "COALESCE(ar.artist_type, '')",
+            "COALESCE(ar.ended, '')",
+        )
+    } else {
+        ("", "''", "''", "''")
+    };
+    let sql = format!(
+        "SELECT p.id, p.name, {image}, {kind}, {ended}, \
+                COUNT(DISTINCT CASE WHEN c.role = 'performer' THEN c.song_id END), \
+                COUNT(DISTINCT CASE WHEN c.role = 'composer' THEN c.song_id END), \
+                COUNT(DISTINCT CASE WHEN c.role = 'lyricist' THEN c.song_id END), \
+                COUNT(DISTINCT CASE WHEN c.role = 'arranger' THEN c.song_id END), \
+                COUNT(DISTINCT c.song_id), \
+                COALESCE(MIN(NULLIF(s.year, '')), ''), COALESCE(MAX(NULLIF(s.year, '')), '') \
+         FROM people p JOIN track_credits c ON c.person_id = p.id \
+         LEFT JOIN songs s ON s.id = c.song_id {join} \
+         GROUP BY p.id ORDER BY p.name"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |row| {
+        Ok(DirectoryEntry {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            image_path: row.get(2)?,
+            artist_type: row.get(3)?,
+            ended: row.get(4)?,
+            performer: row.get(5)?,
+            composer: row.get(6)?,
+            lyricist: row.get(7)?,
+            arranger: row.get(8)?,
+            songs: row.get(9)?,
+            first_year: row.get(10)?,
+            last_year: row.get(11)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// 一个人的档案页要列的歌：他署过名的，加上他待过的乐队演唱的（成员关系没被否掉的）。
+///
+/// 乐队的歌照样只属于乐队——这里只是把它们一起取出来，前端放进「在 X 时」那一区。
+pub(crate) fn person_works(conn: &Connection, person_id: i64) -> Result<Vec<PersonWork>> {
+    let has_members: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='band_members')",
+        [],
+        |row| row.get(0),
+    )?;
+    let band_songs = if has_members {
+        "UNION SELECT c.song_id FROM track_credits c \
+         JOIN band_members m ON m.band_id = c.person_id \
+         WHERE m.member_id = ?1 AND m.status = 'active' AND c.role = 'performer'"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "WITH ids AS (SELECT song_id FROM track_credits WHERE person_id = ?1 {band_songs}) \
+         SELECT {TRACK_COLUMNS}, \
+                (SELECT GROUP_CONCAT(DISTINCT x.role) FROM track_credits x \
+                 WHERE x.song_id = s.id AND x.person_id = ?1), \
+                (SELECT GROUP_CONCAT(DISTINCT x.person_id) FROM track_credits x \
+                 WHERE x.song_id = s.id AND x.role = 'performer') \
+         FROM songs s JOIN ids ON ids.song_id = s.id \
+         ORDER BY s.year, s.artist, s.title"
+    );
+    // TRACK_COLUMNS 占前 11 列（见 track_from_row）
+    let width = 11;
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![person_id], |row| {
+        let roles: Option<String> = row.get(width)?;
+        let performers: Option<String> = row.get(width + 1)?;
+        Ok(PersonWork {
+            track: track_from_row(row)?,
+            roles: roles
+                .unwrap_or_default()
+                .split(',')
+                .filter(|r| !r.is_empty())
+                .map(str::to_string)
+                .collect(),
+            performer_ids: performers
+                .unwrap_or_default()
+                .split(',')
+                .filter_map(|id| id.parse().ok())
+                .collect(),
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -424,13 +524,46 @@ mod tests {
         if with_artists {
             conn.execute_batch(
                 "CREATE TABLE artists (name TEXT PRIMARY KEY, image_path TEXT, artist_type TEXT,
-                                       country TEXT, formed TEXT, updated_at TEXT);
+                                       country TEXT, formed TEXT, updated_at TEXT,
+                                       mbid TEXT, ended TEXT, has_ended INTEGER);
                  INSERT INTO artists (name, image_path) VALUES
                    ('ヨルシカ', 'raw/artists/ヨルシカ.jpg'), ('月村手毬', '');",
             )
             .unwrap();
         }
         conn
+    }
+
+    #[test]
+    fn directory_counts_each_role_once_per_song() {
+        let conn = fixture(true);
+        conn.execute_batch(
+            "CREATE TABLE songs (id TEXT PRIMARY KEY, year TEXT);
+             INSERT INTO songs VALUES ('001', '2019'), ('002', '2021'), ('003', '');
+             UPDATE artists SET artist_type = 'Group' WHERE name = 'ヨルシカ';
+             -- 同一首歌里既作曲又作词：作品总数只算一次
+             INSERT INTO track_credits (song_id, person_id, role) VALUES ('001', 2, 'lyricist');",
+        )
+        .unwrap();
+        let all = people_directory(&conn).unwrap();
+        let band = all.iter().find(|p| p.name == "ヨルシカ").unwrap();
+        assert_eq!((band.performer, band.songs), (2, 2));
+        assert_eq!((band.first_year.as_str(), band.last_year.as_str()), ("2019", "2021"));
+        assert_eq!(band.artist_type, "Group");
+        let nbuna = all.iter().find(|p| p.name == "n-buna").unwrap();
+        assert_eq!((nbuna.performer, nbuna.composer, nbuna.lyricist, nbuna.songs), (0, 1, 1, 1));
+        // 没有年份的歌不算进年份范围
+        let temari = all.iter().find(|p| p.name == "月村手毬").unwrap();
+        assert!(temari.first_year.is_empty());
+    }
+
+    #[test]
+    fn directory_works_without_the_artists_table() {
+        let conn = fixture(false);
+        conn.execute_batch("CREATE TABLE songs (id TEXT PRIMARY KEY, year TEXT);").unwrap();
+        let all = people_directory(&conn).unwrap();
+        assert_eq!(all.len(), 3);
+        assert!(all.iter().all(|p| p.artist_type.is_empty() && p.image_path.is_empty()));
     }
 
     #[test]

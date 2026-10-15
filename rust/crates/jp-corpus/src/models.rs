@@ -26,6 +26,20 @@ pub struct Track {
     pub line_count: i64,
 }
 
+/// 档案页上的一首作品：歌本身 + 这个人在里面做了什么 + 谁演唱的。
+///
+/// 前端按这两样分区：自己演唱的是「个人作品」，所属乐队演唱的是「在 X 时」，其余是合作 / 幕后。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonWork {
+    #[serde(flatten)]
+    pub track: Track,
+    /// 这个人在这首歌里的角色；乐队的歌、他本人没署名的是空的
+    pub roles: Vec<String>,
+    /// 演唱署名的人
+    pub performer_ids: Vec<i64>,
+}
+
 /// 一张专辑。对应 `albums` 表。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +74,36 @@ pub struct PersonSummary {
     /// 作词、作曲这类人从来没去查过，是空串。
     #[serde(default)]
     pub image_path: String,
+}
+
+/// 资料库左栏用的一个人：各个角色各署名了几首、是乐队还是个人、活动年份。
+///
+/// 一次查全，左栏的「音乐人 / 幕后」两种分法都在前端按这一份分，不用每种各查一遍。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryEntry {
+    pub id: i64,
+    pub name: String,
+    #[serde(default)]
+    pub image_path: String,
+    /// 刮削认出来的类型：`Group` / `Person` / 其他，没刮削过是空串
+    #[serde(default)]
+    pub artist_type: String,
+    /// 乐队结束的日期（刮削拿到的），没结束或不知道是空串
+    #[serde(default)]
+    pub ended: String,
+    /// 以演唱署名的歌
+    pub performer: i64,
+    pub composer: i64,
+    pub lyricist: i64,
+    pub arranger: i64,
+    /// 署过名的歌，不分角色去重
+    pub songs: i64,
+    /// 署名的歌里最早、最晚的年份；没年份是空串
+    #[serde(default)]
+    pub first_year: String,
+    #[serde(default)]
+    pub last_year: String,
 }
 
 /// 一条曲目信用。

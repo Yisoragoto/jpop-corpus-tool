@@ -308,6 +308,33 @@ mod tests {
     }
 
     #[test]
+    fn a_member_profile_gets_the_band_songs_without_owning_them() {
+        let conn = db();
+        conn.execute_batch(
+            "INSERT INTO songs (id, title, artist) VALUES
+                ('k1', 'k1', 'きのこ帝国'), ('k2', 'k2', 'きのこ帝国'), ('k3', 'k3', 'きのこ帝国'),
+                ('k4', 'k4', 'きのこ帝国'), ('s1', 's1', '佐藤千亜妃'), ('s2', 's2', '佐藤千亜妃');
+             INSERT INTO track_credits (song_id, person_id, role) VALUES ('k4', 1, 'performer');",
+        )
+        .unwrap();
+        put(&conn, 1, 2, "主唱", "2007", "2019", "musicbrainz").unwrap();
+        let works = crate::library::person_works(&conn, 2).unwrap();
+        let ids: Vec<&str> = works.iter().map(|w| w.track.id.as_str()).collect();
+        // k4 她没署名，但是乐队的歌，也要拿到
+        assert_eq!(works.len(), 6, "{ids:?}");
+        let k4 = works.iter().find(|w| w.track.id == "k4").unwrap();
+        assert!(k4.roles.is_empty());
+        assert_eq!(k4.performer_ids, vec![1]);
+        let s1 = works.iter().find(|w| w.track.id == "s1").unwrap();
+        assert_eq!(s1.performer_ids, vec![2]);
+        assert!(s1.roles.contains(&"performer".to_string()));
+
+        // 否掉之后乐队的歌不再跟过来
+        reject(&conn, 1, 2).unwrap();
+        assert_eq!(crate::library::person_works(&conn, 2).unwrap().len(), 5);
+    }
+
+    #[test]
     fn a_band_lists_its_members_and_a_member_lists_the_band() {
         let conn = db();
         assert_eq!(put(&conn, 1, 2, "主唱 · 作词作曲", "2007", "2019", "musicbrainz").unwrap(), PutOutcome::Inserted);

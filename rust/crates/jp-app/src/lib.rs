@@ -50,6 +50,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::album_tracks,
             commands::track_credits,
             commands::people_by_role,
+            commands::people_directory,
+            commands::person_works,
             commands::person_by_id,
             commands::works_by_person,
             commands::collaborators,

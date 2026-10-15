@@ -17,8 +17,6 @@ export interface AppSettings {
   stageCoverBlur: boolean;
   /** 虚化强度，px */
   stageBlurRadius: number;
-  /** 封面网格先显示歌手，点进去才是他的歌 */
-  gridByArtist: boolean;
   /** 播放条上的频谱条。关掉之后连采样轮询一起停，不再每 50ms 问一次引擎 */
   spectrum: boolean;
   /** 启动时问一次 GitHub Releases 有没有新版 */
@@ -41,7 +39,6 @@ export const DAILY_GOAL_LIMITS = [5, 180] as const;
 export const DEFAULT_SETTINGS: AppSettings = {
   stageCoverBlur: true,
   stageBlurRadius: 64,
-  gridByArtist: true,
   spectrum: true,
   autoCheckUpdates: true,
   autoInstallUpdates: false,
@@ -67,7 +64,6 @@ export function parseSettings(raw: string | null): AppSettings {
     return {
       stageCoverBlur: typeof parsed.stageCoverBlur === "boolean" ? parsed.stageCoverBlur : d.stageCoverBlur,
       stageBlurRadius: clamp(parsed.stageBlurRadius, STAGE_BLUR_LIMITS, d.stageBlurRadius),
-      gridByArtist: typeof parsed.gridByArtist === "boolean" ? parsed.gridByArtist : d.gridByArtist,
       spectrum: typeof parsed.spectrum === "boolean" ? parsed.spectrum : d.spectrum,
       autoCheckUpdates:
         typeof parsed.autoCheckUpdates === "boolean" ? parsed.autoCheckUpdates : d.autoCheckUpdates,

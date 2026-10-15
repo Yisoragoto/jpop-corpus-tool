@@ -48,7 +48,7 @@ in the repository under `legacy/` for reference, and `corpus.db` works with both
 
 ### Library and playback
 
-- Library grouped by artist, as a list or a cover grid; the grid starts with an artist wall you can drill into.
+- One library page, browsed four ways: musicians, behind-the-scenes, albums, songs. Band members are nested under their band; a member who went solo gets their own profile, with solo work kept apart from the band years.
 - Lyrics follow playback line by line; click a line to jump there, or loop a single line.
 - Speed changes go through WSOLA time-stretching (**pitch stays put**); key changes are rendered once per song by the built-in Rubber Band library and cached.
 - Full-screen lyrics with the cover art blurred to fill the background, and the player floating on top as frosted glass.
@@ -79,7 +79,7 @@ Each dictionary's licence and redistribution terms are its author's; check them 
 - KWIC concordance with the keyword centred; filter by artist, part of speech, cross-line matches or Japanese-only, export CSV.
 - Frequency table (lemma × POS with JLPT level), a timeline by year, and a corpus report as TXT.
 - Word cloud over the same filters, on a frosted-glass card backed by the blurred artist photos. Click a word to list the songs it appears in and jump to the line; save it as PNG. Its font is set separately (bundled, imported or installed).
-- People view: vocals / composer / lyricist / arranger, plus a collaboration graph.
+- A profile for every person: the roles they had, the bands they were in, their works by album, and collaborators.
 
 ![Analytics page](docs/screenshots/analytics.webp)
 

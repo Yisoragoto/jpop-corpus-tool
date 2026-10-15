@@ -22,7 +22,6 @@ import {
   type HomeSummary,
   type PlayedTrack,
   type QuickHit,
-  type Track,
 } from "../api";
 import { useCoverColor } from "../coverColor";
 import { Cover } from "../components/Cover";
@@ -106,20 +105,6 @@ export function HomePage({ actions, onNavigate, onError, onPickHit, playbackSong
                 <RecentTile key={t.songId} track={t} onClick={() => void open(t.songId)} />
               ))}
             </div>
-          )}
-          {home.favorites.length > 0 && (
-            <>
-              <h2 className="home-panel-title home-panel-title-sub">收藏</h2>
-              <div className="home-recent">
-                {home.favorites.slice(0, 8).map((t: Track) => (
-                  <button key={t.id} className="tile" onClick={() => void open(t.id)} title={`${t.title} · ${t.artist}`}>
-                    <Cover path={t.coverPath} size={120} rounded={8} />
-                    <span className="tile-title">{t.title}</span>
-                    <span className="tile-sub">{t.artist}</span>
-                  </button>
-                ))}
-              </div>
-            </>
           )}
         </section>
 

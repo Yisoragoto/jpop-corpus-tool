@@ -8,19 +8,19 @@ describe("应用设置", () => {
     expect(parseSettings("这不是 JSON")).toEqual(DEFAULT_SETTINGS);
     expect(parseSettings("{}")).toEqual(DEFAULT_SETTINGS);
     // 旧版本存下的、只有一半字段的，认识的那部分要留住
-    expect(parseSettings(JSON.stringify({ gridByArtist: false }))).toEqual({
+    expect(parseSettings(JSON.stringify({ autoCheckNewSongs: false }))).toEqual({
       ...DEFAULT_SETTINGS,
-      gridByArtist: false,
+      autoCheckNewSongs: false,
     });
   });
 
   it("类型不对的字段逐个退回默认值，不整份丢掉", () => {
     const got = parseSettings(
-      JSON.stringify({ stageCoverBlur: "yes", stageBlurRadius: 40, gridByArtist: false, spectrum: 0 }),
+      JSON.stringify({ stageCoverBlur: "yes", stageBlurRadius: 40, autoCheckNewSongs: false, spectrum: 0 }),
     );
     expect(got.stageCoverBlur).toBe(DEFAULT_SETTINGS.stageCoverBlur);
     expect(got.stageBlurRadius).toBe(40);
-    expect(got.gridByArtist).toBe(false);
+    expect(got.autoCheckNewSongs).toBe(false);
     // 0 不是 false，坏值退回默认（开着）
     expect(got.spectrum).toBe(DEFAULT_SETTINGS.spectrum);
     expect(parseSettings(JSON.stringify({ spectrum: false })).spectrum).toBe(false);

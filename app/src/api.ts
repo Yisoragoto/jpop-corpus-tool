@@ -48,6 +48,32 @@ export interface PersonSummary {
   imagePath: string;
 }
 
+/** 档案页上的一首作品：这个人在里面的角色 + 谁演唱的（`person_works`） */
+export interface PersonWork extends Track {
+  /** 乐队的歌、他本人没署名的是空的 */
+  roles: string[];
+  performerIds: number[];
+}
+
+/** 资料库左栏的一个人：各角色署名了几首、乐队还是个人（`people_directory`） */
+export interface DirectoryEntry {
+  id: number;
+  name: string;
+  imagePath: string;
+  /** 刮削认出来的类型：Group / Person / 其他；没刮削过是空串 */
+  artistType: string;
+  /** 乐队结束的日期；没结束或不知道是空串 */
+  ended: string;
+  performer: number;
+  composer: number;
+  lyricist: number;
+  arranger: number;
+  /** 署过名的歌，不分角色去重 */
+  songs: number;
+  firstYear: string;
+  lastYear: string;
+}
+
 export interface Credit {
   personId: number;
   name: string;
@@ -546,6 +572,8 @@ export const api = {
   /** 按 id 取人。命令面板定位到具体人物时用。 */
   personById: (personId: number) =>
     call<PersonSummary | null>("person_by_id", { personId }),
+  personWorks: (personId: number) => call<PersonWork[]>("person_works", { personId }),
+  peopleDirectory: () => call<DirectoryEntry[]>("people_directory"),
   worksByPerson: (personId: number) => call<Track[]>("works_by_person", { personId }),
   collaborators: (personId: number, limit?: number) =>
     call<Collaborator[]>("collaborators", { personId, limit }),
@@ -628,10 +656,6 @@ export const api = {
     return call<number | null>("anki_notes_since", { sinceMs: midnight.getTime() });
   },
   /** 切换收藏，返回切换后的状态。 */
-  toggleFavorite: (entityType: string, entityId: string) =>
-    call<boolean>("toggle_favorite", { entityType, entityId }),
-  isFavorite: (entityType: string, entityId: string) =>
-    call<boolean>("is_favorite", { entityType, entityId }),
 
   // 维护
   /** 幂等：只填 duration_sec 为空的行。 */

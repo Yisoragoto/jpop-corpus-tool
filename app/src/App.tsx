@@ -30,7 +30,6 @@ import { currentIgnores, newItems, setIgnores, withIgnored } from "./newSongs";
 import { AnkiPage } from "./pages/AnkiPage";
 import { DictionaryPage } from "./pages/DictionaryPage";
 import { ScrapePage } from "./pages/ScrapePage";
-import { ExplorerPage } from "./pages/ExplorerPage";
 import { KwicPage, type KwicRequest } from "./pages/KwicPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -41,13 +40,12 @@ import { usePlaybackState } from "./usePlayback";
 /** 和 styles.css「窗口宽窄」那一节的断点一致 */
 const NARROW_WINDOW = "(max-width: 1100px)";
 
-type Route = "home" | "kwic" | "library" | "explorer" | "analytics" | "import" | "scrape" | "anki" | "dict" | "settings";
+type Route = "home" | "kwic" | "library" | "analytics" | "import" | "scrape" | "anki" | "dict" | "settings";
 
 const ROUTES: { key: Route; label: string; hint: string }[] = [
   { key: "home", label: "首页", hint: "继续听 · 今日 · 语料库" },
   { key: "kwic", label: "检索", hint: "KWIC 语境检索与歌词全文" },
-  { key: "library", label: "曲库", hint: "曲目 · 歌词 · 语料" },
-  { key: "explorer", label: "人物", hint: "演唱 / 作曲 / 作词 / 编曲" },
+  { key: "library", label: "资料库", hint: "音乐人 · 幕后 · 专辑 · 歌曲 · 歌词" },
   { key: "analytics", label: "分析", hint: "总览 · 时间线 · 词云 · 词频统计 · 语料报告" },
   { key: "import", label: "导入", hint: "扫描目录 · 复核 · 写入语料" },
   { key: "scrape", label: "刮削", hint: "识别 · 补 metadata · 封面" },
@@ -193,8 +191,9 @@ export default function App() {
   }, [actions.setTracks]);
 
   const [palette, setPalette] = useState<PaletteMode | null>(null);
-  // 命令面板跳到人物页时要聚焦的人。页面消费掉后清空。
+  // 命令面板跳到资料库时要看的人。页面消费掉后清空。
   const [focusPersonId, setFocusPersonId] = useState<number | null>(null);
+  const consumeFocus = useCallback(() => setFocusPersonId(null), []);
 
   useHotkeys({
     onQuickSearch: () => setPalette("search"),
@@ -259,11 +258,10 @@ export default function App() {
           break;
         case "person":
           setFocusPersonId(hit.personId);
-          setRoute("explorer");
+          setRoute("library");
           break;
         case "album":
-          // 专辑没有独立页面；把曲库列表限定到这张专辑，
-          // 这也正好补上了 Artist → Album → Track 的中间一级
+          // 资料库收到后打开这张专辑（对得上演唱者就是他的档案、定位到这一张）
           await actions.setAlbumFilter({ albumId: hit.albumId, title: hit.title });
           setRoute("library");
           break;
@@ -289,8 +287,7 @@ export default function App() {
       },
       { id: "go-home", label: "打开 首页", hint: "继续听 · 今日 · 语料库", run: () => setRoute("home") },
       { id: "go-kwic", label: "打开 检索", hint: "KWIC", run: () => setRoute("kwic") },
-      { id: "go-library", label: "打开 曲库", run: () => setRoute("library") },
-      { id: "go-explorer", label: "打开 人物", run: () => setRoute("explorer") },
+      { id: "go-library", label: "打开 资料库", hint: "音乐人 · 专辑 · 歌曲", run: () => setRoute("library") },
       { id: "go-analytics", label: "打开 分析", run: () => setRoute("analytics") },
       { id: "go-import", label: "打开 导入", hint: "扫描目录并写入语料", run: () => setRoute("import") },
       { id: "go-scrape", label: "打开 刮削", hint: "识别 · metadata · 封面", run: () => setRoute("scrape") },
@@ -468,19 +465,11 @@ export default function App() {
             audioReady={audioReady}
             onAudioError={onError}
             onLibraryChanged={refreshOverview}
+            libraryVersion={libraryVersion}
+            focusPersonId={focusPersonId}
+            onFocusConsumed={consumeFocus}
             stageWanted={stageWanted}
             onStageConsumed={consumeStage}
-          />
-        )}
-        {route === "explorer" && (
-          <ExplorerPage
-            // 人物和合作关系是这一页自己拉的：库变了就整页重来
-            key={libraryVersion}
-            actions={actions}
-            onNavigate={goLibrary}
-            onError={onError}
-            focusPersonId={focusPersonId}
-            onFocusConsumed={() => setFocusPersonId(null)}
           />
         )}
         {route === "import" && (

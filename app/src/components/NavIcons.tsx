@@ -8,7 +8,7 @@
 const BOX = { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
 
 export type NavIconName =
-  | "home" | "kwic" | "library" | "explorer" | "analytics"
+  | "home" | "kwic" | "library" | "analytics"
   | "import" | "scrape" | "anki" | "dict" | "search" | "menu" | "settings";
 
 export function NavIcon({ name }: { name: NavIconName }) {
@@ -33,15 +33,6 @@ export function NavIcon({ name }: { name: NavIconName }) {
         <svg {...BOX}>
           <path d="M5 4h4v16H5zM11 4h3v16h-3z" />
           <path d="m16.5 5.5 3.2.9-3.4 13-3.2-.9" />
-        </svg>
-      );
-    case "explorer":
-      return (
-        <svg {...BOX}>
-          <circle cx="9" cy="8.5" r="3.2" />
-          <path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6" />
-          <circle cx="17.5" cy="10" r="2.4" />
-          <path d="M16 15c2.3.2 3.8 1.5 4.4 4" />
         </svg>
       );
     case "analytics":
