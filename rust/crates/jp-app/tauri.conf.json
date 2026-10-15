@@ -44,6 +44,18 @@
       "icons/128x128.png",
       "icons/256x256.png",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "language": "zh-CN"
+      }
+    }
   }
 }
