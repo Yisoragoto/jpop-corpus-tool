@@ -246,6 +246,72 @@ pub fn download_cover(
     }
 }
 
+/// 音频文件里内嵌的封面存成这首歌的封面文件，和下载来的放在同一个位置
+/// （`raw/covers/{歌手}/{song_id}.jpg`），删歌、迁库、换封面的代码都不用分两种情况。
+///
+/// 那个位置已经有图就不覆盖（和 `download_cover` 的 overwrite=false 一样）。
+/// PNG 也存成 `.jpg` 这个名字：下载那条路一直这样，webview 按内容认图，不看扩展名。
+///
+/// 返回落盘路径；文件里没有图、或者写不下去时返回 None。**不碰数据库**。
+pub fn save_embedded_cover(
+    covers_dir: &std::path::Path,
+    song_id: &str,
+    artist: &str,
+    audio_path: &std::path::Path,
+) -> Option<String> {
+    let cover = jp_import::embedded::read_cover(audio_path)?;
+    let dest = jp_scraper::cover_path_for(covers_dir, song_id, artist);
+    if std::fs::metadata(&dest).is_ok_and(|m| m.len() > 0) {
+        return Some(dest.display().to_string());
+    }
+    let written = dest
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| {
+            // 先写临时文件再改名：写一半的图不会被当成封面
+            let tmp = dest.with_extension("jpg.part");
+            std::fs::write(&tmp, &cover.data)?;
+            std::fs::rename(&tmp, &dest)
+        });
+    match written {
+        Ok(()) => Some(dest.display().to_string()),
+        Err(err) => {
+            crate::log::warn(format!("内嵌封面写不下去 {song_id}: {err}"));
+            None
+        }
+    }
+}
+
+/// 刚导入的歌里，文件内嵌了封面的，取出来记进库。返回取到了几张。
+///
+/// 导入本身一首歌一个事务、已经提交了，封面放在后面单独做：
+/// 一张图写不下去不该让这首歌算导入失败。
+pub fn save_imported_covers(state: &crate::state::AppState, report: &jp_import::ImportReport) -> usize {
+    let corpus = state.corpus();
+    let conn = corpus.connection();
+    let mut saved = 0;
+    for track in &report.tracks {
+        if !matches!(track.outcome, jp_import::Outcome::Imported { .. }) {
+            continue;
+        }
+        let Ok(artist) = conn.query_row(
+            "SELECT artist FROM songs WHERE id=?1",
+            rusqlite::params![track.song_id],
+            |r| r.get::<_, String>(0),
+        ) else {
+            continue;
+        };
+        let audio = std::path::Path::new(&track.path);
+        if let Some(path) = save_embedded_cover(&state.covers_dir, &track.song_id, &artist, audio) {
+            match record_cover(conn, &track.song_id, &path) {
+                Ok(()) => saved += 1,
+                Err(err) => crate::log::warn(format!("封面记不进库 {}: {err:#}", track.song_id)),
+            }
+        }
+    }
+    saved
+}
+
 /// 把封面路径记进 `songs`。已经有值的不动。
 pub fn record_cover(conn: &rusqlite::Connection, song_id: &str, path: &str) -> Result<()> {
     conn.execute(
@@ -802,6 +868,8 @@ pub struct CoverBackfill {
 /// [`jp_scraper::artwork_urls`] 会把 CAA 的 release / release-group 地址都排进去，
 /// 这里按顺序试：先试赢下匹配的那个候选，再试**同一位歌手、分数够高、自带封面**的其他候选。
 ///
+/// 在这之前先看音频文件自己有没有内嵌封面，有就直接用（见 [`save_embedded_cover`]）。
+///
 /// 只补空的，已经有封面的一律不动；`dry_run` 时只下到 `covers_dir`（给试跑用），不写库。
 pub fn backfill_covers(
     conn: &rusqlite::Connection,
@@ -810,16 +878,32 @@ pub fn backfill_covers(
 ) -> Result<CoverBackfill> {
     let mut out = CoverBackfill::default();
     let mut stmt = conn.prepare(
-        "SELECT s.id, s.artist, COALESCE(st.provider_id,''), COALESCE(st.candidates_json,'')
+        "SELECT s.id, s.artist, COALESCE(st.provider_id,''), COALESCE(st.candidates_json,''),
+                COALESCE(s.audio_path,'')
          FROM songs s LEFT JOIN scrape_state st ON st.song_id = s.id
          WHERE COALESCE(s.cover_path,'') = '' ORDER BY s.id",
     )?;
-    let rows: Vec<(String, String, String, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+    let rows: Vec<(String, String, String, String, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    for (song_id, artist, provider_id, candidates_json) in rows {
+    for (song_id, artist, provider_id, candidates_json, audio_path) in rows {
         out.checked += 1;
+        // 文件里自带封面的先用它：不用联网，也不会配错图。
+        // 当初导入时还不认内嵌封面的那些歌，靠这一步补上。
+        if !audio_path.is_empty()
+            && let Some(path) =
+                save_embedded_cover(covers_dir, &song_id, &artist, std::path::Path::new(&audio_path))
+        {
+            out.filled += 1;
+            if !dry_run {
+                record_cover(conn, &song_id, &path)?;
+            }
+            if out.samples.len() < 8 {
+                out.samples.push(format!("{song_id}：文件内嵌的封面"));
+            }
+            continue;
+        }
         let candidates: Vec<jp_scraper::ScrapeCandidate> =
             serde_json::from_str(&candidates_json).unwrap_or_default();
         let ordered = cover_candidates(&candidates, &provider_id);
@@ -995,6 +1079,63 @@ fn split_slash(name: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    /// 文件里自带封面的，补封面时先用它，不看刮削候选（这首歌根本没刮削过）；
+    /// 已经有图的位置不覆盖，第二次跑已经没有要补的
+    #[test]
+    fn backfill_takes_the_cover_embedded_in_the_audio_first() {
+        use lofty::file::TaggedFileExt;
+        use lofty::tag::TagExt;
+
+        let dir = std::env::temp_dir().join(format!("jp-app-embedded-cover-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let audio = dir.join("song.flac");
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/formats/tone.flac"),
+            &audio,
+        )
+        .unwrap();
+        let picture = vec![0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4];
+        let tagged = lofty::probe::Probe::open(&audio).unwrap().read().unwrap();
+        let mut tag = tagged
+            .primary_tag()
+            .cloned()
+            .unwrap_or_else(|| lofty::tag::Tag::new(tagged.primary_tag_type()));
+        tag.push_picture(
+            lofty::picture::Picture::unchecked(picture.clone())
+                .pic_type(lofty::picture::PictureType::CoverFront)
+                .build(),
+        );
+        tag.save_to_path(&audio, lofty::config::WriteOptions::default()).unwrap();
+
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        jp_corpus::Corpus::ensure_schema_on(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO songs (id, title, artist, audio_path) VALUES ('001', '曲', '歌手', ?1)",
+            [audio.display().to_string()],
+        )
+        .unwrap();
+        // 一首没有内嵌图、也没刮削过的：照旧报「没有候选」，不受影响
+        conn.execute("INSERT INTO songs (id, title, artist, audio_path) VALUES ('002', '曲', '歌手', '')", [])
+            .unwrap();
+
+        let covers = dir.join("covers");
+        let report = super::backfill_covers(&conn, &covers, false).unwrap();
+        assert_eq!((report.checked, report.filled, report.no_candidate), (2, 1, 1), "{report:?}");
+        let stored: String = conn
+            .query_row("SELECT cover_path FROM songs WHERE id='001'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(std::path::PathBuf::from(&stored), jp_scraper::cover_path_for(&covers, "001", "歌手"));
+        assert_eq!(std::fs::read(&stored).unwrap(), picture);
+
+        // 那个位置已有的图不覆盖
+        std::fs::write(&stored, b"user's own").unwrap();
+        let again = super::save_embedded_cover(&covers, "001", "歌手", &audio);
+        assert_eq!(again.as_deref(), Some(stored.as_str()));
+        assert_eq!(std::fs::read(&stored).unwrap(), b"user's own");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 补封面时的候选排序：赢家第一，其余按分数，跨歌手的不要
     #[test]
     fn cover_fallback_keeps_the_same_artist_and_skips_weak_candidates() {

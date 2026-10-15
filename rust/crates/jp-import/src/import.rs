@@ -229,6 +229,14 @@ fn import_one(
     // ── songs ──
     // tag 原值直接落库，一个字都不改。需求：永远不覆盖用户文件里的
     // 原始 metadata；这里连「顺手清理一下」都不做。
+    //
+    // source_file 记歌词的来处：外挂的记 .lrc，内嵌的记音频文件本身。
+    let lyrics = track.lyrics_pick();
+    let source_file = match lyrics {
+        Some(crate::scan::LyricsPick::Embedded(_)) => Some(track.path.as_str()),
+        Some(crate::scan::LyricsPick::File(path)) => Some(path),
+        None => None,
+    };
     tx.execute(
         "INSERT INTO songs \
          (id, title, artist, year, album, genre, audio_path, corpus_type, source_file, duration_sec) \
@@ -241,7 +249,7 @@ fn import_one(
             track.album(),
             track.tag_genre,
             track.path,
-            track.lyrics_path,
+            source_file,
             track.duration_sec,
         ],
     )
@@ -260,15 +268,22 @@ fn import_one(
     link_album(tx, song_id, track.album(), track.artist(), &track.tag_year)?;
 
     // ── 歌词 ──
-    if let Some(path) = &track.lyrics_path {
-        stats += attach_lyrics(
-            tx,
-            song_id,
-            std::path::Path::new(path),
-            analyzer,
-            track.artist(),
-            track.title(),
-        )?;
+    match lyrics {
+        Some(crate::scan::LyricsPick::Embedded(text)) => {
+            stats += attach_lyrics_text(tx, song_id, text, analyzer, track.artist(), track.title())
+                .with_context(|| format!("内嵌歌词入库失败：{}", track.path))?;
+        }
+        Some(crate::scan::LyricsPick::File(path)) => {
+            stats += attach_lyrics(
+                tx,
+                song_id,
+                std::path::Path::new(path),
+                analyzer,
+                track.artist(),
+                track.title(),
+            )?;
+        }
+        None => {}
     }
 
     Ok(stats)
@@ -302,9 +317,32 @@ pub fn attach_lyrics(
     artist: &str,
     title: &str,
 ) -> Result<Stats> {
-    let mut stats = Stats::default();
     let parsed = crate::lrc::parse_file(lrc_path)
         .with_context(|| format!("读歌词失败：{}", lrc_path.display()))?;
+    attach_parsed(tx, song_id, &parsed, analyzer, artist, title)
+}
+
+/// 同 [`attach_lyrics`]，歌词已经在手上（音频文件里内嵌的那份）。
+pub fn attach_lyrics_text(
+    tx: &Connection,
+    song_id: &str,
+    lrc_text: &str,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+    artist: &str,
+    title: &str,
+) -> Result<Stats> {
+    attach_parsed(tx, song_id, &crate::lrc::parse(lrc_text), analyzer, artist, title)
+}
+
+fn attach_parsed(
+    tx: &Connection,
+    song_id: &str,
+    parsed: &crate::lrc::ParsedLrc,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+    artist: &str,
+    title: &str,
+) -> Result<Stats> {
+    let mut stats = Stats::default();
 
     for (line_idx, line) in parsed.lines.iter().enumerate() {
         tx.execute(

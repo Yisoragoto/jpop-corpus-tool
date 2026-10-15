@@ -5,6 +5,9 @@
 //!
 //! 内嵌 tag 优先，读不到就退到文件名和目录结构。Python 版的
 //! `_read_tags` 只读 tag，读不到就把整个文件丢掉；这里不丢。
+//!
+//! 内嵌歌词也在这一步读（见 [`crate::embedded`]）。封面不读进来：一张图动辄几百 KB，
+//! 几百首歌的扫描结果要在内存里放到用户点「导入」为止，导完再按路径去取就行。
 
 use std::path::{Path, PathBuf};
 
@@ -76,10 +79,22 @@ pub struct ScannedTrack {
     pub size: Option<u64>,
     /// 旁边找到的 .lrc 文件
     pub lyrics_path: Option<String>,
+    /// 文件里内嵌的歌词。不送给界面（界面只要知道有没有歌词，见 [`Self::lyrics_pick`]）
+    #[serde(skip)]
+    pub embedded_lyrics: Option<crate::embedded::EmbeddedLyrics>,
     /// 读 tag 时出的问题。为空表示一切正常。
     pub warning: Option<String>,
     /// 这种格式放不了（见 [`UNSUPPORTED_AUDIO`]）。有值的条目不入库，也不当补音频的候选
     pub unsupported: Option<String>,
+}
+
+/// 导入时这首歌的歌词用哪一份。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LyricsPick<'a> {
+    /// 文件里内嵌的歌词原文
+    Embedded(&'a str),
+    /// 外挂 .lrc 的路径
+    File(&'a str),
 }
 
 /// 有效歌手是从哪儿来的，按可信程度从高到低。
@@ -142,6 +157,20 @@ impl ScannedTrack {
         }
     }
 
+    /// 歌词用哪一份：**内嵌的优先**，其次外挂 .lrc。
+    ///
+    /// 内嵌的是文件自己带的，不会配错歌；外挂的 .lrc 只是名字对上了。
+    /// 唯一的例外：内嵌的没有时间轴、外挂的 .lrc 又存在时用 .lrc——
+    /// 没时间轴的歌词跟不上播放、也切不出 Anki 片段，丢掉时间轴比换个来源亏得多。
+    pub fn lyrics_pick(&self) -> Option<LyricsPick<'_>> {
+        match (&self.embedded_lyrics, &self.lyrics_path) {
+            (Some(e), None) => Some(LyricsPick::Embedded(&e.text)),
+            (Some(e), Some(_)) if e.synced => Some(LyricsPick::Embedded(&e.text)),
+            (_, Some(path)) => Some(LyricsPick::File(path)),
+            (None, None) => None,
+        }
+    }
+
     /// 够不够导入。曲名是底线——没有曲名的条目进了库也没法用。
     pub fn has_identity(&self) -> bool {
         !self.title().trim().is_empty()
@@ -164,7 +193,9 @@ pub fn scan_file(path: &Path) -> ScannedTrack {
         ..Default::default()
     };
 
-    match Probe::open(path).and_then(|p| p.options(ParseOptions::new()).read()) {
+    // 封面这一步用不上（见模块注释），别把几百 KB 的图读进来再扔掉
+    let options = ParseOptions::new().read_cover_art(false);
+    match Probe::open(path).and_then(|p| p.options(options).read()) {
         Ok(tagged) => {
             track.duration_sec = Some(tagged.properties().duration().as_secs_f64())
                 .filter(|d| *d > 0.0);
@@ -187,6 +218,7 @@ pub fn scan_file(path: &Path) -> ScannedTrack {
                 track.track_number = tag.track();
                 track.disc_number = tag.disk();
             }
+            track.embedded_lyrics = crate::embedded::lyrics_from(&tagged);
         }
         Err(err) => {
             // 读不出 tag 不等于文件没用——文件名往往就够了

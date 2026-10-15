@@ -831,7 +831,7 @@ export interface MissingLyrics {
 }
 
 /** 歌词是哪来的。 */
-export type LyricsSource = "sibling" | "netease" | "manual";
+export type LyricsSource = "embedded" | "sibling" | "netease" | "manual";
 
 /** 挂上歌词之后的结果。 */
 export interface AttachedLyrics {
@@ -1011,6 +1011,7 @@ export interface UpdateProgress {
 }
 
 export const LYRICS_SOURCE_LABELS: Record<LyricsSource, string> = {
+  embedded: "音频文件内嵌",
   sibling: "音频旁边的 .lrc",
   netease: "在线搜到",
   manual: "手动导入",

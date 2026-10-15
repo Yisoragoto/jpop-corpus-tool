@@ -506,6 +506,95 @@ fn a_sibling_lrc_is_used_without_going_online() {
     assert_eq!(attached["lyricLines"].as_i64(), Some(1));
 }
 
+/// 一张最小的 PNG（文件头 + IHDR），够当封面认出来
+fn tiny_png() -> Vec<u8> {
+    let mut data = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d];
+    data.extend_from_slice(b"IHDR");
+    data.extend_from_slice(&600u32.to_be_bytes());
+    data.extend_from_slice(&600u32.to_be_bytes());
+    data.extend_from_slice(&[8, 2, 0, 0, 0]);
+    data
+}
+
+/// 真的 FLAC（借格式夹具），标签里写好曲名、歌手、带时间轴的歌词和一张封面——
+/// 就是 Mp3tag / foobar2000 整理过的曲库里一首歌的样子（#5）
+fn embedded_flac(dir: &Path, stem: &str, title: &str) -> PathBuf {
+    use lofty::config::WriteOptions;
+    use lofty::file::TaggedFileExt;
+    use lofty::picture::{MimeType, Picture, PictureType};
+    use lofty::tag::{ItemKey, TagExt};
+
+    let path = dir.join(format!("{stem}.flac"));
+    std::fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/formats/tone.flac"), &path).unwrap();
+    let tagged = lofty::probe::Probe::open(&path).unwrap().read().unwrap();
+    let mut tag = tagged
+        .primary_tag()
+        .cloned()
+        .unwrap_or_else(|| lofty::tag::Tag::new(tagged.primary_tag_type()));
+    tag.insert_text(ItemKey::TrackTitle, title.into());
+    tag.insert_text(ItemKey::TrackArtist, "内嵌歌手".into());
+    tag.insert_text(ItemKey::Lyrics, "[00:01.00]埋め込みの一行目
+[00:03.50]埋め込みの二行目
+".into());
+    tag.push_picture(
+        Picture::unchecked(tiny_png()).pic_type(PictureType::CoverFront).mime_type(MimeType::Png).build(),
+    );
+    tag.save_to_path(&path, WriteOptions::default()).unwrap();
+    path
+}
+
+/// 文件里内嵌的歌词和封面，导入时一起进库：旁边没有 .lrc、也没刮削过，照样有歌词有封面
+#[test]
+fn embedded_lyrics_and_cover_come_along_on_import() {
+    let f = Fixture::new("embedded-import");
+    let w = f.w();
+    let dir = drop_dir(&f, "embedded-import");
+    let audio = embedded_flac(&dir, "song", "埋め込みの曲");
+    assert!(!audio.with_extension("lrc").exists(), "前提：旁边没有 .lrc");
+
+    let scan = ok(w, "scan_files", json!({ "paths": [audio.display().to_string()] }));
+    assert_eq!(scan["items"][0]["hasLyrics"], true, "复核列表要显示有歌词：{scan}");
+    ok(w, "cancel_import", json!({}));
+
+    let song_id = import_files(&f, &[&audio]).remove(0);
+    let lines = ok(w, "lyrics", json!({ "songId": song_id }));
+    assert_eq!(len(&lines), 2, "{lines}");
+    assert_eq!(lines[0]["text"].as_str(), Some("埋め込みの一行目"));
+    assert!((lines[1]["timeSec"].as_f64().unwrap() - 3.5).abs() < 1e-6, "时间轴丢了：{lines}");
+
+    let track = ok(w, "get_track", json!({ "songId": song_id }));
+    let cover = track["coverPath"].as_str().unwrap_or("");
+    assert!(!cover.is_empty(), "内嵌封面没记进库：{track}");
+    assert_eq!(std::fs::read(cover).unwrap(), tiny_png(), "落盘的不是文件里那张图");
+    // 和下载来的封面放在同一个地方，删歌、迁库、asset scope 都不用另算
+    assert!(Path::new(cover).starts_with(f.dir().join("raw").join("covers")), "{cover}");
+}
+
+/// 0.2.9 及以前导入的歌：当时不认内嵌数据，库里没歌词。「补齐歌词」要先从文件里取，不上网
+#[test]
+fn filling_lyrics_uses_the_embedded_lyrics_first() {
+    let f = Fixture::new("embedded-fill");
+    let w = f.w();
+    let dir = drop_dir(&f, "embedded-fill");
+    let audio = embedded_flac(&dir, "old", "古い取り込み");
+    let song_id = import_files(&f, &[&audio]).remove(0);
+
+    // 造出「旧版导进来的样子」：没歌词、没封面
+    let cover = ok(w, "get_track", json!({ "songId": song_id }))["coverPath"].as_str().unwrap().to_owned();
+    std::fs::remove_file(&cover).unwrap();
+    f.sql(&format!("DELETE FROM utterances WHERE song_id='{song_id}'"));
+    f.sql(&format!("UPDATE songs SET cover_path=NULL, source_file=NULL WHERE id='{song_id}'"));
+    assert_eq!(len(&ok(w, "lyrics", json!({ "songId": song_id }))), 0);
+
+    let attached = ok(w, "lyrics_fill_one", json!({ "songId": song_id }));
+    assert_eq!(attached["source"], "embedded", "文件里就有歌词却跑去上网：{attached}");
+    assert_eq!(attached["lyricLines"].as_i64(), Some(2));
+    // 和别的来源一样落一份 .lrc，库坏了还能从它重建
+    assert!(Path::new(attached["lrcPath"].as_str().unwrap()).is_file(), "{attached}");
+    // 「补齐封面」先取内嵌的那条见 `scrape.rs` 的单元测试：那个命令会顺手填全库的专辑封面，
+    // 在这个共用的库里跑会和 `filling_album_artwork_is_idempotent` 互相踩
+}
+
 // ────────────────────────── 维护 ──────────────────────────
 
 /// 回填时长：只处理还没有时长的，读得出来的写进去，读不出来的**按原因分开数**。

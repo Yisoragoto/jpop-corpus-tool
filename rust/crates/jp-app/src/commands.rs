@@ -1245,7 +1245,7 @@ fn review(
             artist: item.track.artist().to_string(),
             album: item.track.album().to_string(),
             duration_sec: item.track.duration_sec,
-            has_lyrics: item.track.lyrics_path.is_some(),
+            has_lyrics: item.track.lyrics_pick().is_some(),
             warning: item.track.warning.clone(),
             artist_source: item.track.artist_source(),
             action: item.action.clone(),
@@ -1440,6 +1440,12 @@ pub async fn run_import<R: tauri::Runtime>(
                 ..Default::default()
             },
         );
+
+        // 文件里内嵌了封面的，导完就落一张到 raw/covers，不用等刮削
+        let covers = crate::scrape::save_imported_covers(state, &report);
+        if covers > 0 {
+            crate::log::info(format!("导入时从文件里取出 {covers} 张内嵌封面"));
+        }
 
         // 导完就清掉，避免同一批被点两次
         state.pending_scan().clear();

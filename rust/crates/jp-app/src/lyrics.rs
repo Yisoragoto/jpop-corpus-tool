@@ -8,15 +8,16 @@
 //! 于是从别处拷进来的歌——音乐 App 的下载目录里只有音频——导进来是一行歌词都没有。
 //! 用户看到的就是「以前导入会自动匹配歌词，现在不会了」。
 //!
-//! ## 三条路，一个出口
+//! ## 四条路，一个出口
 //!
 //! | 来源 | 什么时候用 |
 //! |---|---|
+//! | `Embedded` 音频文件里内嵌的歌词 | 当初导入时还不认内嵌歌词（0.2.9 及以前） |
 //! | `Sibling` 音频旁边的 `<同名>.lrc` | 导入之后才下了歌词、或者导入时漏了 |
 //! | `Netease` 在线搜 | 旁边什么都没有（见 [`jp_scraper::lyrics`]） |
 //! | `Manual` 用户自己选的文件 | 自动匹配挑不出来，或者用户有更好的一份 |
 //!
-//! 三条路都走 [`apply_lrc_text`]：**先把 .lrc 落到 `raw/lyrics_lrc/{song_id}.lrc`，
+//! 四条路都走 [`apply_lrc_text`]：**先把 .lrc 落到 `raw/lyrics_lrc/{song_id}.lrc`，
 //! 再入库**。顺序是刻意的——
 //!
 //! * 落盘在前：写文件失败就什么都没改，重试一次即可；
@@ -50,6 +51,8 @@ pub struct MissingLyrics {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum LyricsSource {
+    /// 音频文件里内嵌的
+    Embedded,
     /// 音频旁边的同名 .lrc
     Sibling,
     /// 在线搜到的
@@ -61,6 +64,7 @@ pub enum LyricsSource {
 impl LyricsSource {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Embedded => "embedded",
             Self::Sibling => "sibling",
             Self::Netease => "netease",
             Self::Manual => "manual",
@@ -271,9 +275,11 @@ fn song_names(conn: &Connection, song_id: &str) -> Result<(String, String)> {
     .with_context(|| format!("找不到曲目 {song_id}"))
 }
 
-/// 一首歌走一遍「先本地、再在线」。
+/// 一首歌走一遍「先本地、再在线」：内嵌的 → 旁边的 .lrc → 在线搜。
 ///
 /// 本地优先是因为它必然对：文件就在那首歌旁边，不存在挑错的风险，还不用联网。
+/// 内嵌和外挂之间的取舍和导入时一样（见 `jp_import::ScannedTrack::lyrics_pick`）：
+/// 内嵌的优先，只有它没时间轴、旁边又有 .lrc 时让给 .lrc。
 pub fn fill_one(
     conn: &mut Connection,
     lyrics_dir: &Path,
@@ -281,7 +287,27 @@ pub fn fill_one(
     target: &MissingLyrics,
     analyzer: Option<&jp_tokenizer::Analyzer>,
 ) -> Result<Option<Attached>> {
-    if let Some(local) = sibling_lrc(&target.audio_path) {
+    let sibling = sibling_lrc(&target.audio_path);
+    let embedded = (!target.audio_path.is_empty())
+        .then(|| jp_import::embedded::read_lyrics(Path::new(&target.audio_path)))
+        .flatten()
+        .filter(|e| e.synced || sibling.is_none());
+    if let Some(embedded) = embedded {
+        let name = Path::new(&target.audio_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        return Ok(Some(apply_lrc_text(
+            conn,
+            lyrics_dir,
+            SongRef { id: &target.song_id, artist: &target.artist, title: &target.title },
+            &embedded.text,
+            LyricsSource::Embedded,
+            &name,
+            analyzer,
+        )?));
+    }
+    if let Some(local) = sibling {
         let text = read_text(&local)?;
         let name = local
             .file_name()

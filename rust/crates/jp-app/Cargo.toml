@@ -75,3 +75,5 @@ windows = { version = "0.61", features = [
 tauri = { version = "2", default-features = false, features = [
     "test", "wry", "compression", "dynamic-acl", "x11", "dbus", "protocol-asset",
 ] }
+# 测试里往夹具音频写内嵌歌词、封面。jp-import 已经依赖它，不多下一个包。
+lofty = "0.25"
