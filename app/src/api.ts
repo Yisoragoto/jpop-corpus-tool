@@ -48,6 +48,13 @@ export interface PersonSummary {
   imagePath: string;
 }
 
+/** 关系网的一条边：两个人一起署名的歌数。source < target */
+export interface CollabEdge {
+  source: number;
+  target: number;
+  shared: number;
+}
+
 /** 档案页上的一首作品：这个人在里面的角色 + 谁演唱的（`person_works`） */
 export interface PersonWork extends Track {
   /** 乐队的歌、他本人没署名的是空的 */
@@ -572,6 +579,7 @@ export const api = {
   /** 按 id 取人。命令面板定位到具体人物时用。 */
   personById: (personId: number) =>
     call<PersonSummary | null>("person_by_id", { personId }),
+  collaborationEdges: () => call<CollabEdge[]>("collaboration_edges"),
   personWorks: (personId: number) => call<PersonWork[]>("person_works", { personId }),
   peopleDirectory: () => call<DirectoryEntry[]>("people_directory"),
   worksByPerson: (personId: number) => call<Track[]>("works_by_person", { personId }),

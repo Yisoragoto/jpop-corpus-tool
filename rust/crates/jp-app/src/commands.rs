@@ -6,7 +6,7 @@
 
 use jp_corpus::{
     Album, Collaborator, Credit, KwicHit, KwicQuery, LyricHit, LyricLine, Overview,
-    DirectoryEntry, PersonSummary, PersonWork, PlayEvent, PlayedTrack, QuickSearchResults, Track, WordFrequency, WordInCorpus,
+    CollabEdge, DirectoryEntry, PersonSummary, PersonWork, PlayEvent, PlayedTrack, QuickSearchResults, Track, WordFrequency, WordInCorpus,
     YearStats,
 };
 use serde::Serialize;
@@ -96,6 +96,11 @@ pub fn people_directory(state: State<'_, AppState>) -> CmdResult<Vec<DirectoryEn
 #[tauri::command(async)]
 pub fn person_works(state: State<'_, AppState>, person_id: i64) -> CmdResult<Vec<PersonWork>> {
     Ok(state.corpus().person_works(person_id)?)
+}
+
+#[tauri::command(async)]
+pub fn collaboration_edges(state: State<'_, AppState>) -> CmdResult<Vec<CollabEdge>> {
+    Ok(state.corpus().collaboration_edges()?)
 }
 
 #[tauri::command(async)]

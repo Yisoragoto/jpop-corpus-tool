@@ -177,7 +177,10 @@ export function albumOwner(albumArtist: string): string {
 export type LibraryView =
   | { kind: "song" }
   | { kind: "person"; id: number; albumId?: number | null }
-  | { kind: "album"; albumId: number; title: string };
+  | { kind: "album"; albumId: number; title: string }
+  /** 全局关系网；focus = 打开时选中的人 */
+  | { kind: "graph"; focus?: number | null }
+  | { kind: "timeline" };
 
 export function sameView(a: LibraryView, b: LibraryView): boolean {
   if (a.kind !== b.kind) return false;

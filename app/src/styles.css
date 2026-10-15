@@ -1601,7 +1601,6 @@ button.chip:hover { color: var(--fg); }
    中栏：一个人的档案 / 一张专辑 / 一首歌的歌词。右栏跟着中栏变。 */
 .is-hidden { display: none !important; }
 .browser { display: flex; flex-direction: column; }
-.browser .search { margin: 10px 10px 8px; }
 
 /* 分段控件：选中的那块底色滑过去（--seg-i 第几个，--seg-n 一共几个） */
 .seg-slide {
@@ -1883,6 +1882,67 @@ button.chip:hover { color: var(--fg); }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .song-facts .hint { margin-top: 16px; }
+
+/* 关系网：占中栏和右栏 */
+.graph-pane { grid-column: 3 / -1; position: relative; overflow: hidden; padding: 0; }
+.graph-pane > .nav-back { position: absolute; top: 14px; left: 14px; margin: 0; z-index: 4; }
+.graph-view { position: absolute; inset: 0; animation: fade-in 400ms ease backwards; }
+.relation-graph { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.relation-graph:active { cursor: grabbing; }
+.glass {
+  background: rgba(28, 28, 34, .62); border: 1px solid rgba(255, 255, 255, .1); border-radius: 14px;
+  backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .35);
+}
+.graph-controls {
+  position: absolute; top: 14px; left: 56px; width: 268px; padding: 10px; display: grid; gap: 8px;
+  animation: rise-in 460ms 120ms var(--ease-out) backwards;
+}
+.graph-controls .search, .graph-controls .role-chips { margin: 0; padding-left: 0; padding-right: 0; }
+.graph-controls .search { padding: 6px 10px; }
+.graph-controls .role-chips { padding-bottom: 0; }
+.graph-slider { display: grid; gap: 2px; font-size: 11px; color: var(--muted); }
+.graph-slider input { width: 100%; accent-color: var(--accent); }
+.graph-tip { margin: 0; font-size: 11px; line-height: 1.5; }
+.graph-legend {
+  position: absolute; right: 14px; bottom: 14px; display: flex; gap: 14px; padding: 7px 12px; font-size: 11px; color: var(--muted);
+  animation: rise-in 460ms 200ms var(--ease-out) backwards;
+}
+.graph-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.graph-legend .dot, .graph-legend .ring { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.graph-legend .ring { border: 1.5px solid rgba(255, 255, 255, .8); }
+.graph-legend .line { width: 18px; border-top: 1.5px solid rgba(255, 255, 255, .5); display: inline-block; }
+.graph-legend .line.dashed { border-top: 1.5px dashed #e8d9ff; }
+.graph-card {
+  position: absolute; left: 14px; bottom: 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px;
+  align-items: center; padding: 12px 14px; max-width: 360px;
+  animation: card-pop 380ms var(--spring) backwards;
+}
+@keyframes card-pop { from { opacity: 0; transform: translateY(10px) scale(.96); } }
+.graph-card-text { display: grid; min-width: 0; }
+.graph-card-text b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-card-text small { font-size: 11px; color: var(--muted); }
+.graph-card-actions { grid-column: 1 / -1; display: flex; gap: 8px; margin-top: 6px; }
+.graph-card-actions button { padding: 4px 12px; border-radius: 999px; font-size: 12px; background: var(--control); transition: background 140ms; }
+.graph-card-actions button:hover { background: var(--control-hover); }
+.graph-card-actions button.primary { background: var(--fg); color: #111; font-weight: 600; }
+
+/* 左栏顶上：筛选框 + 关系网 / 时间轴的入口 */
+.browser-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px; }
+.browser-head .search { flex: 1; min-width: 0; margin: 0; }
+.browser-view-btn {
+  display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 auto; border-radius: 8px;
+  color: var(--muted); border: 1px solid var(--line); background: var(--control);
+  transition: background 140ms, color 140ms, transform 240ms var(--spring);
+}
+.browser-view-btn:hover { background: var(--control-hover); color: var(--fg); }
+.browser-view-btn:active { transform: scale(.92); }
+.browser-view-btn.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+
+/* 右栏的小关系网 */
+.local-graph { height: 220px; margin: 0 -8px 8px; border-radius: 12px; background: rgba(0, 0, 0, .18); position: relative; }
+.side-head-row { display: flex; align-items: center; justify-content: space-between; }
+.side-head-row .link-btn { font-size: 11px; }
 
 /* 窄窗口：三栏挤不下时，右栏挪到中栏下面（查词照样用得了），两边不再能拖 */
 @media (max-width: 1100px) {

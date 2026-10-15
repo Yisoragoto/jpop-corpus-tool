@@ -187,6 +187,11 @@ impl Corpus {
         library::person_works(&self.conn, person_id)
     }
 
+    /// 整张关系网的边
+    pub fn collaboration_edges(&self) -> Result<Vec<CollabEdge>> {
+        library::collaboration_edges(&self.conn)
+    }
+
     pub fn people_by_role(&self, role: &str, limit: i64) -> Result<Vec<PersonSummary>> {
         library::people_by_role(&self.conn, role, limit)
     }

@@ -40,6 +40,15 @@ pub struct PersonWork {
     pub performer_ids: Vec<i64>,
 }
 
+/// 关系网的一条边：两个人在几首歌里一起署名。`source < target`，每对只出现一次。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollabEdge {
+    pub source: i64,
+    pub target: i64,
+    pub shared: i64,
+}
+
 /// 一张专辑。对应 `albums` 表。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

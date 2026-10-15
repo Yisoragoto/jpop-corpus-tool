@@ -23,6 +23,7 @@ import { Stat } from "../components/Stat";
 import { useArtistPhotos } from "../components/PerformerPicker";
 import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
 import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
+import { GraphView } from "../components/GraphView";
 import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
@@ -718,6 +719,8 @@ export function LibraryPage({
     </button>
   );
   const songView = view?.kind === "song" || view === null;
+  /** 关系网、时间轴占中栏加右栏 */
+  const wide = view?.kind === "graph" || view?.kind === "timeline";
 
   return (
     <div className="columns library-page" style={columns.style} ref={columns.container}>
@@ -730,6 +733,7 @@ export function LibraryPage({
         onOpenPerson={openPerson}
         onOpenAlbum={openAlbum}
         onOpenTrack={openWithMorph}
+        onOpenGraph={() => go({ kind: "graph", focus: view?.kind === "person" ? view.id : null })}
         banner={
           missing.length > 0 && (
             <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title="扫文件夹或逐首选文件找回">
@@ -747,7 +751,14 @@ export function LibraryPage({
         onReset={columns.reset}
       />
 
-      {view !== null && view.kind !== "song" && (
+      {view?.kind === "graph" && (
+        <main className="pane graph-pane">
+          {backButton}
+          <GraphView data={data} initialFocus={view.focus ?? null} onOpenPerson={(id) => go({ kind: "person", id })} />
+        </main>
+      )}
+
+      {(view?.kind === "person" || view?.kind === "album") && (
         <main className="pane profile-pane" key={view.kind === "person" ? `p${view.id}` : `a${view.albumId}`}>
           {backButton}
           {view.kind === "person" ? (
@@ -985,6 +996,7 @@ export function LibraryPage({
       </main>
 
       <ColumnSplitter
+        className={wide ? "is-hidden" : ""}
         edge="right"
         label="查词栏宽度"
         onDrag={columns.drag}
@@ -992,9 +1004,15 @@ export function LibraryPage({
         onReset={columns.reset}
       />
 
-      <aside className="pane corpus">
+      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>
         {view?.kind === "person" ? (
-          <PersonSide personId={view.id} data={data} onOpenPerson={openPerson} onError={onAudioError} />
+          <PersonSide
+            personId={view.id}
+            data={data}
+            onOpenPerson={openPerson}
+            onOpenGraph={() => go({ kind: "graph", focus: view.id })}
+            onError={onAudioError}
+          />
         ) : (
           corpusContent
         )}

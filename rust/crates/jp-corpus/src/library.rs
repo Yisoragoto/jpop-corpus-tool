@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
-use crate::models::{Album, Collaborator, Credit, DirectoryEntry, FacetCount, PersonWork, LineToken, LyricLine, Person, PersonSummary, Track};
+use crate::models::{Album, CollabEdge, Collaborator, Credit, DirectoryEntry, FacetCount, PersonWork, LineToken, LyricLine, Person, PersonSummary, Track};
 use crate::search::placeholders;
 
 /// 每首曲目都要带歌词行数，UI 靠它区分「没有歌词」和「还没加载」。
@@ -290,6 +290,24 @@ pub(crate) fn works_by_person(conn: &Connection, person_id: i64) -> Result<Vec<T
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
+/// 整张关系网的边：任意两个人一起署过名的歌数。一次自连接，每对只算一次。
+pub(crate) fn collaboration_edges(conn: &Connection) -> Result<Vec<CollabEdge>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.person_id, b.person_id, COUNT(DISTINCT a.song_id) \
+         FROM track_credits a \
+         JOIN track_credits b ON b.song_id = a.song_id AND b.person_id > a.person_id \
+         GROUP BY a.person_id, b.person_id",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(CollabEdge {
+            source: row.get(0)?,
+            target: row.get(1)?,
+            shared: row.get(2)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 /// Collaboration Graph 的边查询。
 ///
 /// 一次自连接就够了——这正是把「人」做成实体而不是留在 `songs.artist`
@@ -564,6 +582,16 @@ mod tests {
         let all = people_directory(&conn).unwrap();
         assert_eq!(all.len(), 3);
         assert!(all.iter().all(|p| p.artist_type.is_empty() && p.image_path.is_empty()));
+    }
+
+    #[test]
+    fn edges_count_each_pair_once() {
+        let conn = fixture(false);
+        conn.execute_batch("INSERT INTO track_credits (song_id, person_id, role) VALUES ('001', 2, 'lyricist');")
+            .unwrap();
+        let edges = collaboration_edges(&conn).unwrap();
+        // ヨルシカ 和 n-buna 只在 001 里一起出现（n-buna 两个角色也只算一首）；月村手毬 没有合作者
+        assert_eq!(edges, vec![CollabEdge { source: 1, target: 2, shared: 1 }]);
     }
 
     #[test]

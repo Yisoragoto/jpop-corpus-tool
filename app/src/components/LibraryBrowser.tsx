@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { api, formatDuration, ROLE_LABELS, type Album, type DirectoryEntry, type Membership, type Track } from "../api";
+import { api, formatDuration, ROLE_LABELS, type Album, type CollabEdge, type DirectoryEntry, type Membership, type Track } from "../api";
 import { messageOf } from "../errors";
 import {
   albumOwner,
@@ -69,6 +69,9 @@ export interface DirectoryData {
   dir: Directory;
   albums: Album[];
   memberships: Membership[];
+  /** 关系网的边（谁和谁一起署过名、几首） */
+  edges: CollabEdge[];
+  entries: DirectoryEntry[];
 }
 
 /**
@@ -79,14 +82,14 @@ export function useDirectory(version: number, onError: (message: string) => void
   const [data, setData] = useState<DirectoryData | null>(null);
   useEffect(() => {
     let alive = true;
-    Promise.all([api.peopleDirectory(), api.memberships(), api.listAlbums(undefined, 2000)])
-      .then(([entries, memberships, albums]) => {
-        if (alive) setData({ dir: buildDirectory(entries, memberships), albums, memberships });
+    Promise.all([api.peopleDirectory(), api.memberships(), api.listAlbums(undefined, 2000), api.collaborationEdges()])
+      .then(([entries, memberships, albums, edges]) => {
+        if (alive) setData({ dir: buildDirectory(entries, memberships), albums, memberships, edges, entries });
       })
       .catch((err: unknown) => {
         if (!alive) return;
         onError(`读不出音乐人列表：${messageOf(err)}`);
-        setData({ dir: buildDirectory([], []), albums: [], memberships: [] });
+        setData({ dir: buildDirectory([], []), albums: [], memberships: [], edges: [], entries: [] });
       });
     return () => {
       alive = false;
@@ -106,6 +109,9 @@ interface Props {
   onOpenTrack: (track: Track, from: HTMLElement) => void;
   /** 找不到音频的歌的提示条（原来在曲库左栏顶上） */
   banner?: React.ReactNode;
+  onOpenGraph: () => void;
+  /** 没给就不显示时间轴按钮 */
+  onOpenTimeline?: () => void;
 }
 
 export function LibraryBrowser({
@@ -118,6 +124,8 @@ export function LibraryBrowser({
   onOpenAlbum,
   onOpenTrack,
   banner,
+  onOpenGraph,
+  onOpenTimeline,
 }: Props) {
   const [mode, setModeState] = useState<BrowseMode>(readMode);
   const [query, setQuery] = useState("");
@@ -163,7 +171,23 @@ export function LibraryBrowser({
   return (
     <aside className="pane library browser">
       {banner}
-      <input className="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
+      <div className="browser-head">
+        <input className="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
+        <button className={`browser-view-btn ${view.kind === "graph" ? "on" : ""}`} onClick={onOpenGraph} title="关系网：所有人和他们的合作" aria-label="关系网">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+            <circle cx="6" cy="7" r="2.4" />
+            <circle cx="18" cy="6" r="2" />
+            <circle cx="12" cy="17" r="2.8" />
+            <path d="m8 8.4 2.6 6.4M16.4 7.5 13.6 14.6M8.3 6.7 16 6.1" />
+          </svg>
+        </button>
+        {onOpenTimeline && <button className={`browser-view-btn ${view.kind === "timeline" ? "on" : ""}`} onClick={onOpenTimeline} title="时间轴：谁在哪年发了什么" aria-label="时间轴">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+            <path d="M3 6h18M3 12h18M3 18h18" opacity=".35" />
+            <path d="M5 6h7M9 12h10M4 18h5" strokeWidth="3" />
+          </svg>
+        </button>}
+      </div>
       <div className="seg-slide browse-modes" style={{ ["--seg-i" as string]: modeIndex, ["--seg-n" as string]: MODES.length }}>
         <span className="seg-thumb" aria-hidden="true" />
         {MODES.map((m) => (

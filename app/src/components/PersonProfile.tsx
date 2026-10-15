@@ -16,6 +16,8 @@ import { prefersReducedMotion } from "../motion";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import { MembersEditor } from "./MembersEditor";
+import { RelationGraph } from "./RelationGraph";
+import { buildGraph } from "../graph";
 import { ROLE_COLORS, type DirectoryData } from "./LibraryBrowser";
 
 /** 没有成员关系时的空列表。用同一个引用：每次新建 [] 会让依赖它的 effect 每帧重跑 */
@@ -354,13 +356,21 @@ export function PersonSide({
   personId,
   data,
   onOpenPerson,
+  onOpenGraph,
   onError,
 }: {
   personId: number;
   data: DirectoryData | null;
   onOpenPerson: (id: number) => void;
+  /** 「全局 ↗」：在整张关系网里看这个人 */
+  onOpenGraph: () => void;
   onError: (message: string) => void;
 }) {
+  // 这个人和他的直接合作者、乐队、成员
+  const local = useMemo(
+    () => (data === null ? null : buildGraph(data.entries, data.edges, data.memberships, { focus: personId, depth: 1 })),
+    [data, personId],
+  );
   const [peers, setPeers] = useState<Collaborator[] | null>(null);
   useEffect(() => {
     let alive = true;
@@ -393,6 +403,23 @@ export function PersonSide({
   const max = Math.max(1, ...(peers ?? []).map((p) => p.sharedTracks));
   return (
     <div className="person-side" key={personId}>
+      {local !== null && local.nodes.length > 1 && (
+        <>
+          <div className="side-head-row">
+            <h3 className="side-head">关系网</h3>
+            <button className="link-btn" onClick={onOpenGraph}>
+              全局 ↗
+            </button>
+          </div>
+          <RelationGraph
+            className="local-graph"
+            graph={local}
+            focusId={personId}
+            compact
+            onSelect={(id) => id !== personId && onOpenPerson(id)}
+          />
+        </>
+      )}
       <h3 className="side-head">合作者</h3>
       <p className="muted small">同一首歌里一起署名的人</p>
       {peers === null && <p className="muted">加载中…</p>}

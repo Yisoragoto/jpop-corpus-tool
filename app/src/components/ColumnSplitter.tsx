@@ -259,13 +259,14 @@ interface Props {
   onNudge: (edge: "left" | "right", step: number) => void;
   onReset: () => void;
   label: string;
+  className?: string;
 }
 
 /** 那道缝本身。6px 宽，鼠标到上面才显出一道高亮线。 */
-export function ColumnSplitter({ edge, onDrag, onNudge, onReset, label }: Props) {
+export function ColumnSplitter({ edge, onDrag, onNudge, onReset, label, className }: Props) {
   return (
     <div
-      className="col-splitter"
+      className={`col-splitter ${className ?? ""}`}
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
