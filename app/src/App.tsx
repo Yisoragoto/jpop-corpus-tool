@@ -38,6 +38,9 @@ import { useLibrary } from "./useLibrary";
 import { useHotkeys } from "./useHotkeys";
 import { usePlaybackState } from "./usePlayback";
 
+/** 和 styles.css「窗口宽窄」那一节的断点一致 */
+const NARROW_WINDOW = "(max-width: 1100px)";
+
 type Route = "home" | "kwic" | "library" | "explorer" | "analytics" | "import" | "scrape" | "anki" | "dict" | "settings";
 
 const ROUTES: { key: Route; label: string; hint: string }[] = [
@@ -63,7 +66,14 @@ export default function App() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [route, setRoute] = useState<Route>("home");
   // 导航栏展开 / 收起（照 WinUI 的 NavigationView）。窄屏和想多留内容宽度时收起
-  const [navOpen, setNavOpen] = useState(true);
+  // 窗口窄于 1100px 时导航自动收成图标，放宽了再展开；中间用户手动开合的照旧
+  const [navOpen, setNavOpen] = useState(() => !window.matchMedia(NARROW_WINDOW).matches);
+  useEffect(() => {
+    const query = window.matchMedia(NARROW_WINDOW);
+    const follow = () => setNavOpen(!query.matches);
+    query.addEventListener("change", follow);
+    return () => query.removeEventListener("change", follow);
+  }, []);
   const [notice, setNotice] = useState<string | null>(null);
 
   const settings = useAppSettings();

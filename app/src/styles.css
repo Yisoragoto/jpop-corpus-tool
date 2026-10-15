@@ -565,7 +565,7 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .spectrum.on span { background: linear-gradient(180deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, .16)); }
 
 .player-row {
-  display: grid; grid-template-columns: 1fr minmax(360px, 42%) 1fr;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center; gap: 16px;
 }
 
@@ -583,9 +583,8 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .now-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .now-artist { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* 中：走带 + 进度 */
-.player-center { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; }
-.transport { display: flex; align-items: center; gap: 6px; }
+/* 中：走带。照 Apple Music：只有图标、没有底框，粗实心的字形 */
+.transport { display: flex; align-items: center; gap: 18px; }
 
 .icon-btn {
   width: 32px; height: 32px; border-radius: var(--radius);
@@ -599,59 +598,49 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .icon-btn.on { color: var(--accent); background: var(--accent-soft); border-color: rgba(76, 194, 255, .35); }
 .player .icon-btn.on { color: #fff; background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .28); }
 
-/* 主按钮：一颗亮一档的毛玻璃圆钮，不用强调色——周围一圈都是玻璃，中间一个蓝圈很跳。
-   左上角一块高光、底下一点内阴影，看起来是凸起来的玻璃珠；外圈细环是这首歌的进度；
-   播放时背后有一圈封面颜色的光在慢慢呼吸。图标切换是旋转 + 缩放的交叉淡入。 */
-.play-btn {
-  position: relative; width: 46px; height: 46px; border-radius: 50%; flex: 0 0 auto;
-  display: grid; place-items: center; color: #fff; isolation: isolate;
-  background:
-    radial-gradient(120% 120% at 30% 18%, rgba(255, 255, 255, .42), rgba(255, 255, 255, .14) 42%, rgba(255, 255, 255, .06) 70%),
-    rgba(255, 255, 255, .06);
-  border: 1px solid rgba(255, 255, 255, .3);
-  backdrop-filter: blur(16px) saturate(180%);
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, .5),
-    inset 0 -8px 14px rgba(0, 0, 0, .18),
-    0 6px 18px rgba(0, 0, 0, .38);
-  transition: transform 320ms var(--spring), background 160ms, border-color 160ms, box-shadow 200ms;
+/* 播放条上的图标按钮：平时只是一个白色字形，鼠标移上去背后浮出一圈毛玻璃，
+   按下去缩一下再弹回来。不常用的（循环、歌词、调音、音量）小一号、颜色淡一档。 */
+.glyph-btn {
+  position: relative; isolation: isolate; flex: 0 0 auto;
+  width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; color: rgba(255, 255, 255, .92);
+  transition: transform 320ms var(--spring), color 160ms, opacity 160ms;
 }
-/* 呼吸的光：封面颜色，只在播放时亮 */
-.play-btn::before {
-  content: ""; position: absolute; inset: -10px; z-index: -1; border-radius: 50%;
-  background: radial-gradient(closest-side, var(--player-tint), transparent);
-  opacity: 0; transform: scale(.8);
-  transition: opacity 400ms ease, transform 400ms ease;
+.glyph-btn::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: 50%;
+  background: radial-gradient(120% 120% at 30% 20%, rgba(255, 255, 255, .26), rgba(255, 255, 255, .08) 60%);
+  border: 1px solid rgba(255, 255, 255, .2);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .35), 0 4px 14px rgba(0, 0, 0, .3);
+  opacity: 0; transform: scale(.7);
+  transition: opacity 200ms ease, transform 320ms var(--spring);
 }
-.play-btn.is-playing::before { opacity: .45; transform: scale(1); animation: play-breathe 2.8s ease-in-out infinite; }
-@keyframes play-breathe { 50% { opacity: .2; transform: scale(1.12); } }
-.play-btn:not(:disabled):hover {
-  transform: scale(1.07);
-  border-color: rgba(255, 255, 255, .45);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .6), inset 0 -8px 14px rgba(0, 0, 0, .14), 0 8px 24px rgba(0, 0, 0, .42);
-}
-.play-btn:not(:disabled):active { transform: scale(.9); transition-duration: 90ms; }
-.play-btn:disabled { opacity: .45; cursor: default; box-shadow: none; }
-.play-ring { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); transform: rotate(-90deg); pointer-events: none; }
-.play-ring circle { fill: none; stroke-width: 1.6; }
-.play-ring-track { stroke: rgba(255, 255, 255, .1); }
-.play-ring-fill { stroke: var(--player-tint); stroke-linecap: round; transition: stroke-dasharray 300ms linear, stroke 400ms; filter: drop-shadow(0 0 3px var(--player-tint)); }
+.glyph-btn:not(:disabled):hover::before, .glyph-btn.open::before { opacity: 1; transform: none; }
+.glyph-btn:not(:disabled):hover { color: #fff; }
+.glyph-btn:not(:disabled):active { transform: scale(.86); transition-duration: 90ms; }
+.glyph-btn:disabled { opacity: .3; cursor: default; }
+.glyph-btn.small { width: 34px; height: 34px; color: rgba(255, 255, 255, .62); }
+.glyph-btn.tiny { width: 26px; height: 26px; color: rgba(255, 255, 255, .55); }
+/* 开着的状态（单句循环在跑、调过速度或音调）：字形变成实白并带一点光 */
+.glyph-btn.on { color: #fff; filter: drop-shadow(0 0 6px rgba(255, 255, 255, .45)); }
+
+/* 播放键大一号；播放 ↔ 暂停两个字形叠着交叉切换 */
+.play-btn { width: 52px; height: 52px; color: #fff; }
 .play-icon { position: absolute; display: grid; place-items: center; transition: opacity 220ms ease, transform 380ms var(--spring); }
 .play-icon.icon-play { transform: translateX(1px); }
 .play-icon.icon-pause { opacity: 0; transform: rotate(-90deg) scale(.4); }
 .play-btn.is-playing .icon-play { opacity: 0; transform: rotate(90deg) scale(.4); }
 .play-btn.is-playing .icon-pause { opacity: 1; transform: none; }
-
-/* 前进后退：按下时箭头往那个方向顶一下 */
-.player .transport .icon-btn { border-radius: 50%; width: 36px; height: 36px; transition: background 140ms, color 140ms, border-color 140ms, transform 300ms var(--spring); }
-.player .transport .icon-btn:not(:disabled):hover { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .16); backdrop-filter: blur(10px); }
-.player .nudge-back:not(:disabled):active { transform: translateX(-3px) scale(.92); transition-duration: 80ms; }
-.player .nudge-forward:not(:disabled):active { transform: translateX(3px) scale(.92); transition-duration: 80ms; }
+/* 前进后退：按下时整个字形往那个方向转一下 */
+.nudge-back:not(:disabled):active { transform: rotate(-24deg) scale(.88); }
+.nudge-forward:not(:disabled):active { transform: rotate(24deg) scale(.88); }
 
 /* 进度条单独一行、贯穿整宽：拖动面积大，时间在两端 */
 .seek-row { display: flex; align-items: center; gap: 12px; padding: 2px 4px 4px; }
-.player .time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 34px; }
+.player .time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 40px; }
 .player .time:last-child { text-align: right; }
+.time-toggle { border-radius: 4px; padding: 0 2px; }
+.time-toggle:not(:disabled):hover { color: var(--fg); }
 .seek-wrap { flex: 1; display: flex; }
 
 /* WinUI 的滑块：细轨 + 圆头，悬停时轨道和圆头一起变大 */
@@ -660,18 +649,18 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
   height: 16px; cursor: pointer;
 }
 .seekbar::-webkit-slider-runnable-track, .volume::-webkit-slider-runnable-track {
-  height: 4px; border-radius: 2px;
+  height: 5px; border-radius: 3px;
   background: linear-gradient(90deg, rgba(255, 255, 255, .88) var(--played, 0%), rgba(255, 255, 255, .16) var(--played, 0%));
   transition: height 100ms;
 }
 .seekbar::-webkit-slider-thumb, .volume::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 12px; height: 12px; margin-top: -4px; border-radius: 50%;
+  width: 13px; height: 13px; margin-top: -4px; border-radius: 50%;
   background: #fff; border: 1px solid rgba(0, 0, 0, .28);
   box-shadow: 0 1px 5px rgba(0, 0, 0, .55);
   transition: transform 100ms;
 }
-.seekbar:hover::-webkit-slider-runnable-track, .volume:hover::-webkit-slider-runnable-track { height: 6px; }
+.seekbar:hover::-webkit-slider-runnable-track, .volume:hover::-webkit-slider-runnable-track { height: 7px; }
 .seekbar:hover::-webkit-slider-thumb, .volume:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .seekbar:active::-webkit-slider-thumb, .volume:active::-webkit-slider-thumb { transform: scale(.9); }
 .seekbar:disabled::-webkit-slider-thumb, .volume:disabled::-webkit-slider-thumb { background: var(--muted); border-color: transparent; box-shadow: none; }
@@ -681,25 +670,17 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .seek-row:hover .seekbar:not(:disabled):active::-webkit-slider-thumb { transform: scale(.9); }
 
 /* 右：工具 */
-.player-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.player-tools { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
 
-/* 弹出面板（Flyout）：按钮 + 向上弹的一列选项 */
-.flyout { position: relative; }
-.flyout-button {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 5px 8px 5px 10px; border-radius: var(--radius);
-  background: var(--control); border: 1px solid var(--line);
-  font-size: 12px; color: var(--fg);
-  transition: background 120ms, border-color 120ms;
+/* 调音：倍速 + 变调合在一个面板里 */
+.tune { position: relative; }
+.tune-badge {
+  position: absolute; left: 50%; bottom: -9px; translate: -50% 0; white-space: nowrap;
+  font-size: 9.5px; line-height: 1; padding: 2px 5px; border-radius: 999px;
+  background: rgba(255, 255, 255, .16); color: #fff; font-variant-numeric: tabular-nums;
+  animation: badge-in 300ms var(--spring) backwards;
 }
-.flyout-button:not(:disabled):hover { background: var(--control-hover); border-color: var(--line-strong); }
-.flyout-button:disabled { opacity: .45; cursor: default; }
-.flyout-button.open { background: var(--control-hover); border-color: var(--line-strong); }
-.flyout-button.on { border-color: rgba(76, 194, 255, .45); background: var(--accent-soft); color: var(--accent); }
-.flyout-caption { color: var(--muted); font-size: 11px; }
-.flyout-button.on .flyout-caption { color: var(--accent); }
-.flyout-value { font-variant-numeric: tabular-nums; }
-
+@keyframes badge-in { from { opacity: 0; transform: translateY(4px) scale(.8); } }
 .flyout-panel {
   position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 60;
   min-width: 168px; max-height: 320px; overflow-y: auto;
@@ -711,22 +692,26 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 }
 .flyout-panel { transform-origin: bottom right; animation: flyout-in 260ms var(--spring) both; }
 @keyframes flyout-in { from { opacity: 0; transform: translateY(8px) scale(.94); } }
-.player .flyout-button { border-radius: 999px; background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .12); backdrop-filter: blur(10px); transition: background 140ms, border-color 140ms, transform 260ms var(--spring); }
-.player .flyout-button:not(:disabled):hover { transform: translateY(-1px); }
-.player .flyout-button:not(:disabled):active { transform: scale(.96); }
-.flyout-note { margin: 4px 8px 6px; font-size: 11px; color: var(--muted); }
-.flyout-item {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 7px 9px; border-radius: 6px; font-size: 13px; color: var(--fg); text-align: left;
+.tune-panel { width: 300px; max-height: none; padding: 12px; display: grid; gap: 8px; }
+.tune-head { display: flex; align-items: baseline; gap: 8px; }
+.tune-head b { font-size: 13px; font-weight: 600; }
+.tune-head span { font-size: 11px; color: var(--muted); }
+.tune-chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 4px; }
+.tune-chips.pitch { grid-template-columns: repeat(7, 1fr); }
+.tune-chips button {
+  padding: 5px 0; border-radius: 7px; font-size: 12px; font-variant-numeric: tabular-nums;
+  background: var(--control); color: var(--muted); transition: background 140ms, color 140ms, transform 220ms var(--spring);
 }
-.flyout-item:hover { background: var(--control-hover); }
-.flyout-check { width: 14px; color: var(--accent); font-size: 12px; }
-.flyout-item.on { color: var(--accent); }
-.flyout-item-label { flex: 1; }
-.flyout-hint { font-size: 11px; color: var(--muted); }
+.tune-chips button:hover { background: var(--control-hover); color: var(--fg); }
+.tune-chips button:active { transform: scale(.94); }
+.tune-chips button.on { background: rgba(255, 255, 255, .9); color: #111; font-weight: 600; }
+.tune-chips.pitch button:nth-child(7) { grid-column: span 1; }
+.tune-reset { justify-self: start; font-size: 12px; color: var(--muted); padding: 3px 10px; border-radius: 999px; background: var(--control); }
+.tune-reset:hover { color: var(--fg); background: var(--control-hover); }
 
-.volume-wrap { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-.volume { width: 84px; }
+.volume-wrap { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); margin-left: 6px; }
+.volume { width: 96px; }
+.volume-max { display: grid; place-items: center; width: 22px; color: rgba(255, 255, 255, .55); }
 
 .pitch-busy {
   font-size: 11px; color: var(--accent); white-space: nowrap;
@@ -1709,6 +1694,43 @@ button.chip:hover { color: var(--fg); }
 
 @media (prefers-reduced-motion: reduce) {
   .wc-inner, .wc-pop, .wc-song, .wc-ripple { animation: none !important; }
+}
+
+/* ── 窗口宽窄 ──────────────────────────────────────────
+   窄窗口（分屏、小笔记本）：导航收成图标（App.tsx 里跟着窗口宽度自动收），页头的统计藏起来，
+   播放条先丢歌手名，再丢歌名和音量条——走带永远在正中间。
+   大屏（27 寸 2560 宽、100% 缩放）：版心放宽，字、按钮、封面都大一档，不再是一小块缩在中间。 */
+@media (max-width: 1100px) {
+  .cmdbar .stats { display: none; }
+  .now-artist { display: none; }
+  .volume { width: 64px; }
+  .player-tools { gap: 2px; }
+}
+@media (max-width: 860px) {
+  .player-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
+  .now { display: none; }
+  .transport { justify-self: center; gap: 6px; }
+  .volume, .volume-max { display: none; }
+}
+@media (min-width: 1900px) {
+  body { font-size: 14px; }
+  .sidebar { width: 232px; }
+  .nav button, .nav-search { font-size: 14px; padding: 9px 12px; }
+  .page-head h1 { font-size: 22px; }
+  .page { padding-inline: max(28px, calc((100% - 1800px) / 2)); }
+  .player { padding-inline: 24px; }
+  .player-row { gap: 28px; }
+  .transport { gap: 22px; }
+  .play-btn { width: 58px; height: 58px; }
+  .glyph-btn.small { width: 38px; height: 38px; }
+  .volume { width: 128px; }
+  .now-title { font-size: 14px; }
+  .now-artist { font-size: 12px; }
+  .player-now .cover { width: 56px !important; height: 56px !important; }
+}
+@media (min-width: 2400px) {
+  body { font-size: 15px; }
+  .page { padding-inline: max(32px, calc((100% - 2100px) / 2)); }
 }
 
 /* ── 动效 ──────────────────────────────────────────────

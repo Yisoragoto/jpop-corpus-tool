@@ -9,9 +9,9 @@
  * 那次 effect——第一下于是只改了显示、没发 seek，看起来就是
  * 「要点两次才跳得过去」。常驻监听没有这个时序窗口。
  *
- * 版面照 Spotify 的三栏：左边这首歌、中间走带和进度、右边工具和音量。
- * 控件按 Windows 11 的质感做（半透明填充 + 细描边 + 悬停变亮），
- * 窗口本身开了 Mica，所以这一条留了透明度，桌面的颜色会透上来。
+ * 版面照 Spotify 的三栏：左边这首歌、中间走带、右边工具和音量，进度条单独一行贯穿整宽。
+ * 按钮照 Apple Music 的底栏：只有粗实心的白色字形、没有底框，鼠标移上去才浮出一圈毛玻璃；
+ * 倍速和变调合成一个「调音」按钮。封面虚化垫在玻璃底下，整条带上这首歌的颜色。
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -20,7 +20,6 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { api, formatDuration, PITCH_STEPS, pitchLabel, RATE_STEPS, type PlaybackState } from "../api";
 import { useCoverTint } from "../coverColor";
 import { Cover } from "./Cover";
-import { Flyout } from "./Flyout";
 import { useSpectrum } from "../usePlayback";
 
 /** 前进 / 后退一步的秒数。听写歌词时反复倒回来的那一小段 */
@@ -109,6 +108,8 @@ export function Player({
   // 封面的颜色：播放钮的光晕、顶边那道高光都用它，换歌跟着换
   const tint = useCoverTint(coverPath);
   const [ambientBroken, setAmbientBroken] = useState(false);
+  const [showRemaining, setShowRemaining] = useState(true);
+  const lastVolume = useRef(1);
   useEffect(() => setAmbientBroken(false), [coverPath]);
 
   return (
@@ -125,7 +126,7 @@ export function Player({
       {showSpectrum && <Spectrum enabled={!disabled} active={playing} />}
 
       <div className="seek-row">
-        <span className="time">{formatDuration(position)}</span>
+        <span className="time">{scrubbing === null && idle ? "—:—" : formatDuration(position)}</span>
         <span className="seek-wrap" style={{ ["--played" as string]: `${pct}%` }}>
           <input
             className="seekbar"
@@ -150,8 +151,15 @@ export function Player({
             aria-label="播放进度"
           />
         </span>
-        {/* 拿不到时长的格式（某些流式 mp3）显示占位而不是 0:00 */}
-        <span className="time">{duration === null ? "—:—" : formatDuration(duration)}</span>
+        {/* 右边默认显示剩余时长（照 Apple Music），点一下换成总长。拿不到时长的格式显示占位 */}
+        <button
+          className="time time-toggle"
+          onClick={() => setShowRemaining((v) => !v)}
+          title={showRemaining ? "显示总时长" : "显示剩余时长"}
+          disabled={duration === null}
+        >
+          {duration === null ? "—:—" : showRemaining ? `-${formatDuration(Math.max(0, duration - position))}` : formatDuration(duration)}
+        </button>
       </div>
 
       <div className="player-row">
@@ -170,109 +178,92 @@ export function Player({
         >
           {/* key 换歌就重挂，封面和歌名一起滑进来 */}
           <div className="now-swap" key={state.songId ?? "none"}>
-          <Cover path={coverPath} size={48} rounded={6} />
-          <div className="now">
-            <span className="now-title">{title || "—"}</span>
-            <span className="now-artist">{artist}</span>
-          </div>
+            <Cover path={coverPath} size={48} rounded={6} />
+            <div className="now">
+              <span className="now-title">{title || "—"}</span>
+              <span className="now-artist">{artist}</span>
+            </div>
           </div>
         </div>
 
-        <div className="player-center">
-          <div className="transport">
-            <button
-              className="icon-btn nudge-back"
-              onClick={() => step(-STEP_SEC)}
-              disabled={disabled || idle}
-              title={`后退 ${STEP_SEC} 秒 (←)`}
-            >
-              <IconBack />
-            </button>
-            <button
-              className={`play-btn ${playing ? "is-playing" : ""}`}
-              onClick={() => void api.audioToggle()}
-              // 等变调渲染时引擎还是空的，但播放键照样能按（记到渲染好之后）
-              disabled={disabled || idle}
-              title={playing ? "暂停 (空格)" : "播放 (空格)"}
-              aria-label={playing ? "暂停" : "播放"}
-            >
-              {/* 外圈是这首歌的进度 */}
-              <svg className="play-ring" viewBox="0 0 60 60" aria-hidden="true">
-                <circle className="play-ring-track" cx="30" cy="30" r="28" />
-                <circle
-                  className="play-ring-fill"
-                  cx="30"
-                  cy="30"
-                  r="28"
-                  pathLength={100}
-                  strokeDasharray={`${pct.toFixed(2)} 100`}
-                />
-              </svg>
-              {/* 两个图标叠着，靠 class 切换：播放 ↔ 暂停是一次旋转 + 缩放的交叉淡入，不是硬切 */}
-              <span className="play-icon icon-play">
-                <IconPlay />
-              </span>
-              <span className="play-icon icon-pause">
-                <IconPause />
-              </span>
-            </button>
-            <button
-              className="icon-btn nudge-forward"
-              onClick={() => step(STEP_SEC)}
-              disabled={disabled || idle}
-              title={`前进 ${STEP_SEC} 秒 (→)`}
-            >
-              <IconForward />
-            </button>
-            <button
-              className={`icon-btn ${state.loopRegion ? "on" : ""}`}
-              onClick={() => void api.audioSetLoop()}
-              disabled={disabled || !state.loopRegion}
-              title={
-                state.loopRegion
-                  ? `单句循环 ${formatDuration(state.loopRegion.startSec)}–${formatDuration(state.loopRegion.endSec)}，点击取消`
-                  : "单句循环：在歌词里选一句开启"
-              }
-            >
-              <IconLoop />
-            </button>
-          </div>
-
+        {/* 走带：照 Apple Music，只有图标没有底框；鼠标移上去才浮出一圈玻璃 */}
+        <div className="transport">
+          <button
+            className="glyph-btn nudge-back"
+            onClick={() => step(-STEP_SEC)}
+            disabled={disabled || idle}
+            title={`后退 ${STEP_SEC} 秒 (←)`}
+            aria-label={`后退 ${STEP_SEC} 秒`}
+          >
+            <IconSkip back />
+          </button>
+          <button
+            className={`glyph-btn play-btn ${playing ? "is-playing" : ""}`}
+            onClick={() => void api.audioToggle()}
+            // 等变调渲染时引擎还是空的，但播放键照样能按（记到渲染好之后）
+            disabled={disabled || idle}
+            title={playing ? "暂停 (空格)" : "播放 (空格)"}
+            aria-label={playing ? "暂停" : "播放"}
+          >
+            {/* 两个图标叠着，靠 class 切换：播放 ↔ 暂停是一次旋转 + 缩放的交叉淡入，不是硬切 */}
+            <span className="play-icon icon-play">
+              <IconPlay />
+            </span>
+            <span className="play-icon icon-pause">
+              <IconPause />
+            </span>
+          </button>
+          <button
+            className="glyph-btn nudge-forward"
+            onClick={() => step(STEP_SEC)}
+            disabled={disabled || idle}
+            title={`前进 ${STEP_SEC} 秒 (→)`}
+            aria-label={`前进 ${STEP_SEC} 秒`}
+          >
+            <IconSkip />
+          </button>
         </div>
 
         <div className="player-tools">
           {state.pitchRendering && <span className="pitch-busy">生成 {pitchLabel(state.pitchSemitones)} 音频…</span>}
-
-          <Flyout
-            caption="速度"
-            label={`${state.rate.toFixed(2).replace(/0$/, "")}×`}
-            title="倍速（不改变音高）"
-            value={state.rate}
-            active={state.rate !== 1}
-            disabled={disabled}
-            options={RATE_STEPS.map((r) => ({ value: r, label: `${r.toFixed(2).replace(/0$/, "")}×` }))}
-            onPick={(r) => void api.audioSetRate(r)}
-            note="不改变音高，走 WSOLA 时间伸缩"
-          />
-
-          <Flyout
-            caption="调"
-            label={pitchLabel(state.pitchSemitones)}
-            title="音调（升降调，不改变速度）"
-            value={state.pitchSemitones}
-            active={state.pitchSemitones !== 0}
-            disabled={disabled}
-            options={PITCH_STEPS.map((n) => ({ value: n, label: pitchLabel(n) }))}
-            onPick={(n) =>
-              void api
-                .audioSetPitch(n)
-                .catch((err: unknown) => onError(err instanceof Error ? err.message : String(err)))
+          <button
+            className={`glyph-btn small ${state.loopRegion ? "on" : ""}`}
+            onClick={() => void api.audioSetLoop()}
+            disabled={disabled || !state.loopRegion}
+            title={
+              state.loopRegion
+                ? `单句循环 ${formatDuration(state.loopRegion.startSec)}–${formatDuration(state.loopRegion.endSec)}，点击取消`
+                : "单句循环：在歌词里选一句开启"
             }
-            note="没用过的调要先生成几秒，之后有缓存"
-          />
-
+            aria-label="单句循环"
+          >
+            <IconLoop />
+          </button>
+          <button
+            className="glyph-btn small"
+            onClick={() => onOpenStage?.()}
+            disabled={!onOpenStage}
+            title="全屏歌词"
+            aria-label="全屏歌词"
+          >
+            <IconLyrics />
+          </button>
+          <TunePanel state={state} disabled={disabled} onError={onError} />
           <span className="volume-wrap" title="音量">
-            <IconVolume muted={state.volume === 0} />
+            <button
+              className="glyph-btn tiny"
+              onClick={() => {
+                // 点小喇叭静音，再点回到静音前的音量
+                if (state.volume > 0) {
+                  lastVolume.current = state.volume;
+                  void api.audioSetVolume(0);
+                } else void api.audioSetVolume(lastVolume.current || 1);
+              }}
+              disabled={disabled}
+              aria-label={state.volume === 0 ? "取消静音" : "静音"}
+            >
+              <IconVolume level={0} muted={state.volume === 0} />
+            </button>
             <input
               className="volume"
               type="range"
@@ -285,10 +276,110 @@ export function Player({
               style={{ ["--played" as string]: `${state.volume * 100}%` }}
               aria-label="音量"
             />
+            <span className="volume-max" aria-hidden="true">
+              <IconVolume level={2} muted={false} />
+            </span>
           </span>
         </div>
       </div>
     </footer>
+  );
+}
+
+/**
+ * 调音：倍速和变调合成一个按钮（照 Apple Music 底栏那颗「均衡器」）。
+ * 两样都不是默认值时按钮下面挂一个小字，一眼看得出现在不是原速原调。
+ */
+function TunePanel({
+  state,
+  disabled,
+  onError,
+}: {
+  state: PlaybackState;
+  disabled: boolean;
+  onError: (message: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+
+  const rateLabel = (r: number) => `${r.toFixed(2).replace(/0$/, "")}×`;
+  const changed = state.rate !== 1 || state.pitchSemitones !== 0;
+  const badge = [state.rate !== 1 && rateLabel(state.rate), state.pitchSemitones !== 0 && `${state.pitchSemitones > 0 ? "+" : ""}${state.pitchSemitones}`]
+    .filter(Boolean)
+    .join(" · ");
+  const setPitch = (n: number) =>
+    void api.audioSetPitch(n).catch((err: unknown) => onError(err instanceof Error ? err.message : String(err)));
+
+  return (
+    <div className="tune" ref={root}>
+      <button
+        className={`glyph-btn small ${changed ? "on" : ""} ${open ? "open" : ""}`}
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        title="速度和音调"
+        aria-label="速度和音调"
+        aria-expanded={open}
+      >
+        <IconTune />
+        {badge && <span className="tune-badge">{badge}</span>}
+      </button>
+      {open && (
+        <div className="flyout-panel tune-panel" role="dialog" aria-label="速度和音调">
+          <div className="tune-head">
+            <b>速度</b>
+            <span>不改变音高</span>
+          </div>
+          <div className="tune-chips">
+            {RATE_STEPS.map((r) => (
+              <button key={r} className={r === state.rate ? "on" : ""} onClick={() => r !== state.rate && void api.audioSetRate(r)}>
+                {rateLabel(r)}
+              </button>
+            ))}
+          </div>
+          <div className="tune-head">
+            <b>音调</b>
+            <span>没用过的调要先生成几秒，之后有缓存</span>
+          </div>
+          <div className="tune-chips pitch">
+            {PITCH_STEPS.map((n) => (
+              <button key={n} className={n === state.pitchSemitones ? "on" : ""} onClick={() => n !== state.pitchSemitones && setPitch(n)}>
+                {n === 0 ? "原调" : `${n > 0 ? "+" : ""}${n}`}
+              </button>
+            ))}
+          </div>
+          {changed && (
+            <button
+              className="tune-reset"
+              onClick={() => {
+                if (state.rate !== 1) void api.audioSetRate(1);
+                if (state.pitchSemitones !== 0) setPitch(0);
+              }}
+            >
+              恢复原速原调
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -313,55 +404,82 @@ function Spectrum({ enabled, active }: { enabled: boolean; active: boolean }) {
 
 function IconPlay() {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-      <path d="M8.5 5.2v13.6L19 12 8.5 5.2z" />
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
+      <path d="M7.5 4.6c0-.9 1-1.5 1.8-1L20 10.6c.8.5.8 1.7 0 2.2L9.3 19.9c-.8.5-1.8-.1-1.8-1z" />
     </svg>
   );
 }
 
 function IconPause() {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-      <rect x="6.5" y="5" width="3.6" height="14" rx="1.2" />
-      <rect x="13.9" y="5" width="3.6" height="14" rx="1.2" />
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
+      <rect x="5.5" y="4" width="4.6" height="16" rx="1.4" />
+      <rect x="13.9" y="4" width="4.6" height="16" rx="1.4" />
     </svg>
   );
 }
 
-function IconBack() {
+/** 前进 / 后退 5 秒：一道圆弧箭头里写着秒数（Apple 的 gobackward.5 那种），不是「上一首 / 下一首」 */
+function IconSkip({ back = false }: { back?: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M11 6 5 12l6 6" />
-      <path d="M19 6l-6 6 6 6" />
-    </svg>
-  );
-}
-
-function IconForward() {
-  return (
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M13 6l6 6-6 6" />
-      <path d="M5 6l6 6-6 6" />
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <g transform={back ? undefined : "translate(24 0) scale(-1 1)"}>
+        <path d="M5.2 8.5A8 8 0 1 1 4 12.6" />
+        <path d="M4.6 4v4.8h4.8" />
+      </g>
+      <text x="12" y="15.6" textAnchor="middle" fontSize="8.5" fontWeight="700" fill="currentColor" stroke="none" fontFamily="Segoe UI, sans-serif">
+        {STEP_SEC}
+      </text>
     </svg>
   );
 }
 
 function IconLoop() {
   return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 12a8 8 0 0 1 8-8h5" />
-      <path d="M14 1.5 17.5 4 14 6.5" />
-      <path d="M20 12a8 8 0 0 1-8 8H7" />
-      <path d="M10 22.5 6.5 20 10 17.5" />
+    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 11V9a3 3 0 0 1 3-3h12" />
+      <path d="m16 3 3 3-3 3" />
+      <path d="M20 13v2a3 3 0 0 1-3 3H5" />
+      <path d="m8 21-3-3 3-3" />
+      <path d="M11.5 10.5 13 9.5v5" strokeWidth="1.8" />
     </svg>
   );
 }
 
-function IconVolume({ muted }: { muted: boolean }) {
+/** 歌词：一个带引号的对话框 */
+function IconLyrics() {
   return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 9.5v5h3.5L12 18V6L7.5 9.5H4z" />
-      {muted ? <path d="M16 9.5l4 5M20 9.5l-4 5" /> : <path d="M15.5 9a4.2 4.2 0 0 1 0 6" />}
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-4.5 3.5V17H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+      <path d="M8.6 9.2h2.4v2.2c0 1-.6 1.7-1.6 2M13.2 9.2h2.4v2.2c0 1-.6 1.7-1.6 2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** 调音：三根推子 */
+function IconTune() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+      <path d="M6 3v18M12 3v18M18 3v18" />
+      <circle cx="6" cy="14" r="2.2" fill="currentColor" />
+      <circle cx="12" cy="8" r="2.2" fill="currentColor" />
+      <circle cx="18" cy="16" r="2.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconVolume({ level, muted }: { level: 0 | 2; muted: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 9.5v5h3.5L12 18V6L7.5 9.5H4z" fill="currentColor" />
+      {muted ? (
+        <path d="M16 9.5l4 5M20 9.5l-4 5" />
+      ) : level === 2 ? (
+        <>
+          <path d="M15.5 9a4.2 4.2 0 0 1 0 6" />
+          <path d="M18 6.5a7.6 7.6 0 0 1 0 11" />
+        </>
+      ) : null}
     </svg>
   );
 }
