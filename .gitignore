@@ -49,3 +49,6 @@ rust/target/
 app/node_modules/
 app/dist/
 app/coverage/
+
+# Tauri 在 Linux 上编译时生成的权限清单（只发 Windows 版，不进仓库）
+rust/crates/jp-app/gen/schemas/linux-schema.json
