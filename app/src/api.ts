@@ -65,6 +65,37 @@ export interface Collaborator {
   imagePath: string;
 }
 
+/**
+ * 一条乐队成员关系（`band_members`）。一首歌属于谁只看演唱署名，这层关系不改变归属。
+ * `leftAt` 为空 = 现在还在；`?` = 知道离开了但不知道哪天。
+ */
+export interface Membership {
+  bandId: number;
+  bandName: string;
+  memberId: number;
+  memberName: string;
+  part: string;
+  joined: string;
+  leftAt: string;
+  /** musicbrainz / confirmed / manual */
+  source: string;
+  bandImage: string;
+  memberImage: string;
+}
+
+/** 推测出来的成员：写的歌几乎全给这个乐队。不会自动生效 */
+export interface MembershipSuggestion {
+  bandId: number;
+  bandName: string;
+  memberId: number;
+  memberName: string;
+  shared: number;
+  written: number;
+}
+
+/** 写成员关系的结果：被挡下来时说明为什么 */
+export type MembershipPutOutcome = "inserted" | "updated" | "keptExisting" | "rejected";
+
 export interface LineToken {
   surface: string;
   lemma: string;
@@ -518,6 +549,18 @@ export const api = {
   worksByPerson: (personId: number) => call<Track[]>("works_by_person", { personId }),
   collaborators: (personId: number, limit?: number) =>
     call<Collaborator[]>("collaborators", { personId, limit }),
+
+  // 乐队成员
+  memberships: () => call<Membership[]>("memberships"),
+  bandMembers: (personId: number) => call<Membership[]>("band_members", { personId }),
+  bandsOf: (personId: number) => call<Membership[]>("bands_of", { personId }),
+  /** 手动加 / 改。成员给 id（库里已有的人）或名字（没署过名的人） */
+  membershipPut: (m: { bandId: number; memberId?: number; memberName?: string; part: string; joined: string; leftAt: string }) =>
+    call<MembershipPutOutcome>("membership_put", m),
+  membershipConfirm: (bandId: number, memberId: number) =>
+    call<MembershipPutOutcome>("membership_confirm", { bandId, memberId }),
+  membershipReject: (bandId: number, memberId: number) => call<void>("membership_reject", { bandId, memberId }),
+  membershipSuggestions: () => call<MembershipSuggestion[]>("membership_suggestions"),
   lyrics: (songId: string) => call<LyricLine[]>("lyrics", { songId }),
 
   // 检索
@@ -1286,7 +1329,14 @@ export interface ArtistOutcome {
   artistType: string;
   country: string;
   formed: string;
+  /** 乐队解散 / 个人去世的日期，可能只有年份 */
+  ended: string;
+  hasEnded: boolean;
+  /** MusicBrainz 编号。同名有好几个条目时不认，这里是空串 */
+  mbid: string;
   imagePath: string;
+  /** 这一轮从 MusicBrainz 写进去的成员关系条数 */
+  memberships: number;
   notFound: boolean;
 }
 

@@ -22,6 +22,7 @@
 mod corpus;
 pub mod home;
 mod library;
+pub mod members;
 mod models;
 mod search;
 mod quick;

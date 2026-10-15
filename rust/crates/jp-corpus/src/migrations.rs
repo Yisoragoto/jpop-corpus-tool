@@ -32,7 +32,7 @@ use rusqlite::Connection;
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///
 /// 格式是 `YYYYMMDD`：单调递增，一眼看得出先后。
-pub const CURRENT: i64 = 20_261_015;
+pub const CURRENT: i64 = 20_261_016;
 
 /// 一步迁移里的一个改动。
 enum Change {
@@ -85,6 +85,33 @@ const STEPS: &[Step] = &[
             column: "added_at",
             ddl: "TEXT",
         }],
+    },
+    Step {
+        version: 20_261_016,
+        what: "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）",
+        // 成员表 `band_members` 是新表，由 schema.sql 建；这里只给老表补列。
+        changes: &[
+            Change::AddColumn {
+                table: "artists",
+                column: "mbid",
+                ddl: "TEXT",
+            },
+            Change::AddColumn {
+                table: "artists",
+                column: "ended",
+                ddl: "TEXT",
+            },
+            Change::AddColumn {
+                table: "artists",
+                column: "has_ended",
+                ddl: "INTEGER",
+            },
+            Change::AddColumn {
+                table: "songs",
+                column: "release_date",
+                ddl: "TEXT",
+            },
+        ],
     },
 ];
 
@@ -268,13 +295,19 @@ mod tests {
         assert_eq!(applied.to, CURRENT);
         assert_eq!(
             applied.steps,
-            vec!["songs.album_id（专辑归属）", "songs.added_at（导入时间）"]
+            vec![
+                "songs.album_id（专辑归属）",
+                "songs.added_at（导入时间）",
+                "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）"
+            ]
         );
 
         // 加列（步骤干的）
         assert!(columns(&conn, "songs").contains(&"album_id".to_string()));
+        assert!(columns(&conn, "songs").contains(&"release_date".to_string()));
         // 加表（schema.sql 干的）
         assert!(table_exists(&conn, "albums").unwrap());
+        assert!(table_exists(&conn, "band_members").unwrap());
         assert!(table_exists(&conn, "track_credits").unwrap());
         // 原来的数据一行不少
         let title: String = conn
@@ -315,7 +348,11 @@ mod tests {
         assert_eq!(applied.to, CURRENT);
         assert_eq!(
             applied.steps,
-            vec!["songs.album_id（专辑归属）", "songs.added_at（导入时间）"],
+            vec![
+                "songs.album_id（专辑归属）",
+                "songs.added_at（导入时间）",
+                "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）"
+            ],
             "没戳过就得把每一步都重跑一遍"
         );
         // 列本来就在，重跑没把它加成两列

@@ -22,7 +22,26 @@ CREATE TABLE IF NOT EXISTS artists (
             country     TEXT,
             formed      TEXT,
             updated_at  TEXT
-        );
+        , mbid TEXT, ended TEXT, has_ended INTEGER);
+
+-- 乐队成员。band_id、member_id 都是 people.id。
+-- 一条关系可能有三个来源：musicbrainz（刮削拿到的）、confirmed（推测之后你确认的）、
+-- manual（你手动加的）。后两种自动流程永远不覆盖。
+-- status = rejected 是「你否掉了」：留着这一行，下次刮削或推测就不会再把它加回来。
+CREATE TABLE IF NOT EXISTS band_members (
+    band_id    INTEGER NOT NULL,
+    member_id  INTEGER NOT NULL,
+    -- 在队里做什么：主唱、吉他、作词作曲……
+    part       TEXT    NOT NULL DEFAULT '',
+    -- 加入 / 离开（或乐队结束）的日期，YYYY、YYYY-MM 或 YYYY-MM-DD；离开为空 = 现在还在
+    joined     TEXT    NOT NULL DEFAULT '',
+    left_at    TEXT    NOT NULL DEFAULT '',
+    source     TEXT    NOT NULL,
+    status     TEXT    NOT NULL DEFAULT 'active',
+    updated_at TEXT    NOT NULL DEFAULT '',
+    PRIMARY KEY (band_id, member_id)
+);
+CREATE INDEX IF NOT EXISTS idx_band_members_member ON band_members(member_id);
 
 CREATE TABLE IF NOT EXISTS chapters (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120,7 +139,7 @@ CREATE TABLE IF NOT EXISTS songs (
             album      TEXT,
             genre      TEXT,
             audio_path TEXT
-        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT);
+        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT);
 
 CREATE TABLE IF NOT EXISTS token_corrections (
             utterance_id INTEGER PRIMARY KEY,

@@ -206,6 +206,19 @@ fn apply_candidate(
         rusqlite::params![candidate.album, candidate.year, candidate.genre, song_id],
     )
     .context("写 songs 失败")?;
+
+    // 完整发行日期（时间轴按月份排要用）。同样只补空的；
+    // 而且**年份对得上才补**：本地文件写的是 2019、候选说 2020-03-04，那这个日期不是这首歌的
+    let date = &candidate.release_date;
+    if !date.is_empty() {
+        conn.execute(
+            "UPDATE songs SET release_date = ?1
+             WHERE id = ?2 AND COALESCE(release_date,'') = ''
+               AND (COALESCE(year,'') = '' OR substr(year,1,4) = substr(?1,1,4))",
+            rusqlite::params![date, song_id],
+        )
+        .context("写发行日期失败")?;
+    }
     Ok(filled)
 }
 
@@ -597,7 +610,14 @@ pub struct ArtistOutcome {
     pub artist_type: String,
     pub country: String,
     pub formed: String,
+    /// 乐队解散 / 个人去世的日期，可能只有年份
+    pub ended: String,
+    pub has_ended: bool,
+    /// MusicBrainz 的编号。同名有好几个条目时不认，这里就是空的
+    pub mbid: String,
     pub image_path: String,
+    /// 这一轮从 MusicBrainz 写进去的成员关系条数（被你手动改过、否掉过的不算）
+    pub memberships: usize,
     /// 一条都没查到
     pub not_found: bool,
 }
@@ -633,6 +653,9 @@ pub fn scrape_artist_one(
         out.artist_type = f.artist_type.clone();
         out.country = f.country.clone();
         out.formed = f.formed.clone();
+        out.ended = f.ended.clone();
+        out.has_ended = f.has_ended;
+        out.mbid = f.provider_id.clone();
         let mut names = f.aliases.clone();
         if !f.name.is_empty() {
             names.push(f.name.clone());
@@ -662,27 +685,87 @@ pub fn scrape_artist_one(
     if !out.not_found {
         upsert_artist(conn, &out)?;
     }
+
+    // 成员关系：只在唯一认出了这个条目（有 MBID）时才查，多一次请求
+    if !out.mbid.is_empty() {
+        match mb.relations(&out.mbid) {
+            Ok(rel) => match apply_relations(conn, name, &rel) {
+                Ok(n) => out.memberships = n,
+                Err(err) => crate::log::warn(format!("写 {name} 的成员关系失败: {err:#}")),
+            },
+            Err(err) => crate::log::warn(format!("MusicBrainz 查 {name} 的成员失败: {err}")),
+        }
+    }
     Ok(out)
+}
+
+/// 把 MusicBrainz 的成员关系写进 `band_members`（来源 musicbrainz）。
+///
+/// * 查的是乐队：每个成员都写，成员不在库里就按名字建一个人（他可能没署过名，比如鼓手）；
+/// * 查的是个人：只写**库里已经有的**乐队——没在库里出现过的乐队建出来也是空壳。
+///
+/// 你手动加过、确认过、否掉过的，[`jp_corpus::members::put`] 会挡下，这里不用管。
+/// 返回实际写进去（新增或更新）的条数。
+pub fn apply_relations(
+    conn: &rusqlite::Connection,
+    name: &str,
+    rel: &jp_scraper::providers::musicbrainz::ArtistRelations,
+) -> Result<usize> {
+    use jp_corpus::members::{PutOutcome, ensure_person, put};
+    use rusqlite::OptionalExtension;
+
+    let me = ensure_person(conn, name)?;
+    let mut written = 0;
+    let mut count = |outcome: PutOutcome| {
+        if matches!(outcome, PutOutcome::Inserted | PutOutcome::Updated) {
+            written += 1;
+        }
+    };
+    for m in &rel.members {
+        if m.name.trim().is_empty() {
+            continue;
+        }
+        let member = ensure_person(conn, &m.name)?;
+        if member != me {
+            count(put(conn, me, member, &m.part, &m.joined, &m.left_at, "musicbrainz")?);
+        }
+    }
+    for b in &rel.member_of {
+        let key = jp_normalize::matching_key(&b.name);
+        let band: Option<i64> = conn
+            .query_row("SELECT id FROM people WHERE normalized_name=?1", rusqlite::params![key], |r| r.get(0))
+            .optional()?;
+        if let Some(band) = band.filter(|b| *b != me) {
+            count(put(conn, band, me, &b.part, &b.joined, &b.left_at, "musicbrainz")?);
+        }
+    }
+    Ok(written)
 }
 
 /// 写 `artists` 表。**空值不覆盖已有值**——这一轮没查到照片，
 /// 不该把上一轮拿到的抹掉。
 fn upsert_artist(conn: &rusqlite::Connection, out: &ArtistOutcome) -> Result<()> {
     conn.execute(
-        "INSERT INTO artists (name, image_path, artist_type, country, formed, updated_at)
-         VALUES (?1,?2,?3,?4,?5,datetime('now'))
+        "INSERT INTO artists (name, image_path, artist_type, country, formed, ended, has_ended, mbid, updated_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,datetime('now'))
          ON CONFLICT(name) DO UPDATE SET
             image_path  = COALESCE(NULLIF(excluded.image_path, ''),  image_path),
             artist_type = COALESCE(NULLIF(excluded.artist_type, ''), artist_type),
             country     = COALESCE(NULLIF(excluded.country, ''),     country),
             formed      = COALESCE(NULLIF(excluded.formed, ''),      formed),
+            ended       = COALESCE(NULLIF(excluded.ended, ''),       ended),
+            has_ended   = MAX(COALESCE(has_ended, 0), excluded.has_ended),
+            mbid        = COALESCE(NULLIF(excluded.mbid, ''),        mbid),
             updated_at  = excluded.updated_at",
         rusqlite::params![
             out.name,
             out.image_path,
             out.artist_type,
             out.country,
-            out.formed
+            out.formed,
+            out.ended,
+            out.has_ended,
+            out.mbid
         ],
     )
     .context("写 artists 失败")?;
@@ -691,7 +774,7 @@ fn upsert_artist(conn: &rusqlite::Connection, out: &ArtistOutcome) -> Result<()>
 
 /// 库里出现过的歌手，按斜杠拆开去重。
 ///
-/// `only_missing` 为真时只返回**还没有照片**的——重跑幂等。
+/// `only_missing` 为真时只返回**还没有照片、或者还没认出 MusicBrainz 条目**的——重跑幂等。
 pub fn library_artists(conn: &rusqlite::Connection, only_missing: bool) -> Result<Vec<String>> {
     let mut stmt =
         conn.prepare("SELECT DISTINCT artist FROM songs WHERE COALESCE(artist,'')<>''")?;
@@ -715,7 +798,10 @@ pub fn library_artists(conn: &rusqlite::Connection, only_missing: bool) -> Resul
     }
 
     let mut have = std::collections::BTreeSet::new();
-    let mut stmt = conn.prepare("SELECT name FROM artists WHERE COALESCE(image_path,'')<>''")?;
+    // 「齐了」= 有照片、也认出了 MusicBrainz 条目。缺 MBID 的再查一次，成员关系是跟着 MBID 拿的
+    let mut stmt = conn.prepare(
+        "SELECT name FROM artists WHERE COALESCE(image_path,'')<>'' AND COALESCE(mbid,'')<>''",
+    )?;
     for row in stmt.query_map([], |r| r.get::<_, String>(0))? {
         have.insert(row?);
     }
@@ -1342,5 +1428,96 @@ mod tests {
             })
             .unwrap();
         assert!(cover.unwrap_or_default().is_empty());
+    }
+
+    fn release_date_of(conn: &rusqlite::Connection) -> String {
+        conn.query_row("SELECT COALESCE(release_date,'') FROM songs WHERE id='001'", [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn accepting_a_candidate_fills_the_full_release_date() {
+        let conn = manual_db();
+        let mut c = candidate("ヨルシカ");
+        c.release_date = "2020-07-29".into();
+        apply_manual(&conn, std::path::Path::new("X:/nowhere"), "001", "ヨルシカ", &c).unwrap();
+        assert_eq!(release_date_of(&conn), "2020-07-29");
+    }
+
+    /// 本地文件写的是 2019，候选的日期是 2020 的：那个日期不是这首歌的，不能补
+    #[test]
+    fn a_release_date_from_another_year_is_not_taken() {
+        let conn = manual_db();
+        conn.execute_batch("UPDATE songs SET year='2019' WHERE id='001'").unwrap();
+        let mut c = candidate("ヨルシカ");
+        c.release_date = "2020-07-29".into();
+        apply_manual(&conn, std::path::Path::new("X:/nowhere"), "001", "ヨルシカ", &c).unwrap();
+        assert_eq!(release_date_of(&conn), "");
+    }
+
+    fn rel(name: &str, part: &str, joined: &str, left_at: &str) -> jp_scraper::providers::musicbrainz::BandRelation {
+        jp_scraper::providers::musicbrainz::BandRelation {
+            mbid: String::new(),
+            name: name.into(),
+            part: part.into(),
+            joined: joined.into(),
+            left_at: left_at.into(),
+        }
+    }
+
+    #[test]
+    fn a_band_lookup_writes_its_members_and_creates_people_who_never_got_a_credit() {
+        let conn = manual_db();
+        conn.execute_batch("INSERT INTO people (id, name, normalized_name) VALUES (2, 'n-buna', 'nbuna')")
+            .unwrap();
+        let relations = jp_scraper::providers::musicbrainz::ArtistRelations {
+            members: vec![rel("n-buna", "吉他", "2017", ""), rel("suis", "主唱", "2017", "")],
+            ..Default::default()
+        };
+        assert_eq!(apply_relations(&conn, "ヨルシカ", &relations).unwrap(), 2);
+        let names: Vec<_> = jp_corpus::members::members_of(&conn, 1)
+            .unwrap()
+            .into_iter()
+            .map(|m| (m.member_name, m.source))
+            .collect();
+        assert_eq!(
+            names,
+            [("n-buna".to_string(), "musicbrainz".to_string()), ("suis".to_string(), "musicbrainz".to_string())]
+        );
+    }
+
+    /// 查个人时，库里没有的乐队不建空壳
+    #[test]
+    fn a_person_lookup_only_links_bands_already_in_the_library() {
+        let conn = manual_db();
+        let relations = jp_scraper::providers::musicbrainz::ArtistRelations {
+            member_of: vec![rel("ヨルシカ", "吉他", "2017", ""), rel("库里没有的乐队", "", "2010", "2012")],
+            ..Default::default()
+        };
+        assert_eq!(apply_relations(&conn, "n-buna", &relations).unwrap(), 1);
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM people WHERE name='库里没有的乐队'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    /// 你否掉的、手动写的，第二次刮削不动
+    #[test]
+    fn scraping_again_leaves_your_own_decisions_alone() {
+        let conn = manual_db();
+        let relations = jp_scraper::providers::musicbrainz::ArtistRelations {
+            members: vec![rel("n-buna", "吉他", "2017", ""), rel("suis", "主唱", "2017", "")],
+            ..Default::default()
+        };
+        apply_relations(&conn, "ヨルシカ", &relations).unwrap();
+        let suis = jp_corpus::members::ensure_person(&conn, "suis").unwrap();
+        let nbuna = jp_corpus::members::ensure_person(&conn, "n-buna").unwrap();
+        jp_corpus::members::reject(&conn, 1, suis).unwrap();
+        jp_corpus::members::put(&conn, 1, nbuna, "作词作曲 · 吉他", "2017", "", "manual").unwrap();
+
+        assert_eq!(apply_relations(&conn, "ヨルシカ", &relations).unwrap(), 0);
+        let members = jp_corpus::members::members_of(&conn, 1).unwrap();
+        assert_eq!(members.len(), 1, "suis 被否掉了，不回来");
+        assert_eq!(members[0].part, "作词作曲 · 吉他", "手动写的分工不被刮削改掉");
     }
 }

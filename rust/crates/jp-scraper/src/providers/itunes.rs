@@ -14,7 +14,7 @@ use crate::error::ProviderError;
 use crate::http::{HttpClient, HttpConfig, RateLimiter};
 use crate::models::{ScrapeCandidate, SearchQuery};
 
-use super::{ArtistInfo, MetadataProvider, as_f64, as_i64, as_str, year_of};
+use super::{ArtistInfo, MetadataProvider, as_f64, as_i64, as_str, date_of, year_of};
 
 const SEARCH_URL: &str = "https://itunes.apple.com/search";
 const LOOKUP_URL: &str = "https://itunes.apple.com/lookup";
@@ -144,6 +144,7 @@ impl ITunesProvider {
                 album: strip_release_suffix(&as_str(item.get("collectionName"))),
                 album_artist,
                 year: year_of(&release),
+                release_date: date_of(&release),
                 genre: as_str(item.get("primaryGenreName")),
                 // trackTimeMillis 是毫秒
                 duration_sec: as_f64(item.get("trackTimeMillis")).map(|ms| ms / 1000.0),
@@ -277,6 +278,7 @@ mod tests {
         assert_eq!(c.artist, "YOASOBI");
         assert_eq!(c.album, "THE BOOK");
         assert_eq!(c.year, "2019");
+        assert_eq!(c.release_date, "2019-11-16");
         assert_eq!(c.genre, "J-Pop");
         // 毫秒要换成秒，不然时长分永远是 0
         assert_eq!(c.duration_sec, Some(261.0));

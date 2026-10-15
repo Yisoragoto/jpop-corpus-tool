@@ -18,7 +18,7 @@ use crate::error::ProviderError;
 use crate::http::{HttpClient, HttpConfig, RateLimiter};
 use crate::models::{ScrapeCandidate, SearchQuery};
 
-use super::{ArtistInfo, MetadataProvider, as_f64, as_i64, as_str, year_of};
+use super::{ArtistInfo, MetadataProvider, as_f64, as_i64, as_str, date_of, year_of};
 
 const RECORDING_URL: &str = "https://musicbrainz.org/ws/2/recording";
 const ARTIST_URL: &str = "https://musicbrainz.org/ws/2/artist";
@@ -158,6 +158,7 @@ impl MusicBrainzProvider {
             artist,
             album: release.map(|r| as_str(r.get("title"))).unwrap_or_default(),
             year: year_of(&release.map(|r| as_str(r.get("date"))).unwrap_or_default()),
+            release_date: date_of(&release.map(|r| as_str(r.get("date"))).unwrap_or_default()),
             // length 是毫秒
             duration_sec: as_f64(item.get("length")).map(|ms| ms / 1000.0),
             track_number: track.and_then(|t| as_i64(t.get("number"))),
@@ -273,6 +274,8 @@ impl MetadataProvider for MusicBrainzProvider {
             .map(|n| matching_key(&n))
             .collect();
 
+        // 名字或别名归一化后相等的才算；按 MBID 去重
+        let mut found: Vec<ArtistInfo> = Vec::new();
         for item in object
             .get("artists")
             .and_then(|v| v.as_array())
@@ -301,19 +304,183 @@ impl MetadataProvider for MusicBrainzProvider {
             if keys.intersection(&accept).next().is_none() {
                 continue;
             }
-            return Ok(Some(ArtistInfo {
+            let id = as_str(item.get("id"));
+            if found.iter().any(|f| f.provider_id == id) {
+                continue;
+            }
+            let life = item.get("life-span");
+            found.push(ArtistInfo {
                 provider: "musicbrainz".into(),
-                provider_id: as_str(item.get("id")),
+                provider_id: id,
                 name: as_str(item.get("name")),
                 aliases: item_aliases,
                 artist_type: as_str(item.get("type")),
                 country: as_str(item.get("country")),
-                formed: as_str(item.get("life-span").and_then(|l| l.get("begin"))),
+                formed: as_str(life.and_then(|l| l.get("begin"))),
+                ended: as_str(life.and_then(|l| l.get("end"))),
+                has_ended: life
+                    .and_then(|l| l.get("ended"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
                 ..Default::default()
-            }));
+            });
         }
-        Ok(None)
+        // **同名的不止一个就不认。** 认错了的代价是把别人的成员、别人的解散时间
+        // 安到这个歌手头上，比查不到严重得多。查不到界面上还能手动补。
+        if found.len() == 1 {
+            Ok(found.pop())
+        } else {
+            Ok(None)
+        }
     }
+}
+
+/// 乐队和成员之间的一条关系（MusicBrainz 的「member of band」）。
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BandRelation {
+    /// 另一头的 MBID 和名字（查乐队时是成员，查个人时是乐队）
+    pub mbid: String,
+    pub name: String,
+    /// 在队里做什么，已经翻成中文（主唱、吉他……），认不出的原样留着
+    pub part: String,
+    pub joined: String,
+    /// 离开的日期。知道离开了但不知道哪天时是 `?`；还在是空串
+    pub left_at: String,
+}
+
+/// 一个艺人条目的成员关系和活动期。
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistRelations {
+    pub ended: String,
+    pub has_ended: bool,
+    /// 查的是乐队：它的成员
+    pub members: Vec<BandRelation>,
+    /// 查的是个人：他待过的乐队
+    pub member_of: Vec<BandRelation>,
+}
+
+/// MusicBrainz 的乐器 / 角色属性 → 中文。只翻常见的，认不出的保留原文。
+fn part_name(attribute: &str) -> Option<&'static str> {
+    Some(match attribute.to_lowercase().as_str() {
+        "original" | "founder" => return None, // 「创始成员」这类不是分工
+        "lead vocals" | "vocals" | "vocal" => "主唱",
+        "background vocals" => "和声",
+        "guitar" | "electric guitar" | "acoustic guitar" => "吉他",
+        "bass guitar" | "bass" | "electric bass guitar" => "贝斯",
+        "drums (drum set)" | "drums" | "drum set" => "鼓",
+        "keyboard" | "keyboards" | "piano" | "synthesizer" => "键盘",
+        _ => return Some(""),
+    })
+}
+
+fn translate_parts(attributes: &[String]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for a in attributes {
+        let name = match part_name(a) {
+            None => continue,
+            Some("") => a.clone(),
+            Some(cn) => cn.to_string(),
+        };
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out.join(" · ")
+}
+
+/// MBID 是 UUID。拼进 URL 路径之前先验一下，别让奇怪的字符串进路径。
+fn is_mbid(id: &str) -> bool {
+    id.len() == 36 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+}
+
+impl MusicBrainzProvider {
+    /// 查一个艺人条目的成员关系（`inc=artist-rels`）。一次请求，走同一条限流。
+    ///
+    /// 乐队已经结束、而某个成员的关系没写结束日期的，按乐队的结束日期算他离开——
+    /// 乐队都没了，人自然也不在队里了。
+    pub fn relations(&self, mbid: &str) -> Result<ArtistRelations, ProviderError> {
+        if !is_mbid(mbid) {
+            return Err(ProviderError::invalid_response(format!("不是 MBID：{mbid}")).with_provider("musicbrainz"));
+        }
+        let url = self.http.build_url(
+            &format!("{ARTIST_URL}/{mbid}"),
+            &[("inc", "artist-rels".into()), ("fmt", "json".into())],
+        );
+        let payload = self.http.get_json(&url)?;
+        Ok(parse_relations(&payload))
+    }
+}
+
+fn parse_relations(payload: &serde_json::Value) -> ArtistRelations {
+    let life = payload.get("life-span");
+    let mut out = ArtistRelations {
+        ended: as_str(life.and_then(|l| l.get("end"))),
+        has_ended: life.and_then(|l| l.get("ended")).and_then(|v| v.as_bool()).unwrap_or(false),
+        ..Default::default()
+    };
+    for rel in payload.get("relations").and_then(|v| v.as_array()).into_iter().flatten() {
+        if as_str(rel.get("type")) != "member of band" {
+            continue;
+        }
+        let Some(other) = rel.get("artist") else { continue };
+        let attributes: Vec<String> = rel
+            .get("attributes")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        let ended = rel.get("ended").and_then(|v| v.as_bool()).unwrap_or(false);
+        let mut left_at = as_str(rel.get("end"));
+        if left_at.is_empty() && ended {
+            left_at = "?".into();
+        }
+        let relation = BandRelation {
+            mbid: as_str(other.get("id")),
+            name: as_str(other.get("name")),
+            part: translate_parts(&attributes),
+            joined: as_str(rel.get("begin")),
+            left_at,
+        };
+        // backward：「对方 是 我 的成员」——查的是乐队；forward 反过来
+        if as_str(rel.get("direction")) == "backward" {
+            out.members.push(relation);
+        } else {
+            out.member_of.push(relation);
+        }
+    }
+    if out.has_ended || !out.ended.is_empty() {
+        let end = if out.ended.is_empty() { "?".to_string() } else { out.ended.clone() };
+        for m in out.members.iter_mut().filter(|m| m.left_at.is_empty()) {
+            m.left_at = end.clone();
+        }
+    }
+    // 同一个人可能有好几段（退队又回来）：按 MBID 合并成一条，取最早加入、最晚离开
+    let merge = |list: &mut Vec<BandRelation>| {
+        let mut merged: Vec<BandRelation> = Vec::new();
+        for r in list.drain(..) {
+            if let Some(m) = merged.iter_mut().find(|m| m.mbid == r.mbid) {
+                if !r.joined.is_empty() && (m.joined.is_empty() || r.joined < m.joined) {
+                    m.joined = r.joined.clone();
+                }
+                // 有一段还在（空）就算还在；否则取更晚的
+                if m.left_at.is_empty() || r.left_at.is_empty() {
+                    m.left_at = String::new();
+                } else if r.left_at > m.left_at {
+                    m.left_at = r.left_at.clone();
+                }
+                if m.part.is_empty() {
+                    m.part = r.part.clone();
+                }
+            } else {
+                merged.push(r);
+            }
+        }
+        *list = merged;
+    };
+    merge(&mut out.members);
+    merge(&mut out.member_of);
+    out
 }
 
 /// release-group 的 secondary-type，带这些的不是「这首歌本来属于哪张专辑」。
@@ -509,6 +676,99 @@ mod tests {
         assert_eq!(got.name, "Mori Calliope");
         assert_eq!(got.artist_type, "Person");
         assert_eq!(got.formed, "2020-08-12");
+    }
+
+    #[test]
+    fn two_artists_with_the_same_name_are_not_guessed_between() {
+        // 同名的两个条目：认哪个都可能错，干脆不认
+        let body = json!({"artists":[
+            {"id":"aaaaaaaa-0000-0000-0000-000000000001","name":"Haru","score":100,"type":"Person"},
+            {"id":"aaaaaaaa-0000-0000-0000-000000000002","name":"HARU","score":95,"type":"Group"}
+        ]})
+        .to_string();
+        assert!(provider(&body).get_artist("Haru", &[]).unwrap().is_none());
+    }
+
+    #[test]
+    fn the_same_artist_listed_twice_is_still_one_match_and_carries_its_end_date() {
+        let body = json!({"artists":[
+            {"id":"bbbbbbbb-0000-0000-0000-000000000001","name":"きのこ帝国","type":"Group",
+             "life-span":{"begin":"2007","end":"2019-05-27","ended":true}},
+            {"id":"bbbbbbbb-0000-0000-0000-000000000001","name":"きのこ帝国","type":"Group"}
+        ]})
+        .to_string();
+        let got = provider(&body).get_artist("きのこ帝国", &[]).unwrap().unwrap();
+        assert_eq!(got.formed, "2007");
+        assert_eq!(got.ended, "2019-05-27");
+        assert!(got.has_ended);
+    }
+
+    fn relations_body() -> serde_json::Value {
+        json!({
+            "id": "bbbbbbbb-0000-0000-0000-000000000001",
+            "life-span": {"begin": "2007", "end": "2019", "ended": true},
+            "relations": [
+                {"type": "member of band", "direction": "backward", "begin": "2007", "end": null, "ended": false,
+                 "attributes": ["original", "lead vocals", "guitar"],
+                 "artist": {"id": "cccccccc-0000-0000-0000-000000000001", "name": "佐藤千亜妃"}},
+                {"type": "member of band", "direction": "backward", "begin": "2007", "end": "2012", "ended": true,
+                 "attributes": ["drums (drum set)"],
+                 "artist": {"id": "cccccccc-0000-0000-0000-000000000002", "name": "前のドラマー"}},
+                {"type": "member of band", "direction": "backward", "begin": "2015", "ended": true,
+                 "attributes": ["theremin"],
+                 "artist": {"id": "cccccccc-0000-0000-0000-000000000003", "name": "サポート"}},
+                {"type": "producer", "direction": "backward",
+                 "artist": {"id": "cccccccc-0000-0000-0000-000000000004", "name": "プロデューサー"}}
+            ]
+        })
+    }
+
+    #[test]
+    fn band_members_are_read_with_parts_in_chinese_and_dates() {
+        let got = parse_relations(&relations_body());
+        assert_eq!(got.ended, "2019");
+        assert!(got.has_ended);
+        let rows: Vec<_> = got
+            .members
+            .iter()
+            .map(|m| (m.name.as_str(), m.part.as_str(), m.joined.as_str(), m.left_at.as_str()))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                // 关系没写结束，但乐队 2019 结束了 → 按 2019 离开
+                ("佐藤千亜妃", "主唱 · 吉他", "2007", "2019"),
+                ("前のドラマー", "鼓", "2007", "2012"),
+                // 知道离开了、不知道哪天
+                ("サポート", "theremin", "2015", "?"),
+            ]
+        );
+        assert!(got.member_of.is_empty(), "producer 之类的关系不算成员");
+    }
+
+    #[test]
+    fn a_person_lists_the_bands_they_were_in_and_rejoining_merges_into_one_row() {
+        let body = json!({
+            "life-span": {"begin": "1988"},
+            "relations": [
+                {"type": "member of band", "direction": "forward", "begin": "2007", "end": "2010", "ended": true,
+                 "artist": {"id": "bbbbbbbb-0000-0000-0000-000000000001", "name": "きのこ帝国"}},
+                {"type": "member of band", "direction": "forward", "begin": "2012", "ended": false,
+                 "artist": {"id": "bbbbbbbb-0000-0000-0000-000000000001", "name": "きのこ帝国"}}
+            ]
+        });
+        let got = parse_relations(&body);
+        assert!(got.members.is_empty());
+        assert_eq!(got.member_of.len(), 1);
+        assert_eq!(got.member_of[0].joined, "2007");
+        assert_eq!(got.member_of[0].left_at, "", "回来之后还在");
+    }
+
+    #[test]
+    fn relations_refuse_anything_that_is_not_an_mbid() {
+        let p = provider("{}");
+        assert!(p.relations("../../etc").is_err());
+        assert!(p.relations("").is_err());
     }
 
     #[test]

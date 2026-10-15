@@ -104,6 +104,74 @@ pub fn collaborators(
         .collaborators(person_id, limit.unwrap_or(50))?)
 }
 
+// ────────────────────────────── 乐队成员 ──────────────────────────────
+//
+// 规则见 `jp_corpus::members`：一首歌属于谁只看演唱署名，成员关系不改变归属；
+// 你手动加的、确认的、否掉的，刮削永远不覆盖。
+
+/// 全库的成员关系（资料库左栏分组、关系网一次拿全）
+#[tauri::command(async)]
+pub fn memberships(state: State<'_, AppState>) -> CmdResult<Vec<jp_corpus::members::Membership>> {
+    Ok(jp_corpus::members::all(state.corpus().connection())?)
+}
+
+/// 一个乐队的成员
+#[tauri::command(async)]
+pub fn band_members(state: State<'_, AppState>, person_id: i64) -> CmdResult<Vec<jp_corpus::members::Membership>> {
+    Ok(jp_corpus::members::members_of(state.corpus().connection(), person_id)?)
+}
+
+/// 一个人待过的乐队
+#[tauri::command(async)]
+pub fn bands_of(state: State<'_, AppState>, person_id: i64) -> CmdResult<Vec<jp_corpus::members::Membership>> {
+    Ok(jp_corpus::members::bands_of(state.corpus().connection(), person_id)?)
+}
+
+/// 手动加 / 改一条成员关系。成员可以给 id（库里已有的人），也可以给名字（没署过名的，比如鼓手）
+#[tauri::command(async)]
+pub fn membership_put(
+    state: State<'_, AppState>,
+    band_id: i64,
+    member_id: Option<i64>,
+    member_name: Option<String>,
+    part: String,
+    joined: String,
+    left_at: String,
+) -> CmdResult<jp_corpus::members::PutOutcome> {
+    let corpus = state.corpus();
+    let conn = corpus.connection();
+    let member = match (member_id, member_name) {
+        (Some(id), _) => id,
+        (None, Some(name)) => jp_corpus::members::ensure_person(conn, &name)?,
+        (None, None) => return Err(anyhow::anyhow!("没给成员").into()),
+    };
+    Ok(jp_corpus::members::put(conn, band_id, member, &part, &joined, &left_at, "manual")?)
+}
+
+/// 确认一条推测
+#[tauri::command(async)]
+pub fn membership_confirm(
+    state: State<'_, AppState>,
+    band_id: i64,
+    member_id: i64,
+) -> CmdResult<jp_corpus::members::PutOutcome> {
+    Ok(jp_corpus::members::put(state.corpus().connection(), band_id, member_id, "", "", "", "confirmed")?)
+}
+
+/// 否掉一条关系或推测。之后刮削、推测都不会再把它加回来
+#[tauri::command(async)]
+pub fn membership_reject(state: State<'_, AppState>, band_id: i64, member_id: i64) -> CmdResult<()> {
+    Ok(jp_corpus::members::reject(state.corpus().connection(), band_id, member_id)?)
+}
+
+/// 推测出来、还没确认的成员。写的歌至少 3 首、八成以上给同一个乐队
+#[tauri::command(async)]
+pub fn membership_suggestions(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<jp_corpus::members::MembershipSuggestion>> {
+    Ok(jp_corpus::members::suggestions(state.corpus().connection(), 3, 0.8)?)
+}
+
 /// 一首歌的全部歌词行，带分词。整首歌只发 2 次查询。
 #[tauri::command(async)]
 pub fn lyrics(state: State<'_, AppState>, song_id: String) -> CmdResult<Vec<LyricLine>> {

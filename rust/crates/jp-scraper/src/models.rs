@@ -156,6 +156,9 @@ pub struct ScrapeCandidate {
     pub album_artist: String,
     #[serde(default)]
     pub year: String,
+    /// 完整发行日期：YYYY、YYYY-MM 或 YYYY-MM-DD，看来源给到哪一级。时间轴按它排
+    #[serde(default)]
+    pub release_date: String,
     #[serde(default)]
     pub genre: String,
     pub duration_sec: Option<f64>,

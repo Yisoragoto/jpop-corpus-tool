@@ -30,6 +30,12 @@ pub struct ArtistInfo {
     pub country: String,
     #[serde(default)]
     pub formed: String,
+    /// 乐队解散 / 个人去世的日期（MusicBrainz 的 life-span.end），可能只有年份
+    #[serde(default)]
+    pub ended: String,
+    /// life-span.ended：有的条目知道已经结束，但不知道是哪天
+    #[serde(default)]
+    pub has_ended: bool,
     /// 艺人照片。iTunes 不提供，Deezer 才有。
     #[serde(default)]
     pub image_url: String,
@@ -102,6 +108,24 @@ pub(crate) fn year_of(date: &str) -> String {
     }
 }
 
+/// 日期截到「年」「年-月」或「年-月-日」：`2019-08-15T07:00:00Z` → `2019-08-15`，
+/// `2019-08` 原样，认不出来的给空串。
+pub(crate) fn date_of(date: &str) -> String {
+    let d = date.trim();
+    let bytes = d.as_bytes();
+    let digits = |range: std::ops::Range<usize>| bytes.get(range.clone()).is_some_and(|b| b.iter().all(u8::is_ascii_digit));
+    if !digits(0..4) {
+        return String::new();
+    }
+    if bytes.get(4) == Some(&b'-') && digits(5..7) {
+        if bytes.get(7) == Some(&b'-') && digits(8..10) {
+            return d[..10].to_string();
+        }
+        return d[..7].to_string();
+    }
+    d[..4].to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +139,17 @@ mod tests {
         assert_eq!(as_i64(Some(&json!(3))), Some(3));
         assert_eq!(as_i64(Some(&json!("A1"))), None);
         assert_eq!(as_i64(None), None);
+    }
+
+    #[test]
+    fn date_of_keeps_as_much_of_the_date_as_there_is() {
+        assert_eq!(date_of("2019-08-15T07:00:00Z"), "2019-08-15");
+        assert_eq!(date_of("2019-08-15"), "2019-08-15");
+        assert_eq!(date_of("2019-08"), "2019-08");
+        assert_eq!(date_of("2019"), "2019");
+        assert_eq!(date_of("2019-8"), "2019");
+        assert_eq!(date_of("19"), "");
+        assert_eq!(date_of(""), "");
     }
 
     #[test]
