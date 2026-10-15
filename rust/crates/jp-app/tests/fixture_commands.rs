@@ -176,9 +176,12 @@ fn a_play_event_lands_in_the_history() {
     // 听满 30 秒才算「常听」
     assert!(len(&ok(w, "most_played", json!({}))) > 0);
 
-    let home = ok(w, "home_summary", json!({}));
+    let home = ok(w, "home_summary", json!({ "utcOffsetMinutes": 480 }));
     assert_eq!(home["overview"]["tracks"], json!(fixture::TRACKS));
-    assert!(home["albums"].is_array() && home["favorites"].is_array());
+    assert_eq!(home["continueTrack"]["songId"], json!("003"), "刚听的那首就是「继续听」");
+    assert_eq!(home["continueTrack"]["positionSec"], json!(130.0));
+    assert!(home["today"]["listenedSec"].as_f64().unwrap() >= 120.0, "刚听的两分钟算今天");
+    assert!(home["favorites"].is_array());
 }
 
 #[test]
@@ -1063,30 +1066,34 @@ fn cross_page_navigation_targets_resolve() {
 #[test]
 fn home_summary_returns_every_section() {
     let f = Fixture::new("home");
-    let home = ok(f.w(), "home_summary", json!({}));
+    let home = ok(f.w(), "home_summary", json!({ "utcOffsetMinutes": 480 }));
     has_keys(
         &home,
         "HomeSummary",
-        &["overview", "recentlyPlayed", "mostPlayed", "favorites", "albums", "genres", "decades", "topWords"],
+        &["overview", "continueTrack", "recentlyPlayed", "favorites", "today", "reach", "recentlyAdded"],
     );
     assert_eq!(home["overview"]["tracks"], json!(fixture::TRACKS));
-    assert_eq!(len(&home["albums"]) as i64, fixture::ALBUMS);
-    assert!(len(&home["recentlyPlayed"]) > 0 && len(&home["mostPlayed"]) > 0 && len(&home["topWords"]) > 0);
+    assert!(len(&home["recentlyPlayed"]) > 0);
+    has_keys(
+        &home["recentlyPlayed"][0],
+        "PlayedTrack",
+        &["songId", "durationSec", "lastPositionSec", "lastCompleted"],
+    );
+    has_keys(
+        &home["continueTrack"],
+        "ContinueTrack",
+        &["songId", "title", "artist", "coverPath", "durationSec", "positionSec", "completed", "lastPlayed", "playCount", "stoppedLine"],
+    );
+    has_keys(&home["today"], "DayListening", &["listenedSec", "songs", "linesHeard", "streakDays"]);
+    has_keys(&home["reach"], "Reach", &["heardSongs", "heardLemmas", "totalLemmas"]);
+    assert!(home["reach"]["totalLemmas"].as_i64().unwrap() > 0);
 }
 
 #[test]
-fn facets_cover_every_track() {
-    let f = Fixture::new("facets");
-    let home = ok(f.w(), "home_summary", json!({}));
-    // 年代分面必须覆盖全部曲目——年份为空的归到「年代不详」而不是被丢掉，
-    // 丢掉的话用户会发现各年代加起来对不上总数
-    for facet in ["decades", "genres"] {
-        let total: i64 = home[facet].as_array().unwrap().iter().map(|d| d["trackCount"].as_i64().unwrap()).sum();
-        assert_eq!(total, fixture::TRACKS, "{facet} 分面应当覆盖全部曲目");
-        for row in home[facet].as_array().unwrap() {
-            has_keys(row, "FacetCount", &["label", "trackCount", "totalDurationSec"]);
-        }
-    }
+fn a_bad_utc_offset_is_an_error_not_a_crash() {
+    let f = Fixture::new("home-offset");
+    let message = refused(f.w(), "home_summary", json!({ "utcOffsetMinutes": 5000 }));
+    assert!(message.contains("时区"), "{message}");
 }
 
 // ────────────────────────── 全局搜索（Cmd+K） ──────────────────────────

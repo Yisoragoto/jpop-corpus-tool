@@ -94,6 +94,14 @@ impl AppState {
             .with_context(|| format!("{} 的结构升不上来", db_path.display()))?;
         crate::log::info(migrated.summary());
         corpus.check_schema()?;
+        // 首页「最近添加」要导入时间；老库的歌没有，拿音频文件的创建时间补一次。
+        // 补不上不影响启动，记一笔就行
+        let mut corpus = corpus;
+        match corpus.backfill_added_at() {
+            Ok(0) => {}
+            Ok(n) => crate::log::info(format!("补了 {n} 首歌的导入时间（音频文件的创建时间）")),
+            Err(err) => crate::log::warn(format!("补导入时间失败：{err:#}")),
+        }
 
         let analyzer = load_analyzer(project_root);
         if analyzer.is_none() {

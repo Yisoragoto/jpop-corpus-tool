@@ -318,6 +318,11 @@ pub struct PlayedTrack {
     pub play_count: i64,
     pub last_played: String,
     pub total_listened_sec: f64,
+    pub duration_sec: Option<f64>,
+    /// 最后一次播放停在哪（秒）
+    pub last_position_sec: f64,
+    /// 最后一次是不是听完了
+    pub last_completed: bool,
 }
 
 /// 按流派 / 年代分组的统计。Home 页的 Genres / Decades 板块。

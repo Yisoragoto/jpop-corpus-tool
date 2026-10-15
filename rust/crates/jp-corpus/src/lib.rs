@@ -20,6 +20,7 @@
 //! ```
 
 mod corpus;
+pub mod home;
 mod library;
 mod models;
 mod search;
@@ -268,6 +269,33 @@ impl Corpus {
         corpus::set_durations(&mut self.conn, rows)
     }
 
+    // ── 首页 ──
+
+    /// 上次听的那首和停下的位置。没有收听记录时是 `None`。
+    pub fn continue_track(&self) -> Result<Option<home::ContinueTrack>> {
+        home::continue_track(&self.conn)
+    }
+
+    /// 今天（本地日期）听了多少。`utc_offset_minutes` 是本地相对 UTC 的分钟数，东八区 +480。
+    pub fn today_listening(&self, utc_offset_minutes: i32) -> Result<home::DayListening> {
+        home::today(&self.conn, utc_offset_minutes)
+    }
+
+    /// 听过的歌覆盖了语料里多少实词。
+    pub fn reach(&self) -> Result<home::Reach> {
+        home::reach(&self.conn)
+    }
+
+    /// 最近添加的歌，新的在前。没有 `added_at` 的不列。
+    pub fn recently_added(&self, limit: i64) -> Result<Vec<home::AddedTrack>> {
+        home::recently_added(&self.conn, limit)
+    }
+
+    /// 给没有导入时间的歌补上（音频文件的创建时间）。需要可写连接。返回补了几首。
+    pub fn backfill_added_at(&mut self) -> Result<usize> {
+        home::backfill_added_at(&mut self.conn)
+    }
+
     /// 按 id 取人。命令面板定位到具体人物时用。
     pub fn person_by_id(&self, person_id: i64) -> Result<Option<PersonSummary>> {
         library::person_by_id(&self.conn, person_id)
@@ -324,6 +352,17 @@ impl Corpus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 分面必须覆盖全部曲目——年份为空的归到「年代不详」而不是被丢掉，
+    /// 丢掉的话各年代加起来对不上总数。（原来挂在首页 command 上测，首页不再带分面后挪到这里）
+    #[test]
+    fn facets_cover_every_track() {
+        let corpus = fixture::corpus().unwrap();
+        for (name, rows) in [("decades", corpus.decades(12).unwrap()), ("genres", corpus.genres(12).unwrap())] {
+            let total: i64 = rows.iter().map(|r| r.track_count).sum();
+            assert_eq!(total, fixture::TRACKS, "{name} 分面应当覆盖全部曲目");
+        }
+    }
 
     /// 新装的程序第一次启动：数据目录里只有一个 0 表的空库。
     /// 建表之后应当能直接用，而不是报「数据库缺少表 songs」。

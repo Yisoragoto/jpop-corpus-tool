@@ -39,7 +39,7 @@ import {
   useLyricsDisplay,
   type FuriganaMode,
 } from "../lyricsDisplay";
-import { STAGE_BLUR_LIMITS, updateSettings, useAppSettings } from "../settings";
+import { DAILY_GOAL_LIMITS, STAGE_BLUR_LIMITS, updateSettings, useAppSettings } from "../settings";
 
 interface Props {
   health: HealthReport | null;
@@ -383,6 +383,14 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
           description="点歌手进去才是他的歌，左上角返回。关掉就是按歌手分组平铺所有歌。"
         >
           <Switch checked={settings.gridByArtist} onChange={(v) => updateSettings({ gridByArtist: v })} label="网格先显示歌手" />
+        </SettingCard>
+        <SettingCard icon={Icons.clock} title="每天的收听目标" description="首页「今日」那个环按这个算">
+          <SettingSlider
+            value={settings.dailyGoalMinutes}
+            limits={DAILY_GOAL_LIMITS}
+            onChange={(v) => updateSettings({ dailyGoalMinutes: v })}
+            unit=" 分钟"
+          />
         </SettingCard>
       </SettingGroup>
 

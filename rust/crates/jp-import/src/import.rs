@@ -239,8 +239,8 @@ fn import_one(
     };
     tx.execute(
         "INSERT INTO songs \
-         (id, title, artist, year, album, genre, audio_path, corpus_type, source_file, duration_sec) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'song', ?8, ?9)",
+         (id, title, artist, year, album, genre, audio_path, corpus_type, source_file, duration_sec, added_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'song', ?8, ?9, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
         params![
             song_id,
             track.title(),

@@ -187,13 +187,20 @@ pub(crate) fn record_play(conn: &Connection, event: &PlayEvent) -> Result<()> {
     Ok(())
 }
 
+/// 每首歌最后一次播放停在哪、听完没有。首页给封面打「听完 / 62%」角标用
+const LAST_PLAY: &str = "COALESCE((SELECT l.position_sec FROM play_history l WHERE l.song_id = s.id \
+                                   ORDER BY l.played_at DESC, l.id DESC LIMIT 1), 0), \
+                         COALESCE((SELECT l.completed FROM play_history l WHERE l.song_id = s.id \
+                                   ORDER BY l.played_at DESC, l.id DESC LIMIT 1), 0)";
+
 pub(crate) fn recently_played(conn: &Connection, limit: i64) -> Result<Vec<PlayedTrack>> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT s.id, s.title, s.artist, COALESCE(s.album,''), COALESCE(s.cover_path,''), \
-                COUNT(*), MAX(h.played_at), COALESCE(SUM(h.listened_sec),0) \
+                COUNT(*), MAX(h.played_at), COALESCE(SUM(h.listened_sec),0), \
+                s.duration_sec, {LAST_PLAY} \
          FROM play_history h JOIN songs s ON s.id = h.song_id \
-         GROUP BY s.id ORDER BY MAX(h.played_at) DESC LIMIT ?1",
-    )?;
+         GROUP BY s.id ORDER BY MAX(h.played_at) DESC LIMIT ?1"
+    ))?;
     collect_played(stmt.query_map(params![limit], played_from_row)?)
 }
 
@@ -203,13 +210,14 @@ pub(crate) fn most_played(
     min_listened_sec: f64,
     limit: i64,
 ) -> Result<Vec<PlayedTrack>> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT s.id, s.title, s.artist, COALESCE(s.album,''), COALESCE(s.cover_path,''), \
-                COUNT(*), MAX(h.played_at), COALESCE(SUM(h.listened_sec),0) \
+                COUNT(*), MAX(h.played_at), COALESCE(SUM(h.listened_sec),0), \
+                s.duration_sec, {LAST_PLAY} \
          FROM play_history h JOIN songs s ON s.id = h.song_id \
          WHERE h.listened_sec >= ?1 \
-         GROUP BY s.id ORDER BY COUNT(*) DESC, SUM(h.listened_sec) DESC LIMIT ?2",
-    )?;
+         GROUP BY s.id ORDER BY COUNT(*) DESC, SUM(h.listened_sec) DESC LIMIT ?2"
+    ))?;
     collect_played(stmt.query_map(params![min_listened_sec, limit], played_from_row)?)
 }
 
@@ -223,6 +231,9 @@ fn played_from_row(row: &rusqlite::Row) -> rusqlite::Result<PlayedTrack> {
         play_count: row.get(5)?,
         last_played: row.get(6)?,
         total_listened_sec: row.get(7)?,
+        duration_sec: row.get(8)?,
+        last_position_sec: row.get(9)?,
+        last_completed: row.get::<_, i64>(10)? != 0,
     })
 }
 

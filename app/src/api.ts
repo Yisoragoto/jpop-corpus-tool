@@ -307,6 +307,11 @@ export interface PlayedTrack {
   playCount: number;
   lastPlayed: string;
   totalListenedSec: number;
+  durationSec: number | null;
+  /** 最后一次播放停在哪（秒） */
+  lastPositionSec: number;
+  /** 最后一次是不是听完了 */
+  lastCompleted: boolean;
 }
 
 /** 现在用的是哪个语料库目录，以及是怎么找到的 */
@@ -372,16 +377,55 @@ export interface FacetCount {
   totalDurationSec: number;
 }
 
+/** 上次听的那首，以及停在哪。和 `jp_corpus::home::ContinueTrack` 对应 */
+export interface ContinueTrack {
+  songId: string;
+  title: string;
+  artist: string;
+  coverPath: string;
+  durationSec: number | null;
+  positionSec: number;
+  completed: boolean;
+  lastPlayed: string;
+  playCount: number;
+  /** 停下的位置正在唱的那一行；没有时间轴或停在第一行之前时是空串 */
+  stoppedLine: string;
+}
+
+/** 今天（本地日期）听了多少 */
+export interface DayListening {
+  listenedSec: number;
+  songs: number;
+  /** 听到的歌词行数（同一首听两遍算两遍） */
+  linesHeard: number;
+  /** 连续有收听的天数；今天还没听时从昨天往回数 */
+  streakDays: number;
+}
+
+/** 听过的歌（听满 30 秒）覆盖了语料里多少实词（名/动/形/副） */
+export interface Reach {
+  heardSongs: number;
+  heardLemmas: number;
+  totalLemmas: number;
+}
+
+export interface AddedTrack {
+  songId: string;
+  title: string;
+  artist: string;
+  coverPath: string;
+  addedAt: string;
+}
+
 /** 首页要的一切。一次拿全，避免六次往返和不一致的快照。 */
 export interface HomeSummary {
   overview: Overview;
+  continueTrack: ContinueTrack | null;
   recentlyPlayed: PlayedTrack[];
-  mostPlayed: PlayedTrack[];
   favorites: Track[];
-  albums: Album[];
-  genres: FacetCount[];
-  decades: FacetCount[];
-  topWords: WordFrequency[];
+  today: DayListening;
+  reach: Reach;
+  recentlyAdded: AddedTrack[];
 }
 
 /** 时长回填的结果。每一种失败单独计数——笼统的「成功 N 个」用户无从修。 */
@@ -530,7 +574,14 @@ export const api = {
   audioSpectrum: () => call<number[]>("audio_spectrum"),
 
   // 首页 / 收藏
-  homeSummary: () => call<HomeSummary>("home_summary"),
+  /** 「今天」按本地日期算，所以把本地相对 UTC 的分钟数带过去（东八区 +480） */
+  homeSummary: () => call<HomeSummary>("home_summary", { utcOffsetMinutes: -new Date().getTimezoneOffset() }),
+  /** 从本地今天零点起新建了几条制卡笔记；没装 Anki 是 null */
+  ankiNotesToday: () => {
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    return call<number | null>("anki_notes_since", { sinceMs: midnight.getTime() });
+  },
   /** 切换收藏，返回切换后的状态。 */
   toggleFavorite: (entityType: string, entityId: string) =>
     call<boolean>("toggle_favorite", { entityType, entityId }),

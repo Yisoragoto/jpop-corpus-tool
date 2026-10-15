@@ -32,7 +32,7 @@ use rusqlite::Connection;
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///
 /// 格式是 `YYYYMMDD`：单调递增，一眼看得出先后。
-pub const CURRENT: i64 = 20_260_908;
+pub const CURRENT: i64 = 20_261_015;
 
 /// 一步迁移里的一个改动。
 enum Change {
@@ -62,18 +62,31 @@ struct Step {
 ///
 /// 已经存在的库戳着 V，就跑所有 `version > V` 的步骤。空库不跑任何一步——
 /// `schema.sql` 本来就是最新的。
-const STEPS: &[Step] = &[Step {
-    version: 20_260_908,
-    what: "songs.album_id（专辑归属）",
-    // 20260907 那一版的库没有这一列。`schema.sql` 的
-    // `CREATE TABLE IF NOT EXISTS songs` 对已有的表不会加列，只能显式 ALTER。
-    // 对应 Python 的 `library/schema.py::ADDED_COLUMNS`。
-    changes: &[Change::AddColumn {
-        table: "songs",
-        column: "album_id",
-        ddl: "INTEGER",
-    }],
-}];
+const STEPS: &[Step] = &[
+    Step {
+        version: 20_260_908,
+        what: "songs.album_id（专辑归属）",
+        // 20260907 那一版的库没有这一列。`schema.sql` 的
+        // `CREATE TABLE IF NOT EXISTS songs` 对已有的表不会加列，只能显式 ALTER。
+        // 对应 Python 的 `library/schema.py::ADDED_COLUMNS`。
+        changes: &[Change::AddColumn {
+            table: "songs",
+            column: "album_id",
+            ddl: "INTEGER",
+        }],
+    },
+    Step {
+        version: 20_261_015,
+        what: "songs.added_at（导入时间）",
+        // 首页「最近添加」要用。这一步只加空列；存量的值由
+        // `Corpus::backfill_added_at` 拿音频文件的创建时间补——那是改数据，不归迁移管。
+        changes: &[Change::AddColumn {
+            table: "songs",
+            column: "added_at",
+            ddl: "TEXT",
+        }],
+    },
+];
 
 /// 这次打开做了什么。调用方拿去写日志。
 #[derive(Debug, Clone)]
@@ -253,7 +266,10 @@ mod tests {
         assert!(!applied.created, "有 songs 的库不是新建");
         assert_eq!(applied.from, 20_260_907);
         assert_eq!(applied.to, CURRENT);
-        assert_eq!(applied.steps, vec!["songs.album_id（专辑归属）"]);
+        assert_eq!(
+            applied.steps,
+            vec!["songs.album_id（专辑归属）", "songs.added_at（导入时间）"]
+        );
 
         // 加列（步骤干的）
         assert!(columns(&conn, "songs").contains(&"album_id".to_string()));
@@ -299,7 +315,7 @@ mod tests {
         assert_eq!(applied.to, CURRENT);
         assert_eq!(
             applied.steps,
-            vec!["songs.album_id（专辑归属）"],
+            vec!["songs.album_id（专辑归属）", "songs.added_at（导入时间）"],
             "没戳过就得把每一步都重跑一遍"
         );
         // 列本来就在，重跑没把它加成两列

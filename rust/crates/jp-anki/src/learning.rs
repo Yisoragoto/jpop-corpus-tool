@@ -314,6 +314,31 @@ pub fn load(collection: Option<&Path>, deck_filter: &str) -> Result<LearningStat
     Ok(state)
 }
 
+/// 某个时刻之后新建了几条我们的笔记（JPOP Corpus 和 Lyrics 两种）。首页「今天制卡 N 张」用。
+///
+/// Anki 的笔记 id 就是创建时的毫秒时间戳，所以按 id 比就行，不用读别的列。
+/// 和 [`load`] 一样读快照，不直接碰用户的 collection。
+pub fn notes_created_since(collection: Option<&Path>, since_ms: i64) -> Result<usize> {
+    let path = match collection {
+        Some(p) => p.to_path_buf(),
+        None => find_collection().context("找不到 Anki 的 collection.anki2")?,
+    };
+    let snap = snapshot(&path)?;
+    let conn = Connection::open_with_flags(
+        snap.path(),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+    )
+    .with_context(|| format!("打不开 {}", snap.path().display()))?;
+    register_unicase(&conn)?;
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM notes WHERE id >= ?1 AND mid IN \
+             (SELECT id FROM notetypes WHERE name IN (?2, ?3))",
+        rusqlite::params![since_ms, NOTE_TYPE, crate::lyrics_model::NOTE_TYPE],
+        |r| r.get(0),
+    )?;
+    Ok(usize::try_from(count).unwrap_or(0))
+}
+
 /// Anki 2.1.28 起，`decks.name` 里的层级分隔符是 `\x1f`，不是 `::`。
 /// AnkiConnect 返回的是 `::` 形式，用户在 Anki 界面上看到的也是 `::`。
 ///
@@ -667,6 +692,23 @@ mod tests {
 
         let state = load(Some(&path), "").unwrap();
         assert!(!state.words.contains_key("别人的卡"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn notes_made_since_a_moment_are_counted_by_their_millisecond_ids() {
+        let dir = tmp("since");
+        let path = fake_collection(&dir);
+        add_note(&path, 1_000, "夜", 10, &[0]);
+        add_note(&path, 2_000, "朝", 10, &[0]);
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("INSERT INTO notetypes VALUES (3, 'Lyrics')", []).unwrap();
+        conn.execute("INSERT INTO notes VALUES (3000, 3, 'x')", []).unwrap();
+        conn.execute("INSERT INTO notes VALUES (4000, 2, '别人的卡')", []).unwrap();
+        drop(conn);
+
+        assert_eq!(notes_created_since(Some(&path), 1_500).unwrap(), 2, "朝 和 Lyrics 那条；Basic 不算");
+        assert_eq!(notes_created_since(Some(&path), 5_000).unwrap(), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

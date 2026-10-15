@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_SETTINGS, parseSettings, STAGE_BLUR_LIMITS } from "./settings";
+import { DAILY_GOAL_LIMITS, DEFAULT_SETTINGS, parseSettings, STAGE_BLUR_LIMITS } from "./settings";
 
 describe("应用设置", () => {
   it("没存过、存坏了、少字段，都退回默认值", () => {
@@ -34,5 +34,11 @@ describe("应用设置", () => {
     expect(parseSettings(JSON.stringify({ stageBlurRadius: 63.6 })).stageBlurRadius).toBe(64);
     // NaN / 字符串这类退回默认值
     expect(parseSettings(JSON.stringify({ stageBlurRadius: "64" })).stageBlurRadius).toBe(DEFAULT_SETTINGS.stageBlurRadius);
+  });
+  it("每日收听目标夹在可调范围里", () => {
+    const [low, high] = DAILY_GOAL_LIMITS;
+    expect(parseSettings(JSON.stringify({ dailyGoalMinutes: 0 })).dailyGoalMinutes).toBe(low);
+    expect(parseSettings(JSON.stringify({ dailyGoalMinutes: 999 })).dailyGoalMinutes).toBe(high);
+    expect(parseSettings(JSON.stringify({ dailyGoalMinutes: "30" })).dailyGoalMinutes).toBe(DEFAULT_SETTINGS.dailyGoalMinutes);
   });
 });

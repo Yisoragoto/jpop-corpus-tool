@@ -5,7 +5,7 @@
 //! 而 command 层测不了（需要 Tauri 运行时）。**能测的东西不要放进测不了的层。**
 
 use jp_corpus::{
-    Album, Collaborator, Credit, FacetCount, KwicHit, KwicQuery, LyricHit, LyricLine, Overview,
+    Album, Collaborator, Credit, KwicHit, KwicQuery, LyricHit, LyricLine, Overview,
     PersonSummary, PlayEvent, PlayedTrack, QuickSearchResults, Track, WordFrequency, WordInCorpus,
     YearStats,
 };
@@ -995,28 +995,28 @@ pub fn is_favorite(
 #[serde(rename_all = "camelCase")]
 pub struct HomeSummary {
     pub overview: Overview,
+    /// 上次听的那首和停在哪；没有收听记录时是 null
+    pub continue_track: Option<jp_corpus::home::ContinueTrack>,
     pub recently_played: Vec<PlayedTrack>,
-    pub most_played: Vec<PlayedTrack>,
     pub favorites: Vec<Track>,
-    pub albums: Vec<Album>,
-    pub genres: Vec<FacetCount>,
-    pub decades: Vec<FacetCount>,
-    /// 语料里词频最高的几个词，作为「从这里开始查」的入口
-    pub top_words: Vec<WordFrequency>,
+    pub today: jp_corpus::home::DayListening,
+    pub reach: jp_corpus::home::Reach,
+    pub recently_added: Vec<jp_corpus::home::AddedTrack>,
 }
 
+/// `utc_offset_minutes`：本地相对 UTC 的分钟数（东八区 +480），「今天」按它算。
+/// 不传就按 UTC。
 #[tauri::command(async)]
-pub fn home_summary(state: State<'_, AppState>) -> CmdResult<HomeSummary> {
+pub fn home_summary(state: State<'_, AppState>, utc_offset_minutes: Option<i32>) -> CmdResult<HomeSummary> {
     let corpus = state.corpus();
     Ok(HomeSummary {
         overview: corpus.overview()?,
+        continue_track: corpus.continue_track()?,
         recently_played: corpus.recently_played(12)?,
-        most_played: corpus.most_played(30.0, 12)?,
         favorites: corpus.favorite_tracks(12)?,
-        albums: corpus.albums(None, 12)?,
-        genres: corpus.genres(12)?,
-        decades: corpus.decades(12)?,
-        top_words: corpus.word_frequency(Some("NOUN"), 24)?,
+        today: corpus.today_listening(utc_offset_minutes.unwrap_or(0))?,
+        reach: corpus.reach()?,
+        recently_added: corpus.recently_added(5)?,
     })
 }
 
@@ -2084,6 +2084,17 @@ pub async fn scrape_backfill_covers<R: tauri::Runtime>(
 #[tauri::command(async)]
 pub fn anki_status(_state: State<'_, AppState>) -> CmdResult<crate::anki::AnkiStatus> {
     Ok(crate::anki::status())
+}
+
+/// 从 `since_ms`（本地今天零点的毫秒时间戳，前端算）起新建了几条制卡笔记。首页「今天制卡 N 张」用。
+///
+/// 找不到 collection（没装 Anki）返回 null，界面就不显示这一句——不是错误。
+#[tauri::command(async)]
+pub fn anki_notes_since(since_ms: i64) -> CmdResult<Option<usize>> {
+    if jp_anki::learning::find_collection().is_none() {
+        return Ok(None);
+    }
+    Ok(Some(jp_anki::learning::notes_created_since(None, since_ms)?))
 }
 
 /// 候选词表，按语料里的频次排，并标出 Anki 里已有 / 已学过的。

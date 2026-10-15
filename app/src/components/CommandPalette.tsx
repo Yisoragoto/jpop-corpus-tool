@@ -37,17 +37,50 @@ interface Props {
 /** 搜索防抖。打字时每敲一下就发一次查询会让 IPC 排队。 */
 const DEBOUNCE_MS = 140;
 
+/**
+ * 全库搜索：防抖 + 丢弃过期响应。命令面板和首页的搜索栏共用。
+ * `query` 为空串时不发请求、结果清空。
+ */
+export function useQuickSearch(query: string, perKind = 6): { hits: QuickHit[]; busy: boolean } {
+  const [hits, setHits] = useState<QuickHit[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (query.length === 0) {
+      setHits([]);
+      setBusy(false);
+      return;
+    }
+    let alive = true;
+    setBusy(true);
+    const timer = setTimeout(() => {
+      api
+        .quickSearch(query, perKind)
+        .then((r) => {
+          // 慢的那次请求可能后到，不能让它覆盖新结果
+          if (!alive) return;
+          setHits([...r.tracks, ...r.people, ...r.albums, ...r.words, ...r.lyrics]);
+        })
+        .catch(() => alive && setHits([]))
+        .finally(() => alive && setBusy(false));
+    }, DEBOUNCE_MS);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [query, perKind]);
+  return { hits, busy };
+}
+
 export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit }: Props) {
   const [text, setText] = useState(initialMode === "command" ? ">" : "");
-  const [hits, setHits] = useState<QuickHit[]>([]);
   const [active, setActive] = useState(0);
-  const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   // `>` 开头 = 命令模式，和编辑器的约定一致
   const commandMode = text.startsWith(">");
   const query = commandMode ? text.slice(1).trim() : text.trim();
+  const { hits, busy } = useQuickSearch(commandMode ? "" : query);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -57,31 +90,8 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 远端搜索：防抖 + 丢弃过期响应
-  useEffect(() => {
-    if (commandMode || query.length === 0) {
-      setHits([]);
-      return;
-    }
-    let alive = true;
-    setBusy(true);
-    const timer = setTimeout(() => {
-      api
-        .quickSearch(query, 6)
-        .then((r) => {
-          // 慢的那次请求可能后到，不能让它覆盖新结果
-          if (!alive) return;
-          setHits([...r.tracks, ...r.people, ...r.albums, ...r.words, ...r.lyrics]);
-          setActive(0);
-        })
-        .catch(() => alive && setHits([]))
-        .finally(() => alive && setBusy(false));
-    }, DEBOUNCE_MS);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [query, commandMode]);
+  // 新结果到了，选中回到第一条
+  useEffect(() => setActive(0), [hits]);
 
   const visibleCommands = useMemo(() => {
     if (!commandMode) return [];
@@ -208,7 +218,7 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
   );
 }
 
-const KIND_LABELS: Record<QuickHit["kind"], string> = {
+export const KIND_LABELS: Record<QuickHit["kind"], string> = {
   track: "曲目",
   album: "专辑",
   person: "人物",
@@ -216,7 +226,7 @@ const KIND_LABELS: Record<QuickHit["kind"], string> = {
   lyric: "歌词",
 };
 
-function hitKey(hit: QuickHit): string {
+export function hitKey(hit: QuickHit): string {
   switch (hit.kind) {
     case "track":
       return `t-${hit.songId}`;
@@ -231,7 +241,7 @@ function hitKey(hit: QuickHit): string {
   }
 }
 
-function hitLabel(hit: QuickHit): string {
+export function hitLabel(hit: QuickHit): string {
   switch (hit.kind) {
     case "track":
       return hit.title;
@@ -246,7 +256,7 @@ function hitLabel(hit: QuickHit): string {
   }
 }
 
-function hitHint(hit: QuickHit): string {
+export function hitHint(hit: QuickHit): string {
   switch (hit.kind) {
     case "track":
       return [hit.artist, hit.album, formatDuration(hit.durationSec)]

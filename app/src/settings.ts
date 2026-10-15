@@ -29,9 +29,12 @@ export interface AppSettings {
   pitchCacheLimitMb: number;
   /** 启动时看一眼语料库的文件夹里有没有还没导入的音频（只读，发现了只提示） */
   autoCheckNewSongs: boolean;
+  /** 首页「今日」那个环的目标：每天听多少分钟 */
+  dailyGoalMinutes: number;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
+export const DAILY_GOAL_LIMITS = [5, 180] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   stageCoverBlur: true,
@@ -42,6 +45,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoInstallUpdates: false,
   pitchCacheLimitMb: 1536,
   autoCheckNewSongs: true,
+  dailyGoalMinutes: 30,
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -68,6 +72,7 @@ export function parseSettings(raw: string | null): AppSettings {
       pitchCacheLimitMb: clamp(parsed.pitchCacheLimitMb, PITCH_CACHE_LIMIT_RANGE, d.pitchCacheLimitMb),
       autoCheckNewSongs:
         typeof parsed.autoCheckNewSongs === "boolean" ? parsed.autoCheckNewSongs : d.autoCheckNewSongs,
+      dailyGoalMinutes: clamp(parsed.dailyGoalMinutes, DAILY_GOAL_LIMITS, d.dailyGoalMinutes),
     };
   } catch {
     return DEFAULT_SETTINGS;

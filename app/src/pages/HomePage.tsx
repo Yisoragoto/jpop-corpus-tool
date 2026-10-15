@@ -1,51 +1,63 @@
 /**
- * 首页 = 分岔口，不是仪表盘。
+ * 首页 = 打开就能接着干的地方。
  *
- * 排版规则（全项目统一，见 `components/Section.tsx`）：一块只有一行标题，
- * 内容直接铺在页底色上，**不再每块套一个方框**。
+ * 版面照一张参考图定的（2026-10-15）：顶上一条全库搜索；左边一大块「继续听」，
+ * 下面一排最近播放；右边一列「今日」「语料库」「最近添加」。
  *
- * **每一块都要能点进去**：点曲目进曲库、点专辑把曲库限定到这张专辑、
- * 点词进语料。点不动的东西就是摆设，不如不放——年代 / 流派这类没有去处的分面
- * 已经移回分析页。
+ * 这一页是「区块不是方框」的例外：几块面板用半透明填充压在云母上，
+ * 没有描边——左右两栏需要靠面板分出层次，平铺在页底色上会糊成一片。
  *
- * 顺序上先给「库里有什么」再给「你听过什么」：打开软件第一眼看到的是语料，
- * 这是 Corpus First 在版面上的体现。
+ * **每一块都要能点进去**：点曲目进曲库、点搜索结果去对应的地方。
+ * 点不动、也不回答「我该干什么 / 我进步了没有」的东西不放。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   api,
   formatDuration,
   formatLongDuration,
-  POS_LABELS,
-  type Album,
+  type AddedTrack,
+  type ContinueTrack,
   type HomeSummary,
   type PlayedTrack,
+  type QuickHit,
   type Track,
 } from "../api";
+import { useCoverColor } from "../coverColor";
 import { Cover } from "../components/Cover";
-import { Section, Shelf } from "../components/Section";
+import { hitHint, hitKey, hitLabel, KIND_LABELS, useQuickSearch } from "../components/CommandPalette";
+import { formatRelative } from "../relativeTime";
+import { useAppSettings } from "../settings";
 import type { LibraryActions } from "../useLibrary";
 
 interface Props {
   actions: LibraryActions;
   onNavigate: (route: "library" | "kwic" | "analytics") => void;
   onError: (message: string) => void;
-  /** 播放状态变了就刷新——听完一首之后「最近播放」应当立刻反映 */
+  /** 选中一条搜索结果。和 Ctrl K 面板走同一个落点映射（在 App 里） */
+  onPickHit: (hit: QuickHit) => void | Promise<void>;
+  /** 播放状态变了就刷新——听完一首之后「继续听」「今日」应当立刻反映 */
   playbackSongId: string;
   /** 库里的歌变了就加一（启动横幅上直接导入新歌时，人还停在这一页） */
   libraryVersion: number;
 }
 
-export function HomePage({ actions, onNavigate, onError, playbackSongId, libraryVersion }: Props) {
+export function HomePage({ actions, onNavigate, onError, onPickHit, playbackSongId, libraryVersion }: Props) {
   const [home, setHome] = useState<HomeSummary | null>(null);
+  /** 今天制了几张卡。没装 Anki 是 null，那一句就不显示 */
+  const [cardsToday, setCardsToday] = useState<number | null>(null);
 
   const load = useCallback(() => {
     api
       .homeSummary()
       .then(setHome)
       .catch((e) => onError(String(e.message ?? e)));
+    // 读 Anki 要复制一份 collection，慢的时候别拖着首页；读不到就当没有
+    api
+      .ankiNotesToday()
+      .then(setCardsToday)
+      .catch(() => setCardsToday(null));
   }, [onError]);
 
   useEffect(load, [load, libraryVersion]);
@@ -62,168 +74,334 @@ export function HomePage({ actions, onNavigate, onError, playbackSongId, library
     [actions, onNavigate],
   );
 
-  const openAlbum = useCallback(
-    async (album: Album) => {
-      // 专辑没有独立页面：把曲库限定到这张专辑，正好补上 Artist → Album → Track 的中间一级
-      await actions.setAlbumFilter({ albumId: album.id, title: album.title });
-      onNavigate("library");
+  /** 留在首页接着放：底下的播放条会动起来，不必跳走 */
+  const resume = useCallback(
+    async (songId: string, fromSec: number) => {
+      await actions.openTrackById(songId, { seekTo: fromSec, autoPlay: true });
     },
-    [actions, onNavigate],
+    [actions],
   );
 
   if (!home) return <div className="page muted pad">加载中…</div>;
 
-  const { overview } = home;
-
   return (
     <div className="page home">
-      <p className="home-summary">
-        <b>{overview.tracks}</b> 首 · <b>{overview.albums}</b> 张专辑 · <b>{overview.people}</b> 人 ·{" "}
-        <b>{overview.lyricLines.toLocaleString()}</b> 行歌词 · <b>{overview.vocabulary.toLocaleString()}</b> 个词 ·{" "}
-        {formatLongDuration(overview.totalDurationSec)}
-        <button className="link-btn" onClick={() => onNavigate("analytics")}>
-          完整分析 →
-        </button>
-      </p>
+      <HomeSearch onPickHit={onPickHit} />
 
-      <Section
-        title="继续听"
-        action={
-          <button className="link-btn" onClick={() => onNavigate("library")}>
-            去曲库 →
-          </button>
-        }
-        {...(home.recentlyPlayed.length === 0 ? { empty: "还没有收听记录。听满 5 秒的曲目会出现在这里。" } : {})}
-      >
-        <Shelf>
-          {home.recentlyPlayed.map((t) => (
-            <TrackTile
-              key={t.songId}
-              cover={t.coverPath}
-              title={t.title}
-              meta={formatRelative(t.lastPlayed)}
-              sub={t.artist}
-              onClick={() => void open(t.songId)}
+      <div className="home-grid">
+        <section className="home-panel home-main">
+          <h2 className="home-panel-title">继续听</h2>
+          {home.continueTrack === null ? (
+            <p className="section-empty">还没有收听记录。去曲库挑一首，听满 5 秒就会出现在这里。</p>
+          ) : (
+            <ContinueHero
+              track={home.continueTrack}
+              onResume={(from) => void resume(home.continueTrack!.songId, from)}
+              onOpen={() => void open(home.continueTrack!.songId)}
             />
-          ))}
-        </Shelf>
-      </Section>
+          )}
+          {home.recentlyPlayed.length > 1 && (
+            <div className="home-recent">
+              {home.recentlyPlayed.slice(1, 9).map((t) => (
+                <RecentTile key={t.songId} track={t} onClick={() => void open(t.songId)} />
+              ))}
+            </div>
+          )}
+          {home.favorites.length > 0 && (
+            <>
+              <h2 className="home-panel-title home-panel-title-sub">收藏</h2>
+              <div className="home-recent">
+                {home.favorites.slice(0, 8).map((t: Track) => (
+                  <button key={t.id} className="tile" onClick={() => void open(t.id)} title={`${t.title} · ${t.artist}`}>
+                    <Cover path={t.coverPath} size={120} rounded={8} />
+                    <span className="tile-title">{t.title}</span>
+                    <span className="tile-sub">{t.artist}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
 
-      <Section
-        title="专辑"
-        hint={`${overview.albums} 张`}
-        {...(home.albums.length === 0 ? { empty: "还没有专辑信息，刮削之后会有。" } : {})}
-      >
-        <Shelf>
-          {home.albums.map((a) => (
-            <TrackTile
-              key={a.id}
-              cover={a.artworkPath}
-              title={a.title}
-              sub={a.albumArtist}
-              meta={`${a.trackCount} 首${a.year ? ` · ${a.year}` : ""}`}
-              onClick={() => void openAlbum(a)}
-            />
-          ))}
-        </Shelf>
-      </Section>
-
-      <Section title="收藏" show={home.favorites.length > 0}>
-        <Shelf>
-          {home.favorites.map((t: Track) => (
-            <TrackTile
-              key={t.id}
-              cover={t.coverPath}
-              title={t.title}
-              sub={t.artist}
-              meta={t.durationSec === null ? "" : formatDuration(t.durationSec)}
-              onClick={() => void open(t.id)}
-            />
-          ))}
-        </Shelf>
-      </Section>
-
-      <Section
-        title="从这些词开始"
-        hint="语料里最常出现的名词"
-        action={
-          <button className="link-btn" onClick={() => onNavigate("kwic")}>
-            KWIC 检索 →
-          </button>
-        }
-      >
-        <div className="word-cloud">
-          {home.topWords.map((w) => (
-            <button
-              key={`${w.lemma}-${w.pos}`}
-              className="word-chip"
-              title={`${POS_LABELS[w.pos] ?? w.pos} · ${w.freq} 次 · ${w.songCount} 首`}
-              onClick={async () => {
-                await actions.openWord(w.lemma);
-                onNavigate("library");
-              }}
-            >
-              {w.lemma}
-              <em>{w.freq}</em>
-            </button>
-          ))}
+        <div className="home-side">
+          <TodayPanel home={home} cardsToday={cardsToday} />
+          <CorpusPanel home={home} onMore={() => onNavigate("analytics")} />
+          <AddedPanel tracks={home.recentlyAdded} onOpen={(id) => void open(id)} />
         </div>
-      </Section>
-
-      <Section title="听得最多" show={home.mostPlayed.length > 0}>
-        <ol className="rank-list">
-          {home.mostPlayed.slice(0, 8).map((t: PlayedTrack, i) => (
-            <li key={t.songId}>
-              <button onClick={() => void open(t.songId)}>
-                <span className="rank-n">{i + 1}</span>
-                <Cover path={t.coverPath} size={32} rounded={4} />
-                <span className="rank-text">
-                  <span className="rank-title">{t.title}</span>
-                  <span className="rank-artist">{t.artist}</span>
-                </span>
-                <span className="rank-meta">
-                  {t.playCount} 次 · {formatLongDuration(t.totalListenedSec)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ol>
-      </Section>
+      </div>
     </div>
   );
 }
 
-/** 架子上的一格：封面 + 两行字。曲目、专辑、收藏共用 */
-function TrackTile({
-  cover,
-  title,
-  sub,
-  meta,
-  onClick,
-}: {
-  cover: string | null | undefined;
-  title: string;
-  sub: string;
-  meta?: string;
-  onClick: () => void;
-}) {
+/** 顶上那条搜索栏。和 Ctrl K 共用一套查询与落点，结果就在栏下面展开 */
+function HomeSearch({ onPickHit }: { onPickHit: (hit: QuickHit) => void | Promise<void> }) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const query = text.trim();
+  const { hits, busy } = useQuickSearch(query);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setActive(0), [hits]);
+
+  // 点到外面就收起
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const pick = (index: number) => {
+    const hit = hits[index];
+    if (!hit) return;
+    setOpen(false);
+    setText("");
+    void onPickHit(hit);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      setOpen(false);
+      (e.target as HTMLInputElement).blur();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => (hits.length === 0 ? 0 : (i + 1) % hits.length));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => (hits.length === 0 ? 0 : (i - 1 + hits.length) % hits.length));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      pick(active);
+    }
+  };
+
+  const showList = open && query.length > 0;
+
   return (
-    <button className="tile" onClick={onClick} title={`${title} · ${sub}`}>
-      <Cover path={cover} size={140} rounded={8} />
-      <span className="tile-title">{title}</span>
-      <span className="tile-sub">{sub}</span>
-      {meta !== undefined && meta !== "" && <span className="tile-meta">{meta}</span>}
+    <div className="home-search" ref={boxRef}>
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" className="home-search-icon">
+        <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M10.4 10.4 14 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+      <input
+        type="search"
+        value={text}
+        placeholder="搜歌名、歌手、专辑、歌词、词"
+        onChange={(e) => {
+          setText(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
+        aria-label="搜索全库"
+      />
+      <kbd>Ctrl K</kbd>
+      {showList && (
+        <div className="home-search-list palette-list" role="listbox">
+          {hits.map((hit, i) => (
+            <button
+              key={hitKey(hit)}
+              className="palette-row"
+              data-active={i === active}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => pick(i)}
+            >
+              <span className="palette-kind">{KIND_LABELS[hit.kind]}</span>
+              <span className="palette-label">{hitLabel(hit)}</span>
+              <span className="palette-hint">{hitHint(hit)}</span>
+            </button>
+          ))}
+          {!busy && hits.length === 0 && <p className="muted pad">没有结果</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 「继续听」那一大块。底色取自封面，和全屏歌词同一套取色 */
+function ContinueHero({
+  track,
+  onResume,
+  onOpen,
+}: {
+  track: ContinueTrack;
+  onResume: (fromSec: number) => void;
+  onOpen: () => void;
+}) {
+  const color = useCoverColor(track.coverPath);
+  const duration = track.durationSec ?? 0;
+  // 听完了（或者停在最后几秒）就从头放，不然从停下的地方接着放
+  const finished = track.completed || (duration > 0 && duration - track.positionSec < 3);
+  const from = finished ? 0 : track.positionSec;
+  const pct = duration > 0 ? Math.min(100, (track.positionSec / duration) * 100) : 0;
+
+  return (
+    <div className="home-hero" style={color ? { background: color } : undefined}>
+      <button className="home-hero-cover" onClick={onOpen} title="在曲库里打开">
+        <Cover path={track.coverPath} size={168} rounded={10} />
+      </button>
+      <div className="home-hero-body">
+        <span className="home-hero-meta">
+          {formatRelative(track.lastPlayed)} · 听过 {track.playCount} 次
+        </span>
+        <button className="home-hero-title" onClick={onOpen}>
+          {track.title}
+        </button>
+        <span className="home-hero-artist">{track.artist}</span>
+        {track.stoppedLine !== "" && (
+          <span className="home-hero-line" title="上次停在这一行">
+            「{track.stoppedLine}」
+          </span>
+        )}
+        <div className="home-hero-progress">
+          <div className="home-hero-bar">
+            <div style={{ width: `${finished ? 100 : pct}%` }} />
+          </div>
+          <span>
+            {finished ? "听完了" : `${formatDuration(track.positionSec)} / ${formatDuration(track.durationSec)}`}
+          </span>
+        </div>
+        <div className="home-hero-actions">
+          <button className="primary" onClick={() => onResume(from)}>
+            ▶ {finished ? "再听一遍" : `从 ${formatDuration(from)} 继续`}
+          </button>
+          <button className="home-hero-secondary" onClick={onOpen}>
+            看歌词
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 最近播放的一格，右上角标上次停在哪 */
+function RecentTile({ track, onClick }: { track: PlayedTrack; onClick: () => void }) {
+  const duration = track.durationSec ?? 0;
+  const done = track.lastCompleted || (duration > 0 && duration - track.lastPositionSec < 3);
+  const badge = done ? "听完" : duration > 0 ? `${Math.round((track.lastPositionSec / duration) * 100)}%` : "";
+  return (
+    <button className="tile" onClick={onClick} title={`${track.title} · ${track.artist}`}>
+      <span className="home-tile-cover">
+        <Cover path={track.coverPath} size={120} rounded={8} />
+        {badge !== "" && <span className="home-badge">{badge}</span>}
+      </span>
+      <span className="tile-title">{track.title}</span>
+      <span className="tile-sub">{formatRelative(track.lastPlayed)}</span>
     </button>
   );
 }
 
-/** ISO 时间 → 「3 分钟前」。收听记录看的是「多久以前」，不是具体几点。 */
-function formatRelative(iso: string): string {
-  const then = Date.parse(iso);
-  if (!Number.isFinite(then)) return "";
-  const seconds = Math.max(0, (Date.now() - then) / 1000);
-  if (seconds < 60) return "刚刚";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
-  return `${Math.floor(seconds / 86400)} 天前`;
+function TodayPanel({ home, cardsToday }: { home: HomeSummary; cardsToday: number | null }) {
+  const { dailyGoalMinutes } = useAppSettings();
+  const { today } = home;
+  const minutes = Math.floor(today.listenedSec / 60);
+  const ratio = Math.min(1, minutes / dailyGoalMinutes);
+  const extras = [
+    cardsToday !== null ? `今天制卡 ${cardsToday} 张` : "",
+    today.streakDays > 0 ? `连续 ${today.streakDays} 天` : "",
+  ].filter((s) => s !== "");
+
+  return (
+    <section className="home-panel">
+      <h2 className="home-panel-title">今日</h2>
+      <div className="home-today">
+        <Ring ratio={ratio} label={`${Math.round(ratio * 100)}%`} />
+        <div className="home-today-text">
+          <div className="home-today-big">
+            {minutes} <span>/ {dailyGoalMinutes} 分钟</span>
+          </div>
+          <div className="muted small">
+            {today.songs === 0 ? "今天还没听" : `${today.songs} 首 · 听到 ${today.linesHeard.toLocaleString()} 行歌词`}
+          </div>
+        </div>
+      </div>
+      {extras.length > 0 && <p className="home-today-extra">{extras.join(" · ")}</p>}
+    </section>
+  );
+}
+
+/** 进度环。SVG 画，不引图表库 */
+function Ring({ ratio, label }: { ratio: number; label: string }) {
+  const r = 22;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg className="home-ring" viewBox="0 0 56 56" width="56" height="56" role="img" aria-label={`完成 ${label}`}>
+      <circle cx="28" cy="28" r={r} className="home-ring-track" />
+      {/* 0 的时候不画：圆头线帽会留下一个点，像是有进度 */}
+      {ratio > 0 && (
+        <circle
+          cx="28"
+          cy="28"
+          r={r}
+          className="home-ring-fill"
+          strokeDasharray={`${c * ratio} ${c}`}
+          transform="rotate(-90 28 28)"
+        />
+      )}
+      <text x="28" y="32" textAnchor="middle">
+        {label}
+      </text>
+    </svg>
+  );
+}
+
+function CorpusPanel({ home, onMore }: { home: HomeSummary; onMore: () => void }) {
+  const { overview, reach } = home;
+  const reachPct = reach.totalLemmas > 0 ? Math.round((reach.heardLemmas / reach.totalLemmas) * 100) : 0;
+  const rows: [string, string, string?][] = [
+    ["曲目", `${overview.tracks} 首 · ${formatLongDuration(overview.totalDurationSec)}`],
+    ["歌词", `${overview.lyricLines.toLocaleString()} 行 · ${overview.vocabulary.toLocaleString()} 个词`],
+    ["歌手 / 专辑", `${overview.people} 人 · ${overview.albums} 张`],
+    ["你听过", `${reach.heardSongs} 首`, "听满 30 秒才算"],
+    [
+      "碰到过的词",
+      `${reachPct}%`,
+      `听过的歌里出现过 ${reach.heardLemmas.toLocaleString()} 个实词（名词、动词、形容词、副词），全库 ${reach.totalLemmas.toLocaleString()} 个`,
+    ],
+  ];
+  return (
+    <section className="home-panel">
+      <header className="home-panel-head">
+        <h2 className="home-panel-title">语料库</h2>
+        <button className="link-btn" onClick={onMore}>
+          完整分析 →
+        </button>
+      </header>
+      <dl className="home-stats">
+        {rows.map(([k, v, tip]) => (
+          <div key={k} title={tip}>
+            <dt>{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function AddedPanel({ tracks, onOpen }: { tracks: AddedTrack[]; onOpen: (songId: string) => void }) {
+  if (tracks.length === 0) return null;
+  return (
+    <section className="home-panel">
+      <h2 className="home-panel-title">最近添加</h2>
+      <ul className="home-added">
+        {tracks.map((t) => (
+          <li key={t.songId}>
+            <button onClick={() => onOpen(t.songId)} title={`${t.title} · ${t.artist}`}>
+              <Cover path={t.coverPath} size={44} rounded={6} />
+              <span className="rank-text">
+                <span className="rank-title">{t.title}</span>
+                <span className="rank-artist">
+                  {t.artist} · {formatRelative(t.addedAt)}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }

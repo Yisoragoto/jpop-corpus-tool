@@ -41,7 +41,7 @@ import { usePlaybackState } from "./usePlayback";
 type Route = "home" | "kwic" | "library" | "explorer" | "analytics" | "import" | "scrape" | "anki" | "dict" | "settings";
 
 const ROUTES: { key: Route; label: string; hint: string }[] = [
-  { key: "home", label: "首页", hint: "语料概览 · 收听记录 · 收藏" },
+  { key: "home", label: "首页", hint: "继续听 · 今日 · 语料库" },
   { key: "kwic", label: "检索", hint: "KWIC 语境检索与歌词全文" },
   { key: "library", label: "曲库", hint: "曲目 · 歌词 · 语料" },
   { key: "explorer", label: "人物", hint: "演唱 / 作曲 / 作词 / 编曲" },
@@ -277,7 +277,7 @@ export default function App() {
         ...(playback.loopRegion ? {} : { disabled: "当前没有循环" }),
         run: () => void api.audioSetLoop(),
       },
-      { id: "go-home", label: "打开 首页", hint: "语料概览", run: () => setRoute("home") },
+      { id: "go-home", label: "打开 首页", hint: "继续听 · 今日 · 语料库", run: () => setRoute("home") },
       { id: "go-kwic", label: "打开 检索", hint: "KWIC", run: () => setRoute("kwic") },
       { id: "go-library", label: "打开 曲库", run: () => setRoute("library") },
       { id: "go-explorer", label: "打开 人物", run: () => setRoute("explorer") },
@@ -436,6 +436,7 @@ export default function App() {
             actions={actions}
             onNavigate={setRoute}
             onError={onError}
+            onPickHit={onPickHit}
             playbackSongId={playback.songId}
             libraryVersion={libraryVersion}
           />

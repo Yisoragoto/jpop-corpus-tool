@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS songs (
             album      TEXT,
             genre      TEXT,
             audio_path TEXT
-        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER);
+        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT);
 
 CREATE TABLE IF NOT EXISTS token_corrections (
             utterance_id INTEGER PRIMARY KEY,

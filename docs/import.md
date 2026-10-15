@@ -95,7 +95,7 @@ cargo run -p jp-import --example new_audio -- <语料库目录>
 
 | 表 | 内容 |
 |---|---|
-| `songs` | 曲目。tag 原值直接写，不做任何「美化」 |
+| `songs` | 曲目。tag 原值直接写，不做任何「美化」；`added_at` 记导入时间（首页「最近添加」用） |
 | `utterances` | 歌词行 |
 | `utterances_fts` | 全文索引 |
 | `tokens` | 分词 |

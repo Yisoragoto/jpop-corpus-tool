@@ -146,6 +146,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::scrape_backfill_covers,
             // Anki：选词 / 预览 / 导出 / 学习状态
             commands::anki_status,
+            commands::anki_notes_since,
             commands::anki_words,
             commands::anki_preview,
             commands::anki_ensure_note_type,
