@@ -335,6 +335,25 @@ mod tests {
     }
 
     #[test]
+    fn timeline_groups_albums_and_prefers_full_dates() {
+        let conn = db();
+        conn.execute_batch(
+            "INSERT INTO songs (id, title, artist, album, album_id, year, release_date) VALUES
+                ('k1', '東京', 'きのこ帝国', 'フェイクワールドワンダーランド', 1, '2014', '2014-10-08'),
+                ('k2', 'クロノスタシス', 'きのこ帝国', 'フェイクワールドワンダーランド', 1, '2014', ''),
+                ('k3', '無題', 'きのこ帝国', NULL, NULL, '', ''),
+                ('s1', 'カタワレ', '佐藤千亜妃', NULL, NULL, '2020', '');",
+        )
+        .unwrap();
+        let rows = crate::library::timeline_releases(&conn).unwrap();
+        // 没日期的 k3 不列；k1 k2 合成一张，日期取完整的那个
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        assert_eq!((rows[0].person_id, rows[0].date.as_str(), rows[0].tracks), (1, "2014-10-08", 2));
+        assert_eq!(rows[0].title, "フェイクワールドワンダーランド");
+        assert_eq!((rows[1].person_id, rows[1].title.as_str(), rows[1].song_id.as_str()), (2, "カタワレ", "s1"));
+    }
+
+    #[test]
     fn a_band_lists_its_members_and_a_member_lists_the_band() {
         let conn = db();
         assert_eq!(put(&conn, 1, 2, "主唱 · 作词作曲", "2007", "2019", "musicbrainz").unwrap(), PutOutcome::Inserted);

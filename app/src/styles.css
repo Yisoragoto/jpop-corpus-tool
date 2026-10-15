@@ -1927,6 +1927,69 @@ button.chip:hover { color: var(--fg); }
 .graph-card-actions button:hover { background: var(--control-hover); }
 .graph-card-actions button.primary { background: var(--fg); color: #111; font-weight: 600; }
 
+/* 时间轴 */
+.timeline-pane > .nav-back { top: 12px; }
+.timeline-view { position: absolute; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); animation: fade-in 400ms ease backwards; }
+.timeline-bar { display: flex; align-items: center; gap: 16px; padding: 12px 16px 10px 58px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.timeline-bar .search { margin: 0; width: 220px; }
+.timeline-zoom { width: 180px; grid-template-columns: auto 1fr; align-items: center; gap: 8px; }
+.timeline-legend { display: flex; gap: 14px; margin-left: auto; }
+.timeline-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.tl-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); display: inline-block; }
+.tl-end { width: 2px; height: 12px; background: #ff9f7a; display: inline-block; }
+.tl-link { width: 18px; border-top: 1.5px dashed #e8d9ff; display: inline-block; }
+.timeline-scroll { overflow: auto; min-height: 0; position: relative; }
+.timeline-grid { display: flex; min-width: max-content; position: relative; }
+.timeline-names {
+  position: sticky; left: 0; z-index: 3; width: 190px; flex: 0 0 auto;
+  background: var(--content); border-right: 1px solid var(--line); backdrop-filter: blur(20px);
+}
+.timeline-corner { position: sticky; top: 0; z-index: 2; background: var(--content); border-bottom: 1px solid var(--line); }
+.timeline-name {
+  width: 100%; display: flex; align-items: center; gap: 8px; padding: 0 12px; text-align: left; font-size: 12px;
+  transition: background 140ms; animation: item-in 420ms calc(var(--n, 0) * 25ms) var(--ease-out) backwards;
+}
+.timeline-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-name:hover { background: var(--panel-2); }
+.timeline-name.under { padding-left: 30px; color: var(--muted); }
+.timeline-plot { position: relative; flex: 0 0 auto; }
+.timeline-years {
+  position: sticky; top: 0; z-index: 2; margin-bottom: -30px; background: var(--content);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(20px);
+}
+.timeline-years span { position: absolute; top: 7px; transform: translateX(-50%); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.timeline-svg { display: block; }
+.tl-grid { stroke: rgba(255, 255, 255, .05); }
+.tl-now { stroke: var(--accent); stroke-opacity: .35; stroke-dasharray: 2 4; }
+.tl-stripe { fill: rgba(255, 255, 255, .018); }
+.tl-lane {
+  stroke: rgba(76, 194, 255, .35); stroke-width: 2; stroke-linecap: round;
+  stroke-dasharray: 4000; stroke-dashoffset: 0; animation: lane-draw 1100ms calc(var(--n, 0) * 30ms) var(--ease-out) backwards;
+}
+.tl-lane.band { stroke: rgba(255, 255, 255, .4); stroke-width: 3; }
+@keyframes lane-draw { from { stroke-dashoffset: 4000; } }
+.tl-ended { stroke: #ff9f7a; stroke-width: 2.5; stroke-linecap: round; animation: fade-in 400ms 600ms ease backwards; }
+.tl-connector {
+  fill: none; stroke: #e8d9ff; stroke-opacity: .7; stroke-width: 1.5; stroke-dasharray: 5 5;
+  animation: fade-in 600ms calc(700ms + var(--n, 0) * 80ms) ease backwards;
+}
+.tl-release {
+  fill: var(--accent); stroke: var(--content); stroke-width: 2.5; cursor: pointer;
+  transform-box: fill-box; transform-origin: center;
+  transition: transform 260ms var(--spring), fill 140ms;
+  animation: dot-in 500ms calc(300ms + var(--d, 0ms)) var(--spring) backwards;
+}
+.tl-release.band { fill: #f2f2f5; }
+.tl-release:hover { transform: scale(1.35); fill: #fff; }
+.timeline-tip {
+  position: absolute; z-index: 10; transform: translate(-50%, calc(-100% - 10px)); pointer-events: none;
+  display: flex; gap: 10px; align-items: center; padding: 8px 12px 8px 8px; max-width: 320px;
+  animation: card-pop 220ms var(--spring) backwards;
+}
+.timeline-tip span { display: grid; min-width: 0; }
+.timeline-tip b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-tip small { font-size: 11px; color: var(--muted); }
+
 /* 左栏顶上：筛选框 + 关系网 / 时间轴的入口 */
 .browser-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px; }
 .browser-head .search { flex: 1; min-width: 0; margin: 0; }

@@ -49,6 +49,23 @@ pub struct CollabEdge {
     pub shared: i64,
 }
 
+/// 时间轴上的一次发行：某位演唱者的一张专辑（或一首没专辑的单曲）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineRelease {
+    pub person_id: i64,
+    pub album_id: Option<i64>,
+    /// 专辑名；单曲是歌名
+    pub title: String,
+    /// 完整发行日期（刮削拿到的），没有就是年份；都没有不列
+    pub date: String,
+    pub tracks: i64,
+    #[serde(default)]
+    pub cover_path: String,
+    /// 单曲时是那首歌（点了直接打开）
+    pub song_id: String,
+}
+
 /// 一张专辑。对应 `albums` 表。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

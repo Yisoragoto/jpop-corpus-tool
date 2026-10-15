@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
-use crate::models::{Album, CollabEdge, Collaborator, Credit, DirectoryEntry, FacetCount, PersonWork, LineToken, LyricLine, Person, PersonSummary, Track};
+use crate::models::{Album, CollabEdge, Collaborator, Credit, DirectoryEntry, FacetCount, PersonWork, TimelineRelease, LineToken, LyricLine, Person, PersonSummary, Track};
 use crate::search::placeholders;
 
 /// 每首曲目都要带歌词行数，UI 靠它区分「没有歌词」和「还没加载」。
@@ -287,6 +287,34 @@ pub(crate) fn works_by_person(conn: &Connection, person_id: i64) -> Result<Vec<T
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![person_id], track_from_row)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// 时间轴：每位演唱者的每一次发行。有专辑的按专辑合在一起，日期取那张里最早的；
+/// 没专辑的歌各算一次。日期优先用刮削拿到的完整日期，没有退回年份；两样都没有的不列。
+pub(crate) fn timeline_releases(conn: &Connection) -> Result<Vec<TimelineRelease>> {
+    let mut stmt = conn.prepare(
+        "SELECT c.person_id, s.album_id, \
+                CASE WHEN s.album_id IS NULL THEN s.title ELSE COALESCE(NULLIF(MIN(s.album), ''), MIN(s.title)) END, \
+                COALESCE(MIN(NULLIF(s.release_date, '')), MIN(NULLIF(s.year, ''))), \
+                COUNT(DISTINCT s.id), COALESCE(MAX(s.cover_path), ''), MIN(s.id) \
+         FROM track_credits c JOIN songs s ON s.id = c.song_id \
+         WHERE c.role = 'performer' \
+           AND COALESCE(NULLIF(s.release_date, ''), NULLIF(s.year, '')) IS NOT NULL \
+         GROUP BY c.person_id, COALESCE(CAST(s.album_id AS TEXT), 'song:' || s.id) \
+         ORDER BY 4",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(TimelineRelease {
+            person_id: row.get(0)?,
+            album_id: row.get(1)?,
+            title: row.get(2)?,
+            date: row.get(3)?,
+            tracks: row.get(4)?,
+            cover_path: row.get(5)?,
+            song_id: row.get(6)?,
+        })
+    })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 

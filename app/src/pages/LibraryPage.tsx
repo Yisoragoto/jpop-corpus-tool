@@ -24,6 +24,7 @@ import { useArtistPhotos } from "../components/PerformerPicker";
 import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
 import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
 import { GraphView } from "../components/GraphView";
+import { TimelineView } from "../components/TimelineView";
 import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
@@ -734,6 +735,7 @@ export function LibraryPage({
         onOpenAlbum={openAlbum}
         onOpenTrack={openWithMorph}
         onOpenGraph={() => go({ kind: "graph", focus: view?.kind === "person" ? view.id : null })}
+        onOpenTimeline={() => go({ kind: "timeline" })}
         banner={
           missing.length > 0 && (
             <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title="扫文件夹或逐首选文件找回">
@@ -755,6 +757,22 @@ export function LibraryPage({
         <main className="pane graph-pane">
           {backButton}
           <GraphView data={data} initialFocus={view.focus ?? null} onOpenPerson={(id) => go({ kind: "person", id })} />
+        </main>
+      )}
+
+      {view?.kind === "timeline" && (
+        <main className="pane graph-pane timeline-pane">
+          {backButton}
+          <TimelineView
+            data={data}
+            version={libraryVersion}
+            onOpenPerson={(id) => go({ kind: "person", id })}
+            onOpenRelease={(rel) => {
+              if (rel.albumId !== null) go({ kind: "person", id: rel.personId, albumId: rel.albumId });
+              else void actions.openTrackById(rel.songId, { autoPlay: false });
+            }}
+            onError={onAudioError}
+          />
         </main>
       )}
 

@@ -80,6 +80,7 @@ Each dictionary's licence and redistribution terms are its author's; check them 
 - Frequency table (lemma × POS with JLPT level), a timeline by year, and a corpus report as TXT.
 - Word cloud over the same filters, on a frosted-glass card backed by the blurred artist photos. Click a word to list the songs it appears in and jump to the line; save it as PNG. Its font is set separately (bundled, imported or installed).
 - A profile for every person: the roles they had, the bands they were in, their works by album, and collaborators.
+- A relationship graph (Obsidian-style, drag and zoom) and a release timeline (one lane per musician; a band that split links to its members' solo careers).
 
 ![Analytics page](docs/screenshots/analytics.webp)
 

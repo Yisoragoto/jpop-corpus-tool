@@ -48,6 +48,18 @@ export interface PersonSummary {
   imagePath: string;
 }
 
+/** 时间轴上的一次发行：某位演唱者的一张专辑或一首单曲（`timeline_releases`） */
+export interface TimelineRelease {
+  personId: number;
+  albumId: number | null;
+  title: string;
+  /** YYYY-MM-DD / YYYY-MM / YYYY */
+  date: string;
+  tracks: number;
+  coverPath: string;
+  songId: string;
+}
+
 /** 关系网的一条边：两个人一起署名的歌数。source < target */
 export interface CollabEdge {
   source: number;
@@ -579,6 +591,7 @@ export const api = {
   /** 按 id 取人。命令面板定位到具体人物时用。 */
   personById: (personId: number) =>
     call<PersonSummary | null>("person_by_id", { personId }),
+  timelineReleases: () => call<TimelineRelease[]>("timeline_releases"),
   collaborationEdges: () => call<CollabEdge[]>("collaboration_edges"),
   personWorks: (personId: number) => call<PersonWork[]>("person_works", { personId }),
   peopleDirectory: () => call<DirectoryEntry[]>("people_directory"),

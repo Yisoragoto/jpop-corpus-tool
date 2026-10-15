@@ -187,6 +187,11 @@ impl Corpus {
         library::person_works(&self.conn, person_id)
     }
 
+    /// 时间轴：每位演唱者的每一次发行
+    pub fn timeline_releases(&self) -> Result<Vec<TimelineRelease>> {
+        library::timeline_releases(&self.conn)
+    }
+
     /// 整张关系网的边
     pub fn collaboration_edges(&self) -> Result<Vec<CollabEdge>> {
         library::collaboration_edges(&self.conn)

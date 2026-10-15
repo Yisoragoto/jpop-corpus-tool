@@ -53,6 +53,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::people_directory,
             commands::person_works,
             commands::collaboration_edges,
+            commands::timeline_releases,
             commands::person_by_id,
             commands::works_by_person,
             commands::collaborators,
