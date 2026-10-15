@@ -118,3 +118,20 @@ export function useCoverColor(path: string | null | undefined): string | null {
   }, [path]);
   return color;
 }
+
+/** 封面的主色提亮成高光色（播放钮的光晕、词云的前几名）。没有就是 null */
+export function useCoverTint(path: string | null | undefined): string | null {
+  const [tint, setTint] = useState<string | null>(null);
+  useEffect(() => {
+    setTint(null);
+    if (!path) return;
+    let alive = true;
+    void imageColor(path).then((rgb) => {
+      if (alive && rgb) setTint(toHighlight(rgb));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+  return tint;
+}

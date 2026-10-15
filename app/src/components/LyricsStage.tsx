@@ -17,10 +17,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
-import type { LyricLine } from "../api";
+import { formatDuration, ROLE_LABELS, type Credit, type LyricLine, type Track } from "../api";
 import { useCoverColor } from "../coverColor";
 import type { LyricsDisplay } from "../lyricsDisplay";
 import { useAppSettings } from "../settings";
+import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import { LyricsTools } from "./LyricsTools";
 import { ColumnSplitter, usePaneWidth } from "./ColumnSplitter";
@@ -29,6 +30,12 @@ interface Props {
   title: string;
   meta: string;
   coverPath: string | null | undefined;
+  /** 侧栏卡片要的细节：专辑、年份、流派、时长 */
+  track: Track;
+  /** 署名：演唱、作词、作曲、编曲 */
+  credits: Credit[];
+  /** 名字 → 照片路径（只有刮削过的演唱者有） */
+  photoOf: (name: string) => string;
   lines: LyricLine[];
   currentLine: number;
   renderText: (index: number) => ReactNode;
@@ -141,12 +148,15 @@ export function LyricsStage(props: Props) {
         />
         <aside className="stage-side" style={side.style}>
           {props.side === null ? (
-            /* 没在查词时放这首歌本身：封面、歌名、歌手和署名 */
-            <div className="stage-card">
-              <Cover path={props.coverPath} size={300} alt="" rounded={10} />
-              <h2>{props.title}</h2>
-              <p>{props.meta}</p>
-            </div>
+            /* 没在查词时放这首歌本身：封面、歌名、歌手和署名。key 换歌就重新进场 */
+            <SongCard
+              key={props.track.id}
+              track={props.track}
+              coverPath={props.coverPath}
+              credits={props.credits}
+              photoOf={props.photoOf}
+              lineCount={lines.length}
+            />
           ) : (
             <>
               <button className="stage-side-close" onClick={props.onCloseSide} title="收起" aria-label="收起查词">
@@ -157,6 +167,82 @@ export function LyricsStage(props: Props) {
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+/** 署名的显示顺序：先唱的人，再词、曲、编 */
+const ROLE_ORDER = ["performer", "lyricist", "composer", "arranger"];
+
+/**
+ * 全屏右栏的歌曲卡片。署名按角色分行，同一个人兼几个角色就在几行里都出现——
+ * 「作词作曲都是 ACAね」是值得一眼看到的信息，不合并。演唱者有照片就带头像。
+ */
+function SongCard({
+  track,
+  coverPath,
+  credits,
+  photoOf,
+  lineCount,
+}: {
+  track: Track;
+  coverPath: string | null | undefined;
+  credits: Credit[];
+  photoOf: (name: string) => string;
+  lineCount: number;
+}) {
+  const roles = [...new Set(credits.map((c) => c.role))].sort((a, b) => {
+    const ia = ROLE_ORDER.indexOf(a);
+    const ib = ROLE_ORDER.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+  const facts = [
+    track.album && { label: "专辑", value: track.album },
+    track.year && { label: "年份", value: track.year },
+    track.genre && { label: "流派", value: track.genre },
+    track.durationSec !== null && { label: "时长", value: formatDuration(track.durationSec) },
+    lineCount > 0 && { label: "歌词", value: `${lineCount} 行` },
+  ].filter((f): f is { label: string; value: string } => Boolean(f));
+
+  return (
+    <div className="stage-card">
+      <div className="stage-card-cover">
+        <Cover path={coverPath} size={300} alt="" rounded={10} />
+      </div>
+      <h2>{track.title}</h2>
+      <p className="stage-card-artist">{track.artist}</p>
+
+      {roles.length > 0 && (
+        <dl className="stage-credits">
+          {roles.map((role, i) => (
+            <div key={role} className="stage-credit-row" style={{ ["--i" as string]: i }}>
+              <dt>{ROLE_LABELS[role] ?? role}</dt>
+              <dd>
+                {credits
+                  .filter((c) => c.role === role)
+                  .map((c) => (
+                    <span key={c.personId} className="stage-person">
+                      {role === "performer" && <Avatar path={photoOf(c.name)} name={c.name} size={22} />}
+                      {c.name}
+                    </span>
+                  ))}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {roles.length === 0 && <p className="stage-card-none">还没有署名信息（刮削或「编辑信息」里可以补）</p>}
+
+      {facts.length > 0 && (
+        <dl className="stage-facts" style={{ ["--i" as string]: roles.length }}>
+          {facts.map((f) => (
+            <div key={f.label}>
+              <dt>{f.label}</dt>
+              <dd>{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </div>
   );
 }

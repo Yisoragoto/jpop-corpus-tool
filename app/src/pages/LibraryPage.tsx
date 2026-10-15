@@ -30,6 +30,7 @@ import { retryFurigana, useLyricsDisplay, useSongFurigana } from "../lyricsDispl
 import { useAppSettings } from "../settings";
 import { csvProblem, describeDelete, describeEdit, libraryApi, type MissingAudio } from "../libraryAdmin";
 import { segmentLine, type Piece } from "../lyricSegments";
+import { morph } from "../motion";
 import type { LibraryActions, LibraryState } from "../useLibrary";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
 import { dictApi, type FindTermsResult } from "../dict/api";
@@ -503,13 +504,43 @@ export function LibraryPage({
     [artistPhotos],
   );
 
+  /** 打开一首歌：封面从左栏飞到歌词栏的标题旁（共享元素过渡） */
+  const openWithMorph = (track: Track, button: HTMLElement) => {
+    if (selected?.id === track.id) return;
+    morph(() => void actions.openTrack(track), {
+      name: "track-cover",
+      from: button.querySelector(".cover"),
+      to: () => document.querySelector(".lyrics .track-head .cover"),
+    });
+  };
+
+  /** 歌手墙 ↔ 某位歌手的歌：头像在两屏之间飞过去 */
+  const drillInto = (artist: string, card: HTMLElement) =>
+    morph(() => setGridArtist(artist), {
+      name: "artist-photo",
+      from: card.querySelector(".artist-photo"),
+      to: () => document.querySelector(".artist-head .artist-photo"),
+    });
+  const drillOut = () => {
+    const leaving = gridArtist;
+    morph(() => setGridArtist(null), {
+      name: "artist-photo",
+      from: document.querySelector(".artist-head .artist-photo"),
+      to: () =>
+        leaving === null
+          ? null
+          : document.querySelector(`.artist-card[data-artist="${CSS.escape(leaving)}"] .artist-photo`),
+    });
+  };
+
   /** 一首歌在左栏里的样子：网格是封面卡片，列表是一行 */
-  const trackButton = (track: Track) =>
+  const trackButton = (track: Track, index: number) =>
     view === "grid" ? (
       <button
         key={track.id}
         className={`track-card ${selected?.id === track.id ? "active" : ""}`}
-        onClick={() => void actions.openTrack(track)}
+        style={{ ["--i" as string]: Math.min(index, 24) }}
+        onClick={(e) => openWithMorph(track, e.currentTarget)}
         title={`${track.title} · ${track.artist}`}
       >
         <Cover path={track.coverPath} size={118} rounded={8} />
@@ -524,7 +555,7 @@ export function LibraryPage({
       <button
         key={track.id}
         className={`track with-cover ${selected?.id === track.id ? "active" : ""}`}
-        onClick={() => void actions.openTrack(track)}
+        onClick={(e) => openWithMorph(track, e.currentTarget)}
       >
         <Cover path={track.coverPath} size={36} />
         <span className="track-lines">
@@ -711,14 +742,18 @@ export function LibraryPage({
         <div className={`list ${view === "grid" ? "as-grid" : ""}`}>
           {artistWall && (
             <div className="artist-wall">
-              {groups.map((group) => (
+              {groups.map((group, i) => (
                 <button
                   key={group.artist}
                   className="artist-card"
-                  onClick={() => setGridArtist(group.artist)}
+                  data-artist={group.artist}
+                  style={{ ["--i" as string]: Math.min(i, 24) }}
+                  onClick={(e) => drillInto(group.artist, e.currentTarget)}
                   title={`${group.artist} · ${group.tracks.length} 首`}
                 >
-                  <Avatar path={photoOf(group.artist)} name={group.artist} size={118} />
+                  <span className="artist-photo">
+                    <Avatar path={photoOf(group.artist)} name={group.artist} size={118} />
+                  </span>
                   <span className="artist-name">{group.artist}</span>
                   <span className="artist-count">{group.tracks.length} 首</span>
                 </button>
@@ -729,12 +764,14 @@ export function LibraryPage({
           {drilled !== null && (
             <>
               <div className="artist-head">
-                <button className="artist-back" onClick={() => setGridArtist(null)} title="回到所有歌手" aria-label="回到所有歌手">
+                <button className="artist-back" onClick={drillOut} title="回到所有歌手" aria-label="回到所有歌手">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="m14 8-4 4 4 4" />
                   </svg>
                 </button>
-                <Avatar path={photoOf(drilled.artist)} name={drilled.artist} size={44} />
+                <span className="artist-photo">
+                  <Avatar path={photoOf(drilled.artist)} name={drilled.artist} size={44} />
+                </span>
                 <span className="artist-head-text">
                   <b>{drilled.artist}</b>
                   <span className="muted small">{drilled.tracks.length} 首</span>
@@ -916,6 +953,8 @@ export function LibraryPage({
                   className={`line ${active ? "current" : ""} ${looped ? "looped" : ""}`}
                   key={line.utteranceId}
                   data-utt={line.utteranceId}
+                  // 换歌时前十几行依次浮上来，再往后一起出（见 styles.css「动效」）
+                  style={{ ["--n" as string]: Math.min(idx, 16) }}
                   ref={active ? currentLineRef : undefined}
                 >
                   <button
@@ -965,6 +1004,9 @@ export function LibraryPage({
           title={selected.title}
           meta={[selected.artist, selected.album, selected.year].filter(Boolean).join(" · ")}
           coverPath={selected.coverPath}
+          track={selected}
+          credits={credits}
+          photoOf={photoOf}
           lines={lyrics}
           currentLine={currentLine}
           renderText={renderLineText}

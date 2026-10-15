@@ -15,8 +15,10 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { api, formatDuration, PITCH_STEPS, pitchLabel, RATE_STEPS, type PlaybackState } from "../api";
+import { useCoverTint } from "../coverColor";
 import { Cover } from "./Cover";
 import { Flyout } from "./Flyout";
 import { useSpectrum } from "../usePlayback";
@@ -104,9 +106,22 @@ export function Player({
     void api.audioSeek(duration === null ? target : Math.min(target, duration));
   };
   const pct = duration && duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
+  // 封面的颜色：播放钮的光晕、顶边那道高光都用它，换歌跟着换
+  const tint = useCoverTint(coverPath);
+  const [ambientBroken, setAmbientBroken] = useState(false);
+  useEffect(() => setAmbientBroken(false), [coverPath]);
 
   return (
-    <footer className={`player ${disabled ? "off" : ""}`}>
+    <footer
+      className={`player ${disabled ? "off" : ""} ${playing ? "is-playing" : ""}`}
+      style={{ ["--player-tint" as string]: tint ?? "rgba(255, 255, 255, .7)" }}
+    >
+      {/* 封面重度虚化垫在玻璃底下：整条播放条带上这首歌的颜色。单独一层裁切，弹出面板不受影响 */}
+      <div className="player-ambient" aria-hidden="true">
+        {coverPath && !ambientBroken && (
+          <img key={coverPath} src={convertFileSrc(coverPath)} alt="" draggable={false} onError={() => setAmbientBroken(true)} />
+        )}
+      </div>
       {showSpectrum && <Spectrum enabled={!disabled} active={playing} />}
 
       <div className="seek-row">
@@ -153,17 +168,20 @@ export function Player({
             }
           }}
         >
+          {/* key 换歌就重挂，封面和歌名一起滑进来 */}
+          <div className="now-swap" key={state.songId ?? "none"}>
           <Cover path={coverPath} size={48} rounded={6} />
           <div className="now">
             <span className="now-title">{title || "—"}</span>
             <span className="now-artist">{artist}</span>
+          </div>
           </div>
         </div>
 
         <div className="player-center">
           <div className="transport">
             <button
-              className="icon-btn"
+              className="icon-btn nudge-back"
               onClick={() => step(-STEP_SEC)}
               disabled={disabled || idle}
               title={`后退 ${STEP_SEC} 秒 (←)`}
@@ -171,16 +189,35 @@ export function Player({
               <IconBack />
             </button>
             <button
-              className="play-btn"
+              className={`play-btn ${playing ? "is-playing" : ""}`}
               onClick={() => void api.audioToggle()}
               // 等变调渲染时引擎还是空的，但播放键照样能按（记到渲染好之后）
               disabled={disabled || idle}
               title={playing ? "暂停 (空格)" : "播放 (空格)"}
+              aria-label={playing ? "暂停" : "播放"}
             >
-              {playing ? <IconPause /> : <IconPlay />}
+              {/* 外圈是这首歌的进度 */}
+              <svg className="play-ring" viewBox="0 0 60 60" aria-hidden="true">
+                <circle className="play-ring-track" cx="30" cy="30" r="28" />
+                <circle
+                  className="play-ring-fill"
+                  cx="30"
+                  cy="30"
+                  r="28"
+                  pathLength={100}
+                  strokeDasharray={`${pct.toFixed(2)} 100`}
+                />
+              </svg>
+              {/* 两个图标叠着，靠 class 切换：播放 ↔ 暂停是一次旋转 + 缩放的交叉淡入，不是硬切 */}
+              <span className="play-icon icon-play">
+                <IconPlay />
+              </span>
+              <span className="play-icon icon-pause">
+                <IconPause />
+              </span>
             </button>
             <button
-              className="icon-btn"
+              className="icon-btn nudge-forward"
               onClick={() => step(STEP_SEC)}
               disabled={disabled || idle}
               title={`前进 ${STEP_SEC} 秒 (→)`}
@@ -276,16 +313,17 @@ function Spectrum({ enabled, active }: { enabled: boolean; active: boolean }) {
 
 function IconPlay() {
   return (
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
-      <path d="M8 5.2v13.6L19 12 8 5.2z" />
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+      <path d="M8.5 5.2v13.6L19 12 8.5 5.2z" />
     </svg>
   );
 }
 
 function IconPause() {
   return (
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
-      <path d="M7 5h3.2v14H7zM13.8 5H17v14h-3.2z" />
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+      <rect x="6.5" y="5" width="3.6" height="14" rx="1.2" />
+      <rect x="13.9" y="5" width="3.6" height="14" rx="1.2" />
     </svg>
   );
 }

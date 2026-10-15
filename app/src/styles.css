@@ -30,6 +30,9 @@
   --surface-pop: rgba(30, 30, 36, .97);
   --radius: 7px;
   --shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  /* 带一点回弹的缓动：按钮、卡片、弹出层共用，动起来是一个手感 */
+  --spring: cubic-bezier(.2, .9, .25, 1.15);
+  --ease-out: cubic-bezier(.2, .8, .3, 1);
   color-scheme: dark;
 }
 
@@ -464,10 +467,31 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .stage-body .col-splitter:hover,
 .stage-body .col-splitter:focus-visible { background: rgba(255, 255, 255, .38); }
 .stage-side-close { position: absolute; top: 8px; right: 8px; z-index: 1; }
+/* 全屏右栏的歌曲卡片：封面、歌名，再往下是署名和几项事实。
+   换歌时整张卡重挂（key），封面先浮上来，署名一行行跟着进场。 */
 .stage-card { display: flex; flex-direction: column; gap: 4px; }
-.stage-card .cover { width: 100% !important; height: auto !important; aspect-ratio: 1; object-fit: cover; box-shadow: 0 12px 34px rgba(0, 0, 0, .5); }
-.stage-card h2 { margin: 14px 0 0; font-size: 20px; font-weight: 700; letter-spacing: -.2px; }
+.stage-card-cover { animation: card-cover-in 600ms var(--spring) both; }
+@keyframes card-cover-in { from { opacity: 0; transform: translateY(14px) scale(.96); filter: blur(6px); } }
+.stage-card .cover { width: 100% !important; height: auto !important; aspect-ratio: 1; object-fit: cover; box-shadow: 0 12px 34px rgba(0, 0, 0, .5); transition: transform 500ms var(--spring), box-shadow 500ms; }
+.stage-card-cover:hover .cover { transform: translateY(-3px) scale(1.015); box-shadow: 0 20px 44px rgba(0, 0, 0, .55); }
+.stage-card h2 { margin: 14px 0 0; font-size: 20px; font-weight: 700; letter-spacing: -.2px; animation: card-row-in 500ms 80ms var(--ease-out) both; }
 .stage-card p { margin: 0; font-size: 13px; color: rgba(255, 255, 255, .62); }
+.stage-card-artist { animation: card-row-in 500ms 120ms var(--ease-out) both; }
+@keyframes card-row-in { from { opacity: 0; transform: translateY(8px); } }
+.stage-credits { margin: 16px 0 0; display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px;
+  background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .1); backdrop-filter: blur(20px); }
+.stage-credit-row { display: grid; grid-template-columns: 3em minmax(0, 1fr); gap: 8px; align-items: baseline;
+  animation: card-row-in 500ms calc(160ms + var(--i, 0) * 60ms) var(--ease-out) both; }
+.stage-credit-row dt { font-size: 12px; color: rgba(255, 255, 255, .55); }
+.stage-credit-row dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+.stage-person { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.stage-person .avatar { border: 1px solid rgba(255, 255, 255, .25); }
+.stage-card-none { margin-top: 14px !important; font-size: 12px !important; }
+.stage-facts { margin: 10px 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; padding: 0 2px;
+  animation: card-row-in 500ms calc(200ms + var(--i, 0) * 60ms) var(--ease-out) both; }
+.stage-facts div { min-width: 0; }
+.stage-facts dt { font-size: 11px; color: rgba(255, 255, 255, .5); }
+.stage-facts dd { margin: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .link-btn { font-size: 12px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
 .link-btn:hover { color: var(--fg); }
@@ -508,8 +532,24 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
   background: var(--shell);
   backdrop-filter: blur(40px) saturate(180%);
   padding: 0 14px 10px;
+  isolation: isolate;
 }
 .player.off { opacity: .45; }
+/* 顶边一道封面颜色的细光，正中最亮、往两边淡掉 */
+.player::before {
+  content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--player-tint) 50%, transparent);
+  opacity: .35; transition: opacity 600ms, background 600ms;
+}
+.player.is-playing::before { opacity: .7; }
+/* 封面虚化垫底：单独一层裁切（播放条本身不能 overflow: hidden，弹出面板要伸出去） */
+.player-ambient { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.player-ambient img {
+  position: absolute; left: -10%; top: -150%; width: 120%; height: 400%; object-fit: cover;
+  filter: blur(60px) saturate(1.6); opacity: .28;
+  animation: ambient-in 900ms ease both;
+}
+@keyframes ambient-in { from { opacity: 0; } }
 
 .spectrum {
   display: flex; align-items: flex-end; gap: 2px;
@@ -535,6 +575,10 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .player-now.clickable { cursor: pointer; border-radius: 8px; padding: 4px; margin: -4px; }
 .player-now.clickable:hover { background: var(--control-hover); }
 .player-now.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.now-swap { display: flex; align-items: center; gap: 11px; min-width: 0; animation: now-in 520ms var(--spring) both; }
+@keyframes now-in { from { opacity: 0; transform: translateY(10px); filter: blur(4px); } }
+.player-now .cover { box-shadow: 0 4px 14px rgba(0, 0, 0, .45); transition: transform 300ms var(--spring); }
+.player-now.clickable:hover .cover { transform: scale(1.05); }
 .now { display: flex; flex-direction: column; min-width: 0; }
 .now-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .now-artist { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -555,23 +599,54 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .icon-btn.on { color: var(--accent); background: var(--accent-soft); border-color: rgba(76, 194, 255, .35); }
 .player .icon-btn.on { color: #fff; background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .28); }
 
-/* 主按钮不用强调色：周围一圈都是玻璃，中间一个蓝圈很跳。
-   做成亮一档的毛玻璃圆钮——按钮本身就是玻璃的一部分，靠亮度而不是颜色分出主次。 */
+/* 主按钮：一颗亮一档的毛玻璃圆钮，不用强调色——周围一圈都是玻璃，中间一个蓝圈很跳。
+   左上角一块高光、底下一点内阴影，看起来是凸起来的玻璃珠；外圈细环是这首歌的进度；
+   播放时背后有一圈封面颜色的光在慢慢呼吸。图标切换是旋转 + 缩放的交叉淡入。 */
 .play-btn {
-  width: 40px; height: 40px; border-radius: 50%; flex: 0 0 auto;
-  display: grid; place-items: center;
-  background: rgba(255, 255, 255, .14); color: #fff;
-  border: 1px solid rgba(255, 255, 255, .22);
-  backdrop-filter: blur(12px) saturate(150%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 2px 10px rgba(0, 0, 0, .3);
-  transition: background 120ms, border-color 120ms, transform 80ms;
+  position: relative; width: 46px; height: 46px; border-radius: 50%; flex: 0 0 auto;
+  display: grid; place-items: center; color: #fff; isolation: isolate;
+  background:
+    radial-gradient(120% 120% at 30% 18%, rgba(255, 255, 255, .42), rgba(255, 255, 255, .14) 42%, rgba(255, 255, 255, .06) 70%),
+    rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .3);
+  backdrop-filter: blur(16px) saturate(180%);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, .5),
+    inset 0 -8px 14px rgba(0, 0, 0, .18),
+    0 6px 18px rgba(0, 0, 0, .38);
+  transition: transform 320ms var(--spring), background 160ms, border-color 160ms, box-shadow 200ms;
 }
-.play-btn:not(:disabled):hover { background: rgba(255, 255, 255, .24); border-color: rgba(255, 255, 255, .34); }
-.play-btn:not(:disabled):active { transform: scale(.94); background: rgba(255, 255, 255, .16); }
-.play-btn:disabled {
-  background: rgba(255, 255, 255, .05); color: var(--muted);
-  border-color: var(--line); box-shadow: none; cursor: default;
+/* 呼吸的光：封面颜色，只在播放时亮 */
+.play-btn::before {
+  content: ""; position: absolute; inset: -10px; z-index: -1; border-radius: 50%;
+  background: radial-gradient(closest-side, var(--player-tint), transparent);
+  opacity: 0; transform: scale(.8);
+  transition: opacity 400ms ease, transform 400ms ease;
 }
+.play-btn.is-playing::before { opacity: .45; transform: scale(1); animation: play-breathe 2.8s ease-in-out infinite; }
+@keyframes play-breathe { 50% { opacity: .2; transform: scale(1.12); } }
+.play-btn:not(:disabled):hover {
+  transform: scale(1.07);
+  border-color: rgba(255, 255, 255, .45);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .6), inset 0 -8px 14px rgba(0, 0, 0, .14), 0 8px 24px rgba(0, 0, 0, .42);
+}
+.play-btn:not(:disabled):active { transform: scale(.9); transition-duration: 90ms; }
+.play-btn:disabled { opacity: .45; cursor: default; box-shadow: none; }
+.play-ring { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); transform: rotate(-90deg); pointer-events: none; }
+.play-ring circle { fill: none; stroke-width: 1.6; }
+.play-ring-track { stroke: rgba(255, 255, 255, .1); }
+.play-ring-fill { stroke: var(--player-tint); stroke-linecap: round; transition: stroke-dasharray 300ms linear, stroke 400ms; filter: drop-shadow(0 0 3px var(--player-tint)); }
+.play-icon { position: absolute; display: grid; place-items: center; transition: opacity 220ms ease, transform 380ms var(--spring); }
+.play-icon.icon-play { transform: translateX(1px); }
+.play-icon.icon-pause { opacity: 0; transform: rotate(-90deg) scale(.4); }
+.play-btn.is-playing .icon-play { opacity: 0; transform: rotate(90deg) scale(.4); }
+.play-btn.is-playing .icon-pause { opacity: 1; transform: none; }
+
+/* 前进后退：按下时箭头往那个方向顶一下 */
+.player .transport .icon-btn { border-radius: 50%; width: 36px; height: 36px; transition: background 140ms, color 140ms, border-color 140ms, transform 300ms var(--spring); }
+.player .transport .icon-btn:not(:disabled):hover { background: rgba(255, 255, 255, .1); border-color: rgba(255, 255, 255, .16); backdrop-filter: blur(10px); }
+.player .nudge-back:not(:disabled):active { transform: translateX(-3px) scale(.92); transition-duration: 80ms; }
+.player .nudge-forward:not(:disabled):active { transform: translateX(3px) scale(.92); transition-duration: 80ms; }
 
 /* 进度条单独一行、贯穿整宽：拖动面积大，时间在两端 */
 .seek-row { display: flex; align-items: center; gap: 12px; padding: 2px 4px 4px; }
@@ -600,6 +675,10 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .seekbar:hover::-webkit-slider-thumb, .volume:hover::-webkit-slider-thumb { transform: scale(1.15); }
 .seekbar:active::-webkit-slider-thumb, .volume:active::-webkit-slider-thumb { transform: scale(.9); }
 .seekbar:disabled::-webkit-slider-thumb, .volume:disabled::-webkit-slider-thumb { background: var(--muted); border-color: transparent; box-shadow: none; }
+/* 进度条的圆头平时收起来，鼠标到这一行才弹出——条本身更干净 */
+.seekbar::-webkit-slider-thumb { transform: scale(0); transition: transform 220ms var(--spring); }
+.seek-row:hover .seekbar:not(:disabled)::-webkit-slider-thumb { transform: scale(1.1); }
+.seek-row:hover .seekbar:not(:disabled):active::-webkit-slider-thumb { transform: scale(.9); }
 
 /* 右：工具 */
 .player-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
@@ -630,6 +709,11 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow);
 }
+.flyout-panel { transform-origin: bottom right; animation: flyout-in 260ms var(--spring) both; }
+@keyframes flyout-in { from { opacity: 0; transform: translateY(8px) scale(.94); } }
+.player .flyout-button { border-radius: 999px; background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .12); backdrop-filter: blur(10px); transition: background 140ms, border-color 140ms, transform 260ms var(--spring); }
+.player .flyout-button:not(:disabled):hover { transform: translateY(-1px); }
+.player .flyout-button:not(:disabled):active { transform: scale(.96); }
 .flyout-note { margin: 4px 8px 6px; font-size: 11px; color: var(--muted); }
 .flyout-item {
   display: flex; align-items: center; gap: 8px; width: 100%;
@@ -1191,9 +1275,10 @@ button.chip:hover { color: var(--fg); }
 .track.with-cover .track-lines { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
 .track.with-cover .track-title,
 .track.with-cover .track-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.track-head-row { display: flex; gap: 16px; align-items: flex-start; }
+/* 栏窄的时候右边的工具换到下一行，标题和署名至少留 220px，不被挤成一个字一行 */
+.track-head-row { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-start; }
 .track-head-row .cover { flex: 0 0 auto; }
-.track-head-text { min-width: 0; flex: 1; }
+.track-head-text { min-width: 0; flex: 1 1 220px; }
 .track-head-row .credits { margin-top: 8px; }
 
 /* 合作者行带头像时横排。头像是圆的，和方形的专辑封面区分开 */
@@ -1334,6 +1419,8 @@ button.chip:hover { color: var(--fg); }
   text-align: center; min-width: 0;
 }
 .artist-card:hover { background: var(--control-hover); border-color: var(--line); }
+.artist-card .artist-photo { display: block; width: 100%; border-radius: 50%; }
+.artist-head .artist-photo { display: block; flex: 0 0 auto; border-radius: 50%; }
 /* 头像跟着格子宽度走（和歌曲卡片的封面一样），不用写死尺寸 */
 .artist-card .cover, .artist-card .avatar {
   width: 100% !important; height: auto !important; aspect-ratio: 1;
@@ -1622,4 +1709,92 @@ button.chip:hover { color: var(--fg); }
 
 @media (prefers-reduced-motion: reduce) {
   .wc-inner, .wc-pop, .wc-song, .wc-ripple { animation: none !important; }
+}
+
+/* ── 动效 ──────────────────────────────────────────────
+   原则：只动 opacity / transform（走合成器，不重排）；进场用 `backwards` 填充，
+   动完就不再挂 transform——祖先上挂着 transform 的话，里面 position: fixed 的东西
+   （全屏歌词、弹出层）会被它困住。系统开了「减少动态效果」时，最底下一条全部关掉。 */
+
+/* 换页：新的一页淡入并从下面浮上来一点 */
+.body > * { animation: route-in 380ms var(--ease-out) backwards; }
+@keyframes route-in { from { opacity: 0; transform: translateY(10px); } }
+/* 页内的卡片一块块跟着进来 */
+.page > * { animation: rise-in 520ms var(--ease-out) backwards; }
+.page > *:nth-child(2) { animation-delay: 40ms; }
+.page > *:nth-child(3) { animation-delay: 80ms; }
+.page > *:nth-child(4) { animation-delay: 120ms; }
+.page > *:nth-child(5) { animation-delay: 160ms; }
+.page > *:nth-child(n + 6) { animation-delay: 200ms; }
+@keyframes rise-in { from { opacity: 0; transform: translateY(14px); } }
+
+/* 歌手墙、歌曲卡片：按顺序一张张冒出来（--i 由组件给，最多排到 24 张，再往后一起出） */
+.artist-card, .list.as-grid .track-card {
+  animation: card-in 480ms calc(var(--i, 0) * 22ms) var(--spring) backwards;
+  transition: background 160ms, border-color 160ms, transform 320ms var(--spring), box-shadow 320ms;
+}
+@keyframes card-in { from { opacity: 0; transform: translateY(12px) scale(.94); } }
+/* 悬停：整张卡抬起来，头像 / 封面再放大一点 */
+.artist-card:hover, .list.as-grid .track-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0, 0, 0, .3); }
+.artist-card:active, .list.as-grid .track-card:active { transform: translateY(-1px) scale(.97); transition-duration: 90ms; }
+.artist-card .avatar, .track-card .cover { transition: transform 420ms var(--spring), box-shadow 420ms; }
+.artist-card:hover .avatar { transform: scale(1.05); box-shadow: 0 0 0 2px rgba(255, 255, 255, .22), 0 8px 22px rgba(0, 0, 0, .4); }
+.track-card:hover .cover { transform: scale(1.04); }
+/* 点进某位歌手：顶上那一行从左边滑进来 */
+.artist-head { animation: slide-in 420ms var(--ease-out) backwards; }
+@keyframes slide-in { from { opacity: 0; transform: translateX(-12px); } }
+.artist-back { transition: transform 260ms var(--spring), background 140ms; }
+.artist-back:hover { transform: translateX(-2px); }
+
+/* 列表视图：换选中项时左边那道强调色条是长出来的，不是闪一下 */
+.track { transition: background 160ms; position: relative; }
+.track.active::before {
+  content: ""; position: absolute; left: -2px; top: 0; bottom: 0; width: 2px; background: var(--accent);
+  animation: bar-grow 300ms var(--spring) backwards;
+}
+@keyframes bar-grow { from { transform: scaleY(0); } }
+/* 分组展开：内容往下淡入 */
+.list:not(.as-grid) .group-body { animation: fold-in 280ms var(--ease-out) backwards; }
+@keyframes fold-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* 换歌：标题区和前几行歌词依次浮上来 */
+.lyrics .track-head { animation: rise-in 460ms var(--ease-out) backwards; }
+.lyrics .line { animation: line-in 460ms calc(60ms + var(--n, 16) * 22ms) var(--ease-out) backwards; }
+@keyframes line-in { from { opacity: 0; transform: translateY(8px); } }
+.lyrics .track-head .cover { transition: transform 420ms var(--spring); }
+.lyrics .track-head .cover:hover { transform: scale(1.04) rotate(-1deg); }
+
+/* 首页的磁贴和面板 */
+.home-panel { animation: rise-in 520ms var(--ease-out) backwards; }
+.home-grid > .home-panel:nth-child(2) { animation-delay: 60ms; }
+.home-grid > .home-panel:nth-child(3) { animation-delay: 120ms; }
+.home-grid > .home-panel:nth-child(n + 4) { animation-delay: 180ms; }
+.home-recent > * { transition: transform 320ms var(--spring); }
+.home-recent > *:hover { transform: translateY(-3px); }
+.home-tile-cover .cover { transition: transform 420ms var(--spring), box-shadow 420ms; }
+.home-recent > *:hover .home-tile-cover .cover { transform: scale(1.04); box-shadow: 0 10px 24px rgba(0, 0, 0, .4); }
+
+/* 命令面板：背景淡入，面板从上面轻轻落下 */
+.palette-backdrop { animation: fade-in 180ms ease backwards; }
+.palette { animation: palette-in 320ms var(--spring) backwards; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes palette-in { from { opacity: 0; transform: translateY(-10px) scale(.97); } }
+
+/* 通用的按钮手感：主按钮按下去缩一点 */
+button.primary { transition: filter 120ms, transform 260ms var(--spring); }
+button.primary:not(:disabled):active { transform: scale(.96); transition-duration: 80ms; }
+
+/* 共享元素过渡（motion.ts）：头像、封面在两屏之间飞，其余部分快速交叉淡化 */
+::view-transition-group(artist-photo), ::view-transition-group(track-cover) {
+  animation-duration: 460ms; animation-timing-function: cubic-bezier(.2, .9, .25, 1.05);
+}
+::view-transition-old(artist-photo), ::view-transition-new(artist-photo),
+::view-transition-old(track-cover), ::view-transition-new(track-cover) { height: 100%; object-fit: cover; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 240ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
 }
