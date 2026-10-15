@@ -48,10 +48,18 @@ in the repository under `legacy/` for reference, and `corpus.db` works with both
 
 ### Library and playback
 
-- One library page, browsed four ways: musicians, behind-the-scenes, albums, songs. Band members are nested under their band; a member who went solo gets their own profile, with solo work kept apart from the band years.
+- One library page (the old Library and People pages merged), browsed four ways: **musicians, behind the scenes, albums, songs**.
+  - Band members are nested under their band, former members with their years; a member who went solo gets their own profile, with solo work kept apart from the band years (the band's songs stay the band's).
+  - Memberships come from scraping (MusicBrainz), from suggestions based on credits that you confirm, or from manual edits; whatever you change or reject is never overwritten by a scrape.
+- A profile for every person: a header over their blurred photo, the roles they had, the bands they were in, a release axis, their works by album, and collaborators.
+- A relationship graph in the style of Obsidian: everyone and their collaborations as one network you can drag and zoom, hover to highlight neighbours; band–member links are dashed.
+- A release timeline: one lane per musician; where a band split, a dashed line leads to the members' solo lanes.
+- Songs have a breadcrumb (artist › album › title) and clickable credits; edit, replace lyrics and delete live in the "⋯" menu.
 - Lyrics follow playback line by line; click a line to jump there, or loop a single line.
 - Speed changes go through WSOLA time-stretching (**pitch stays put**); key changes are rendered once per song by the built-in Rubber Band library and cached.
-- Full-screen lyrics with the cover art blurred to fill the background, and the player floating on top as frosted glass.
+- A player bar modelled on Apple Music: frosted glass, ±5 s skips, speed and key in one panel, remaining / total time on a click.
+- Full-screen lyrics with the cover art blurred to fill the background, a side card listing vocals, lyrics, music and arrangement, and the player floating on top as frosted glass.
+- Laid out for narrow windows and for 27-inch and larger screens.
 - Furigana over kanji only or over whole words; font, size, line height and letter spacing are all adjustable.
 
 ### Word lookup (Yomitan dictionaries)
@@ -79,8 +87,6 @@ Each dictionary's licence and redistribution terms are its author's; check them 
 - KWIC concordance with the keyword centred; filter by artist, part of speech, cross-line matches or Japanese-only, export CSV.
 - Frequency table (lemma × POS with JLPT level), a timeline by year, and a corpus report as TXT.
 - Word cloud over the same filters, on a frosted-glass card backed by the blurred artist photos. Click a word to list the songs it appears in and jump to the line; save it as PNG. Its font is set separately (bundled, imported or installed).
-- A profile for every person: the roles they had, the bands they were in, their works by album, and collaborators.
-- A relationship graph (Obsidian-style, drag and zoom) and a release timeline (one lane per musician; a band that split links to its members' solo careers).
 
 ![Analytics page](docs/screenshots/analytics.webp)
 
@@ -110,13 +116,15 @@ to add cards through. That is how cards get made here — **local only, nothing 
 - Lyrics: an `.lrc` sitting next to the audio is picked up on import. When there is none —
   - **Settings → Library maintenance → Fill in missing lyrics** does the whole library: it looks next to the audio
     first, then searches online (NetEase).
-  - Per song, the library offers **Fetch online** and **Import a lyrics file…** (`.lrc` / `.txt`; UTF-8, Shift-JIS and GBK are all read).
+  - Per song, the library (the "⋯" next to the title) offers **Fetch online** and **Import a lyrics file…** (`.lrc` / `.txt`; UTF-8, Shift-JIS and GBK are all read).
   - **No guessing**: a candidate is accepted only if title, artist and duration all line up — too many songs share a
     title, and the wrong lyrics are worse than none. Whatever can't be matched is left for you to supply.
   - Fetched lyrics land in `raw/lyrics_lrc/{song_id}.lrc` beside the imported ones, and tokenisation you corrected
     by hand is re-applied by text, so it survives replacing the lyrics.
 - Scraping: iTunes → MusicBrainz for tracks, Cover Art Archive for covers, Deezer for artist photos. Anything below
-  the confidence threshold stops in a review queue for a human.
+  the confidence threshold stops in a review queue for a human. Scraping an artist also picks up band members, the
+  date a band split and full release dates (when MusicBrainz has more than one artist by that name, it declines to
+  guess rather than attach someone else's members).
 - Already have a library somewhere else (a 0.1.x checkout, say)? **Settings → Library maintenance → Migrate from
   another library directory** previews what would move, then **merges** songs, lyrics, tokenisation, credits, play
   history and dictionaries into the current library. Songs you already have are skipped, and audio files are not
