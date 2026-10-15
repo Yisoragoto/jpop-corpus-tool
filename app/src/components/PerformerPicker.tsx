@@ -13,7 +13,7 @@ import { api, type PersonSummary } from "../api";
 let cached: Promise<PersonSummary[]> | null = null;
 
 /** 演唱者列表整个会话只取一次；取失败了下次再取 */
-function loadPerformers(): Promise<PersonSummary[]> {
+export function loadPerformers(): Promise<PersonSummary[]> {
   if (!cached) {
     cached = api.peopleByRole("performer", 5000).catch((err) => {
       cached = null;

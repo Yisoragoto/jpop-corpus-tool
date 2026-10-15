@@ -90,6 +90,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::stats_frequency,
             commands::stats_report,
             commands::export_text,
+            commands::export_png,
             commands::anki_mining_report,
             commands::audio_state,
             commands::audio_tick,

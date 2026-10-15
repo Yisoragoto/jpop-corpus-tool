@@ -544,6 +544,8 @@ export const api = {
   statsReport: (filter: StatsFilter) => call<StatsReport>("stats_report", { filter }),
   /** 把导出内容写到保存对话框选的路径。只接受 .txt / .csv / .html */
   exportText: (path: string, content: string) => call<void>("export_text", { path, content }),
+  /** 词云的 PNG。后端只认 .png 路径和 PNG 文件头 */
+  exportPng: (path: string, bytes: Uint8Array) => call<void>("export_png", { path, bytes: Array.from(bytes) }),
 
   // 播放
   /** 位置和播不播一次传：设了变调时要先渲染，渲染好才真正加载 */

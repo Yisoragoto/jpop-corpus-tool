@@ -78,6 +78,7 @@ Each dictionary's licence and redistribution terms are its author's; check them 
 
 - KWIC concordance with the keyword centred; filter by artist, part of speech, cross-line matches or Japanese-only, export CSV.
 - Frequency table (lemma × POS with JLPT level), a timeline by year, and a corpus report as TXT.
+- Word cloud over the same filters, on a frosted-glass card backed by the blurred artist photos. Click a word to list the songs it appears in and jump to the line; save it as PNG. Its font is set separately (bundled, imported or installed).
 - People view: vocals / composer / lyricist / arranger, plus a collaboration graph.
 
 ![Analytics page](docs/screenshots/analytics.webp)

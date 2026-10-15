@@ -1503,3 +1503,123 @@ button.chip:hover { color: var(--fg); }
 /* 右栏的「词典 / 例句」标签页 */
 .corpus-tabs { margin: 14px 0 10px; }
 .corpus-tabs button { flex: 1; }
+
+/* ── 统计页：词云 ──
+   歌手照片放大、重度虚化铺满整张卡，词浮在一块毛玻璃上。
+   词的位移和缩放由 WordCloud.tsx 里的弹簧写 transform；这里只管静态样式、出场和点击动画。 */
+.wc-stage {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; gap: 14px; padding: 18px;
+  border-radius: 14px; border: 1px solid var(--line);
+  --wc-spring: cubic-bezier(.2, .9, .25, 1.15);
+}
+.wc-bg { position: absolute; inset: -18%; z-index: -2; will-change: translate; pointer-events: none; }
+.wc-bg img { position: absolute; object-fit: cover; filter: blur(48px) saturate(1.5); }
+.wc-bg img.single { inset: 0; width: 100%; height: 100%; }
+.wc-bg-plain { position: absolute; inset: 0; background:
+  radial-gradient(40% 50% at 30% 40%, rgba(76, 194, 255, .45), transparent 70%),
+  radial-gradient(40% 50% at 70% 60%, rgba(160, 110, 255, .4), transparent 70%), #15151c; filter: blur(30px); }
+.wc-dim { position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 30%, rgba(10, 10, 16, .15), rgba(10, 10, 16, .65)); }
+
+.wc-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
+.wc-faces { display: flex; }
+.wc-faces .avatar { border: 2px solid rgba(255, 255, 255, .35); box-shadow: 0 6px 20px rgba(0, 0, 0, .35); }
+.wc-faces .avatar + .avatar { margin-left: -12px; }
+.wc-all { width: 56px; height: 56px; border-radius: 50%; font-size: 22px; }
+.wc-who { display: grid; min-width: 0; }
+.wc-who h2 { margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wc-who span { font-size: 12px; color: rgba(255, 255, 255, .72); font-variant-numeric: tabular-nums; }
+.wc-tools { margin-left: auto; display: flex; gap: 8px; }
+.wc-btn { padding: 5px 14px; border-radius: var(--radius); font-size: 12px;
+  background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .18); transition: background .15s; }
+.wc-btn:not(:disabled):hover { background: rgba(255, 255, 255, .2); }
+.wc-btn:disabled { opacity: .5; cursor: default; }
+
+.wc-glass {
+  position: relative; border-radius: 12px; padding: 10px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .04) 45%, rgba(255, 255, 255, .07));
+  border: 1px solid rgba(255, 255, 255, .18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 20px 50px rgba(0, 0, 0, .35);
+  backdrop-filter: blur(26px) saturate(170%);
+}
+/* 跟着鼠标走的反光和一圈亮边 */
+.wc-glass::before, .wc-glass::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  opacity: var(--lit, 0); transition: opacity .5s ease; }
+.wc-glass::before { background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .16), transparent 70%); mix-blend-mode: soft-light; }
+.wc-glass::after { padding: 1px;
+  background: radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .75), transparent 70%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+
+.wc-cloud { position: relative; width: 100%; transition: opacity .2s; }
+.wc-cloud.stale { opacity: .5; }
+.wc-word { position: absolute; cursor: pointer; will-change: transform; border-radius: 6px; }
+.wc-word:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wc-inner {
+  display: grid; place-items: center; width: 100%; height: 100%;
+  white-space: nowrap; line-height: 1;
+  transition: opacity .35s ease, filter .35s ease, text-shadow .3s ease;
+  animation: wc-pop .7s var(--wc-spring) both;
+}
+.wc-word.v .wc-inner { writing-mode: vertical-rl; text-orientation: upright; letter-spacing: -.02em; }
+.wc-cloud.hovering .wc-word:not(.hot) .wc-inner { opacity: .38; filter: blur(.6px); }
+.wc-word.hot .wc-inner { text-shadow: 0 0 18px var(--glow), 0 0 2px rgba(255, 255, 255, .5) !important; }
+.wc-inner.picked { animation: wc-pick .6s var(--wc-spring); }
+@keyframes wc-pop { from { opacity: 0; transform: translateY(8px) scale(.55); filter: blur(8px); } }
+@keyframes wc-pick { 30% { transform: scale(.86); } 70% { transform: scale(1.12); } }
+.wc-ripple { position: absolute; border-radius: 50%; pointer-events: none; border: 1.5px solid rgba(255, 255, 255, .75);
+  animation: wc-ripple .8s cubic-bezier(.2, .7, .3, 1) forwards; }
+@keyframes wc-ripple { from { transform: translate(-50%, -50%) scale(.2); opacity: .9; } to { transform: translate(-50%, -50%) scale(3.2); opacity: 0; } }
+.wc-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: rgba(255, 255, 255, .7); }
+
+.wc-tip { position: fixed; z-index: 60; pointer-events: none; padding: 6px 10px; border-radius: 10px;
+  background: rgba(28, 28, 36, .82); border: 1px solid var(--line-strong); backdrop-filter: blur(16px);
+  font-size: 12px; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* 点词弹出的歌曲列表。挂在 body 上（portal），不受卡片的 overflow 和 backdrop-filter 影响 */
+.wc-pop {
+  position: fixed; z-index: 70; width: min(360px, calc(100vw - 32px)); max-height: min(520px, calc(100vh - 40px));
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; border-radius: 16px; overflow: hidden;
+  background: rgba(26, 26, 34, .88); border: 1px solid var(--line-strong);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .18);
+  backdrop-filter: blur(30px) saturate(180%);
+  transform-origin: var(--ox, 50%) var(--oy, 0);
+  animation: wc-pop-in .45s cubic-bezier(.2, .9, .25, 1.15) both;
+}
+.wc-pop.closing { animation: wc-pop-out .18s ease-in forwards; }
+@keyframes wc-pop-in { from { opacity: 0; transform: scale(.6); filter: blur(10px); } }
+@keyframes wc-pop-out { to { opacity: 0; transform: scale(.85); filter: blur(6px); } }
+.wc-pop-head { position: relative; padding: 16px 18px 10px; display: grid; gap: 2px; overflow: hidden; }
+.wc-pop-head b { font-size: 38px; line-height: 1.15; font-weight: 400; color: var(--hl); }
+.wc-pop-head > span:not(.wc-pop-ghost) { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wc-pop-ghost { position: absolute; right: -8px; top: -18px; font-size: 96px; line-height: 1; opacity: .07; pointer-events: none; white-space: nowrap; }
+.wc-pop-close { position: absolute; right: 10px; top: 10px; width: 28px; height: 28px; border-radius: 50%; color: var(--muted); }
+.wc-pop-close:hover { background: var(--control-hover); color: var(--fg); }
+.wc-pop-by { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 18px 10px; }
+.wc-pop-by span { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted);
+  padding: 2px 8px 2px 2px; border-radius: 999px; background: var(--control); }
+.wc-pop-list { overflow: auto; padding: 0 8px 8px; display: grid; gap: 2px; align-content: start; }
+.wc-pop-none { padding: 8px 10px; margin: 0; }
+.wc-song {
+  display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  width: 100%; padding: 8px 10px; border-radius: 10px; text-align: left;
+  animation: wc-row-in .5s cubic-bezier(.2, .9, .25, 1.15) both;
+  transition: background .2s, transform .25s cubic-bezier(.2, .9, .25, 1.15);
+}
+.wc-song:hover { background: var(--control-hover); transform: translateX(3px); }
+.wc-song:hover .wc-go, .wc-song:focus-visible .wc-go { opacity: 1; transform: none; }
+@keyframes wc-row-in { from { opacity: 0; transform: translateY(10px); } }
+.wc-song-meta { display: grid; min-width: 0; }
+.wc-song-meta strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wc-song-meta small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wc-song-meta em { font-style: normal; font-size: 13px; color: rgba(255, 255, 255, .78); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wc-song-meta mark { background: none; color: var(--hl); box-shadow: inset 0 -.45em 0 color-mix(in srgb, var(--hl) 30%, transparent); }
+.wc-song-side { display: grid; justify-items: end; gap: 2px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wc-go { opacity: 0; transform: translateX(-6px); color: var(--fg); transition: opacity .2s, transform .25s cubic-bezier(.2, .9, .25, 1.15); }
+.wc-pop-foot { display: flex; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--line); }
+.wc-pop-foot button { flex: 1; padding: 6px 10px; border-radius: var(--radius); font-size: 12px; background: var(--control); border: 1px solid var(--line); }
+.wc-pop-foot button:hover { background: var(--control-hover); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wc-inner, .wc-pop, .wc-song, .wc-ripple { animation: none !important; }
+}

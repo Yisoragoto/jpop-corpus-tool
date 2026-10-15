@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dominantColor, toBackdrop } from "./coverColor";
+import { dominantColor, toBackdrop, toHighlight } from "./coverColor";
 
 /** 造一张纯色图的像素：n 个像素，全是同一个颜色 */
 function solid(n: number, r: number, g: number, b: number, a = 255): Uint8ClampedArray {
@@ -38,5 +38,14 @@ describe("封面取色", () => {
     expect(toBackdrop({ r: 255, g: 0, b: 0 })).toBe("rgb(66, 0, 0)");
     // 已经很暗的颜色不会被提亮
     expect(toBackdrop({ r: 20, g: 10, b: 0 })).toBe("rgb(20, 10, 0)");
+  });
+});
+
+describe("toHighlight", () => {
+  it("提亮到接近满亮度再掺白，色相不变", () => {
+    expect(toHighlight({ r: 40, g: 80, b: 120 })).toBe("rgb(122, 181, 240)");
+  });
+  it("纯黑不除以零", () => {
+    expect(toHighlight({ r: 0, g: 0, b: 0 })).toBe("rgb(64, 64, 64)");
   });
 });

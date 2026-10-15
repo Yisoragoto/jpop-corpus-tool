@@ -45,7 +45,7 @@ const ROUTES: { key: Route; label: string; hint: string }[] = [
   { key: "kwic", label: "检索", hint: "KWIC 语境检索与歌词全文" },
   { key: "library", label: "曲库", hint: "曲目 · 歌词 · 语料" },
   { key: "explorer", label: "人物", hint: "演唱 / 作曲 / 作词 / 编曲" },
-  { key: "analytics", label: "分析", hint: "总览 · 时间线 · 词频统计 · 语料报告" },
+  { key: "analytics", label: "分析", hint: "总览 · 时间线 · 词云 · 词频统计 · 语料报告" },
   { key: "import", label: "导入", hint: "扫描目录 · 复核 · 写入语料" },
   { key: "scrape", label: "刮削", hint: "识别 · 补 metadata · 封面" },
   { key: "anki", label: "Anki", hint: "选词 · 用语料例句做卡片" },

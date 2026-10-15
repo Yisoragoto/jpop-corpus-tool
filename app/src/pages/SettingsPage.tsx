@@ -30,7 +30,7 @@ import { PitchCacheCard } from "../components/PitchCacheCard";
 import { DiagnosticsCard } from "../components/DiagnosticsCard";
 import { SettingsToc, type TocItem } from "../components/SettingsToc";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
-import { lyricFontStack, useFontOptions } from "../fonts";
+import { lyricFontStack, useFontOptions, useLyricFontFiles } from "../fonts";
 import {
   DISPLAY_LIMITS,
   FURIGANA_MODE_LABELS,
@@ -39,7 +39,7 @@ import {
   useLyricsDisplay,
   type FuriganaMode,
 } from "../lyricsDisplay";
-import { DAILY_GOAL_LIMITS, STAGE_BLUR_LIMITS, updateSettings, useAppSettings } from "../settings";
+import { DAILY_GOAL_LIMITS, DEFAULT_SETTINGS, STAGE_BLUR_LIMITS, updateSettings, useAppSettings } from "../settings";
 
 interface Props {
   health: HealthReport | null;
@@ -197,6 +197,7 @@ const ROOT_SOURCE_LABELS: Record<LibraryRootInfo["source"], string> = {
 const TOC: TocItem[] = [
   { id: "settings-appearance", label: "外观" },
   { id: "settings-lyrics", label: "歌词" },
+  { id: "settings-wordcloud", label: "词云" },
   { id: "settings-lookup", label: "查词" },
   { id: "settings-mining", label: "制卡" },
   { id: "settings-library", label: "曲库维护" },
@@ -208,6 +209,8 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
   const settings = useAppSettings();
   const display = useLyricsDisplay();
   const fonts = useFontOptions(true, onError);
+  // 预览要真用上选的字体：导入的、自带的字体是按文件加载的
+  useLyricFontFiles([settings.wordCloudFont, display.fontFamily, display.fallbackFamily], onError);
   const [anki, setAnki] = useState<AnkiStatus | null>(null);
   const [root, setRoot] = useState<LibraryRootInfo | null>(null);
   const [rootNote, setRootNote] = useState("");
@@ -335,6 +338,10 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
   if (display.fontFamily !== "" && !fontOptions.some((o) => o.value === display.fontFamily)) {
     fontOptions.push({ value: display.fontFamily, label: `${display.fontFamily}（本机没有）` });
   }
+  const cloudFontOptions = [...fontOptions];
+  if (settings.wordCloudFont !== "" && !cloudFontOptions.some((o) => o.value === settings.wordCloudFont)) {
+    cloudFontOptions.push({ value: settings.wordCloudFont, label: `${settings.wordCloudFont}（本机没有）` });
+  }
   const fallbackOptions = [{ value: "", label: "不设" }, ...fontOptions.slice(1)];
   if (display.fallbackFamily !== "" && !fallbackOptions.some((o) => o.value === display.fallbackFamily)) {
     fallbackOptions.push({ value: display.fallbackFamily, label: `${display.fallbackFamily}（本机没有）` });
@@ -459,6 +466,35 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
           }
         >
           <button className="link-btn" onClick={resetLyricsDisplay}>
+            恢复默认
+          </button>
+        </SettingCard>
+      </SettingGroup>
+
+      <SettingGroup title="词云" id="settings-wordcloud">
+        <SettingCard
+          icon={Icons.font}
+          title="词云字体"
+          description="统计页词云用的字体。想要手写、毛笔这类风格，把字体文件导进来再在这里选"
+        >
+          <SettingSelect
+            value={settings.wordCloudFont}
+            options={cloudFontOptions}
+            onChange={(v) => updateSettings({ wordCloudFont: v })}
+          />
+        </SettingCard>
+        <SettingCard icon={Icons.font} title="导入字体" description="ttf / otf / ttc。和歌词字体共用一份导入列表">
+          <CommandButton icon="import" label="导入字体…" onClick={() => void importFonts()} />
+        </SettingCard>
+        <SettingCard
+          title="预览"
+          description={
+            <span className="setting-preview" lang="ja" style={{ fontFamily: lyricFontStack(settings.wordCloudFont, ""), fontSize: 26 }}>
+              君 僕 夢 世界 抱きしめる
+            </span>
+          }
+        >
+          <button className="link-btn" onClick={() => updateSettings({ wordCloudFont: DEFAULT_SETTINGS.wordCloudFont })}>
             恢复默认
           </button>
         </SettingCard>

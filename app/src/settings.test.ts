@@ -41,4 +41,10 @@ describe("应用设置", () => {
     expect(parseSettings(JSON.stringify({ dailyGoalMinutes: 999 })).dailyGoalMinutes).toBe(high);
     expect(parseSettings(JSON.stringify({ dailyGoalMinutes: "30" })).dailyGoalMinutes).toBe(DEFAULT_SETTINGS.dailyGoalMinutes);
   });
+  it("词云字体：存的是字体名，空串表示界面字体，坏值退回默认", () => {
+    expect(parseSettings(JSON.stringify({ wordCloudFont: " LXGW WenKai " })).wordCloudFont).toBe("LXGW WenKai");
+    expect(parseSettings(JSON.stringify({ wordCloudFont: "" })).wordCloudFont).toBe("");
+    expect(parseSettings(JSON.stringify({ wordCloudFont: 3 })).wordCloudFont).toBe(DEFAULT_SETTINGS.wordCloudFont);
+    expect(parseSettings(JSON.stringify({ wordCloudFont: "x".repeat(500) })).wordCloudFont).toBe(DEFAULT_SETTINGS.wordCloudFont);
+  });
 });

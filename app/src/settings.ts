@@ -31,6 +31,8 @@ export interface AppSettings {
   autoCheckNewSongs: boolean;
   /** 首页「今日」那个环的目标：每天听多少分钟 */
   dailyGoalMinutes: number;
+  /** 统计页词云的字体（CSS 字体名）。可以是自带、导入或本机的任何一种；空串用界面字体 */
+  wordCloudFont: string;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
@@ -46,6 +48,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pitchCacheLimitMb: 1536,
   autoCheckNewSongs: true,
   dailyGoalMinutes: 30,
+  // 自带的手写风格字体，装好就有
+  wordCloudFont: "Klee One",
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -73,6 +77,10 @@ export function parseSettings(raw: string | null): AppSettings {
       autoCheckNewSongs:
         typeof parsed.autoCheckNewSongs === "boolean" ? parsed.autoCheckNewSongs : d.autoCheckNewSongs,
       dailyGoalMinutes: clamp(parsed.dailyGoalMinutes, DAILY_GOAL_LIMITS, d.dailyGoalMinutes),
+      wordCloudFont:
+        typeof parsed.wordCloudFont === "string" && parsed.wordCloudFont.length <= 200
+          ? parsed.wordCloudFont.trim()
+          : d.wordCloudFont,
     };
   } catch {
     return DEFAULT_SETTINGS;

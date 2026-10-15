@@ -9,6 +9,7 @@
  * 都能点开，直接跳到曲库页看它的例句，或者去检索页看 KWIC。数据是入口，不是终点。
  *
  * 词频统计和报告对应 PyQt 版的「统计」「报告」两页，共用一组筛选（歌手、只看日文）。
+ * 词云（`WordCloud`）对应 PyQt 版统计页的「词云图」按钮，用的就是词频表那一份数据。
  * 数字的写法照 Python（千分位、正好一半取偶），和导出的 TXT 一致。
  */
 
@@ -28,6 +29,7 @@ import {
 } from "../api";
 import { PerformerPicker } from "../components/PerformerPicker";
 import { Stat } from "../components/Stat";
+import { WordCloud } from "../components/WordCloud";
 import { pyFixed, pyGrouped } from "../pyFormat";
 import type { LibraryActions } from "../useLibrary";
 
@@ -112,6 +114,12 @@ export function AnalyticsPage({
   const openWord = async (lemma: string) => {
     await actions.openWord(lemma);
     onNavigate();
+  };
+
+  // 词云里点歌：和检索页一样，打开那首歌、滚到那一行、不自动播放
+  const openSong = async (songId: string, utteranceId: number, timeSec: number | null) => {
+    onNavigate();
+    await actions.openTrackById(songId, { scrollTo: utteranceId, seekTo: timeSec, autoPlay: false });
   };
 
   const exportReport = async () => {
@@ -239,8 +247,18 @@ export function AnalyticsPage({
           />
           仅日文
         </label>
-        <span className="muted small">词频表和报告都按这里筛选</span>
+        <span className="muted small">词云、词频表和报告都按这里筛选</span>
       </div>
+
+      <WordCloud
+        rows={rows}
+        performerIds={filter.performerIds}
+        loading={loadingRows}
+        onOpenSong={(songId, utteranceId, timeSec) => void openSong(songId, utteranceId, timeSec)}
+        onSearchWord={onSearchWord}
+        onShowExamples={(lemma) => void openWord(lemma)}
+        onError={onError}
+      />
 
       <section className="card">
         <div className="card-head">

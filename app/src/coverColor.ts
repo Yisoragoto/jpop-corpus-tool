@@ -56,7 +56,27 @@ export function toBackdrop(color: Rgb, target = 0.26): string {
   return `rgb(${mix(color.r)}, ${mix(color.g)}, ${mix(color.b)})`;
 }
 
-async function read(path: string): Promise<string | null> {
+/** 压亮当高光：保留色相，亮度提到 `target`，再掺一点白，深色玻璃上的字和光晕用 */
+export function toHighlight(color: Rgb, target = 0.92, white = 0.25): string {
+  const max = Math.max(color.r, color.g, color.b) / 255;
+  const scale = max > 0 ? target / max : 1;
+  const mix = (v: number) => Math.round(Math.min(255, v * scale) * (1 - white) + 255 * white);
+  return `rgb(${mix(color.r)}, ${mix(color.g)}, ${mix(color.b)})`;
+}
+
+const rgbCache = new Map<string, Promise<Rgb | null>>();
+
+/** 一张图的主色（原色，没压暗）。词云拿歌手照片的颜色做高光 */
+export function imageColor(path: string): Promise<Rgb | null> {
+  let pending = rgbCache.get(path);
+  if (pending === undefined) {
+    pending = readRgb(path);
+    rgbCache.set(path, pending);
+  }
+  return pending;
+}
+
+async function readRgb(path: string): Promise<Rgb | null> {
   try {
     // fetch 而不是 <img>：asset 协议的响应带 CORS 头，这样 canvas 不会被污染
     const response = await fetch(convertFileSrc(path));
@@ -69,11 +89,15 @@ async function read(path: string): Promise<string | null> {
     if (ctx === null) return null;
     ctx.drawImage(bitmap, 0, 0, SIZE, SIZE);
     bitmap.close();
-    const color = dominantColor(ctx.getImageData(0, 0, SIZE, SIZE).data);
-    return color === null ? null : toBackdrop(color);
+    return dominantColor(ctx.getImageData(0, 0, SIZE, SIZE).data);
   } catch {
     return null;
   }
+}
+
+async function read(path: string): Promise<string | null> {
+  const color = await imageColor(path);
+  return color === null ? null : toBackdrop(color);
 }
 
 /** 封面的主色（已压暗）。没有就是 null */

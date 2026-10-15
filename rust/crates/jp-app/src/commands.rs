@@ -1589,6 +1589,25 @@ pub fn export_text(path: String, content: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// 把界面画好的图（统计页的词云）写到保存对话框选的位置。只写 .png，理由同上。
+#[tauri::command(async)]
+pub fn export_png(path: String, bytes: Vec<u8>) -> CmdResult<()> {
+    let target = std::path::Path::new(&path);
+    let ext = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    if ext != "png" {
+        return Err(anyhow::anyhow!("只能导出 .png：{path}").into());
+    }
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err(anyhow::anyhow!("不是 PNG 数据，没有写入").into());
+    }
+    std::fs::write(target, bytes).map_err(|err| anyhow::anyhow!("写不了 {path}：{err}"))?;
+    Ok(())
+}
+
 // ────────────────────────────── 曲库维护 ──────────────────────────────
 
 /// 改曲目信息（歌名、歌手、年份、专辑、流派）。署名、专辑、分词校正跟着改，`metadata/songs.csv` 同步。
