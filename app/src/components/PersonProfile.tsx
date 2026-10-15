@@ -11,9 +11,11 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { api, ROLE_LABELS, type Album, type Collaborator, type DirectoryEntry, type Membership, type PersonWork, type Track } from "../api";
 import { messageOf } from "../errors";
-import { rolesOf, sectionWorks, spanOf } from "../libraryIndex";
+import { rolesOf, sectionWorks, spanOf, type WorkSection } from "../libraryIndex";
+import { prefersReducedMotion } from "../motion";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
+import { MembersEditor } from "./MembersEditor";
 import { ROLE_COLORS, type DirectoryData } from "./LibraryBrowser";
 
 /** 没有成员关系时的空列表。用同一个引用：每次新建 [] 会让依赖它的 effect 每帧重跑 */
@@ -28,11 +30,16 @@ export interface AlbumGroup {
   tracks: Track[];
 }
 
+/** 一首歌归到哪一组：有专辑 id 按 id，只有专辑名按名字，都没有算「单曲」 */
+export function albumKey(t: Track): string {
+  return t.albumId !== null ? `id:${t.albumId}` : t.album ? `t:${t.album}` : "single";
+}
+
 /** 作品按专辑分组，专辑按年份；没有专辑的歌各自归到「单曲」 */
 export function groupByAlbum(tracks: Track[]): AlbumGroup[] {
   const groups = new Map<string, AlbumGroup>();
   for (const t of tracks) {
-    const key = t.albumId !== null ? `id:${t.albumId}` : t.album ? `t:${t.album}` : "single";
+    const key = albumKey(t);
     let g = groups.get(key);
     if (g === undefined) {
       g = { key, albumId: t.albumId, title: t.album || "单曲", year: t.year, coverPath: t.coverPath, tracks: [] };
@@ -55,6 +62,8 @@ interface ProfileProps {
   onOpenPerson: (id: number) => void;
   onOpenTrack: (track: Track, from: HTMLElement) => void;
   onPlayAll: (tracks: Track[]) => void;
+  /** 改了成员：目录要重拉 */
+  onMembersChanged: () => void;
   onError: (message: string) => void;
 }
 
@@ -66,6 +75,7 @@ export function PersonProfile({
   onOpenPerson,
   onOpenTrack,
   onPlayAll,
+  onMembersChanged,
   onError,
 }: ProfileProps) {
   const [works, setWorks] = useState<PersonWork[] | null>(null);
@@ -123,25 +133,29 @@ export function PersonProfile({
       return next;
     });
 
-  // 从专辑点进来：滚到那一张，闪一下
+  // 要定位的那张专辑：左栏「专辑」点进来的，或者发行轴上点的。滚到那一张，闪一下；
+  // 在收起的区里就先展开那一区。nonce 让同一张点第二次也再闪
+  const [focus, setFocus] = useState<{ key: string; nonce: number } | null>(null);
   useEffect(() => {
-    if (focusAlbumId === null || works === null) return;
-    // 同一次定位只闪一回（展开、收起别的区时不再闪）
-    const token = `${personId}:${focusAlbumId}`;
+    setFocus(focusAlbumId === null ? null : { key: `id:${focusAlbumId}`, nonce: Date.now() });
+  }, [personId, focusAlbumId]);
+  useEffect(() => {
+    if (focus === null || works === null) return;
+    const token = `${focus.key}:${focus.nonce}`;
     if (flashed.current === token) return;
-    const holder = sections.find((x) => x.collapsed && x.works.some((w) => w.albumId === focusAlbumId));
+    const holder = sections.find((x) => x.collapsed && x.works.some((w) => albumKey(w) === focus.key));
     if (holder !== undefined && !opened.has(holder.key)) {
       setOpened((cur) => new Set(cur).add(holder.key));
       return; // 展开之后这个 effect 会再跑一次
     }
-    const el = document.querySelector<HTMLElement>(`.profile-album[data-album="${focusAlbumId}"]`);
+    const el = document.querySelector<HTMLElement>(`.profile-album[data-key="${CSS.escape(focus.key)}"]`);
     if (el === null) return;
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     el.classList.remove("flash");
     void el.offsetWidth; // 重新触发动画
     el.classList.add("flash");
     flashed.current = token;
-  }, [personId, focusAlbumId, works, sections, opened]);
+  }, [focus, works, sections, opened]);
 
   const name = entry?.name ?? fallback?.name ?? "";
   const image = entry?.imagePath || fallback?.imagePath || "";
@@ -191,7 +205,20 @@ export function PersonProfile({
         )}
       </header>
 
-      {members.length > 0 && <MemberCards members={members} data={data} onOpen={onOpenPerson} />}
+      {works !== null && works.length > 0 && (
+        <ReleaseAxis sections={sections} onPick={(key) => setFocus({ key, nonce: Date.now() })} ended={entry?.ended ?? ""} />
+      )}
+
+      {(isBand || (entry !== undefined && entry.performer > 0 && entry.artistType !== "Person" && bands.length === 0)) && (
+        <MembersEditor
+          bandId={personId}
+          members={members}
+          data={data}
+          onOpen={onOpenPerson}
+          onChanged={onMembersChanged}
+          onError={onError}
+        />
+      )}
 
       <section className="profile-works">
         {works === null && <p className="muted">加载作品…</p>}
@@ -214,7 +241,7 @@ export function PersonProfile({
               {sec.note && <p className="section-note">{sec.note}</p>}
               {open &&
                 groupByAlbum(sec.works).map((g, i) => (
-                  <div className="profile-album" key={g.key} data-album={g.albumId ?? ""} style={{ ["--n" as string]: Math.min(i, 12) }}>
+                  <div className="profile-album" key={g.key} data-key={g.key} style={{ ["--n" as string]: Math.min(i, 12) }}>
                     <Cover path={g.coverPath} size={72} rounded={8} />
                     <div className="profile-album-body">
                       <h3>
@@ -256,41 +283,64 @@ function yearSpan(entry: DirectoryEntry | undefined): string {
   return from === to || !to ? from : `${from}–${to}`;
 }
 
+/**
+ * 发行轴：每张专辑一个点，横着按年份排；点越大歌越多。自己的作品实心，乐队时期的空心，合作 / 幕后是小一号的绿色。
+ * 悬停看名字，点一下滚到下面那一张。乐队解散了，那一年画一道竖线。
+ */
+function ReleaseAxis({ sections, onPick, ended }: { sections: WorkSection[]; onPick: (key: string) => void; ended: string }) {
+  const dots = sections.flatMap((sec) =>
+    groupByAlbum(sec.works)
+      .filter((g) => /^\d{4}/.test(g.year))
+      .map((g) => ({ g, kind: sec.key === "own" ? "own" : sec.key === "credits" ? "credit" : "band", year: Number(g.year.slice(0, 4)) })),
+  );
+  if (dots.length === 0) return null;
+  const endYear = /^\d{4}/.test(ended) ? Number(ended.slice(0, 4)) : null;
+  const years = dots.map((d) => d.year).concat(endYear ?? []);
+  const lo = Math.min(...years) - 1;
+  const hi = Math.max(...years) + 1;
+  const x = (y: number) => ((y - lo) / (hi - lo)) * 100;
+  const step = hi - lo > 24 ? 5 : hi - lo > 12 ? 2 : 1;
+  const ticks: number[] = [];
+  for (let y = lo; y <= hi; y++) if (y % step === 0) ticks.push(y);
+  // 同一年的几张错开一点，别叠成一个点
+  const seen = new Map<number, number>();
+  return (
+    <section className="release-axis" aria-label="发行时间轴">
+      <div className="axis-line" />
+      {ticks.map((y) => (
+        <span key={y} className="axis-year" style={{ left: `${x(y)}%` }}>
+          {y}
+        </span>
+      ))}
+      {endYear !== null && <span className="axis-end" style={{ left: `${x(endYear)}%` }} title={`${endYear} 解散`} />}
+      {dots.map(({ g, kind, year }, i) => {
+        const k = seen.get(year) ?? 0;
+        seen.set(year, k + 1);
+        const size = Math.min(26, 10 + g.tracks.length * 2) * (kind === "credit" ? 0.75 : 1);
+        return (
+          <button
+            key={`${kind}-${g.key}`}
+            className={`axis-dot ${kind} ${x(year) < 18 ? "edge-l" : x(year) > 82 ? "edge-r" : ""}`}
+            style={{ left: `calc(${x(year)}% + ${k * 9}px)`, width: size, height: size, ["--n" as string]: i }}
+            onClick={() => onPick(g.key)}
+            aria-label={`${g.title} · ${year}`}
+          >
+            <span className="axis-label">
+              {g.title} · {year}
+            </span>
+          </button>
+        );
+      })}
+    </section>
+  );
+}
+
 function Fact({ value, label }: { value: number | string; label: string }) {
   return (
     <div className="fact">
       <b>{value}</b>
       <small>{label}</small>
     </div>
-  );
-}
-
-function MemberCards({ members, data, onOpen }: { members: Membership[]; data: DirectoryData | null; onOpen: (id: number) => void }) {
-  return (
-    <section className="member-cards">
-      <h2 className="section-label">成员</h2>
-      <div className="member-card-row">
-        {members.map((m, i) => {
-          const solo = data?.dir.byId.get(m.memberId)?.performer ?? 0;
-          return (
-            <button
-              key={m.memberId}
-              className={`member-card ${m.leftAt ? "former" : ""}`}
-              style={{ ["--n" as string]: i }}
-              onClick={() => onOpen(m.memberId)}
-            >
-              <Avatar path={data?.dir.byId.get(m.memberId)?.imagePath || m.memberImage} name={m.memberName} size={36} />
-              <span>
-                <b>{m.memberName}</b>
-                <small>
-                  {[m.part, spanOf(m.joined, m.leftAt), solo > 0 ? `个人 ${solo} 首 →` : ""].filter(Boolean).join(" · ")}
-                </small>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 

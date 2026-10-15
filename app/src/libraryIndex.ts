@@ -23,6 +23,11 @@ export function yearOf(date: string): string {
   return m ? m[0] : date.trim();
 }
 
+/** 成员的加入、离开日期只收 YYYY、YYYY-MM、YYYY-MM-DD，或者「?」（知道离开了、不知道哪年）；空着也行 */
+export function validDate(value: string): boolean {
+  return value === "" || value === "?" || /^\d{4}(-\d{2}(-\d{2})?)?$/.test(value);
+}
+
 /** 「2007–2019」「2017–至今」「?–2019」 */
 export function spanOf(joined: string, leftAt: string): string {
   const from = yearOf(joined) || "?";

@@ -24,6 +24,7 @@ import { useArtistPhotos } from "../components/PerformerPicker";
 import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
 import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
 import { Cover } from "../components/Cover";
+import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
 import { LyricsStage } from "../components/LyricsStage";
 import { SongEditor } from "../components/SongEditor";
@@ -411,7 +412,10 @@ export function LibraryPage({
   // ── 中栏在看什么 ──
   //
   // 来的路记在一个栈里，左上角的返回按钮一层层退回去。歌本身在 `selected` 里（外壳持有，换页不丢）。
-  const data = useDirectory(libraryVersion, onAudioError);
+  // 改了成员之后自己加一，和外面的版本号加在一起：两边都只增不减，和一变就重拉
+  const [membersVersion, setMembersVersion] = useState(0);
+  const bumpMembers = useCallback(() => setMembersVersion((v) => v + 1), []);
+  const data = useDirectory(libraryVersion + membersVersion, onAudioError);
   const [view, setView] = useState<LibraryView | null>(() =>
     focusPersonId !== null ? { kind: "person", id: focusPersonId } : selected !== null ? { kind: "song" } : null,
   );
@@ -491,6 +495,42 @@ export function LibraryPage({
     },
     [view, go],
   );
+
+  /** 面包屑上的专辑：在目录里找到就按专辑的规矩走，找不到就单独看 */
+  const openAlbumById = (albumId: number, title: string) => {
+    const album = data?.albums.find((a) => a.id === albumId);
+    if (album !== undefined) openAlbum(album);
+    else go({ kind: "album", albumId, title });
+  };
+  const performers = credits.filter((c) => c.role === "performer");
+  /** 右栏的署名按人合并：同一个人作曲又编曲只占一行 */
+  const creditPeople = useMemo(() => {
+    const byPerson = new Map<number, { personId: number; name: string; roles: string[] }>();
+    for (const c of credits) {
+      const row = byPerson.get(c.personId) ?? { personId: c.personId, name: c.name, roles: [] };
+      if (!row.roles.includes(c.role)) row.roles.push(c.role);
+      byPerson.set(c.personId, row);
+    }
+    return [...byPerson.values()];
+  }, [credits]);
+
+  // 歌名旁的「⋯」：编辑、换歌词、删除收在里面。点外面或按 Esc 关
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => setMenuOpen(false), [selected?.id]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const away = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [menuOpen]);
 
   /** 打开一首歌：封面从点的地方飞到歌词栏的标题旁（共享元素过渡） */
   const openWithMorph = (track: Track, button: HTMLElement) => {
@@ -598,7 +638,34 @@ export function LibraryPage({
 
   const corpusContent = (
     <>
-      {!word && !wordLoading && lookup === null && (
+      {!word && !wordLoading && lookup === null && selected !== null && (
+        <div className="song-facts">
+          <h3 className="side-head">这首歌</h3>
+          <dl className="facts">
+            {selected.album && <><dt>专辑</dt><dd>{selected.album}</dd></>}
+            {selected.year && <><dt>年份</dt><dd>{selected.year}</dd></>}
+            {selected.genre && <><dt>流派</dt><dd>{selected.genre}</dd></>}
+            {selected.durationSec !== null && <><dt>时长</dt><dd>{formatDuration(selected.durationSec)}</dd></>}
+            <dt>歌词</dt><dd>{lyrics.length > 0 ? `${lyrics.length} 行` : "没有"}</dd>
+          </dl>
+          {credits.length > 0 && (
+            <>
+              <h3 className="side-head">署名</h3>
+              {creditPeople.map((c, i) => (
+                <button key={c.personId} className="peer" style={{ ["--n" as string]: i }} onClick={() => openPerson(c.personId)}>
+                  <Avatar path={c.roles.includes("performer") ? photoOf(c.name) : ""} name={c.name} size={30} />
+                  <span className="peer-text">
+                    <b>{c.name}</b>
+                    <small>{c.roles.map((r) => ROLE_LABELS[r] ?? r).join(" / ")}</small>
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
+          <p className="muted small hint">点歌词里的词，这里换成释义和它在整个语料里的例句</p>
+        </div>
+      )}
+      {!word && !wordLoading && lookup === null && selected === null && (
         <p className="muted pad">点歌词里的词：看释义，以及它在整个语料里的样子</p>
       )}
       {wordLoading && <p className="muted pad">查询中…</p>}
@@ -692,6 +759,7 @@ export function LibraryPage({
               onOpenPerson={openPerson}
               onOpenTrack={openWithMorph}
               onPlayAll={playAll}
+              onMembersChanged={bumpMembers}
               onError={onAudioError}
             />
           ) : (
@@ -730,56 +798,94 @@ export function LibraryPage({
         {panel !== "repair" && !selected && <p className="muted pad">从左侧选一位音乐人、一张专辑或一首歌</p>}
         {panel !== "repair" && selected && (
           <>
+            <nav className="crumbs" aria-label="这首歌在哪">
+              {performers.length > 0
+                ? performers.map((c, i) => (
+                    <Fragment key={c.personId}>
+                      {i > 0 && <span className="crumb-sep">/</span>}
+                      <button onClick={() => openPerson(c.personId)}>{c.name}</button>
+                    </Fragment>
+                  ))
+                : <span>{selected.artist || "未知歌手"}</span>}
+              {selected.album && (
+                <>
+                  <span className="crumb-sep">›</span>
+                  {selected.albumId !== null ? (
+                    <button onClick={() => openAlbumById(selected.albumId!, selected.album)}>{selected.album}</button>
+                  ) : (
+                    <span>{selected.album}</span>
+                  )}
+                </>
+              )}
+              <span className="crumb-sep">›</span>
+              <b>{selected.title}</b>
+            </nav>
             <div className="track-head track-head-row">
               <Cover path={selected.coverPath} size={96} alt="" rounded={6} />
               <div className="track-head-text">
                 <h1>{selected.title}</h1>
-              <p className="muted">
-                {selected.artist}
-                {selected.album && ` · ${selected.album}`}
-                {selected.year && ` · ${selected.year}`}
-              </p>
+                <p className="muted">
+                  {selected.artist}
+                  {selected.album && ` · ${selected.album}`}
+                  {selected.year && ` · ${selected.year}`}
+                </p>
                 {credits.length > 0 && (
                   <ul className="credits">
                     {credits.map((c) => (
                       <li key={`${c.role}-${c.personId}`}>
-                        <span className="role">{ROLE_LABELS[c.role] ?? c.role}</span>
-                        {c.name}
+                        <button className="credit-link" onClick={() => openPerson(c.personId)} title={`看 ${c.name} 的档案`}>
+                          <span className="role">{ROLE_LABELS[c.role] ?? c.role}</span>
+                          {c.name}
+                        </button>
                       </li>
                     ))}
                   </ul>
                 )}
               </div>
               <div className="track-side">
-                <LyricsTools display={display} onError={onAudioError} onExpand={() => setStageOpen(true)} />
-                <div className="track-actions">
-                  <button className="link-btn" onClick={() => setPanel(panel === "edit" ? null : "edit")}>
-                    编辑信息
-                  </button>
-                  {lyrics.length > 0 && (
-                    <LyricsFill
-                      songId={selected.id}
-                      hasLyrics
-                      onAttached={() => void actions.reloadLyrics()}
-                      onError={onAudioError}
-                    />
-                  )}
-                  {confirmDelete ? (
-                    <span className="confirm-delete">
-                      删掉《{selected.title}》？歌词和分词一起删，音频文件不动
-                      <button className="link-btn danger" onClick={() => void deleteSelected()}>
-                        确认删除
-                      </button>
-                      <button className="link-btn" onClick={() => setConfirmDelete(false)}>
-                        取消
-                      </button>
-                    </span>
-                  ) : (
-                    <button className="link-btn" onClick={() => setConfirmDelete(true)}>
-                      删除
+                <div className="track-tools">
+                  <LyricsTools display={display} onError={onAudioError} onExpand={() => setStageOpen(true)} />
+                  <div className="more-menu" ref={menuRef}>
+                    <button
+                      className={`more-btn ${menuOpen ? "on" : ""}`}
+                      onClick={() => setMenuOpen((v) => !v)}
+                      title="更多"
+                      aria-label="更多"
+                      aria-expanded={menuOpen}
+                    >
+                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                        <circle cx="6" cy="12" r="1.6" fill="currentColor" />
+                        <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+                        <circle cx="18" cy="12" r="1.6" fill="currentColor" />
+                      </svg>
                     </button>
-                  )}
+                    {menuOpen && (
+                      <div className="menu-panel" role="menu">
+                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "edit" ? null : "edit"); }}>
+                          编辑信息
+                        </button>
+                        {lyrics.length > 0 && (
+                          <LyricsFill songId={selected.id} hasLyrics onAttached={() => void actions.reloadLyrics()} onError={onAudioError} />
+                        )}
+                        <hr />
+                        <button role="menuitem" className="danger" onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}>
+                          删除这首歌…
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
+                {confirmDelete && (
+                  <span className="confirm-delete">
+                    删掉《{selected.title}》？歌词和分词一起删，音频文件不动
+                    <button className="link-btn danger" onClick={() => void deleteSelected()}>
+                      确认删除
+                    </button>
+                    <button className="link-btn" onClick={() => setConfirmDelete(false)}>
+                      取消
+                    </button>
+                  </span>
+                )}
               </div>
             </div>
             {panel === "edit" && (

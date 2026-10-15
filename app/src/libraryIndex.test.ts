@@ -9,6 +9,7 @@ import {
   sectionWorks,
   musicianSubtitle,
   spanOf,
+  validDate,
   yearOf,
 } from "./libraryIndex";
 
@@ -106,6 +107,11 @@ describe("dates", () => {
     expect(yearOf("2019-05-27")).toBe("2019");
     expect(spanOf("2017", "")).toBe("2017–至今");
     expect(spanOf("", "?")).toBe("?–?");
+  });
+
+  it("accepts only year-like dates for members", () => {
+    for (const ok of ["", "?", "2019", "2019-05", "2019-05-27"]) expect(validDate(ok)).toBe(true);
+    for (const bad of ["19", "2019/05", "去年", "2019-5"]) expect(validDate(bad)).toBe(false);
   });
 });
 
