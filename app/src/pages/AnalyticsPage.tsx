@@ -28,6 +28,7 @@ import {
   type YearStats,
 } from "../api";
 import { AnalysisRuns } from "../components/AnalysisRuns";
+import { KeynessCard, RepeatEffectCard } from "../components/CorpusCompare";
 import { PerformerPicker } from "../components/PerformerPicker";
 import { QualityCard } from "../components/QualityCard";
 import { SubcorpusFilters } from "../components/SubcorpusFilters";
@@ -337,6 +338,15 @@ export function AnalyticsPage({
         )}
         {rows && rows.length === 0 && !loadingRows && <p className="muted">没有数据</p>}
       </section>
+
+      <RepeatEffectCard
+        performerIds={filter.performerIds}
+        jpOnly={filter.jpOnly}
+        onSearchWord={onSearchWord}
+        onError={onError}
+      />
+
+      <KeynessCard jpOnly={filter.jpOnly} onSearchWord={onSearchWord} onError={onError} />
 
       <section className="card report">
         <div className="card-head">

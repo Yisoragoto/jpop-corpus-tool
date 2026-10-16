@@ -1,0 +1,82 @@
+name: macOS client
+
+# 原生 macOS 客户端（macos/）的门禁：构建 Rust 核心静态库 → swift build → swift test。
+# Swift 测试经真的 libjp_ffi.a 调 Rust，对着合成语料库检查跨语言的数据形状和「检索 → KWIC → 定位」那条链路，
+# 以及「空目录建库 → 导入音频 + .lrc → 装分词词典、补分词 → KWIC」那条（要一份 Sudachi 词典，缓存着，见下）。
+# 作者在 Windows 上开发，这里是 Swift 代码唯一会被编译、运行的地方。
+on:
+  push:
+    branches: ["main"]
+    paths: ["macos/**", "rust/**", ".github/workflows/macos.yml"]
+  pull_request:
+    paths: ["macos/**", "rust/**", ".github/workflows/macos.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+
+      # 分词词典：和应用下载的是同一个发布、同一个哈希（jp-setup/src/sudachi.rs）。
+      # 207MB，缓存起来，只在第一次（或换了词典）时下。Rust 和 Swift 的导入测试经 JP_SUDACHI_SOURCE 用它
+      - name: Sudachi dictionary (cache)
+        id: sudachi
+        uses: actions/cache@v4
+        with:
+          path: ~/sudachi-dict/system.dic
+          key: sudachi-system-dic-a4c0cfea5674e1e9
+
+      - name: Sudachi dictionary (download)
+        if: steps.sudachi.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/sudachi-dict
+          url=https://github.com/Yisoragoto/jpop-corpus-tool/releases/download/sudachi-dict-core/system.dic.xz
+          curl -fsSL --retry 5 -o "$RUNNER_TEMP/system.dic.xz" "$url"
+          echo "5ba334f1ac976ae6f77f8f92d26cef9bc44a9c2cf0d723545432fcd43df2db5b  $RUNNER_TEMP/system.dic.xz" | shasum -a 256 -c
+          unxz=(python3 -c "import lzma, shutil, sys; shutil.copyfileobj(lzma.open(sys.argv[1]), open(sys.argv[2], 'wb'))")
+          "${unxz[@]}" "$RUNNER_TEMP/system.dic.xz" ~/sudachi-dict/system.dic
+          echo "a4c0cfea5674e1e9cfcbd3cf05bb45576b533c3944e60b7dbbea022423a1866a  $HOME/sudachi-dict/system.dic" | shasum -a 256 -c
+
+      - name: Sudachi dictionary (resources)
+        run: |
+          cp rust/crates/jp-tokenizer/resources/{sudachi.json,char.def,unk.def,rewrite.def} ~/sudachi-dict/
+          echo "JP_SUDACHI_SOURCE=$HOME/sudachi-dict" >> "$GITHUB_ENV"
+
+      - name: Rust core (jp-ffi) tests
+        working-directory: rust
+        run: cargo test -p jp-ffi -p jp-corpus -p jp-setup --lib --no-fail-fast
+
+      - name: Build libjp_ffi.a
+        run: ./macos/scripts/build-rust.sh
+
+      - name: Swift build
+        working-directory: macos
+        run: swift build
+
+      - name: Swift tests
+        working-directory: macos
+        run: swift test
+
+      - name: App bundle
+        working-directory: macos
+        run: ./scripts/bundle.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JPOP-Corpus-macOS-unsigned
+          path: macos/build/JPOP Corpus.app
+          retention-days: 7

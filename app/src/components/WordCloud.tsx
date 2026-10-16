@@ -21,7 +21,7 @@ import { ensureFontFile, fetchFontCatalog, loadImportedFonts, lyricFontStack } f
 import { pyGrouped } from "../pyFormat";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import { useAppSettings } from "../settings";
-import { useActiveScope } from "../subcorpusScope";
+import { mergeSubcorpus, useActiveScope } from "../subcorpusScope";
 import { groupHitsBySong, layoutCloud, mergeByLemma, type CloudWord, type Placed, type SongHits } from "../wordCloud";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
@@ -652,7 +652,7 @@ function SongPanel({
   useEffect(() => {
     let alive = true;
     api
-      .kwic({ keywords: [word.lemma], field: "lemma", pos: word.pos, personIds: performerIds, limit: KWIC_LIMIT, scope: scope?.filter ?? null })
+      .kwic({ keywords: [word.lemma], field: "lemma", pos: word.pos, personIds: performerIds, limit: KWIC_LIMIT, subcorpus: mergeSubcorpus({}, scope) })
       .then((hits) => {
         if (!alive) return;
         setSongs(groupHitsBySong(hits));

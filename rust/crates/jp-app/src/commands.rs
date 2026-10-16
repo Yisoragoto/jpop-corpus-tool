@@ -280,6 +280,70 @@ pub async fn kwic<R: tauri::Runtime>(
     blocking(app, move |state| state.corpus().kwic(&query)).await
 }
 
+// ────────────────────────────── 分析与定位 ──────────────────────────────
+//
+// 规则全在 jp-corpus 的 analysis / segments / subcorpus 里；macOS 客户端经 jp-ffi 调的是同一组函数。
+
+/// 一首歌每行在音频里的区间（行级）
+#[tauri::command(async)]
+pub fn line_spans(state: State<'_, AppState>, song_id: String) -> CmdResult<Vec<jp_corpus::segments::LineSpan>> {
+    Ok(state.corpus().line_spans(&song_id)?)
+}
+
+/// 以某一行为中心、前后各扩几行的试听区间。没有时间戳时是 null
+#[tauri::command(async)]
+pub fn listen_window(
+    state: State<'_, AppState>,
+    utterance_id: i64,
+    before: Option<usize>,
+    after: Option<usize>,
+) -> CmdResult<Option<jp_corpus::segments::ListenWindow>> {
+    Ok(state
+        .corpus()
+        .listen_window(utterance_id, before.unwrap_or(0), after.unwrap_or(0))?)
+}
+
+#[tauri::command(async)]
+pub fn corpus_snapshot(state: State<'_, AppState>) -> CmdResult<jp_corpus::analysis::CorpusSnapshot> {
+    Ok(state.corpus().snapshot()?)
+}
+
+/// 重复感知的词频（两种计数单位都给）
+#[tauri::command]
+pub async fn corpus_frequency<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::analysis::FrequencyQuery,
+) -> CmdResult<jp_corpus::analysis::FrequencyResult> {
+    blocking(app, move |state| state.corpus().frequency(&query)).await
+}
+
+#[tauri::command]
+pub async fn collocations<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::analysis::CollocationQuery,
+) -> CmdResult<jp_corpus::analysis::CollocationResult> {
+    blocking(app, move |state| state.corpus().collocations(&query)).await
+}
+
+/// 子语料对比（特征词）
+#[tauri::command]
+pub async fn keyness<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::analysis::KeynessQuery,
+) -> CmdResult<jp_corpus::analysis::KeynessResult> {
+    blocking(app, move |state| state.corpus().keyness(&query)).await
+}
+
+/// 从一首歌进入语料分析：重复行、特征词
+#[tauri::command]
+pub async fn song_profile<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+    limit: Option<usize>,
+) -> CmdResult<jp_corpus::analysis::SongProfile> {
+    blocking(app, move |state| state.corpus().song_profile(&song_id, limit.unwrap_or(12))).await
+}
+
 #[tauri::command(async)]
 pub fn search_lyrics(
     state: State<'_, AppState>,
@@ -319,11 +383,11 @@ pub fn word_in_corpus(
     lemma: String,
     current_song_id: Option<String>,
     limit: Option<i64>,
-    scope: Option<jp_corpus::stats::StatsFilter>,
+    scope: Option<jp_corpus::subcorpus::Subcorpus>,
 ) -> CmdResult<WordInCorpus> {
     let corpus = state.corpus();
     let limit = limit.unwrap_or(20);
-    Ok(match scope.filter(|f| !f.is_whole_corpus()) {
+    Ok(match scope.filter(|s| !s.is_all()) {
         Some(scope) => corpus.word_in_subcorpus(&lemma, current_song_id.as_deref(), limit, &scope)?,
         None => corpus.word_in_corpus(&lemma, current_song_id.as_deref(), limit)?,
     })
@@ -582,6 +646,13 @@ pub fn audio_set_loop(
         _ => None,
     };
     Ok(audio(&state)?.set_loop(region))
+}
+
+/// 播到 `position_sec` 自动暂停一次。检索结果「只听这一句」：加载到行首、到行尾停。传 null 取消
+#[tauri::command]
+pub fn audio_set_stop_at(state: State<'_, AppState>, position_sec: Option<f64>) -> CmdResult<()> {
+    audio(&state)?.set_stop_at(position_sec);
+    Ok(())
 }
 
 /// 播放状态快照。前端轮询它来驱动进度条和歌词跟随。
@@ -1200,38 +1271,8 @@ pub fn person_by_id(
 
 /// 复核用的一条。不把整个 `ScannedTrack` 端上去——那里面一半字段
 /// 是推断过程的中间产物，UI 用不上，白白撑大 payload。
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanItemView {
-    pub path: String,
-    pub file_name: String,
-    pub title: String,
-    pub artist: String,
-    pub album: String,
-    pub duration_sec: Option<f64>,
-    pub has_lyrics: bool,
-    /// 读 tag 时出的问题。为空表示一切正常。
-    pub warning: Option<String>,
-    /// 歌手是从 tag、文件名还是文件夹名定出来的。从文件夹名来的只是猜，界面不让它不经复核就导
-    pub artist_source: jp_import::ArtistSource,
-    pub action: jp_import::Action,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScanResult {
-    pub summary: jp_import::PlanSummary,
-    pub items: Vec<PlanItemView>,
-    /// 分词器可不可用。不可用时导入仍能进行，只是不写 tokens——
-    /// UI 要在按下「导入」之前就把这件事说清楚。
-    pub tokenizer_ready: bool,
-    /// 选中但不是音频、因此没进计划的文件名。
-    ///
-    /// 单曲导入时用户可能顺手选中了 .lrc 或封面图。默不作声地丢掉
-    /// 会让人以为「选了 5 个却只导了 3 个」是 bug，所以原样报出来。
-    #[serde(default)]
-    pub ignored: Vec<String>,
-}
+/// 计划的形状在 `jp-import`，macOS 客户端用的是同一份
+pub use jp_import::{PlanItemView, ScanResult};
 
 /// 扫描一个目录（或单个音频文件），和现有曲库比对，返回一份计划供复核。
 ///
@@ -1275,39 +1316,13 @@ pub fn scan_files(
 
 /// 扫 + 比对 + 记下待确认的结果。`scan_folder` 和 `scan_files` 的共同实现。
 ///
-/// 同一个文件被选中两次（选了文件又选了它所在的目录）只算一次：
-/// 按路径去重在这里做，不然计划里会出现两条一模一样的、还互相判成「本批重复」。
+/// 扫哪些、怎么去重、怎么报「选中的不是音频」都在 [`jp_import::scan_targets`]。
 fn plan_targets(
     state: &AppState,
     paths: &[String],
     max_depth: Option<usize>,
 ) -> anyhow::Result<ScanResult> {
-    let depth = max_depth.unwrap_or(8);
-    let mut tracks: Vec<jp_import::ScannedTrack> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut ignored: Vec<String> = Vec::new();
-
-    for path in paths {
-        let target = std::path::Path::new(path);
-        let found = jp_import::scan_dir(target, depth);
-        if found.is_empty() && target.is_file() {
-            // 不是音频（.lrc、封面图、歌单文件……）。扫目录时这种文件本来就不计数，
-            // 但用户明确选中它的时候要说一声。
-            ignored.push(
-                target
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| path.clone()),
-            );
-            continue;
-        }
-        for track in found {
-            if seen.insert(track.path.clone()) {
-                tracks.push(track);
-            }
-        }
-    }
-    tracks.sort_by(|a, b| a.path.cmp(&b.path));
+    let (tracks, ignored) = jp_import::scan_targets(paths, max_depth.unwrap_or(8));
 
     let index = jp_import::LibraryIndex::from_corpus(&state.corpus())?;
     let result = review(state, &tracks, &index, ignored);
@@ -1319,36 +1334,14 @@ fn plan_targets(
     Ok(result)
 }
 
-/// 扫描结果 → 给界面复核的那份计划。**只算，不记**：记成待导入的一批是调用方的事。
+/// 扫描结果 → 给界面复核的那份计划（[`jp_import::review`]）。**只算，不记**。
 fn review(
     state: &AppState,
     tracks: &[jp_import::ScannedTrack],
     index: &jp_import::LibraryIndex,
     ignored: Vec<String>,
 ) -> ScanResult {
-    let plan = jp_import::plan(tracks, index);
-    let items = plan
-        .items
-        .iter()
-        .map(|item| PlanItemView {
-            path: item.track.path.clone(),
-            file_name: item.track.file_name.clone(),
-            title: item.track.title().to_string(),
-            artist: item.track.artist().to_string(),
-            album: item.track.album().to_string(),
-            duration_sec: item.track.duration_sec,
-            has_lyrics: item.track.lyrics_pick().is_some(),
-            warning: item.track.warning.clone(),
-            artist_source: item.track.artist_source(),
-            action: item.action.clone(),
-        })
-        .collect();
-    ScanResult {
-        summary: plan.summary(),
-        items,
-        tokenizer_ready: state.analyzer().is_some(),
-        ignored,
-    }
+    jp_import::review(tracks, index, state.analyzer().is_some(), ignored)
 }
 
 /// 去看的一个文件夹，和在里面找到了多少。
@@ -1748,8 +1741,8 @@ pub fn song_set_language(state: State<'_, AppState>, song_id: String, language: 
 
 /// 建子语料时可选的值：年份范围、流派、语言
 #[tauri::command]
-pub async fn subcorpus_facets<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> CmdResult<jp_corpus::analysis::FilterFacets> {
-    blocking(app, move |state| jp_corpus::analysis::facets(state.corpus().connection())).await
+pub async fn subcorpus_facets<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> CmdResult<jp_corpus::runs::FilterFacets> {
+    blocking(app, move |state| jp_corpus::runs::facets(state.corpus().connection())).await
 }
 
 /// 按条件预览范围：多少首歌、多少行（不存）
@@ -1757,9 +1750,9 @@ pub async fn subcorpus_facets<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Cm
 pub async fn subcorpus_preview<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     filter: jp_corpus::stats::StatsFilter,
-) -> CmdResult<jp_corpus::analysis::Scope> {
+) -> CmdResult<jp_corpus::runs::Scope> {
     blocking(app, move |state| {
-        let mut scope = jp_corpus::analysis::scope(state.corpus().connection(), &filter)?;
+        let mut scope = jp_corpus::runs::scope(state.corpus().connection(), &filter)?;
         // 预览只要数目，不把几百首歌的清单传给界面
         scope.songs.clear();
         Ok(scope)
@@ -1768,8 +1761,8 @@ pub async fn subcorpus_preview<R: tauri::Runtime>(
 }
 
 #[tauri::command]
-pub async fn subcorpus_list<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> CmdResult<Vec<jp_corpus::analysis::Subcorpus>> {
-    blocking(app, move |state| jp_corpus::analysis::subcorpora(state.corpus().connection())).await
+pub async fn subcorpus_list<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> CmdResult<Vec<jp_corpus::runs::SavedSubcorpus>> {
+    blocking(app, move |state| jp_corpus::runs::subcorpora(state.corpus().connection())).await
 }
 
 #[tauri::command]
@@ -1778,29 +1771,29 @@ pub async fn subcorpus_save<R: tauri::Runtime>(
     name: String,
     filter: jp_corpus::stats::StatsFilter,
     note: Option<String>,
-) -> CmdResult<jp_corpus::analysis::Subcorpus> {
+) -> CmdResult<jp_corpus::runs::SavedSubcorpus> {
     blocking(app, move |state| {
-        jp_corpus::analysis::save_subcorpus(state.corpus().connection(), &name, &filter, note.as_deref().unwrap_or(""))
+        jp_corpus::runs::save_subcorpus(state.corpus().connection(), &name, &filter, note.as_deref().unwrap_or(""))
     })
     .await
 }
 
 #[tauri::command(async)]
 pub fn subcorpus_delete(state: State<'_, AppState>, id: i64) -> CmdResult<bool> {
-    Ok(jp_corpus::analysis::delete_subcorpus(state.corpus().connection(), id)?)
+    Ok(jp_corpus::runs::delete_subcorpus(state.corpus().connection(), id)?)
 }
 
 /// 跑一次分析并存下来：条件、范围（每首歌和它的歌词版本）、分词器、口径、结果
 #[tauri::command]
 pub async fn analysis_run<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
-    spec: jp_corpus::analysis::AnalysisSpec,
+    spec: jp_corpus::runs::AnalysisSpec,
     filter: Option<jp_corpus::stats::StatsFilter>,
     label: Option<String>,
-) -> CmdResult<jp_corpus::analysis::AnalysisRun> {
+) -> CmdResult<jp_corpus::runs::AnalysisRun> {
     let version = app.package_info().version.to_string();
     blocking(app, move |state| {
-        jp_corpus::analysis::run(
+        jp_corpus::runs::run(
             state.corpus().connection(),
             &spec,
             &filter.unwrap_or_default(),
@@ -1816,16 +1809,16 @@ pub async fn analysis_run<R: tauri::Runtime>(
 pub async fn analysis_list<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     limit: Option<i64>,
-) -> CmdResult<Vec<jp_corpus::analysis::AnalysisSummary>> {
-    blocking(app, move |state| jp_corpus::analysis::list(state.corpus().connection(), limit.unwrap_or(100).clamp(1, 1000))).await
+) -> CmdResult<Vec<jp_corpus::runs::AnalysisSummary>> {
+    blocking(app, move |state| jp_corpus::runs::list(state.corpus().connection(), limit.unwrap_or(100).clamp(1, 1000))).await
 }
 
 #[tauri::command]
 pub async fn analysis_get<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     id: i64,
-) -> CmdResult<Option<jp_corpus::analysis::AnalysisRun>> {
-    blocking(app, move |state| jp_corpus::analysis::get(state.corpus().connection(), id)).await
+) -> CmdResult<Option<jp_corpus::runs::AnalysisRun>> {
+    blocking(app, move |state| jp_corpus::runs::get(state.corpus().connection(), id)).await
 }
 
 /// 拿一条记录的条件和参数在现在的库上重跑，另存一条，并说明和原来差在哪
@@ -1833,9 +1826,9 @@ pub async fn analysis_get<R: tauri::Runtime>(
 pub async fn analysis_rerun<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     id: i64,
-) -> CmdResult<jp_corpus::analysis::Comparison> {
+) -> CmdResult<jp_corpus::runs::Comparison> {
     let version = app.package_info().version.to_string();
-    blocking(app, move |state| jp_corpus::analysis::rerun(state.corpus().connection(), id, &version)).await
+    blocking(app, move |state| jp_corpus::runs::rerun(state.corpus().connection(), id, &version)).await
 }
 
 /// 任意两条记录逐项对比
@@ -1844,18 +1837,18 @@ pub async fn analysis_compare<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     before: i64,
     after: i64,
-) -> CmdResult<jp_corpus::analysis::Comparison> {
+) -> CmdResult<jp_corpus::runs::Comparison> {
     blocking(app, move |state| {
         let corpus = state.corpus();
-        let get = |id| jp_corpus::analysis::get(corpus.connection(), id)?.ok_or_else(|| anyhow::anyhow!("找不到分析记录 {id}"));
-        Ok(jp_corpus::analysis::compare(&get(before)?, &get(after)?))
+        let get = |id| jp_corpus::runs::get(corpus.connection(), id)?.ok_or_else(|| anyhow::anyhow!("找不到分析记录 {id}"));
+        Ok(jp_corpus::runs::compare(&get(before)?, &get(after)?))
     })
     .await
 }
 
 #[tauri::command(async)]
 pub fn analysis_delete(state: State<'_, AppState>, id: i64) -> CmdResult<bool> {
-    Ok(jp_corpus::analysis::delete(state.corpus().connection(), id)?)
+    Ok(jp_corpus::runs::delete(state.corpus().connection(), id)?)
 }
 
 /// 挖词报告：读 Anki 的 collection（复制一份再读），写 `output/corpus_report.html` 并用浏览器打开。

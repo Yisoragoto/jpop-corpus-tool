@@ -17,7 +17,7 @@ import {
   sameFilter,
   type FilterFacets,
   type Scope,
-  type Subcorpus,
+  type SavedSubcorpus,
 } from "../corpusQuality";
 
 interface Props {
@@ -36,7 +36,7 @@ const COMPLETENESS_OPTIONS: [string, number | null][] = [
 
 export function SubcorpusFilters({ filter, onChange, onError }: Props) {
   const [facets, setFacets] = useState<FilterFacets | null>(null);
-  const [saved, setSaved] = useState<Subcorpus[]>([]);
+  const [saved, setSaved] = useState<SavedSubcorpus[]>([]);
   const [scope, setScope] = useState<Scope | null>(null);
   const [naming, setNaming] = useState<string | null>(null);
   const previewRequest = useRef(0);

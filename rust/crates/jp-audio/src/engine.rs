@@ -76,6 +76,8 @@ struct Shared {
     song_id: Mutex<String>,
     duration: Mutex<Option<Duration>>,
     loop_region: Mutex<Option<LoopRegion>>,
+    /// 播到这个位置就暂停，然后清掉。和循环区间互斥：设了循环就不停
+    stop_at: Mutex<Option<f64>>,
     /// 有没有加载过音频。用来区分 Empty 和 Ended。
     loaded: AtomicBool,
 }
@@ -88,6 +90,7 @@ impl Shared {
             song_id: Mutex::new(String::new()),
             duration: Mutex::new(None),
             loop_region: Mutex::new(None),
+            stop_at: Mutex::new(None),
             loaded: AtomicBool::new(false),
         }
     }
@@ -325,13 +328,25 @@ impl AudioEngine {
                         };
                         *guard
                     };
-                    let Some(region) = region else { continue };
                     if player.is_paused() {
                         continue;
                     }
                     let pos = shared.position_sec();
-                    if pos >= region.end_sec {
-                        let _ = player.try_seek(Duration::from_secs_f64(region.start_sec));
+                    if let Some(region) = region {
+                        if pos >= region.end_sec {
+                            let _ = player.try_seek(Duration::from_secs_f64(region.start_sec));
+                        }
+                        continue;
+                    }
+                    // 试听一句：到点就停，停完清掉，下次按播放就接着往下放
+                    let stop_at = shared.stop_at.lock().ok().and_then(|g| *g);
+                    if let Some(stop_at) = stop_at
+                        && pos >= stop_at
+                    {
+                        player.pause();
+                        if let Ok(mut slot) = shared.stop_at.lock() {
+                            *slot = None;
+                        }
                     }
                 }
             })
@@ -377,6 +392,9 @@ impl AudioEngine {
         // 换歌时清掉循环区间：上一首的句子边界对这一首没有意义
         if !same_song && let Ok(mut region) = self.shared.loop_region.lock() {
             *region = None;
+        }
+        if !same_song && let Ok(mut stop_at) = self.shared.stop_at.lock() {
+            *stop_at = None;
         }
         if let Ok(mut current) = self.current.lock() {
             *current = Some((path.to_path_buf(), song_id.to_owned()));
@@ -437,6 +455,9 @@ impl AudioEngine {
         }
         if let Ok(mut region) = self.shared.loop_region.lock() {
             *region = None;
+        }
+        if let Ok(mut stop_at) = self.shared.stop_at.lock() {
+            *stop_at = None;
         }
     }
 
@@ -540,6 +561,14 @@ impl AudioEngine {
         }
     }
 
+    /// 播到 `position_sec` 自动暂停一次（之后清掉）。传 None 取消。
+    /// 检索结果「只听这一句」用：起播、到行尾停，不改循环设置。
+    pub fn set_stop_at(&self, position_sec: Option<f64>) {
+        if let Ok(mut slot) = self.shared.stop_at.lock() {
+            *slot = position_sec.filter(|p| p.is_finite() && *p > 0.0);
+        }
+    }
+
     /// 当前状态快照。前端轮询这个。
     pub fn state(&self) -> PlaybackState {
         let position_sec = self.shared.position_sec();
@@ -573,6 +602,7 @@ impl AudioEngine {
             rate: self.shared.rate(),
             volume: self.player.volume(),
             loop_region: self.shared.loop_region.lock().ok().and_then(|r| *r),
+            stop_at_sec: self.shared.stop_at.lock().ok().and_then(|s| *s),
             pitch_semitones: 0,
             pitch_rendering: false,
             pitch_error: None,
@@ -714,6 +744,18 @@ mod tests {
         );
         assert!(e.set_loop(None));
         assert!(e.state().loop_region.is_none());
+    }
+
+    #[test]
+    fn stop_at_is_accepted_cleared_and_rejects_nonsense() {
+        let e = engine_or_skip!();
+        e.set_stop_at(Some(12.5));
+        assert_eq!(e.state().stop_at_sec, Some(12.5));
+        e.set_stop_at(Some(f64::NAN));
+        assert_eq!(e.state().stop_at_sec, None);
+        e.set_stop_at(Some(3.0));
+        e.stop();
+        assert_eq!(e.state().stop_at_sec, None, "停止要清掉");
     }
 
     #[test]

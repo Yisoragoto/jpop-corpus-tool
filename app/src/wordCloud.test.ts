@@ -103,7 +103,7 @@ describe("layoutCloud", () => {
 describe("groupHitsBySong", () => {
   const hit = (songId: string, repeatCount = 1, utteranceId = 1): KwicHit => ({
     songId, artist: "A", title: `t${songId}`, audioPath: "", utteranceId, lineIdx: 0, timeSec: null,
-    text: "", left: "", keyword: "", right: "", repeatCount, corrected: false,
+    text: "", left: "", keyword: "", right: "", repeatCount, corrected: false, endSec: null, endKind: null, matchLen: 1,
   });
 
   it("按歌合并，折叠的重复行也算次数，多的在前", () => {

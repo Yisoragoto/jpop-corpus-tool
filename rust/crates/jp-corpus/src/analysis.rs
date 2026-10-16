@@ -1,849 +1,880 @@
-//! 可复现的分析：一次统计连同它的条件、范围、分词器、口径和结果一起存下来，
-//! 之后能原样重跑，并且说得清新旧两次为什么不一样。
+//! 语料分析：重复感知的词频、搭配、子语料对比，以及结果出处。
 //!
-//! 「能生成图表」和「能验证分析」差在这里：同一张词频表，三个月后再看，
-//! 得知道当时纳入了哪些歌、每首歌是哪一版歌词、分词用的哪本词典、
-//! 「词」是怎么数的。差一样，数字对不上就无从解释。
+//! ## 重复段落
 //!
-//! 一次分析存这几样（`analysis_runs`）：
+//! 歌词和散文不同：副歌会原样唱好几遍。用户真实语料里，**同一首歌内重复出现的行占 23%**
+//! （8,587 行里 1,960 行是同一首歌里前面已经出现过的原句）。直接数词次，副歌里的词会被放大好几倍，
+//! 「这个词常用」和「这首歌把这句唱了六遍」混在一起分不开。
 //!
-//! | 字段 | 内容 |
-//! |---|---|
-//! | `filter_json` | 筛选条件（[`StatsFilter`]），重跑时原样用 |
-//! | `params_json` | 分析种类和参数（[`AnalysisSpec`]） |
-//! | `scope_json` | 当时纳入的每首歌和它的歌词版本 id |
-//! | `tokenizers_json` | 这些歌词行用过的分词器（引擎、词典、切分模式、配置指纹） |
-//! | `method_json` | 统计口径：词元怎么取、排除哪些词性、各指标的定义 |
-//! | `result_json` | 结果本身 |
+//! 所以每个分析都可以选计数单位（[`CountUnit`]）：
 //!
-//! 重跑（[`rerun`]）= 拿同样的条件和参数在**现在的库**上再算一次，另存一条记录，
-//! 再和原来那条逐项比（[`compare`]）：范围变了哪些歌、哪些歌换了歌词、分词器变没变、
-//! 每个指标差多少。
+//! - `Tokens`：所有词次，唱几遍算几遍——和听到的一样，也和旧版统计页一致；
+//! - `DistinctLines`：同一首歌里文本完全相同的行只算第一次——和写词人「写了什么」一致。
+//!
+//! 词频表两个数都给，外加「重复占比」，一眼看出哪些高频词是副歌堆出来的。
+//! 「完全相同」按原文逐字比，和 KWIC 的「去重」是同一个规则。
+//!
+//! ## 计算方式
+//!
+//! 整个子语料的 token 流一次读进内存（全库 6 万词，几十毫秒），统计在 Rust 里做。
+//! 不在 SQL 里拼窗口函数：搭配要按行内位置开窗，重复行要按首次出现跳过，
+//! 写成 SQL 既慢又难核对。
+//!
+//! 词次的分母不含标点和符号（`PUNCT`、`SYM`），和统计页一致；搭配窗口也跳过它们，
+//! 免得「、」占掉一个窗口位置。
+//!
+//! ## 出处
+//!
+//! 每个结果都带 [`Provenance`]：库的指纹（行数、词数、最大 id、校正数）、子语料的描述、
+//! 计数单位、全部参数、规则版本。指纹和参数相同，结果就相同；分词校正或导入新歌之后指纹会变，
+//! 界面据此提示「结果基于旧数据」。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{HashMap, HashSet};
 
-use anyhow::{Context, Result, bail};
-use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
+use anyhow::Result;
+use rusqlite::{Connection, params_from_iter};
 use serde::{Deserialize, Serialize};
 
-use crate::lineage::{Fingerprint, NOW, TokenizerRunRow, tokenizer_runs};
-use crate::stats::{self, StatsFilter};
+use crate::subcorpus::Subcorpus;
+use crate::MatchField;
 
-/// 分析种类和参数
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum AnalysisSpec {
-    /// 语料统计报告：TTR / STTR / Hapax / 词性分布 / 覆盖率
-    CorpusReport,
-    /// 词频表：词元 × 词性
-    #[serde(rename_all = "camelCase")]
-    Frequency { pos: Option<String>, limit: usize },
-}
+/// 规则版本。改了计数或打分的规则就加一，旧结果的出处里能看出是按哪套规则算的
+pub const RULES_VERSION: &str = "analysis-1";
 
-impl AnalysisSpec {
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::CorpusReport => "corpusReport",
-            Self::Frequency { .. } => "frequency",
-        }
-    }
-}
-
-/// 范围里的一首歌：歌和当时的歌词版本
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ScopeSong {
-    pub song_id: String,
-    /// 老库里没登记版本的歌是 `None`
-    pub version_id: Option<i64>,
-    pub lines: i64,
+pub enum CountUnit {
+    /// 所有词次，重复的副歌唱几遍算几遍
+    #[default]
+    Tokens,
+    /// 同一首歌里文本相同的行只算第一次
+    DistinctLines,
 }
 
-/// 一次分析的范围
+/// 分析的范围：哪些歌、怎么数、要不要只看日文
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Scope {
-    pub songs: Vec<ScopeSong>,
-    pub song_count: usize,
-    pub line_count: i64,
+    pub subcorpus: Subcorpus,
+    pub unit: CountUnit,
+    /// 只算含假名或汉字的词元（去掉英文、数字）
+    pub jp_only: bool,
 }
 
-/// 范围里用到的分词器
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+// ────────────────────────────── 出处 ──────────────────────────────
+
+/// 库在某一刻的指纹。只要歌词、分词、校正有任何增删改，指纹就会变。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TokenizerUse {
-    pub runs: Vec<TokenizerRunRow>,
-    /// 不知道是哪个分词器分的行（老库导进来的）
-    pub unknown_lines: i64,
+pub struct CorpusSnapshot {
+    pub schema_version: i64,
+    pub songs: i64,
+    pub lines: i64,
+    pub tokens: i64,
+    pub corrections: i64,
+    /// 16 位十六进制。不是密码学哈希，只用来判断「是不是同一份数据」
+    pub fingerprint: String,
 }
 
-/// 按条件取范围。和统计用的是**同一个子句**，所以范围就是统计实际看到的那批行。
-pub fn scope(conn: &Connection, filter: &StatsFilter) -> Result<Scope> {
-    let (clause, values) = filter.clause();
-    let mut stmt = conn.prepare(&format!(
-        "SELECT u.song_id, u.version_id, COUNT(*) FROM utterances u WHERE 1=1{clause} \
-         GROUP BY u.song_id, u.version_id ORDER BY u.song_id, u.version_id"
-    ))?;
-    let songs: Vec<ScopeSong> = stmt
-        .query_map(params_from_iter(values), |r| Ok(ScopeSong { song_id: r.get(0)?, version_id: r.get(1)?, lines: r.get(2)? }))?
-        .collect::<rusqlite::Result<_>>()?;
-    let song_count = songs.iter().map(|s| s.song_id.as_str()).collect::<BTreeSet<_>>().len();
-    let line_count = songs.iter().map(|s| s.lines).sum();
-    Ok(Scope { songs, song_count, line_count })
-}
-
-fn tokenizers_in_scope(conn: &Connection, filter: &StatsFilter) -> Result<TokenizerUse> {
-    let (clause, values) = filter.clause();
-    let mut stmt = conn.prepare(&format!(
-        "SELECT u.tokenizer_run_id, COUNT(*) FROM utterances u WHERE 1=1{clause} \
-         AND EXISTS (SELECT 1 FROM tokens t WHERE t.utterance_id = u.id) GROUP BY u.tokenizer_run_id"
-    ))?;
-    let counts: Vec<(Option<i64>, i64)> =
-        stmt.query_map(params_from_iter(values), |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
-    let ids: Vec<i64> = counts.iter().filter_map(|(id, _)| *id).collect();
-    let mut runs = tokenizer_runs(conn, &ids)?;
-    for run in &mut runs {
-        run.line_count = counts.iter().find(|(id, _)| *id == Some(run.id)).map_or(0, |(_, n)| *n);
-    }
-    let unknown_lines = counts.iter().filter(|(id, _)| id.is_none()).map(|(_, n)| n).sum();
-    Ok(TokenizerUse { runs, unknown_lines })
-}
-
-fn scope_hash(scope: &Scope) -> String {
-    let mut h = Fingerprint::new();
-    for s in &scope.songs {
-        h.str(&s.song_id).str(&s.version_id.map(|v| v.to_string()).unwrap_or_default()).str(&s.lines.to_string());
-    }
-    h.hex()
-}
-
-/// 统计口径。写成人能读的话，存进记录里——三个月后看的人不一定记得代码是怎么写的
-pub fn method(spec: &AnalysisSpec, filter: &StatsFilter) -> serde_json::Value {
-    let common = serde_json::json!({
-        "tokenUnit": "Sudachi SplitMode C 的词元（dictionary_form），词性是 UniDic 映射到的 UPOS",
-        "whitespace": "空白 token 在入库时就不收",
-        "jpOnly": if filter.jp_only { "只算词元里有平假名、片假名或汉字的" } else { "全部词元" },
-        "lines": if filter.distinct_lines { "同一首歌里文本相同的行只算第一次（副歌只算一遍）" } else { "每一行都算（副歌唱几遍算几遍）" },
-        "corrections": "分词校正过的行用校正后的分词",
-    });
-    let specific = match spec {
-        AnalysisSpec::CorpusReport => serde_json::json!({
-            "excludedPos": ["PUNCT", "SYM", "SPACE", "X"],
-            "tokenCount": "词次：排除上述词性后的 token 数",
-            "typeCount": "词种：不同词元数（不分词性）",
-            "ttr": "词种 ÷ 词次",
-            "sttr": "按歌曲、行、词序排好，词次 ≥ 5000 时每 1000 个一段、≥ 1000 时每 500 个一段，取完整段 TTR 的平均",
-            "hapax": "只出现一次的词元",
-            "coverage": "前 N 个高频词元占全部词次的比例",
-        }),
-        AnalysisSpec::Frequency { pos, limit } => serde_json::json!({
-            "excludedPos": ["PUNCT", "SYM"],
-            "unit": "词元 × 词性 的组合",
-            "pos": pos.clone().unwrap_or_else(|| "全部".into()),
-            "limit": limit,
-            "order": "频次降序，同频次按词元、词性排",
-            "songCount": "出现过这个词的歌的数目",
-        }),
+pub fn snapshot(conn: &Connection) -> Result<CorpusSnapshot> {
+    let schema_version = crate::migrations::version(conn)?;
+    let (songs,): (i64,) = conn.query_row("SELECT COUNT(*) FROM songs", [], |r| Ok((r.get(0)?,)))?;
+    let (lines, max_line): (i64, i64) =
+        conn.query_row("SELECT COUNT(*), COALESCE(MAX(id),0) FROM utterances", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    // 校正会删掉旧 token 重新插入，所以最大 id 会变——这正是要的
+    let (tokens, max_token): (i64, i64) =
+        conn.query_row("SELECT COUNT(*), COALESCE(MAX(id),0) FROM tokens", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let has_corrections = conn
+        .query_row("SELECT 1 FROM sqlite_master WHERE type='table' AND name='token_corrections'", [], |_| Ok(()))
+        .is_ok();
+    let (corrections, latest): (i64, String) = if has_corrections {
+        conn.query_row(
+            "SELECT COUNT(*), COALESCE(MAX(updated_at),'') FROM token_corrections",
+            [],
+            |r| Ok((r.get(0)?, r.get::<_, Option<String>>(1)?.unwrap_or_default())),
+        )
+        .or_else(|_| conn.query_row("SELECT COUNT(*), '' FROM token_corrections", [], |r| Ok((r.get(0)?, r.get(1)?))))?
+    } else {
+        (0, String::new())
     };
-    let mut out = common;
-    if let (Some(a), serde_json::Value::Object(b)) = (out.as_object_mut(), specific) {
-        a.extend(b);
+    // 歌的元数据（年份、演唱）会改变子语料的范围，也要进指纹
+    let meta: String = conn.query_row(
+        "SELECT COALESCE(group_concat(id || ':' || COALESCE(year,'') || ':' || COALESCE(album_id,''), ','),'') \
+         FROM (SELECT id, year, album_id FROM songs ORDER BY id)",
+        [],
+        |r| r.get(0),
+    )?;
+    let credits: i64 = conn
+        .query_row("SELECT COUNT(*) FROM track_credits", [], |r| r.get(0))
+        .unwrap_or(0);
+    let mut h = Fnv64::new();
+    for part in [
+        schema_version.to_string(),
+        songs.to_string(),
+        lines.to_string(),
+        max_line.to_string(),
+        tokens.to_string(),
+        max_token.to_string(),
+        corrections.to_string(),
+        latest,
+        credits.to_string(),
+        meta,
+    ] {
+        h.write(part.as_bytes());
+        h.write(b"|");
     }
-    out
-}
-
-/// 只算，不存
-pub fn execute(conn: &Connection, spec: &AnalysisSpec, filter: &StatsFilter) -> Result<serde_json::Value> {
-    Ok(match spec {
-        AnalysisSpec::CorpusReport => serde_json::to_value(stats::corpus_report(conn, filter)?)?,
-        AnalysisSpec::Frequency { pos, limit } => {
-            serde_json::to_value(stats::frequency_table(conn, pos.as_deref(), filter, (*limit).clamp(1, 5000))?)?
-        }
+    Ok(CorpusSnapshot {
+        schema_version,
+        songs,
+        lines,
+        tokens,
+        corrections,
+        fingerprint: format!("{:016x}", h.finish()),
     })
 }
 
-/// 一次分析的完整记录
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// 一个结果是怎么算出来的
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AnalysisRun {
-    pub id: i64,
-    pub label: String,
-    pub spec: AnalysisSpec,
-    pub filter: StatsFilter,
-    pub scope: Scope,
-    pub scope_hash: String,
-    pub tokenizers: TokenizerUse,
-    pub method: serde_json::Value,
-    pub result: serde_json::Value,
-    pub result_hash: String,
-    pub schema_version: i64,
-    pub app_version: String,
-    pub rerun_of: Option<i64>,
-    pub created_at: String,
+pub struct Provenance {
+    pub snapshot: CorpusSnapshot,
+    pub rules: String,
+    /// 子语料的一句人话描述
+    pub scope: String,
+    pub unit: CountUnit,
+    /// 这个子语料里的歌数、词次（按所选单位）
+    pub songs: i64,
+    pub tokens: i64,
+    /// 原样回显的查询参数。拿它重跑就能复现
+    pub params: serde_json::Value,
 }
 
-/// 列表里的一行（不带结果本身）
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisSummary {
-    pub id: i64,
-    pub kind: String,
-    pub label: String,
-    pub filter: StatsFilter,
-    pub song_count: usize,
-    pub scope_hash: String,
-    pub result_hash: String,
-    pub app_version: String,
-    pub rerun_of: Option<i64>,
-    pub created_at: String,
-}
-
-/// 算一次并存下来
-pub fn run(
-    conn: &Connection,
-    spec: &AnalysisSpec,
-    filter: &StatsFilter,
-    label: &str,
-    app_version: &str,
-    rerun_of: Option<i64>,
-) -> Result<AnalysisRun> {
-    // 范围、分词器、结果要是同一个时刻的库：放在一个读事务里，中间有人写也看不见
-    let tx = conn.unchecked_transaction()?;
-    let scope = scope(&tx, filter)?;
-    let tokenizers = tokenizers_in_scope(&tx, filter)?;
-    let result = execute(&tx, spec, filter)?;
-    let method = method(spec, filter);
-    let schema_version = crate::migrations::version(&tx)?;
-    let result_hash = Fingerprint::new().str(&result.to_string()).hex();
-    let scope_hash = scope_hash(&scope);
-    tx.execute(
-        &format!(
-            "INSERT INTO analysis_runs (kind, label, filter_json, params_json, scope_json, scope_hash, tokenizers_json, \
-             method_json, result_json, result_hash, schema_version, app_version, rerun_of, created_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,{NOW})"
-        ),
-        params![
-            spec.kind(),
-            label.trim(),
-            serde_json::to_string(filter)?,
-            serde_json::to_string(spec)?,
-            serde_json::to_string(&scope)?,
-            scope_hash,
-            serde_json::to_string(&tokenizers)?,
-            method.to_string(),
-            result.to_string(),
-            result_hash,
-            schema_version,
-            app_version,
-            rerun_of,
-        ],
-    )?;
-    let id = tx.last_insert_rowid();
-    tx.commit()?;
-    get(conn, id)?.context("刚存的分析记录读不回来")
-}
-
-pub fn get(conn: &Connection, id: i64) -> Result<Option<AnalysisRun>> {
-    let row = conn
-        .query_row(
-            "SELECT id, label, params_json, filter_json, scope_json, scope_hash, tokenizers_json, method_json, \
-             result_json, result_hash, schema_version, app_version, rerun_of, created_at FROM analysis_runs WHERE id=?1",
-            params![id],
-            |r| {
-                Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, String>(1)?,
-                    [r.get::<_, String>(2)?, r.get(3)?, r.get(4)?],
-                    r.get::<_, String>(5)?,
-                    [r.get::<_, String>(6)?, r.get(7)?, r.get(8)?],
-                    r.get::<_, String>(9)?,
-                    r.get::<_, i64>(10)?,
-                    r.get::<_, String>(11)?,
-                    r.get::<_, Option<i64>>(12)?,
-                    r.get::<_, String>(13)?,
-                ))
-            },
-        )
-        .optional()?;
-    let Some((id, label, [spec, filter, scope], scope_hash, [tokenizers, method, result], result_hash, schema_version, app_version, rerun_of, created_at)) = row
-    else {
-        return Ok(None);
-    };
-    Ok(Some(AnalysisRun {
-        id,
-        label,
-        spec: serde_json::from_str(&spec).context("分析参数读不出来")?,
-        filter: serde_json::from_str(&filter).context("筛选条件读不出来")?,
-        scope: serde_json::from_str(&scope).unwrap_or_default(),
-        scope_hash,
-        tokenizers: serde_json::from_str(&tokenizers).unwrap_or_default(),
-        method: serde_json::from_str(&method).unwrap_or_default(),
-        result: serde_json::from_str(&result).unwrap_or_default(),
-        result_hash,
-        schema_version,
-        app_version,
-        rerun_of,
-        created_at,
-    }))
-}
-
-/// 存过的分析，新的在前
-pub fn list(conn: &Connection, limit: i64) -> Result<Vec<AnalysisSummary>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, kind, label, filter_json, scope_json, scope_hash, result_hash, app_version, rerun_of, created_at \
-         FROM analysis_runs ORDER BY id DESC LIMIT ?1",
-    )?;
-    let rows = stmt.query_map(params![limit], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, String>(3)?,
-            r.get::<_, String>(4)?,
-            r.get::<_, String>(5)?,
-            r.get::<_, String>(6)?,
-            r.get::<_, String>(7)?,
-            r.get::<_, Option<i64>>(8)?,
-            r.get::<_, String>(9)?,
-        ))
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let (id, kind, label, filter, scope, scope_hash, result_hash, app_version, rerun_of, created_at) = row?;
-        let scope: Scope = serde_json::from_str(&scope).unwrap_or_default();
-        out.push(AnalysisSummary {
-            id,
-            kind,
-            label,
-            filter: serde_json::from_str(&filter).unwrap_or_default(),
-            song_count: scope.song_count,
-            scope_hash,
-            result_hash,
-            app_version,
-            rerun_of,
-            created_at,
-        });
+struct Fnv64(u64);
+impl Fnv64 {
+    fn new() -> Self {
+        Self(0xcbf2_9ce4_8422_2325)
     }
-    Ok(out)
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.0 ^= u64::from(*b);
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
 }
 
-pub fn delete(conn: &Connection, id: i64) -> Result<bool> {
-    Ok(conn.execute("DELETE FROM analysis_runs WHERE id=?1", params![id])? > 0)
+// ────────────────────────────── token 流 ──────────────────────────────
+
+#[derive(Debug, Clone)]
+struct Tok {
+    surface: String,
+    lemma: String,
+    pos: String,
 }
 
-// ── 重跑与对比 ───────────────────────────────────────────────────
+#[derive(Debug, Clone)]
+struct Line {
+    song_id: String,
+    utterance_id: i64,
+    /// 同一首歌里前面已经有一行文本完全相同
+    repeat: bool,
+    /// 已去掉标点、符号（以及 jp_only 时的非日文词）
+    tokens: Vec<Tok>,
+}
 
-/// 范围上的差别
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+/// 读出一个子语料的全部行和词，按歌、行号排好
+fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> {
+    let (clause, params) = scope.subcorpus.and_clause("u.song_id");
+    let sql = format!(
+        "SELECT u.song_id, u.id, u.text, t.surface, t.lemma, COALESCE(t.pos,'') \
+         FROM utterances u JOIN tokens t ON t.utterance_id = u.id \
+         WHERE 1{clause} \
+         ORDER BY u.song_id, u.line_idx, u.id, t.token_idx"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params_from_iter(params))?;
+    let mut lines: Vec<Line> = Vec::new();
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    while let Some(row) = rows.next()? {
+        let utterance_id: i64 = row.get(1)?;
+        if lines.last().map(|l| l.utterance_id) != Some(utterance_id) {
+            let song_id: String = row.get(0)?;
+            let text: String = row.get(2)?;
+            let repeat = !seen.insert((song_id.clone(), text));
+            lines.push(Line { song_id, utterance_id, repeat, tokens: Vec::new() });
+        }
+        let pos: String = row.get(5)?;
+        if pos == "PUNCT" || pos == "SYM" {
+            continue;
+        }
+        let lemma: String = row.get(4)?;
+        if scope.jp_only && !crate::stats::is_japanese(&lemma) {
+            continue;
+        }
+        let line = lines.last_mut().expect("刚 push 过");
+        line.tokens.push(Tok { surface: row.get(3)?, lemma, pos });
+    }
+    Ok(lines)
+}
+
+fn counted(line: &Line, unit: CountUnit) -> bool {
+    unit == CountUnit::Tokens || !line.repeat
+}
+
+fn provenance(conn: &Connection, scope: &Scope, lines: &[Line], params: serde_json::Value) -> Result<Provenance> {
+    let songs: HashSet<&str> = lines.iter().map(|l| l.song_id.as_str()).collect();
+    let tokens = lines.iter().filter(|l| counted(l, scope.unit)).map(|l| l.tokens.len() as i64).sum();
+    Ok(Provenance {
+        snapshot: snapshot(conn)?,
+        rules: RULES_VERSION.into(),
+        scope: scope.subcorpus.describe(conn)?,
+        unit: scope.unit,
+        songs: songs.len() as i64,
+        tokens,
+        params,
+    })
+}
+
+fn per_10k(freq: i64, total: i64) -> f64 {
+    if total <= 0 { 0.0 } else { freq as f64 * 10_000.0 / total as f64 }
+}
+
+// ────────────────────────────── 词频 ──────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FrequencyQuery {
+    pub scope: Scope,
+    /// UPOS，空是全部
+    pub pos: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ScopeDiff {
-    pub added: Vec<String>,
-    pub removed: Vec<String>,
-    /// 两次都在、但歌词版本或行数变了的
-    pub lyrics_changed: Vec<String>,
-}
-
-/// 一个数值指标的前后
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MetricDiff {
-    pub name: String,
-    pub before: Option<f64>,
-    pub after: Option<f64>,
-}
-
-/// 词频表上一个词的前后（只列有变化的）
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WordDiff {
+pub struct FrequencyItem {
     pub lemma: String,
     pub pos: String,
-    pub before_rank: Option<usize>,
-    pub after_rank: Option<usize>,
-    pub before_freq: Option<i64>,
-    pub after_freq: Option<i64>,
+    /// 按所选单位的频次（排序依据）
+    pub freq: i64,
+    /// 每万词（按所选单位的分母）
+    pub per_10k: f64,
+    /// 所有词次
+    pub raw_freq: i64,
+    /// 重复行只算一次的词次
+    pub distinct_freq: i64,
+    /// 来自重复行的比例：1 − distinct / raw。越高越是副歌堆出来的
+    pub repeat_share: f64,
+    /// 出现在几首歌里（分布广度）
+    pub songs: i64,
+    /// 占子语料歌数的比例
+    pub range: f64,
+    /// 最常见的几个写法，按频次降序
+    pub surfaces: Vec<String>,
 }
 
-/// 两次分析的对比
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Comparison {
-    pub before: AnalysisSummary,
-    pub after: AnalysisSummary,
-    pub same_filter: bool,
-    pub same_spec: bool,
-    pub same_method: bool,
-    pub same_scope: bool,
-    pub same_tokenizers: bool,
-    pub same_schema: bool,
-    pub result_identical: bool,
-    pub scope: ScopeDiff,
-    /// 报告的各项指标（只列变了的）
-    pub metrics: Vec<MetricDiff>,
-    /// 词频表的变化（最多 200 条）
-    pub words: Vec<WordDiff>,
-    /// 一句句人话：为什么不一样
-    pub reasons: Vec<String>,
+pub struct FrequencyResult {
+    pub items: Vec<FrequencyItem>,
+    pub provenance: Provenance,
 }
 
-/// 拿记录里的条件和参数在现在的库上再跑一次，另存一条，并和原来那条比
-pub fn rerun(conn: &Connection, id: i64, app_version: &str) -> Result<Comparison> {
-    let Some(before) = get(conn, id)? else { bail!("找不到分析记录 {id}") };
-    let label = if before.label.is_empty() { format!("重跑 #{id}") } else { format!("{}（重跑）", before.label) };
-    let after = run(conn, &before.spec, &before.filter, &label, app_version, Some(id))?;
-    Ok(compare(&before, &after))
-}
+pub fn frequency(conn: &Connection, query: &FrequencyQuery) -> Result<FrequencyResult> {
+    let lines = load_lines(conn, &query.scope)?;
+    let pos = query.pos.as_deref().filter(|p| !p.is_empty());
 
-fn summary(run: &AnalysisRun) -> AnalysisSummary {
-    AnalysisSummary {
-        id: run.id,
-        kind: run.spec.kind().into(),
-        label: run.label.clone(),
-        filter: run.filter.clone(),
-        song_count: run.scope.song_count,
-        scope_hash: run.scope_hash.clone(),
-        result_hash: run.result_hash.clone(),
-        app_version: run.app_version.clone(),
-        rerun_of: run.rerun_of,
-        created_at: run.created_at.clone(),
+    #[derive(Default)]
+    struct Acc {
+        raw: i64,
+        distinct: i64,
+        songs: HashSet<String>,
+        surfaces: HashMap<String, i64>,
     }
-}
-
-/// 两次分析逐项比。不要求是同一种分析——条件、种类不同也照比，`reasons` 里会说
-pub fn compare(before: &AnalysisRun, after: &AnalysisRun) -> Comparison {
-    let mut reasons = Vec::new();
-    let same_filter = before.filter == after.filter;
-    let same_spec = before.spec == after.spec;
-    let same_method = before.method == after.method;
-    let same_scope = before.scope_hash == after.scope_hash;
-    let same_schema = before.schema_version == after.schema_version;
-    let fingerprints = |t: &TokenizerUse| (t.runs.iter().map(|r| r.fingerprint.clone()).collect::<BTreeSet<_>>(), t.unknown_lines > 0);
-    let same_tokenizers = fingerprints(&before.tokenizers) == fingerprints(&after.tokenizers);
-    let result_identical = before.result_hash == after.result_hash;
-
-    if !same_filter {
-        reasons.push("筛选条件不同".into());
-    }
-    if !same_spec {
-        reasons.push("分析种类或参数不同".into());
-    }
-    if !same_method {
-        reasons.push("统计口径的说明变了（程序版本更新了统计方法）".into());
-    }
-
-    let index = |s: &Scope| -> BTreeMap<String, Vec<(Option<i64>, i64)>> {
-        let mut m: BTreeMap<String, Vec<(Option<i64>, i64)>> = BTreeMap::new();
-        for song in &s.songs {
-            m.entry(song.song_id.clone()).or_default().push((song.version_id, song.lines));
-        }
-        m
-    };
-    let (a, b) = (index(&before.scope), index(&after.scope));
-    let mut scope = ScopeDiff::default();
-    for (song, versions) in &a {
-        match b.get(song) {
-            None => scope.removed.push(song.clone()),
-            Some(other) if other != versions => scope.lyrics_changed.push(song.clone()),
-            Some(_) => {}
-        }
-    }
-    scope.added = b.keys().filter(|k| !a.contains_key(*k)).cloned().collect();
-    if !scope.added.is_empty() {
-        reasons.push(format!("新纳入 {} 首歌（导入了新歌，或者歌的信息改到了条件里）", scope.added.len()));
-    }
-    if !scope.removed.is_empty() {
-        reasons.push(format!("少了 {} 首歌（删了，或者不再符合条件）", scope.removed.len()));
-    }
-    if !scope.lyrics_changed.is_empty() {
-        reasons.push(format!("{} 首歌换了歌词版本", scope.lyrics_changed.len()));
-    }
-    if !same_tokenizers {
-        reasons.push("用到的分词器（引擎、词典或配置）不同".into());
-    }
-    if !same_schema {
-        reasons.push(format!("库结构版本 {} → {}", before.schema_version, after.schema_version));
-    }
-
-    let metrics = metric_diffs(&before.result, &after.result);
-    let words = word_diffs(&before.result, &after.result);
-    if !result_identical && reasons.is_empty() {
-        // 范围、分词器、口径都没变，结果却变了：最可能是有人校正了分词
-        reasons.push("范围和分词器都没变：多半是有歌词行的分词被校正过（见各歌的修订历史）".into());
-    }
-
-    Comparison {
-        before: summary(before),
-        after: summary(after),
-        same_filter,
-        same_spec,
-        same_method,
-        same_scope,
-        same_tokenizers,
-        same_schema,
-        result_identical,
-        scope,
-        metrics,
-        words,
-        reasons,
-    }
-}
-
-/// 报告里的数值指标。覆盖率按 N 展开成 `coverage@N`
-fn metric_diffs(a: &serde_json::Value, b: &serde_json::Value) -> Vec<MetricDiff> {
-    let flat = |v: &serde_json::Value| -> BTreeMap<String, f64> {
-        let mut out = BTreeMap::new();
-        let Some(obj) = v.as_object() else { return out };
-        for (k, v) in obj {
-            if let Some(x) = v.as_f64() {
-                out.insert(k.clone(), x);
+    let mut acc: HashMap<(String, String), Acc> = HashMap::new();
+    for line in &lines {
+        for tok in &line.tokens {
+            if pos.is_some_and(|p| p != tok.pos) {
+                continue;
             }
+            let a = acc.entry((tok.lemma.clone(), tok.pos.clone())).or_default();
+            a.raw += 1;
+            if !line.repeat {
+                a.distinct += 1;
+            }
+            if counted(line, query.scope.unit) {
+                a.songs.insert(line.song_id.clone());
+            }
+            *a.surfaces.entry(tok.surface.clone()).or_default() += 1;
         }
-        if let Some(cov) = obj.get("coverage").and_then(|c| c.as_array()) {
-            for c in cov {
-                if let (Some(n), Some(p)) = (c.get("n").and_then(|n| n.as_i64()), c.get("pct").and_then(|p| p.as_f64())) {
-                    out.insert(format!("coverage@{n}"), p);
+    }
+    let total: i64 = lines.iter().filter(|l| counted(l, query.scope.unit)).map(|l| l.tokens.len() as i64).sum();
+    let song_total = lines.iter().map(|l| l.song_id.as_str()).collect::<HashSet<_>>().len().max(1) as f64;
+
+    let mut items: Vec<FrequencyItem> = acc
+        .into_iter()
+        .map(|((lemma, pos), a)| {
+            let freq = match query.scope.unit {
+                CountUnit::Tokens => a.raw,
+                CountUnit::DistinctLines => a.distinct,
+            };
+            let mut surfaces: Vec<(String, i64)> = a.surfaces.into_iter().collect();
+            surfaces.sort_by(|x, y| y.1.cmp(&x.1).then_with(|| x.0.cmp(&y.0)));
+            FrequencyItem {
+                lemma,
+                pos,
+                freq,
+                per_10k: per_10k(freq, total),
+                raw_freq: a.raw,
+                distinct_freq: a.distinct,
+                repeat_share: if a.raw > 0 { 1.0 - a.distinct as f64 / a.raw as f64 } else { 0.0 },
+                songs: a.songs.len() as i64,
+                range: a.songs.len() as f64 / song_total,
+                surfaces: surfaces.into_iter().take(5).map(|(s, _)| s).collect(),
+            }
+        })
+        .filter(|item| item.freq > 0)
+        .collect();
+    // 频次相同按词元排，结果才可复现（HashMap 的顺序每次运行都不同）
+    items.sort_by(|a, b| b.freq.cmp(&a.freq).then_with(|| a.lemma.cmp(&b.lemma)).then_with(|| a.pos.cmp(&b.pos)));
+    items.truncate(query.limit.unwrap_or(500));
+    let provenance = provenance(conn, &query.scope, &lines, serde_json::to_value(query)?)?;
+    Ok(FrequencyResult { items, provenance })
+}
+
+// ────────────────────────────── 搭配 ──────────────────────────────
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CollocationMeasure {
+    /// logDice：不受语料大小影响，低频噪音少。默认
+    #[default]
+    LogDice,
+    /// 互信息：偏爱罕见的固定搭配
+    Mi,
+    /// 对数似然：显著性
+    LogLikelihood,
+    /// 共现次数
+    Frequency,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CollocationQuery {
+    pub scope: Scope,
+    /// 节点词
+    pub node: String,
+    pub field: MatchField,
+    /// 左右窗口（词数，不含标点）。窗口不跨行——歌词的行就是自然的语义单位
+    pub left: usize,
+    pub right: usize,
+    /// 共现少于这个数的不列出
+    pub min_freq: i64,
+    /// 只看这种词性的搭配词，空是全部
+    pub collocate_pos: Option<String>,
+    /// 只看实词搭配：去掉助词、助动词、连词、冠词类（ADP AUX SCONJ CCONJ PART DET）。
+    /// 不去的话「君」的前几名全是「の が を に」，研究价值低
+    pub content_only: bool,
+    pub measure: CollocationMeasure,
+    pub limit: Option<usize>,
+}
+
+impl Default for CollocationQuery {
+    fn default() -> Self {
+        Self {
+            scope: Scope::default(),
+            node: String::new(),
+            field: MatchField::Lemma,
+            left: 3,
+            right: 3,
+            min_freq: 2,
+            collocate_pos: None,
+            content_only: false,
+            measure: CollocationMeasure::LogDice,
+            limit: Some(100),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Collocate {
+    pub lemma: String,
+    pub pos: String,
+    /// 共现次数
+    pub freq: i64,
+    pub freq_left: i64,
+    pub freq_right: i64,
+    /// 搭配词在子语料里的总频次
+    pub collocate_freq: i64,
+    /// 共现发生在几首歌里
+    pub songs: i64,
+    pub log_dice: f64,
+    pub mi: f64,
+    pub log_likelihood: f64,
+    pub t_score: f64,
+    /// 第一次共现的那一行，点了直接去听
+    pub example_utterance_id: i64,
+    pub example_song_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollocationResult {
+    /// 节点词出现了几次（按所选单位）
+    pub node_freq: i64,
+    pub collocates: Vec<Collocate>,
+    pub provenance: Provenance,
+}
+
+fn matches(tok: &Tok, field: MatchField, node: &str) -> bool {
+    match field {
+        MatchField::Lemma => tok.lemma == node,
+        MatchField::Surface => tok.surface == node,
+    }
+}
+
+pub fn collocations(conn: &Connection, query: &CollocationQuery) -> Result<CollocationResult> {
+    let lines = load_lines(conn, &query.scope)?;
+    let node = query.node.trim();
+    let unit = query.scope.unit;
+
+    #[derive(Default)]
+    struct Acc {
+        left: i64,
+        right: i64,
+        songs: HashSet<String>,
+        example: Option<(i64, String)>,
+    }
+    let mut acc: HashMap<(String, String), Acc> = HashMap::new();
+    let mut corpus_freq: HashMap<(String, String), i64> = HashMap::new();
+    let mut total: i64 = 0;
+    let mut node_freq: i64 = 0;
+    // 所有节点窗口里一共有多少个位置。期望值按它算，比 `节点数 × 窗口宽` 准（行首行尾的窗口是不满的）
+    let mut window_slots: i64 = 0;
+
+    for line in lines.iter().filter(|l| counted(l, unit)) {
+        total += line.tokens.len() as i64;
+        for tok in &line.tokens {
+            *corpus_freq.entry((tok.lemma.clone(), tok.pos.clone())).or_default() += 1;
+        }
+        for (i, tok) in line.tokens.iter().enumerate() {
+            if !matches(tok, query.field, node) {
+                continue;
+            }
+            node_freq += 1;
+            let from = i.saturating_sub(query.left);
+            let to = (i + query.right).min(line.tokens.len().saturating_sub(1));
+            for (j, other) in line.tokens.iter().enumerate().take(to + 1).skip(from) {
+                if j == i {
+                    continue;
+                }
+                window_slots += 1;
+                let a = acc.entry((other.lemma.clone(), other.pos.clone())).or_default();
+                if j < i {
+                    a.left += 1;
+                } else {
+                    a.right += 1;
+                }
+                a.songs.insert(line.song_id.clone());
+                if a.example.is_none() {
+                    a.example = Some((line.utterance_id, line.song_id.clone()));
                 }
             }
         }
-        out
-    };
-    let (x, y) = (flat(a), flat(b));
-    let names: BTreeSet<&String> = x.keys().chain(y.keys()).collect();
-    names
-        .into_iter()
-        .filter_map(|name| {
-            let (before, after) = (x.get(name).copied(), y.get(name).copied());
-            let same = match (before, after) {
-                (Some(p), Some(q)) => (p - q).abs() < 1e-12,
-                (None, None) => true,
-                _ => false,
-            };
-            (!same).then(|| MetricDiff { name: name.clone(), before, after })
-        })
-        .collect()
-}
-
-/// 词频表的变化：频次或名次变了的、新进榜的、掉出榜的
-fn word_diffs(a: &serde_json::Value, b: &serde_json::Value) -> Vec<WordDiff> {
-    let table = |v: &serde_json::Value| -> BTreeMap<(String, String), (usize, i64)> {
-        let mut out = BTreeMap::new();
-        for (rank, row) in v.as_array().into_iter().flatten().enumerate() {
-            let lemma = row.get("lemma").and_then(|x| x.as_str()).unwrap_or_default().to_string();
-            let pos = row.get("pos").and_then(|x| x.as_str()).unwrap_or_default().to_string();
-            let freq = row.get("freq").and_then(|x| x.as_i64()).unwrap_or_default();
-            out.insert((lemma, pos), (rank + 1, freq));
-        }
-        out
-    };
-    let (x, y) = (table(a), table(b));
-    if x.is_empty() && y.is_empty() {
-        return Vec::new();
     }
-    let keys: BTreeSet<&(String, String)> = x.keys().chain(y.keys()).collect();
-    let mut out: Vec<WordDiff> = keys
+
+    let pos_filter = query.collocate_pos.as_deref().filter(|p| !p.is_empty());
+    let n = total.max(1) as f64;
+    let mut collocates: Vec<Collocate> = acc
         .into_iter()
-        .filter_map(|key| {
-            let (p, q) = (x.get(key), y.get(key));
-            (p != q).then(|| WordDiff {
-                lemma: key.0.clone(),
-                pos: key.1.clone(),
-                before_rank: p.map(|v| v.0),
-                after_rank: q.map(|v| v.0),
-                before_freq: p.map(|v| v.1),
-                after_freq: q.map(|v| v.1),
+        .filter(|((_, pos), _)| pos_filter.is_none_or(|p| p == pos))
+        .filter(|((_, pos), _)| !query.content_only || !FUNCTION_POS.contains(&pos.as_str()))
+        .filter_map(|((lemma, pos), a)| {
+            let o = a.left + a.right;
+            if o < query.min_freq.max(1) {
+                return None;
+            }
+            let fc = *corpus_freq.get(&(lemma.clone(), pos.clone())).unwrap_or(&0);
+            let ofl = o as f64;
+            let expected = window_slots as f64 * fc as f64 / n;
+            let mi = if expected > 0.0 { (ofl / expected).log2() } else { 0.0 };
+            let t_score = if ofl > 0.0 { (ofl - expected) / ofl.sqrt() } else { 0.0 };
+            let log_dice = 14.0 + (2.0 * ofl / (node_freq + fc).max(1) as f64).log2();
+            // 2×2 表：行 = 在不在节点窗口里，列 = 是不是这个搭配词
+            let a11 = ofl;
+            let a12 = (window_slots as f64 - ofl).max(0.0);
+            let a21 = (fc as f64 - ofl).max(0.0);
+            let a22 = (n - window_slots as f64 - a21).max(0.0);
+            let log_likelihood = g2(&[a11, a12, a21, a22]);
+            let (example_utterance_id, example_song_id) = a.example.unwrap_or_default();
+            Some(Collocate {
+                lemma,
+                pos,
+                freq: o,
+                freq_left: a.left,
+                freq_right: a.right,
+                collocate_freq: fc,
+                songs: a.songs.len() as i64,
+                log_dice,
+                mi,
+                log_likelihood,
+                t_score,
+                example_utterance_id,
+                example_song_id,
             })
         })
         .collect();
-    // 原来名次靠前的先列
-    out.sort_by_key(|d| (d.before_rank.or(d.after_rank).unwrap_or(usize::MAX), d.after_rank.unwrap_or(usize::MAX)));
-    out.truncate(200);
-    out
-}
-
-// ── 子语料 ───────────────────────────────────────────────────────
-
-/// 存起来的子语料
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Subcorpus {
-    pub id: i64,
-    pub name: String,
-    pub filter: StatsFilter,
-    pub note: String,
-    pub created_at: String,
-    pub updated_at: String,
-    /// 按现在的库算，有几首歌、几行
-    pub song_count: usize,
-    pub line_count: i64,
-}
-
-/// 存一个子语料；同名的覆盖
-pub fn save_subcorpus(conn: &Connection, name: &str, filter: &StatsFilter, note: &str) -> Result<Subcorpus> {
-    let name = name.trim();
-    if name.is_empty() {
-        bail!("子语料要有个名字");
-    }
-    conn.execute(
-        &format!(
-            "INSERT INTO subcorpora (name, filter_json, note, created_at, updated_at) VALUES (?1,?2,?3,{NOW},{NOW}) \
-             ON CONFLICT(name) DO UPDATE SET filter_json=excluded.filter_json, note=excluded.note, updated_at={NOW}"
-        ),
-        params![name, serde_json::to_string(filter)?, note.trim()],
-    )?;
-    subcorpora(conn)?.into_iter().find(|s| s.name == name).context("刚存的子语料读不回来")
-}
-
-pub fn subcorpora(conn: &Connection) -> Result<Vec<Subcorpus>> {
-    let rows: Vec<(i64, String, String, String, String, String)> = {
-        let mut stmt = conn.prepare("SELECT id, name, filter_json, note, created_at, updated_at FROM subcorpora ORDER BY name")?;
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?
-            .collect::<rusqlite::Result<_>>()?
+    let key = |c: &Collocate| match query.measure {
+        CollocationMeasure::LogDice => c.log_dice,
+        CollocationMeasure::Mi => c.mi,
+        CollocationMeasure::LogLikelihood => c.log_likelihood,
+        CollocationMeasure::Frequency => c.freq as f64,
     };
-    let mut out = Vec::new();
-    for (id, name, filter, note, created_at, updated_at) in rows {
-        let filter: StatsFilter = serde_json::from_str(&filter).unwrap_or_default();
-        let s = scope(conn, &filter)?;
-        out.push(Subcorpus { id, name, filter, note, created_at, updated_at, song_count: s.song_count, line_count: s.line_count });
+    collocates.sort_by(|a, b| {
+        key(b)
+            .partial_cmp(&key(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.freq.cmp(&a.freq))
+            .then_with(|| a.lemma.cmp(&b.lemma))
+            .then_with(|| a.pos.cmp(&b.pos))
+    });
+    collocates.truncate(query.limit.unwrap_or(100));
+    let provenance = provenance(conn, &query.scope, &lines, serde_json::to_value(query)?)?;
+    Ok(CollocationResult { node_freq, collocates, provenance })
+}
+
+/// 功能词的 UPOS。搭配表「只看实词」时去掉
+pub const FUNCTION_POS: &[&str] = &["ADP", "AUX", "SCONJ", "CCONJ", "PART", "DET"];
+
+/// 2×2 列联表的 G²（对数似然）。顺序 [a11, a12, a21, a22]
+fn g2(cells: &[f64; 4]) -> f64 {
+    let [a, b, c, d] = *cells;
+    let n = a + b + c + d;
+    if n <= 0.0 {
+        return 0.0;
     }
-    Ok(out)
+    let rows = [a + b, c + d];
+    let cols = [a + c, b + d];
+    let observed = [[a, b], [c, d]];
+    let mut sum = 0.0;
+    for (i, row) in observed.iter().enumerate() {
+        for (j, o) in row.iter().enumerate() {
+            let e = rows[i] * cols[j] / n;
+            if *o > 0.0 && e > 0.0 {
+                sum += o * (o / e).ln();
+            }
+        }
+    }
+    2.0 * sum
 }
 
-pub fn delete_subcorpus(conn: &Connection, id: i64) -> Result<bool> {
-    Ok(conn.execute("DELETE FROM subcorpora WHERE id=?1", params![id])? > 0)
+// ────────────────────────────── 子语料对比 ──────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct KeynessQuery {
+    /// 目标子语料
+    pub target: Subcorpus,
+    /// 参照子语料。None 是「语料库里其余的歌」
+    pub reference: Option<Subcorpus>,
+    pub unit: CountUnit,
+    pub jp_only: bool,
+    pub pos: Option<String>,
+    /// 两边合计少于这个数的词不列出
+    pub min_freq: i64,
+    pub limit: Option<usize>,
 }
 
-/// 建子语料时可选的值：库里出现过的年份范围、流派、语言（各带首数）
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FilterFacets {
-    pub year_min: Option<i32>,
-    pub year_max: Option<i32>,
-    pub songs_without_year: i64,
-    pub genres: Vec<(String, i64)>,
-    pub languages: Vec<(String, i64)>,
+pub struct KeyItem {
+    pub lemma: String,
+    pub pos: String,
+    pub target_freq: i64,
+    pub reference_freq: i64,
+    pub target_per_10k: f64,
+    pub reference_per_10k: f64,
+    /// 对数似然，**带符号**：正 = 目标里偏多，负 = 偏少
+    pub log_likelihood: f64,
+    /// log2（目标相对频率 ÷ 参照相对频率），零频按 0.5 平滑。效应大小
+    pub log_ratio: f64,
+    /// 目标里出现在几首歌
+    pub target_songs: i64,
 }
 
-pub fn facets(conn: &Connection) -> Result<FilterFacets> {
-    let year = "CAST(substr(COALESCE(NULLIF(release_date,''), NULLIF(year,''), ''), 1, 4) AS INTEGER)";
-    let (year_min, year_max, songs_without_year): (Option<i32>, Option<i32>, i64) = conn.query_row(
-        &format!(
-            "SELECT MIN(CASE WHEN {year} > 0 THEN {year} END), MAX(CASE WHEN {year} > 0 THEN {year} END), \
-             SUM(CASE WHEN {year} > 0 THEN 0 ELSE 1 END) FROM songs"
-        ),
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<i64>>(2)?.unwrap_or(0))),
-    )?;
-    let pairs = |sql: &str| -> Result<Vec<(String, i64)>> {
-        let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeynessResult {
+    /// 目标里偏多的词，按对数似然降序
+    pub over: Vec<KeyItem>,
+    /// 目标里偏少的词
+    pub under: Vec<KeyItem>,
+    pub target: Provenance,
+    pub reference: Provenance,
+}
+
+pub fn keyness(conn: &Connection, query: &KeynessQuery) -> Result<KeynessResult> {
+    let target_scope = Scope { subcorpus: query.target.clone(), unit: query.unit, jp_only: query.jp_only };
+    let target_lines = load_lines(conn, &target_scope)?;
+    let (reference_scope, reference_lines) = match &query.reference {
+        Some(reference) => {
+            let scope = Scope { subcorpus: reference.clone(), unit: query.unit, jp_only: query.jp_only };
+            let lines = load_lines(conn, &scope)?;
+            (scope, lines)
+        }
+        None => {
+            // 其余的歌 = 全库减去目标
+            let target_ids = query.target.song_ids(conn)?;
+            let all = Scope { subcorpus: Subcorpus::default(), unit: query.unit, jp_only: query.jp_only };
+            let lines: Vec<Line> = load_lines(conn, &all)?
+                .into_iter()
+                .filter(|l| !target_ids.contains(&l.song_id))
+                .collect();
+            let rest: Vec<String> = lines.iter().map(|l| l.song_id.clone()).collect::<HashSet<_>>().into_iter().collect();
+            let mut rest = rest;
+            rest.sort();
+            (Scope { subcorpus: Subcorpus { song_ids: rest, ..Default::default() }, ..all }, lines)
+        }
     };
-    Ok(FilterFacets {
-        year_min,
-        year_max,
-        songs_without_year,
-        genres: pairs(
-            "SELECT TRIM(genre), COUNT(*) FROM songs WHERE TRIM(COALESCE(genre,'')) <> '' GROUP BY LOWER(TRIM(genre)) ORDER BY 2 DESC, 1",
-        )?,
-        languages: pairs(
-            "SELECT language, COUNT(*) FROM songs WHERE COALESCE(language,'') <> '' GROUP BY language ORDER BY 2 DESC, 1",
-        )?,
+
+    let pos = query.pos.as_deref().filter(|p| !p.is_empty());
+    let count = |lines: &[Line]| {
+        let mut freq: HashMap<(String, String), (i64, HashSet<String>)> = HashMap::new();
+        let mut total = 0i64;
+        for line in lines.iter().filter(|l| counted(l, query.unit)) {
+            total += line.tokens.len() as i64;
+            for tok in &line.tokens {
+                if pos.is_some_and(|p| p != tok.pos) {
+                    continue;
+                }
+                let e = freq.entry((tok.lemma.clone(), tok.pos.clone())).or_default();
+                e.0 += 1;
+                e.1.insert(line.song_id.clone());
+            }
+        }
+        (freq, total)
+    };
+    let (tf, tn) = count(&target_lines);
+    let (rf, rn) = count(&reference_lines);
+
+    let keys: HashSet<&(String, String)> = tf.keys().chain(rf.keys()).collect();
+    let mut items: Vec<KeyItem> = keys
+        .into_iter()
+        .filter_map(|key| {
+            let (a, songs) = tf.get(key).map(|(f, s)| (*f, s.len() as i64)).unwrap_or((0, 0));
+            let b = rf.get(key).map(|(f, _)| *f).unwrap_or(0);
+            if a + b < query.min_freq.max(1) {
+                return None;
+            }
+            let (af, bf, c, d) = (a as f64, b as f64, tn.max(1) as f64, rn.max(1) as f64);
+            let e1 = c * (af + bf) / (c + d);
+            let e2 = d * (af + bf) / (c + d);
+            let mut ll = 0.0;
+            if af > 0.0 {
+                ll += af * (af / e1).ln();
+            }
+            if bf > 0.0 {
+                ll += bf * (bf / e2).ln();
+            }
+            ll *= 2.0;
+            let log_ratio = (((af.max(0.5)) / c) / ((bf.max(0.5)) / d)).log2();
+            let signed = if af / c >= bf / d { ll } else { -ll };
+            Some(KeyItem {
+                lemma: key.0.clone(),
+                pos: key.1.clone(),
+                target_freq: a,
+                reference_freq: b,
+                target_per_10k: per_10k(a, tn),
+                reference_per_10k: per_10k(b, rn),
+                log_likelihood: signed,
+                log_ratio,
+                target_songs: songs,
+            })
+        })
+        .collect();
+    let by_strength = |x: &KeyItem, y: &KeyItem| {
+        y.log_likelihood
+            .abs()
+            .partial_cmp(&x.log_likelihood.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| x.lemma.cmp(&y.lemma))
+            .then_with(|| x.pos.cmp(&y.pos))
+    };
+    let limit = query.limit.unwrap_or(100);
+    let mut under: Vec<KeyItem> = items.iter().filter(|i| i.log_likelihood < 0.0).cloned().collect();
+    items.retain(|i| i.log_likelihood > 0.0);
+    items.sort_by(by_strength);
+    under.sort_by(by_strength);
+    items.truncate(limit);
+    under.truncate(limit);
+    let params = serde_json::to_value(query)?;
+    Ok(KeynessResult {
+        over: items,
+        under,
+        target: provenance(conn, &target_scope, &target_lines, params.clone())?,
+        reference: provenance(conn, &reference_scope, &reference_lines, params)?,
+    })
+}
+
+// ────────────────────────────── 一首歌的语料画像 ──────────────────────────────
+
+/// 从一首歌进入语料分析：这首歌里哪些词在全库里也常见、哪些是它独有的，副歌占了多少。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SongProfile {
+    pub song_id: String,
+    pub lines: i64,
+    pub repeated_lines: i64,
+    pub tokens: i64,
+    pub distinct_tokens: i64,
+    /// 这首歌相对于其余歌的特征词（偏多的那一侧）
+    pub keywords: Vec<KeyItem>,
+    pub provenance: Provenance,
+}
+
+pub fn song_profile(conn: &Connection, song_id: &str, limit: usize) -> Result<SongProfile> {
+    let scope = Scope {
+        subcorpus: Subcorpus { song_ids: vec![song_id.to_string()], ..Default::default() },
+        unit: CountUnit::Tokens,
+        jp_only: true,
+    };
+    let lines = load_lines(conn, &scope)?;
+    let keys = keyness(
+        conn,
+        &KeynessQuery {
+            target: scope.subcorpus.clone(),
+            reference: None,
+            unit: CountUnit::DistinctLines,
+            jp_only: true,
+            pos: None,
+            min_freq: 2,
+            // 先多取一些：功能词（だ、て、の）筛掉之后还要剩够 limit 个
+            limit: Some(limit * 4),
+        },
+    )?;
+    // 特征词只要实词。「だ」「て」在某首歌里偏多说明不了这首歌写了什么
+    let keywords: Vec<KeyItem> = keys
+        .over
+        .into_iter()
+        .filter(|k| !FUNCTION_POS.contains(&k.pos.as_str()) && k.pos != "PRON" && k.pos != "NUM")
+        .take(limit)
+        .collect();
+    Ok(SongProfile {
+        song_id: song_id.to_string(),
+        lines: lines.len() as i64,
+        repeated_lines: lines.iter().filter(|l| l.repeat).count() as i64,
+        tokens: lines.iter().map(|l| l.tokens.len() as i64).sum(),
+        distinct_tokens: lines.iter().filter(|l| !l.repeat).map(|l| l.tokens.len() as i64).sum(),
+        keywords,
+        provenance: provenance(conn, &scope, &lines, serde_json::json!({ "songId": song_id, "limit": limit }))?,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lineage::{self, LyricSource, TokenizerRun};
-    use crate::quality::LineInput;
 
-    /// 两首歌：001（2019，J-Pop，副歌重复）、002（2023，Rock）
-    fn db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        crate::Corpus::ensure_schema_on(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO songs (id, title, artist, year, genre, duration_sec) VALUES
-               ('001','夜に駆ける','YOASOBI','2019','J-Pop',30.0),
-               ('002','怪獣','サカナクション','2023-01-01','Rock',30.0);
-             INSERT INTO utterances (id, song_id, line_idx, time_sec, text) VALUES
-               (1,'001',0,1.0,'夜に駆ける'),(2,'001',1,2.0,'夜に駆ける'),(3,'002',0,1.0,'怪獣の夜');
-             INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) VALUES
-               (1,0,'夜','夜','NOUN'),(1,1,'に','に','ADP'),(1,2,'駆ける','駆ける','VERB'),
-               (2,0,'夜','夜','NOUN'),(2,1,'に','に','ADP'),(2,2,'駆ける','駆ける','VERB'),
-               (3,0,'怪獣','怪獣','NOUN'),(3,1,'の','の','ADP'),(3,2,'夜','夜','NOUN');",
+    fn conn() -> crate::Corpus {
+        crate::fixture::corpus().unwrap()
+    }
+
+    #[test]
+    fn distinct_lines_never_count_more_than_tokens_and_repeat_share_is_consistent() {
+        let corpus = conn();
+        let tokens = frequency(corpus.connection(), &FrequencyQuery::default()).unwrap();
+        let distinct = frequency(
+            corpus.connection(),
+            &FrequencyQuery { scope: Scope { unit: CountUnit::DistinctLines, ..Default::default() }, ..Default::default() },
         )
         .unwrap();
-        lineage::backfill_legacy(&conn).unwrap();
-        conn
-    }
-
-    fn freq() -> AnalysisSpec {
-        AnalysisSpec::Frequency { pos: None, limit: 50 }
-    }
-
-    #[test]
-    fn subcorpus_filters_cut_the_scope() {
-        let conn = db();
-        let all = scope(&conn, &StatsFilter::default()).unwrap();
-        assert_eq!(all.song_count, 2);
-        let early = StatsFilter { year_to: Some(2020), ..Default::default() };
-        assert_eq!(scope(&conn, &early).unwrap().songs[0].song_id, "001");
-        let late = StatsFilter { year_from: Some(2021), ..Default::default() };
-        assert_eq!(scope(&conn, &late).unwrap().songs[0].song_id, "002", "年份取 release_date 的前四位");
-        let rock = StatsFilter { genres: vec!["rock".into()], ..Default::default() };
-        assert_eq!(scope(&conn, &rock).unwrap().song_count, 1, "流派不分大小写");
-        let ja = StatsFilter { languages: vec!["ja".into()], ..Default::default() };
-        assert_eq!(scope(&conn, &ja).unwrap().song_count, 2);
-        let distinct = StatsFilter { distinct_lines: true, ..Default::default() };
-        assert_eq!(scope(&conn, &distinct).unwrap().line_count, 2, "副歌只算一遍");
+        assert!(distinct.provenance.tokens < tokens.provenance.tokens, "夹具 004 有一行副歌唱了两遍");
+        for item in &tokens.items {
+            assert!(item.distinct_freq <= item.raw_freq);
+            assert_eq!(item.freq, item.raw_freq);
+            let share = 1.0 - item.distinct_freq as f64 / item.raw_freq as f64;
+            assert!((item.repeat_share - share).abs() < 1e-12);
+        }
+        // 词次总和就是分母
+        let sum: i64 = tokens.items.iter().map(|i| i.freq).sum();
+        assert_eq!(sum, tokens.provenance.tokens);
+        assert!(!tokens.items.iter().any(|i| i.pos == "PUNCT" || i.pos == "SYM"));
     }
 
     #[test]
-    fn unknown_years_are_left_out_once_a_year_bound_is_set() {
-        let conn = db();
-        conn.execute("UPDATE songs SET year='' WHERE id='001'", []).unwrap();
-        let s = scope(&conn, &StatsFilter { year_to: Some(2030), ..Default::default() }).unwrap();
-        assert_eq!(s.song_count, 1);
+    fn frequency_is_deterministic_and_snapshot_changes_when_tokens_change() {
+        let corpus = conn();
+        let a = frequency(corpus.connection(), &FrequencyQuery::default()).unwrap();
+        let b = frequency(corpus.connection(), &FrequencyQuery::default()).unwrap();
+        assert_eq!(
+            a.items.iter().map(|i| (&i.lemma, i.freq)).collect::<Vec<_>>(),
+            b.items.iter().map(|i| (&i.lemma, i.freq)).collect::<Vec<_>>()
+        );
+        assert_eq!(a.provenance.snapshot, b.provenance.snapshot);
+        corpus
+            .connection()
+            .execute("DELETE FROM tokens WHERE id = (SELECT MAX(id) FROM tokens)", [])
+            .unwrap();
+        let after = snapshot(corpus.connection()).unwrap();
+        assert_ne!(after.fingerprint, a.provenance.snapshot.fingerprint);
     }
 
     #[test]
-    fn distinct_lines_changes_counts_but_not_the_vocabulary() {
-        let conn = db();
-        let all = stats::word_frequency_table(&conn, None, &StatsFilter::default(), 10).unwrap();
-        let distinct = stats::word_frequency_table(&conn, None, &StatsFilter { distinct_lines: true, ..Default::default() }, 10).unwrap();
-        let f = |rows: &[crate::WordFrequency], l: &str| rows.iter().find(|r| r.lemma == l).unwrap().freq;
-        assert_eq!(f(&all, "駆ける"), 2);
-        assert_eq!(f(&distinct, "駆ける"), 1);
-        assert_eq!(all.len(), distinct.len());
-    }
-
-    #[test]
-    fn a_saved_run_records_scope_tokenizers_and_method() {
-        let conn = db();
-        let r = run(&conn, &AnalysisSpec::CorpusReport, &StatsFilter::default(), "全库", "0.2.10", None).unwrap();
-        assert_eq!(r.scope.song_count, 2);
-        assert!(r.scope.songs.iter().all(|s| s.version_id.is_some()), "补登记过，每首都有版本");
-        assert_eq!(r.tokenizers.unknown_lines, 3, "老库的行不知道是哪个分词器分的，照实记");
-        assert!(r.method["ttr"].as_str().unwrap().contains("词次"));
-        assert_eq!(r.result["songCount"], 2);
-        assert_eq!(r.schema_version, crate::migrations::CURRENT);
-        assert_eq!(list(&conn, 10).unwrap()[0].id, r.id);
-    }
-
-    #[test]
-    fn rerunning_an_unchanged_library_gives_the_identical_result() {
-        let conn = db();
-        let first = run(&conn, &freq(), &StatsFilter::default(), "", "t", None).unwrap();
-        let cmp = rerun(&conn, first.id, "t").unwrap();
-        assert!(cmp.result_identical, "{:?}", cmp.reasons);
-        assert!(cmp.same_scope && cmp.same_tokenizers && cmp.same_method);
-        assert!(cmp.reasons.is_empty());
-        assert!(cmp.words.is_empty());
-        assert_eq!(cmp.after.rerun_of, Some(first.id));
-    }
-
-    #[test]
-    fn a_rerun_explains_new_songs_and_replaced_lyrics() {
-        let conn = db();
-        let first = run(&conn, &AnalysisSpec::CorpusReport, &StatsFilter::default(), "", "t", None).unwrap();
-
-        // 002 换一版歌词，再加一首 003
-        let lines = [LineInput { time_sec: Some(1.0), text: "怪獣" }];
-        let v = lineage::record_version(&conn, "002", &LyricSource::new("online", "netease", "", "user"), Some("[00:01]怪獣"), &lines).unwrap();
-        conn.execute_batch(&format!(
-            "DELETE FROM tokens WHERE utterance_id=3; DELETE FROM utterances WHERE id=3;
-             INSERT INTO utterances (id, song_id, line_idx, time_sec, text, version_id) VALUES (4,'002',0,1.0,'怪獣',{});
-             INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) VALUES (4,0,'怪獣','怪獣','NOUN');
-             INSERT INTO songs (id, title, artist) VALUES ('003','新曲','X');
-             INSERT INTO utterances (id, song_id, line_idx, text) VALUES (5,'003',0,'光');
-             INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) VALUES (5,0,'光','光','NOUN');",
-            v.id
-        ))
-        .unwrap();
-        let run_id = lineage::ensure_tokenizer_run(&conn, &TokenizerRun { engine: "sudachi.rs".into(), ..Default::default() }).unwrap();
-        conn.execute("UPDATE utterances SET tokenizer_run_id=?1 WHERE id IN (4,5)", [run_id]).unwrap();
-
-        let cmp = rerun(&conn, first.id, "t").unwrap();
-        assert!(!cmp.result_identical);
-        assert_eq!(cmp.scope.added, ["003"]);
-        assert_eq!(cmp.scope.lyrics_changed, ["002"]);
-        assert!(!cmp.same_tokenizers);
-        assert!(cmp.reasons.iter().any(|r| r.contains("换了歌词版本")), "{:?}", cmp.reasons);
-        assert!(cmp.metrics.iter().any(|m| m.name == "songCount" && m.before == Some(2.0) && m.after == Some(3.0)));
-    }
-
-    #[test]
-    fn a_token_correction_alone_is_named_as_the_likely_cause() {
-        let conn = db();
-        let first = run(&conn, &freq(), &StatsFilter::default(), "", "t", None).unwrap();
-        crate::corrections::save(
-            &conn,
-            3,
-            &[crate::TokenEdit { surface: "怪獣の夜".into(), lemma: "怪獣の夜".into(), pos: "NOUN".into() }],
+    fn collocates_come_from_the_window_and_are_sorted_by_the_measure() {
+        let corpus = conn();
+        let top = frequency(corpus.connection(), &FrequencyQuery::default()).unwrap();
+        let node = top.items.iter().find(|i| i.freq >= 2).unwrap().lemma.clone();
+        let res = collocations(
+            corpus.connection(),
+            &CollocationQuery { node: node.clone(), min_freq: 1, ..Default::default() },
         )
         .unwrap();
-        let cmp = rerun(&conn, first.id, "t").unwrap();
-        assert!(!cmp.result_identical);
-        assert!(cmp.same_scope);
-        assert!(cmp.reasons[0].contains("校正"), "{:?}", cmp.reasons);
-        assert!(cmp.words.iter().any(|w| w.lemma == "怪獣の夜" && w.before_rank.is_none()));
+        assert!(res.node_freq >= 2);
+        assert!(!res.collocates.is_empty());
+        for pair in res.collocates.windows(2) {
+            assert!(pair[0].log_dice >= pair[1].log_dice);
+        }
+        for c in &res.collocates {
+            assert_eq!(c.freq, c.freq_left + c.freq_right);
+            assert!(c.example_utterance_id > 0 && !c.example_song_id.is_empty());
+            assert!(c.log_likelihood >= 0.0);
+        }
+        // 窗口为 0 就没有搭配
+        let none = collocations(
+            corpus.connection(),
+            &CollocationQuery { node, left: 0, right: 0, min_freq: 1, ..Default::default() },
+        )
+        .unwrap();
+        assert!(none.collocates.is_empty());
     }
 
     #[test]
-    fn subcorpora_are_saved_by_name_and_counted_live() {
-        let conn = db();
-        let f = StatsFilter { year_to: Some(2020), ..Default::default() };
-        let s = save_subcorpus(&conn, " 2010 年代 ", &f, "").unwrap();
-        assert_eq!(s.name, "2010 年代");
-        assert_eq!(s.song_count, 1);
-        let again = save_subcorpus(&conn, "2010 年代", &StatsFilter::default(), "全部").unwrap();
-        assert_eq!(again.id, s.id, "同名覆盖");
-        assert_eq!(again.song_count, 2);
-        assert!(save_subcorpus(&conn, "  ", &f, "").is_err());
-        assert!(delete_subcorpus(&conn, s.id).unwrap());
-        assert!(subcorpora(&conn).unwrap().is_empty());
+    fn keyness_against_the_rest_partitions_the_corpus() {
+        let corpus = conn();
+        let target = Subcorpus { song_ids: vec!["001".into()], ..Default::default() };
+        let res = keyness(corpus.connection(), &KeynessQuery { target, min_freq: 1, ..Default::default() }).unwrap();
+        let whole = frequency(corpus.connection(), &FrequencyQuery::default()).unwrap();
+        assert_eq!(res.target.tokens + res.reference.tokens, whole.provenance.tokens);
+        assert_eq!(res.target.songs, 1);
+        assert!(res.over.iter().all(|k| k.log_likelihood > 0.0 && k.target_freq > 0));
+        assert!(res.under.iter().all(|k| k.log_likelihood < 0.0));
     }
 
     #[test]
-    fn old_filters_without_the_new_fields_still_load() {
-        let f: StatsFilter = serde_json::from_str(r#"{"performerIds":[1],"jpOnly":true}"#).unwrap();
-        assert_eq!(f.performer_ids, [1]);
-        assert!(f.year_from.is_none() && !f.distinct_lines);
+    fn g2_is_zero_for_independent_tables() {
+        assert!(g2(&[10.0, 10.0, 10.0, 10.0]).abs() < 1e-9);
+        assert!(g2(&[30.0, 10.0, 10.0, 30.0]) > 0.0);
     }
 
     #[test]
-    fn kwic_and_word_examples_stay_inside_the_subcorpus() {
-        let conn = db();
-        // 「夜」在 001（2019）和 002（2023）里都有
-        let query = |scope: Option<StatsFilter>| crate::KwicQuery {
-            keywords: vec!["夜".into()],
-            field: crate::MatchField::Lemma,
-            dedup: false,
-            scope,
-            ..Default::default()
-        };
-        let all = crate::search::kwic(&conn, &query(None)).unwrap();
-        assert_eq!(all.iter().map(|h| h.song_id.as_str()).collect::<BTreeSet<_>>().len(), 2);
-        // distinct_lines 是口径，KWIC 不吃它（KWIC 有自己的 dedup）
-        let late = StatsFilter { year_from: Some(2021), distinct_lines: true, ..Default::default() };
-        let hits = crate::search::kwic(&conn, &query(Some(late.clone()))).unwrap();
-        assert!(!hits.is_empty() && hits.iter().all(|h| h.song_id == "002"));
-
-        let word = crate::corpus::word_in_corpus(&conn, "夜", None, 10, Some(&late)).unwrap();
-        assert_eq!(word.song_count, 1);
-        assert_eq!(word.occurrences, 1);
-        assert!(word.examples.iter().all(|e| e.song_id == "002"));
-        let whole = crate::corpus::word_in_corpus(&conn, "夜", Some("002"), 10, None).unwrap();
-        assert_eq!(whole.occurrences, 3);
-        assert_eq!(whole.examples[0].song_id, "002", "当前这首的例句排最前");
-    }
-
-    #[test]
-    fn facets_list_years_genres_and_languages() {
-        let conn = db();
-        let f = facets(&conn).unwrap();
-        assert_eq!((f.year_min, f.year_max), (Some(2019), Some(2023)));
-        assert_eq!(f.genres.len(), 2);
-        assert_eq!(f.languages, [("ja".to_string(), 2)]);
+    fn song_profile_counts_repeated_lines() {
+        let corpus = conn();
+        let p = song_profile(corpus.connection(), crate::fixture::RICH_SONG, 10).unwrap();
+        assert!(p.repeated_lines >= 1);
+        assert!(p.distinct_tokens < p.tokens);
+        assert!(p.keywords.iter().all(|k| !FUNCTION_POS.contains(&k.pos.as_str())));
+        assert!(p.keywords.len() <= 10);
     }
 }

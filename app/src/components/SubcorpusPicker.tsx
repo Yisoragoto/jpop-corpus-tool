@@ -12,7 +12,7 @@ interface Props {
   className?: string;
 }
 
-export function SubcorpusPicker({ onError, onChange, className = "rate" }: Props) {
+export function SubcorpusPicker({ onError, onChange, className = "rate subcorpus-picker" }: Props) {
   const active = useActiveScope();
   const list = useSubcorpora(onError);
   if (list.length === 0 && !active) return null;

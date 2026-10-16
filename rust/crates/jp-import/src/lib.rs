@@ -10,6 +10,7 @@
 //! | `embedded` | 音频文件里内嵌的歌词、封面 | ✅（夹具写 tag） |
 //! | `plan` | 和现有曲库比对 → 每个文件打算怎么处置 | ✅ |
 //! | `watch` | 库里的歌都在哪些文件夹 → 那里还有哪些文件没导入 | ✅（临时目录） |
+//! | `review` | 扫一批路径 + 计划 → 给人复核的那份（两个客户端共用） | ✅ |
 //! | `import` | 执行计划，写库 | ✅（内存库） |
 //!
 //! 前三层**只读取和推断，不写库**，所以能在没有数据库的情况下完整测试；
@@ -23,6 +24,7 @@ pub mod maintain;
 pub mod migrate;
 pub mod metadata_csv;
 pub mod plan;
+pub mod review;
 pub mod scan;
 pub mod watch;
 
@@ -31,6 +33,7 @@ pub use import::{
     ImportReport, ImportedTrack, LyricSource, Outcome, Stats, add_credit, attach_lines, attach_lyrics, attach_lyrics_text, execute,
     execute_cancellable, execute_with_progress, get_or_create_person,
 };
+pub use review::{PlanItemView, ScanResult, review, scan_targets};
 pub use plan::{Action, ImportPlan, LibraryIndex, PlanSummary, PlannedTrack, plan};
 pub use embedded::{EmbeddedCover, EmbeddedLyrics};
 pub use scan::{ArtistSource, LyricsPick, ScannedTrack, is_audio_file, list_audio, scan_dir, scan_file, scan_file_path};

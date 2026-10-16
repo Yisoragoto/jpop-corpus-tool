@@ -1923,9 +1923,9 @@ dependencies = [
  "jp-import",
  "jp-normalize",
  "jp-scraper",
+ "jp-setup",
  "jp-tokenizer",
  "lofty",
- "lzma-rs",
  "rusqlite",
  "semver",
  "serde",
@@ -1976,6 +1976,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "jp-ffi"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-corpus",
+ "jp-dict",
+ "jp-import",
+ "jp-setup",
+ "jp-tokenizer",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "jp-import"
 version = "0.1.0"
 dependencies = [
@@ -2012,6 +2026,18 @@ dependencies = [
  "serde",
  "serde_json",
  "strsim",
+ "ureq",
+]
+
+[[package]]
+name = "jp-setup"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-tokenizer",
+ "lzma-rs",
+ "serde",
+ "sha2",
  "ureq",
 ]
 

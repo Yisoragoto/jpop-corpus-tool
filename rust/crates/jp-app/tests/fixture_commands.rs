@@ -892,6 +892,19 @@ fn loop_region_round_trips_and_rejects_degenerate_spans() {
 }
 
 #[test]
+fn stop_at_round_trips_through_the_audio_state() {
+    let f = Fixture::new("stop-at");
+    let w = f.w();
+    if !audio_or_skip(w, "stop_at_round_trips_through_the_audio_state") {
+        return;
+    }
+    ok(w, "audio_set_stop_at", json!({ "positionSec": 12.5 }));
+    assert_eq!(ok(w, "audio_state", json!({}))["stopAtSec"], json!(12.5));
+    ok(w, "audio_set_stop_at", json!({}));
+    assert!(ok(w, "audio_state", json!({}))["stopAtSec"].is_null());
+}
+
+#[test]
 fn font_catalog_lists_installed_and_bundled_fonts() {
     let f = Fixture::new("fonts");
     // 自带的字体是在语料库目录的 `assets/fonts` 下找的。把仓库里那份放一个进去
@@ -1367,7 +1380,7 @@ fn every_song_with_lyrics_has_a_registered_version_after_startup() {
 /// 子语料和可复现分析：存一次、重跑一次，没改过库就该完全一致。
 #[test]
 fn an_analysis_can_be_saved_rerun_and_compared() {
-    let f = Fixture::new("analysis");
+    let f = Fixture::new("saved-analysis");
     let w = f.w();
 
     let facets = ok(w, "subcorpus_facets", json!({}));
@@ -1422,11 +1435,53 @@ fn kwic_and_word_examples_can_be_limited_to_a_subcorpus() {
     let hits = ok(
         w,
         "kwic",
-        json!({ "query": { "keywords": ["風"], "field": "lemma", "scope": early } }),
+        json!({ "query": { "keywords": ["風"], "field": "lemma", "subcorpus": early } }),
     );
     for hit in hits.as_array().unwrap() {
         assert!(["001", "002"].contains(&hit["songId"].as_str().unwrap()), "{hit}");
     }
     let late = json!({ "performerIds": [], "jpOnly": false, "yearFrom": 2030 });
-    assert_eq!(len(&ok(w, "kwic", json!({ "query": { "keywords": ["風"], "field": "lemma", "scope": late } }))), 0);
+    assert_eq!(len(&ok(w, "kwic", json!({ "query": { "keywords": ["風"], "field": "lemma", "subcorpus": late } }))), 0);
+}
+
+// ────────────────────────────── 分析与定位 ──────────────────────────────
+
+#[test]
+fn the_analysis_and_locating_commands_link_results_to_audio_positions() {
+    let f = Fixture::new("analysis");
+    let w = f.w();
+
+    // KWIC 命中带着行的结束时间：点了能直接放这一句
+    let hits = ok(w, "kwic", json!({ "query": { "keywords": ["風"], "field": "lemma" } }));
+    for hit in hits.as_array().unwrap() {
+        has_keys(hit, "KWIC 命中", &["endSec", "endKind", "matchLen"]);
+        assert!(hit["endSec"].as_f64().unwrap() > hit["timeSec"].as_f64().unwrap());
+    }
+    // 子语料：只看 001
+    let only = ok(w, "kwic", json!({ "query": { "keywords": ["風"], "field": "lemma", "subcorpus": { "songIds": ["001"] } } }));
+    assert_eq!(len(&only), 1);
+
+    let spans = ok(w, "line_spans", json!({ "songId": "001" }));
+    assert_eq!(len(&spans), 4);
+    let utterance = spans[1]["utteranceId"].as_i64().unwrap();
+    let window = ok(w, "listen_window", json!({ "utteranceId": utterance, "before": 1, "after": 1 }));
+    assert_eq!(len(&window["utteranceIds"]), 3);
+    assert!(ok(w, "listen_window", json!({ "utteranceId": -1 })).is_null());
+
+    let snapshot = ok(w, "corpus_snapshot", json!({}));
+    assert_eq!(snapshot["songs"], json!(fixture::TRACKS));
+
+    let freq = ok(w, "corpus_frequency", json!({ "query": { "scope": { "unit": "distinctLines" }, "limit": 5 } }));
+    assert!(len(&freq["items"]) > 0);
+    assert_eq!(freq["provenance"]["unit"], json!("distinctLines"));
+    has_keys(&freq["items"][0], "词频", &["rawFreq", "distinctFreq", "repeatShare", "per10k"]);
+
+    let colloc = ok(w, "collocations", json!({ "query": { "node": "夜", "minFreq": 1 } }));
+    assert!(colloc["nodeFreq"].as_i64().unwrap() >= 2);
+
+    let key = ok(w, "keyness", json!({ "query": { "target": { "songIds": ["001"] }, "minFreq": 1 } }));
+    has_keys(&key, "对比", &["over", "under", "target", "reference"]);
+
+    let profile = ok(w, "song_profile", json!({ "songId": fixture::RICH_SONG }));
+    assert!(profile["repeatedLines"].as_i64().unwrap() >= 1);
 }

@@ -8,8 +8,8 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-import type { StatsFilter } from "./api";
-import { qualityApi, type Subcorpus } from "./corpusQuality";
+import type { StatsFilter, Subcorpus } from "./api";
+import { qualityApi, type SavedSubcorpus } from "./corpusQuality";
 
 export interface ActiveScope {
   id: number;
@@ -58,8 +58,8 @@ export function useActiveScope(): ActiveScope | null {
 }
 
 /** 存过的子语料列表；当前选的那个被删了（或改了条件）时跟着更新 */
-export function useSubcorpora(onError: (message: string) => void): Subcorpus[] {
-  const [list, setList] = useState<Subcorpus[]>([]);
+export function useSubcorpora(onError: (message: string) => void): SavedSubcorpus[] {
+  const [list, setList] = useState<SavedSubcorpus[]>([]);
   useEffect(() => {
     qualityApi
       .subcorpora()
@@ -86,5 +86,22 @@ export function withScope(filter: StatsFilter, scope: ActiveScope | null): Stats
     performerIds: filter.performerIds.length ? filter.performerIds : s.performerIds,
     jpOnly: filter.jpOnly,
     distinctLines: !!filter.distinctLines,
+  };
+}
+
+/** 一页自己的条件（歌手、年份……）叠在当前子语料上：这页填了的以这页为准，没填的沿用子语料的 */
+export function mergeSubcorpus(local: Subcorpus, scope: ActiveScope | null): Subcorpus {
+  if (!scope) return local;
+  const s = scope.filter;
+  const pick = <T,>(mine: T[] | undefined, theirs: T[] | undefined) => (mine && mine.length ? mine : theirs ?? []);
+  return {
+    performerIds: pick(local.performerIds, s.performerIds),
+    yearFrom: local.yearFrom ?? s.yearFrom ?? null,
+    yearTo: local.yearTo ?? s.yearTo ?? null,
+    albumIds: pick(local.albumIds, s.albumIds),
+    genres: pick(local.genres, s.genres),
+    songIds: pick(local.songIds, s.songIds),
+    languages: pick(local.languages, s.languages),
+    minCompleteness: local.minCompleteness ?? s.minCompleteness ?? null,
   };
 }

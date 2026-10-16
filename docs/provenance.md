@@ -11,7 +11,9 @@
 4. **三个月后再算一次，数字为什么不一样？**（P1：可复现分析）
 
 代码在 `rust/crates/jp-corpus/src/` 的 `quality.rs`（校验）、`lineage.rs`（来源记录）、
-`analysis.rs`（子语料与分析记录）；结构版本 `20261018`（`migrations.rs`）。
+`runs.rs`（存起来的子语料与分析存档）；结构版本 `20261018`（`migrations.rs`）。
+「哪些歌」的规则只有一处：`subcorpus.rs` 的 `Subcorpus`（和重复感知的词频、搭配、对比共用，见 `analysis.rs`）；
+统计页的 `StatsFilter` 是它加上两个统计口径（仅日文、副歌只算一遍），范围部分由 `StatsFilter::subcorpus` 转成 `Subcorpus`。
 
 ## 数据模型
 
@@ -150,7 +152,7 @@ analysis_runs（一次分析的条件、范围、分词器、口径、结果）
 
 | 条件 | 说明 |
 |---|---|
-| `yearFrom` / `yearTo` | 发行年份（`release_date` 优先，其次 `year` 的前四位）。**设了年份条件时，年份不明的歌不算进来** |
+| `yearFrom` / `yearTo` | 发行年份（`release_date` 优先，其次 `year` 的前四位）。**设了年份条件时，年份不明的歌不算进来**。KWIC、搭配、对比用的是同一条规则 |
 | `genres` | 流派，不分大小写 |
 | `languages` | 歌词语言 |
 | `albumIds` / `songIds` | 指定专辑、指定歌 |
@@ -162,7 +164,8 @@ analysis_runs（一次分析的条件、范围、分词器、口径、结果）
 
 **检索、词云、单词例句**也能限定在子语料里：这三处各有一个「整个库 / 子语料：…」下拉框，选的是同一个
 「当前子语料」（记在本机，见 `app/src/subcorpusScope.ts`）。它们只用子语料的**范围**条件
-（`StatsFilter::scope_only`），「仅日文」「副歌只算一遍」是统计口径，这几处有自己的开关（KWIC 的去重、日文过滤）。
+（转成 `Subcorpus` 传给 `KwicQuery.subcorpus` / `word_in_corpus` 的 `scope`），「仅日文」「副歌只算一遍」是统计口径，
+这几处有自己的开关（KWIC 的去重、日文过滤）。检索页自己的歌手、年份条件叠在当前子语料上，填了的以检索页为准。
 词云的演唱者以词云上选的为准，没选才用子语料里的。
 
 ## 可复现分析（`analysis_runs`）

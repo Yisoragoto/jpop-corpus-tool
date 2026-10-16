@@ -321,7 +321,7 @@ export interface Comparison {
   reasons: string[];
 }
 
-export interface Subcorpus {
+export interface SavedSubcorpus {
   id: number;
   name: string;
   filter: StatsFilter;
@@ -433,9 +433,9 @@ export const qualityApi = {
 
   facets: () => call<FilterFacets>("subcorpus_facets"),
   preview: (filter: StatsFilter) => call<Scope>("subcorpus_preview", { filter }),
-  subcorpora: () => call<Subcorpus[]>("subcorpus_list"),
+  subcorpora: () => call<SavedSubcorpus[]>("subcorpus_list"),
   saveSubcorpus: (name: string, filter: StatsFilter, note = "") =>
-    call<Subcorpus>("subcorpus_save", { name, filter, note }),
+    call<SavedSubcorpus>("subcorpus_save", { name, filter, note }),
   deleteSubcorpus: (id: number) => call<boolean>("subcorpus_delete", { id }),
 
   runAnalysis: (spec: AnalysisSpec, filter: StatsFilter, label = "") =>

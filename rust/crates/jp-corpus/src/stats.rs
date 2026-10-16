@@ -65,68 +65,24 @@ impl StatsFilter {
             && self.min_completeness.is_none()
     }
 
-    /// 只留范围条件（演唱者、年代、流派、语言、专辑、歌、完整度），去掉口径（仅日文、副歌只算一遍）。
-    /// KWIC、例句这些「找」的功能用它：它们有自己的去重和日文开关
-    pub fn scope_only(&self) -> Self {
-        Self { jp_only: false, distinct_lines: false, ..self.clone() }
+    /// 范围部分就是一个子语料（[`crate::subcorpus::Subcorpus`]）：KWIC、搭配、对比、统计页
+    /// 圈歌的规则只写在那一处
+    pub fn subcorpus(&self) -> crate::subcorpus::Subcorpus {
+        crate::subcorpus::Subcorpus {
+            performer_ids: self.performer_ids.clone(),
+            year_from: self.year_from,
+            year_to: self.year_to,
+            album_ids: self.album_ids.clone(),
+            genres: self.genres.clone(),
+            song_ids: self.song_ids.clone(),
+            languages: self.languages.clone(),
+            min_completeness: self.min_completeness,
+        }
     }
 
     /// `AND ...` 子句和它的参数（接在已经 JOIN 了 utterances u 的查询后面）
     pub(crate) fn clause(&self) -> (String, Vec<rusqlite::types::Value>) {
-        use rusqlite::types::Value;
-        let marks = |n: usize| vec!["?"; n].join(",");
-        let mut sql = String::new();
-        let mut values: Vec<Value> = Vec::new();
-        if !self.performer_ids.is_empty() {
-            sql.push_str(&format!(
-                " AND EXISTS (SELECT 1 FROM track_credits c WHERE c.song_id = u.song_id \
-                  AND c.role = 'performer' AND c.person_id IN ({}))",
-                marks(self.performer_ids.len())
-            ));
-            values.extend(self.performer_ids.iter().map(|&id| Value::from(id)));
-        }
-
-        // 歌这一层的条件收进一个子查询：调用方不一定 JOIN 了 songs
-        let mut song = Vec::new();
-        if self.year_from.is_some() || self.year_to.is_some() {
-            let year = "CAST(substr(COALESCE(NULLIF(s2.release_date,''), NULLIF(s2.year,''), ''), 1, 4) AS INTEGER)";
-            song.push(format!("{year} > 0"));
-            if let Some(from) = self.year_from {
-                song.push(format!("{year} >= ?"));
-                values.push(Value::from(i64::from(from)));
-            }
-            if let Some(to) = self.year_to {
-                song.push(format!("{year} <= ?"));
-                values.push(Value::from(i64::from(to)));
-            }
-        }
-        if !self.genres.is_empty() {
-            song.push(format!("LOWER(COALESCE(s2.genre,'')) IN ({})", marks(self.genres.len())));
-            values.extend(self.genres.iter().map(|g| Value::from(g.trim().to_lowercase())));
-        }
-        if !self.languages.is_empty() {
-            song.push(format!("COALESCE(s2.language,'') IN ({})", marks(self.languages.len())));
-            values.extend(self.languages.iter().map(|l| Value::from(l.clone())));
-        }
-        if !self.album_ids.is_empty() {
-            song.push(format!("s2.album_id IN ({})", marks(self.album_ids.len())));
-            values.extend(self.album_ids.iter().map(|&id| Value::from(id)));
-        }
-        if !self.song_ids.is_empty() {
-            song.push(format!("s2.id IN ({})", marks(self.song_ids.len())));
-            values.extend(self.song_ids.iter().map(|id| Value::from(id.clone())));
-        }
-        if let Some(min) = self.min_completeness {
-            song.push(
-                "EXISTS (SELECT 1 FROM lyric_versions v WHERE v.song_id = s2.id AND v.is_current = 1 \
-                 AND v.completeness >= ?)"
-                    .into(),
-            );
-            values.push(Value::from(min));
-        }
-        if !song.is_empty() {
-            sql.push_str(&format!(" AND u.song_id IN (SELECT s2.id FROM songs s2 WHERE {})", song.join(" AND ")));
-        }
+        let (mut sql, values) = self.subcorpus().and_clause("u.song_id");
         if self.distinct_lines {
             sql.push_str(" AND u.id IN (SELECT MIN(u2.id) FROM utterances u2 GROUP BY u2.song_id, u2.text)");
         }

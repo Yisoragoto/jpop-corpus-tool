@@ -105,11 +105,11 @@ pub(crate) fn word_in_corpus(
     lemma: &str,
     current_song_id: Option<&str>,
     example_limit: i64,
-    scope: Option<&crate::stats::StatsFilter>,
+    scope: Option<&crate::subcorpus::Subcorpus>,
 ) -> Result<WordInCorpus> {
     use rusqlite::types::Value;
-    // 子语料只取范围条件；没给就是整个库（子句为空）
-    let (clause, scope_values) = scope.map(|f| f.scope_only().clause()).unwrap_or_default();
+    // 没给子语料就是整个库（子句为空）
+    let (clause, scope_values) = scope.map(|s| s.and_clause("u.song_id")).unwrap_or_default();
     let with = |head: Vec<Value>| -> Vec<Value> { head.into_iter().chain(scope_values.iter().cloned()).collect() };
     let lemma_v = || Value::from(lemma.to_string());
 

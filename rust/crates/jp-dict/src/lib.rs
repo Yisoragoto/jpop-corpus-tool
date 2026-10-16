@@ -12,6 +12,7 @@ pub mod deinflect;
 pub mod furigana;
 pub mod html;
 pub mod import;
+pub mod lookup;
 pub mod occurrence;
 pub mod media;
 pub mod store;

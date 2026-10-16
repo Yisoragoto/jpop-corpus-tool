@@ -655,7 +655,7 @@ mod tests {
         assert_eq!(status, "pending");
         let prov = jp_corpus::lineage::provenance(&target, "song", new_id).unwrap();
         assert!(prov.iter().any(|p| p.field == "year" && p.source == "manual"));
-        assert_eq!(jp_corpus::analysis::subcorpora(&target).unwrap().len(), 1);
+        assert_eq!(jp_corpus::runs::subcorpora(&target).unwrap().len(), 1);
 
         // 当前库原有的那首（没走导入）也在搬完时补登记了
         assert_eq!(jp_corpus::lineage::versions(&target, "001").unwrap()[0].source_type, "legacy");
