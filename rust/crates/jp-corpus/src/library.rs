@@ -187,15 +187,16 @@ pub(crate) fn people_directory(conn: &Connection) -> Result<Vec<DirectoryEntry>>
         |row| row.get(0),
     )?;
     // 没刮削过的库没有 artists 表，照片、类型、解散时间都给空串
-    let (join, image, kind, ended) = if has_artists {
+    let (join, image, kind, ended, manual) = if has_artists {
         (
             "LEFT JOIN artists ar ON ar.name = p.name",
             "COALESCE(ar.image_path, '')",
             "COALESCE(ar.artist_type, '')",
             "COALESCE(ar.ended, '')",
+            "COALESCE(ar.image_manual, 0)",
         )
     } else {
-        ("", "''", "''", "''")
+        ("", "''", "''", "''", "0")
     };
     let sql = format!(
         "SELECT p.id, p.name, {image}, {kind}, {ended}, \
@@ -204,7 +205,7 @@ pub(crate) fn people_directory(conn: &Connection) -> Result<Vec<DirectoryEntry>>
                 COUNT(DISTINCT CASE WHEN c.role = 'lyricist' THEN c.song_id END), \
                 COUNT(DISTINCT CASE WHEN c.role = 'arranger' THEN c.song_id END), \
                 COUNT(DISTINCT c.song_id), \
-                COALESCE(MIN(NULLIF(s.year, '')), ''), COALESCE(MAX(NULLIF(s.year, '')), '') \
+                COALESCE(MIN(NULLIF(s.year, '')), ''), COALESCE(MAX(NULLIF(s.year, '')), ''), {manual} \
          FROM people p JOIN track_credits c ON c.person_id = p.id \
          LEFT JOIN songs s ON s.id = c.song_id {join} \
          GROUP BY p.id ORDER BY p.name"
@@ -224,6 +225,7 @@ pub(crate) fn people_directory(conn: &Connection) -> Result<Vec<DirectoryEntry>>
             songs: row.get(9)?,
             first_year: row.get(10)?,
             last_year: row.get(11)?,
+            image_manual: row.get::<_, i64>(12)? != 0,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -571,7 +573,7 @@ mod tests {
             conn.execute_batch(
                 "CREATE TABLE artists (name TEXT PRIMARY KEY, image_path TEXT, artist_type TEXT,
                                        country TEXT, formed TEXT, updated_at TEXT,
-                                       mbid TEXT, ended TEXT, has_ended INTEGER);
+                                       mbid TEXT, ended TEXT, has_ended INTEGER, image_manual INTEGER);
                  INSERT INTO artists (name, image_path) VALUES
                    ('ヨルシカ', 'raw/artists/ヨルシカ.jpg'), ('月村手毬', '');",
             )

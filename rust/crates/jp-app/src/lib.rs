@@ -154,6 +154,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::artist_roster,
             commands::library_completeness,
             commands::scrape_artist,
+            commands::artist_image_set,
+            commands::artist_image_reset,
             commands::scrape_artists_start,
             commands::fill_album_artwork,
             commands::scrape_backfill_covers,

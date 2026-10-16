@@ -32,7 +32,7 @@ use rusqlite::Connection;
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///
 /// 格式是 `YYYYMMDD`：单调递增，一眼看得出先后。
-pub const CURRENT: i64 = 20_261_016;
+pub const CURRENT: i64 = 20_261_017;
 
 /// 一步迁移里的一个改动。
 enum Change {
@@ -112,6 +112,15 @@ const STEPS: &[Step] = &[
                 ddl: "TEXT",
             },
         ],
+    },
+    Step {
+        version: 20_261_017,
+        what: "artists.image_manual（照片是你换的：刮削不再覆盖）",
+        changes: &[Change::AddColumn {
+            table: "artists",
+            column: "image_manual",
+            ddl: "INTEGER",
+        }],
     },
 ];
 
@@ -298,7 +307,8 @@ mod tests {
             vec![
                 "songs.album_id（专辑归属）",
                 "songs.added_at（导入时间）",
-                "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）"
+                "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）",
+                "artists.image_manual（照片是你换的：刮削不再覆盖）"
             ]
         );
 
@@ -351,7 +361,8 @@ mod tests {
             vec![
                 "songs.album_id（专辑归属）",
                 "songs.added_at（导入时间）",
-                "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）"
+                "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）",
+                "artists.image_manual（照片是你换的：刮削不再覆盖）"
             ],
             "没戳过就得把每一步都重跑一遍"
         );

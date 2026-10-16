@@ -201,6 +201,26 @@ export function LibraryPage({
     window.innerWidth >= 1900 ? { left: 320, right: 400 } : { left: 260, right: 320 },
   );
   const artistPhotos = useArtistPhotos();
+  // 左栏可以收起来，给中栏（词云、时间轴、歌词）多留地方。记住
+  const [browserHidden, setBrowserHidden] = useState(() => {
+    try {
+      return localStorage.getItem("jp.library.browserHidden") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleBrowser = useCallback(() => {
+    setBrowserHidden((v) => {
+      try {
+        localStorage.setItem("jp.library.browserHidden", v ? "0" : "1");
+      } catch {
+        // 只在这次会话里生效
+      }
+      return !v;
+    });
+  }, []);
+  // 封面按歌查：词云里列出的歌要显示它自己的封面
+  const coverOf = useCallback((songId: string) => tracks.find((t) => t.id === songId)?.coverPath ?? "", [tracks]);
 
   // 曲库维护：编辑、删除（两步确认，不弹窗）、找回丢了的音频
   const [panel, setPanel] = useState<null | "edit" | "repair">(null);
@@ -767,7 +787,19 @@ export function LibraryPage({
   const wide = view?.kind === "graph" || view?.kind === "timeline" || view?.kind === "cloud";
 
   return (
-    <div className="columns library-page" style={columns.style} ref={columns.container}>
+    <div
+      className={`columns library-page ${browserHidden ? "browser-hidden" : ""}`}
+      style={browserHidden ? { gridTemplateColumns: `0px 0px minmax(0, 1fr) 6px ${columns.widths.right}px` } : columns.style}
+      ref={columns.container}
+    >
+      {browserHidden && (
+        <button className="btn browser-reveal" onClick={toggleBrowser} title="展开左栏" aria-label="展开左栏">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+            <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+            <path d="M9 4.5v15M13 10l2 2-2 2" />
+          </svg>
+        </button>
+      )}
       <LibraryBrowser
         data={data}
         tracks={tracks}
@@ -780,6 +812,7 @@ export function LibraryPage({
         onOpenGraph={() => go({ kind: "graph", focus: view?.kind === "person" ? view.id : null })}
         onOpenTimeline={() => go({ kind: "timeline" })}
         onOpenCloud={() => go({ kind: "cloud" })}
+        onHide={toggleBrowser}
         banner={
           missing.length > 0 && (
             <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title="扫文件夹或逐首选文件找回">
@@ -790,6 +823,7 @@ export function LibraryPage({
       />
 
       <ColumnSplitter
+        className="split-left"
         edge="left"
         label="资料库左栏宽度"
         onDrag={columns.drag}
@@ -815,6 +849,7 @@ export function LibraryPage({
                 : null
             }
             onPlayLine={playLine}
+            coverOf={coverOf}
             covered={stageOpen}
             onSearchWord={onSearchWord}
             onShowExamples={(lemma) => {
@@ -1087,7 +1122,7 @@ export function LibraryPage({
       </main>
 
       <ColumnSplitter
-        className={wide ? "is-hidden" : ""}
+        className={`split-right ${wide ? "is-hidden" : ""}`}
         edge="right"
         label="查词栏宽度"
         onDrag={columns.drag}

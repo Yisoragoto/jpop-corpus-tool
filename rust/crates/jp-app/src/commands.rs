@@ -2145,6 +2145,25 @@ pub fn scrape_artist(
     )?)
 }
 
+/// 用自己选的图片当歌手照片（刮削之后不再覆盖）。返回存下来的路径
+#[tauri::command(async)]
+pub fn artist_image_set(state: State<'_, AppState>, name: String, path: String) -> CmdResult<String> {
+    let corpus = state.corpus();
+    Ok(crate::scrape::set_artist_image(
+        corpus.connection(),
+        &state.artists_dir,
+        &name,
+        std::path::Path::new(&path),
+    )?)
+}
+
+/// 不要手动换的照片了，用回刮削下的那张（没有就空着）
+#[tauri::command(async)]
+pub fn artist_image_reset(state: State<'_, AppState>, name: String) -> CmdResult<String> {
+    let corpus = state.corpus();
+    Ok(crate::scrape::reset_artist_image(corpus.connection(), &state.artists_dir, &name)?)
+}
+
 /// 批量刮歌手，后台跑。和曲目刮削共用一个作业标志——
 /// 两边都要排 MusicBrainz 的队，同时跑只会互相拖慢。
 #[tauri::command(async)]

@@ -749,7 +749,9 @@ fn upsert_artist(conn: &rusqlite::Connection, out: &ArtistOutcome) -> Result<()>
         "INSERT INTO artists (name, image_path, artist_type, country, formed, ended, has_ended, mbid, updated_at)
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,datetime('now'))
          ON CONFLICT(name) DO UPDATE SET
-            image_path  = COALESCE(NULLIF(excluded.image_path, ''),  image_path),
+            -- 照片是你手动换的：刮削不动它
+            image_path  = CASE WHEN COALESCE(image_manual, 0) = 1 THEN image_path
+                               ELSE COALESCE(NULLIF(excluded.image_path, ''), image_path) END,
             artist_type = COALESCE(NULLIF(excluded.artist_type, ''), artist_type),
             country     = COALESCE(NULLIF(excluded.country, ''),     country),
             formed      = COALESCE(NULLIF(excluded.formed, ''),      formed),
@@ -770,6 +772,71 @@ fn upsert_artist(conn: &rusqlite::Connection, out: &ArtistOutcome) -> Result<()>
     )
     .context("写 artists 失败")?;
     Ok(())
+}
+
+// ────────────────────────────── 手动换照片 ──────────────────────────────
+//
+// 刮削有时会把专辑封面当成歌手照片（Deezer 上很多乐队就是这样）。你换的照片单独存一份
+// `<名字>.manual-<时间>.<扩展名>`，`image_manual = 1`，之后刮削不再覆盖；恢复时删掉它，
+// 用回刮削下的那张（没有就空着）。文件名带时间，换第二次时 webview 不会拿缓存里的旧图。
+
+fn manual_prefix(name: &str) -> String {
+    format!("{}.manual-", jp_scraper::safe_name(name))
+}
+
+fn remove_manual_images(artists_dir: &std::path::Path, name: &str) {
+    let prefix = manual_prefix(name);
+    if let Ok(entries) = std::fs::read_dir(artists_dir) {
+        for e in entries.flatten() {
+            if e.file_name().to_string_lossy().starts_with(&prefix) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+}
+
+/// 用你选的图片当这位歌手的照片。返回存下来的路径。
+pub fn set_artist_image(
+    conn: &rusqlite::Connection,
+    artists_dir: &std::path::Path,
+    name: &str,
+    source: &std::path::Path,
+) -> Result<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        anyhow::bail!("没有歌手名");
+    }
+    let data = std::fs::read(source).with_context(|| format!("读不了 {}", source.display()))?;
+    let kind = jp_scraper::sniff_image(&data).context("这不是 JPG、PNG 或 WebP 图片")?;
+    std::fs::create_dir_all(artists_dir).context("建不了歌手照片目录")?;
+    remove_manual_images(artists_dir, name);
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let dest = artists_dir.join(format!("{}{stamp}.{}", manual_prefix(name), kind.extension()));
+    std::fs::write(&dest, &data).with_context(|| format!("写不了 {}", dest.display()))?;
+    let path = dest.display().to_string();
+    conn.execute(
+        "INSERT INTO artists (name, image_path, image_manual, updated_at) VALUES (?1, ?2, 1, datetime('now'))
+         ON CONFLICT(name) DO UPDATE SET image_path = excluded.image_path, image_manual = 1, updated_at = excluded.updated_at",
+        rusqlite::params![name, path],
+    )
+    .context("写 artists 失败")?;
+    Ok(path)
+}
+
+/// 不要手动换的那张了：用回刮削下的照片（没有就空着），之后刮削又能更新它。返回现在的路径。
+pub fn reset_artist_image(conn: &rusqlite::Connection, artists_dir: &std::path::Path, name: &str) -> Result<String> {
+    remove_manual_images(artists_dir, name);
+    let scraped = jp_scraper::artist_image_path_for(artists_dir, name);
+    let path = if scraped.is_file() { scraped.display().to_string() } else { String::new() };
+    conn.execute(
+        "UPDATE artists SET image_path = ?2, image_manual = 0, updated_at = datetime('now') WHERE name = ?1",
+        rusqlite::params![name, path],
+    )
+    .context("写 artists 失败")?;
+    Ok(path)
 }
 
 /// 库里出现过的歌手，按斜杠拆开去重。
@@ -1165,6 +1232,47 @@ fn split_slash(name: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    /// 手动换的照片刮削不覆盖；恢复后用回刮削下的那张，刮削又能更新它
+    #[test]
+    fn a_hand_picked_artist_photo_survives_scraping_until_reset() {
+        let dir = std::env::temp_dir().join(format!("jp-app-artist-photo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("logo.png");
+        std::fs::write(&src, b"\x89PNG\r\n\x1a\nrest").unwrap();
+        let scraped = jp_scraper::artist_image_path_for(&dir, "ヨルシカ");
+        std::fs::write(&scraped, [0xff, 0xd8, 0xff, 0]).unwrap();
+
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        jp_corpus::Corpus::ensure_schema_on(&conn).unwrap();
+        let image = |c: &rusqlite::Connection| -> String {
+            c.query_row("SELECT image_path FROM artists WHERE name = 'ヨルシカ'", [], |r| r.get(0)).unwrap()
+        };
+
+        let manual = super::set_artist_image(&conn, &dir, "ヨルシカ", &src).unwrap();
+        assert!(manual.ends_with(".png") && manual.contains(".manual-"), "{manual}");
+        assert_eq!(image(&conn), manual);
+
+        let out = super::ArtistOutcome {
+            name: "ヨルシカ".into(),
+            image_path: scraped.display().to_string(),
+            ..Default::default()
+        };
+        super::upsert_artist(&conn, &out).unwrap();
+        assert_eq!(image(&conn), manual, "刮削把手动换的照片盖掉了");
+
+        // 不是图片的文件不收
+        let txt = dir.join("note.txt");
+        std::fs::write(&txt, "hello").unwrap();
+        assert!(super::set_artist_image(&conn, &dir, "ヨルシカ", &txt).is_err());
+
+        assert_eq!(super::reset_artist_image(&conn, &dir, "ヨルシカ").unwrap(), scraped.display().to_string());
+        assert!(!std::path::Path::new(&manual).exists());
+        super::upsert_artist(&conn, &out).unwrap();
+        assert_eq!(image(&conn), scraped.display().to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 文件里自带封面的，补封面时先用它，不看刮削候选（这首歌根本没刮削过）；
     /// 已经有图的位置不覆盖，第二次跑已经没有要补的
     #[test]

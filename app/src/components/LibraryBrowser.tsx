@@ -113,6 +113,8 @@ interface Props {
   /** 没给就不显示时间轴按钮 */
   onOpenTimeline?: () => void;
   onOpenCloud: () => void;
+  /** 收起左栏 */
+  onHide: () => void;
 }
 
 export function LibraryBrowser({
@@ -128,6 +130,7 @@ export function LibraryBrowser({
   onOpenGraph,
   onOpenTimeline,
   onOpenCloud,
+  onHide,
 }: Props) {
   const [mode, setModeState] = useState<BrowseMode>(readMode);
   const [query, setQuery] = useState("");
@@ -174,6 +177,12 @@ export function LibraryBrowser({
     <aside className="pane library browser">
       {banner}
       <div className="browser-head">
+        <button className="btn browser-view-btn browser-hide" onClick={onHide} title="收起左栏" aria-label="收起左栏">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+            <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+            <path d="M9 4.5v15M15 10l-2 2 2 2" />
+          </svg>
+        </button>
         <input className="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
         <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "graph" ? "on" : ""}`} onClick={onOpenGraph} title="关系网：所有人和他们的合作" aria-label="关系网">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">

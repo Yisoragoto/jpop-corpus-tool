@@ -23,6 +23,7 @@ import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import { useAppSettings } from "../settings";
 import { groupHitsBySong, layoutCloud, mergeByLemma, type CloudWord, type Placed, type SongHits } from "../wordCloud";
 import { Avatar } from "./Avatar";
+import { Cover } from "./Cover";
 import { loadPerformers } from "./PerformerPicker";
 
 /** 弹出的歌曲列表：KWIC 最多取这么多行再按歌分组 */
@@ -63,6 +64,8 @@ interface Props {
   present: boolean;
   /** 上面盖着全屏歌词：词云这边不响应 Esc，也退到播放条底下 */
   covered: boolean;
+  /** 一首歌的封面（右边列表里显示歌的封面，不是歌手头像） */
+  coverOf: (songId: string) => string;
   onPresent: (on: boolean) => void;
   onError: (message: string) => void;
 }
@@ -205,6 +208,7 @@ export function WordCloud({
   onShowExamples,
   present,
   covered,
+  coverOf,
   onPresent,
   onError,
 }: Props) {
@@ -547,6 +551,7 @@ export function WordCloud({
             playing={playing}
             compact={present}
             covered={covered}
+            coverOf={coverOf}
             onClose={() => onPick(null)}
             onPlayLine={onPlayLine}
             onSearchWord={onSearchWord}
@@ -616,6 +621,7 @@ function SongPanel({
   playing,
   compact,
   covered,
+  coverOf,
   onClose,
   onPlayLine,
   onSearchWord,
@@ -630,6 +636,7 @@ function SongPanel({
   playing: { songId: string; utteranceId: number } | null;
   compact: boolean;
   covered: boolean;
+  coverOf: (songId: string) => string;
   onClose: () => void;
   onPlayLine: (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => void;
   onSearchWord: (lemma: string) => void;
@@ -721,7 +728,7 @@ function SongPanel({
                 title="从这一句开始放，进全屏歌词（退出来还是词云）"
               >
                 <span className="wc-song-face">
-                  <Avatar path={photoOf(s.artist)} name={s.artist} size={40} />
+                  {coverOf(s.songId) ? <Cover path={coverOf(s.songId)} size={40} rounded={6} /> : <Avatar path={photoOf(s.artist)} name={s.artist} size={40} />}
                   <span className="wc-song-icon" aria-hidden="true">
                     {now ? <i className="wc-eq"><b /><b /><b /></i> : "▶"}
                   </span>

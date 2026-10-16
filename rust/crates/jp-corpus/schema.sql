@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS artists (
             country     TEXT,
             formed      TEXT,
             updated_at  TEXT
-        , mbid TEXT, ended TEXT, has_ended INTEGER);
+        , mbid TEXT, ended TEXT, has_ended INTEGER, image_manual INTEGER);
 
 -- 乐队成员。band_id、member_id 都是 people.id。
 -- 一条关系可能有三个来源：musicbrainz（刮削拿到的）、confirmed（推测之后你确认的）、

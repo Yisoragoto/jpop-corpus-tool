@@ -24,8 +24,12 @@ export function loadPerformers(): Promise<PersonSummary[]> {
 }
 
 /** 曲库改过（编辑、删除、导入）之后调一下，下次打开重新取 */
+/** 用到照片的地方：失效时通知它们重拉（换了歌手照片，歌词页、词云要马上看到） */
+const listeners = new Set<() => void>();
+
 export function invalidatePerformers() {
   cached = null;
+  for (const l of listeners) l();
 }
 
 /**
@@ -36,6 +40,14 @@ export function invalidatePerformers() {
  */
 export function useArtistPhotos(): Map<string, string> {
   const [photos, setPhotos] = useState<Map<string, string>>(new Map());
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const bump = () => setVersion((v) => v + 1);
+    listeners.add(bump);
+    return () => {
+      listeners.delete(bump);
+    };
+  }, []);
   useEffect(() => {
     let alive = true;
     loadPerformers().then(
@@ -47,7 +59,7 @@ export function useArtistPhotos(): Map<string, string> {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [version]);
   return photos;
 }
 
