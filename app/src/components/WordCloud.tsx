@@ -21,6 +21,7 @@ import { ensureFontFile, fetchFontCatalog, loadImportedFonts, lyricFontStack } f
 import { pyGrouped } from "../pyFormat";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import { useAppSettings } from "../settings";
+import { mergeSubcorpus, useActiveScope } from "../subcorpusScope";
 import { groupHitsBySong, layoutCloud, mergeByLemma, type CloudWord, type Placed, type SongHits } from "../wordCloud";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
@@ -645,11 +646,13 @@ function SongPanel({
 }) {
   const [songs, setSongs] = useState<SongHits[] | null>(null);
   const [truncated, setTruncated] = useState(false);
+  // 词云的词频按当前子语料算，点词列出来的歌也得是这块语料里的
+  const scope = useActiveScope();
 
   useEffect(() => {
     let alive = true;
     api
-      .kwic({ keywords: [word.lemma], field: "lemma", pos: word.pos, personIds: performerIds, limit: KWIC_LIMIT })
+      .kwic({ keywords: [word.lemma], field: "lemma", pos: word.pos, personIds: performerIds, limit: KWIC_LIMIT, subcorpus: mergeSubcorpus({}, scope) })
       .then((hits) => {
         if (!alive) return;
         setSongs(groupHitsBySong(hits));
@@ -663,7 +666,7 @@ function SongPanel({
     return () => {
       alive = false;
     };
-  }, [word, performerIds, onError]);
+  }, [word, performerIds, scope, onError]);
 
   // Esc 关掉这一栏（全屏时第二下 Esc 才退出全屏）。盖着全屏歌词时不管
   useEffect(() => {

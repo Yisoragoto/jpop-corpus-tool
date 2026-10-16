@@ -61,6 +61,12 @@ songs(id, audio_path, duration_sec, year, album_id …)
 - **出处**（`analysis::Provenance`）：每个分析结果带库指纹（行数、词数、最大 id、校正数、元数据的哈希）、
   规则版本（`analysis-1`）、范围描述、计数单位和原样回显的参数。指纹与参数相同，结果就相同；
   导入新歌、校正分词后指纹会变。
+- **存档与来源追踪**（`jp_corpus::runs`、`jp_corpus::lineage`，见 [provenance.md](provenance.md)）：
+  出处回答「是不是现在的库算的」，存档回答「当时怎么来的、为什么变了」，可以把上面任何一种分析存档后原样重跑对比。
+  子语料在 `Subcorpus` 上还多两个条件：歌词语言、歌词完整度下限。
+  `jp-ffi` 有同名方法：`qualityOverview`、`songLineage`、`lyricVersionRaw`、`artistProvenance`、
+  `subcorpusFacets` / `Preview` / `List` / `Save` / `Delete`、`analysisRun` / `List` / `Get` / `Rerun` / `Compare` / `Delete`；
+  `wordInCorpus` 多一个 `scope`。会话打开时和 Tauri 一样给老歌补登记歌词版本。
 - 统计量：搭配有 logDice、MI、t、对数似然（2×2 表，期望值按实际窗口位置数算）；对比用带符号的对数似然和 log ratio（零频 0.5 平滑）。
 
 ## macOS 上建库：导入、分词词典、查词
@@ -100,4 +106,5 @@ CI：`.github/workflows/macos.yml` 在 macOS runner 上跑 Rust 核心测试、`
 - macOS 导入后还不做的两件事：取出内嵌封面（`jp-app/src/scrape.rs`）、追加 `metadata/songs.csv`
   （`jp-app/src/library_admin.rs`）。两处还在 `jp-app` 里，要先挪进 Tauri 无关的 crate。
 - 词级时间戳。
+- macOS 上换歌词、逐行编辑歌词、恢复旧版（要落盘 `.lrc`，代码还在 `jp-app/src/lyrics.rs`）。
 - 搭配目前只在行内开窗；跨行、按句法依存的搭配没做。

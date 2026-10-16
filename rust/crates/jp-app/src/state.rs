@@ -102,6 +102,13 @@ impl AppState {
             Ok(n) => crate::log::info(format!("补了 {n} 首歌的导入时间（音频文件的创建时间）")),
             Err(err) => crate::log::warn(format!("补导入时间失败：{err:#}")),
         }
+        // 来源追踪是 20261018 才有的：之前导进来的歌没有歌词版本、逐行状态。补登记一次
+        // （原文当时没留，记成 legacy）。补不上不影响启动
+        match corpus.backfill_lineage() {
+            Ok(0) => {}
+            Ok(n) => crate::log::info(format!("给 {n} 首老歌补登记了歌词版本和逐行状态")),
+            Err(err) => crate::log::warn(format!("补登记歌词版本失败：{err:#}")),
+        }
 
         let analyzer = load_analyzer(project_root);
         if analyzer.is_none() {

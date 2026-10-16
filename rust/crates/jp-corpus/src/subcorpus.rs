@@ -18,7 +18,7 @@ use anyhow::Result;
 use rusqlite::{Connection, params_from_iter, types::Value};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Subcorpus {
     /// 演唱者（`people.id`），任何一位唱的都算
@@ -31,6 +31,10 @@ pub struct Subcorpus {
     pub genres: Vec<String>,
     /// 直接点名的歌
     pub song_ids: Vec<String>,
+    /// 歌词语言（`songs.language`：ja / en / ko / zh / mixed，见 `quality::guess_language`）
+    pub languages: Vec<String>,
+    /// 当前歌词版本的完整度下限（0~1，见 `lineage`）。没有版本记录的歌在设了这个条件时被排除
+    pub min_completeness: Option<f64>,
 }
 
 impl Subcorpus {
@@ -42,6 +46,8 @@ impl Subcorpus {
             && self.album_ids.is_empty()
             && self.genres.is_empty()
             && self.song_ids.is_empty()
+            && self.languages.is_empty()
+            && self.min_completeness.is_none()
     }
 
     /// 只看某几位演唱者。兼容老接口（`KwicQuery.person_ids`、`StatsFilter.performer_ids`）
@@ -64,8 +70,12 @@ impl Subcorpus {
             ));
             params.extend(self.performer_ids.iter().map(|id| Value::from(*id)));
         }
-        // 年份存成 TEXT，有「2006」也可能有「2006-05-01」，取前四位当整数比
-        let year = format!("CAST(substr(COALESCE({alias}.year,''),1,4) AS INTEGER)");
+        // 年份存成 TEXT，有「2006」也可能有「2006-05-01」，取前四位当整数比。
+        // 刮削补了完整发行日期（release_date）的优先用它——它只在年份对得上或年份为空时才写，
+        // 所以只会把「year 为空但知道发行日期」的歌多认出来
+        let year = format!(
+            "CAST(substr(COALESCE(NULLIF({alias}.release_date,''), NULLIF({alias}.year,''), ''),1,4) AS INTEGER)"
+        );
         if let Some(from) = self.year_from {
             parts.push(format!("{year} >= ?"));
             params.push(Value::from(i64::from(from)));
@@ -79,8 +89,20 @@ impl Subcorpus {
             params.extend(self.album_ids.iter().map(|id| Value::from(*id)));
         }
         if !self.genres.is_empty() {
-            parts.push(format!("COALESCE({alias}.genre,'') IN ({})", marks(self.genres.len())));
-            params.extend(self.genres.iter().map(|g| Value::from(g.clone())));
+            // 不分大小写：标签里「J-Pop」「J-POP」都有
+            parts.push(format!("LOWER(TRIM(COALESCE({alias}.genre,''))) IN ({})", marks(self.genres.len())));
+            params.extend(self.genres.iter().map(|g| Value::from(g.trim().to_lowercase())));
+        }
+        if !self.languages.is_empty() {
+            parts.push(format!("COALESCE({alias}.language,'') IN ({})", marks(self.languages.len())));
+            params.extend(self.languages.iter().map(|l| Value::from(l.clone())));
+        }
+        if let Some(min) = self.min_completeness {
+            parts.push(format!(
+                "EXISTS (SELECT 1 FROM lyric_versions v WHERE v.song_id = {alias}.id AND v.is_current = 1 \
+                 AND v.completeness >= ?)"
+            ));
+            params.push(Value::from(min));
         }
         if !self.song_ids.is_empty() {
             parts.push(format!("{alias}.id IN ({})", marks(self.song_ids.len())));
@@ -143,6 +165,12 @@ impl Subcorpus {
         }
         if !self.song_ids.is_empty() {
             parts.push(format!("{} 首指定歌曲", self.song_ids.len()));
+        }
+        if !self.languages.is_empty() {
+            parts.push(format!("语言：{}", self.languages.join(" / ")));
+        }
+        if let Some(min) = self.min_completeness {
+            parts.push(format!("歌词完整度 ≥ {:.0}%", min * 100.0));
         }
         Ok(parts.join("，"))
     }

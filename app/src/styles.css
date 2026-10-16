@@ -2517,6 +2517,81 @@ button.primary:not(:disabled):active { transform: scale(.96); transition-duratio
   .scrape-row-action { grid-column: 2 / -1; justify-content: flex-start; }
 }
 
+/* ── 子语料 / 语料质量 / 分析记录 / 来源与校验（docs/provenance.md）── */
+.subcorpus { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; }
+.subcorpus-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.subcorpus .year-range input { width: 76px; }
+.inline-form { display: inline-flex; align-items: center; gap: 6px; }
+.inline-form input { width: 200px; }
+.label-input { width: 160px; }
+
+table.data.compact td { white-space: normal; }
+table.data.compact td.row-actions { white-space: nowrap; }
+table.data td.row-actions .link-btn + .link-btn { margin-left: 10px; }
+table.data tr.current td { background: var(--accent-soft); }
+.tag + .tag, td .tag { margin-left: 6px; }
+
+.quality-facts p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+.quality-facts p > .muted:first-child { min-width: 64px; }
+.quality-facts .chip { cursor: default; }
+
+.lineage-panel {
+  margin: 0 0 16px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+}
+.lineage-panel h3 { margin: 0; font-size: 15px; }
+.lineage-panel h4 { margin: 16px 0 6px; font-size: 13px; color: var(--muted); font-weight: 500; }
+.lineage-summary { display: flex; gap: 20px; align-items: flex-start; margin: 10px 0; }
+.lineage-summary > div:first-child { display: flex; flex-direction: column; align-items: center; min-width: 96px; font-size: 12px; color: var(--muted); }
+.lineage-summary dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+.lineage-summary dt { color: var(--muted); }
+.lineage-summary dd { margin: 0; }
+.tokenizer-line { display: block; }
+.completeness { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.completeness.c-good { color: #6ccb5f; }
+.completeness.c-ok { color: var(--accent); }
+.completeness.c-bad { color: var(--warn); }
+.completeness.c-none { color: var(--muted); }
+
+.issue-list, .provenance-list, .revision-list, .method-list, .reasons { list-style: none; margin: 6px 0; padding: 0; }
+.issue-list li { display: flex; gap: 10px; padding: 3px 0 3px 10px; border-left: 2px solid var(--line); }
+.issue-list li.sev-warning { border-left-color: var(--warn); }
+.issue-list li.sev-error { border-left-color: var(--danger); }
+.issue-list .issue-code { min-width: 9em; }
+.provenance-list li, .revision-list li { display: grid; grid-template-columns: 8em 1fr auto; gap: 10px; padding: 2px 0; }
+.revision-list li { grid-template-columns: 11em 9em 1fr; }
+.raw-lyrics {
+  max-height: 260px; overflow: auto; margin: 8px 0; padding: 10px; border-radius: 6px;
+  background: var(--panel-2); font-size: 12px; white-space: pre-wrap;
+}
+
+.run-detail { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.run-detail h3 { margin: 0; font-size: 14px; }
+.run-detail dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px 0 0; }
+.run-detail dt { color: var(--muted); }
+.run-detail dd { margin: 0; }
+.run-detail code { font-size: 11px; }
+.comparison .chip { margin-right: 6px; cursor: default; }
+.reasons li::before { content: "· "; color: var(--muted); }
+
+@media (max-width: 720px) {
+  .lineage-summary { flex-direction: column; }
+  .provenance-list li, .revision-list li { grid-template-columns: 1fr; gap: 0; }
+}
+
+/* 逐行编辑歌词 */
+.lyrics-editor {
+  margin: 0 0 16px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+}
+.lyrics-editor h3 { margin: 0; font-size: 15px; }
+.lyrics-editor-rows { display: flex; flex-direction: column; gap: 4px; max-height: 420px; overflow-y: auto; margin: 8px 0; }
+.lyrics-editor-row { display: grid; grid-template-columns: 2.5em 7em 1fr auto auto; gap: 6px; align-items: center; }
+.lyrics-editor-row .num { text-align: right; }
+.lyrics-editor-row input.stamp { font-variant-numeric: tabular-nums; }
+.lyrics-editor-row.bad input.stamp { border-color: var(--danger); }
+.lyrics-editor-actions { display: flex; gap: 8px; align-items: center; }
+.lyrics-editor-actions input { flex: 1; }
+.artist-provenance { margin: 4px 0 0; }
+
 /* ── 分析页：副歌效应、子语料对比 ── */
 .share-bar {
   display: inline-block; min-width: 46px; padding: 0 4px; border-radius: 3px;
@@ -2537,3 +2612,4 @@ button.primary:not(:disabled):active { transform: scale(.96); transition-duratio
 .song-profile p { margin: 0 0 6px; line-height: 1.6; }
 .chip.link { cursor: pointer; }
 .chip.link:hover { color: var(--accent); border-color: var(--accent); }
+.subcorpus-picker { max-width: 220px; }

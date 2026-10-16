@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS songs (
             album      TEXT,
             genre      TEXT,
             audio_path TEXT
-        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT);
+        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT, language TEXT);
 
 CREATE TABLE IF NOT EXISTS token_corrections (
             utterance_id INTEGER PRIMARY KEY,
@@ -200,7 +200,7 @@ CREATE TABLE IF NOT EXISTS "utterances" (
             time_sec   REAL,
             text       TEXT NOT NULL,
             chapter_id INTEGER REFERENCES chapters(id)
-        );
+        , version_id INTEGER, time_confidence REAL, token_status TEXT, tokenizer_run_id INTEGER);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS utterances_fts USING fts5(
             text,
@@ -208,6 +208,134 @@ CREATE VIRTUAL TABLE IF NOT EXISTS utterances_fts USING fts5(
             content_rowid=id,
             tokenize='trigram'
         );
+
+-- ── 语料质量与来源追踪（20261018）──────────────────────────────
+-- 设计说明见 docs/provenance.md。
+
+-- 歌词版本：每挂一次歌词记一版，旧版不删。
+-- raw_text 是挂上时的原文，一个字不改——重新分词、校正分词都不碰它，
+-- 将来要换解析规则也能从这里重来。老库补登记的版本原文没留下，是 NULL。
+-- 当前在用的那一版 is_current = 1；utterances.version_id 指向它。
+CREATE TABLE IF NOT EXISTS lyric_versions (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    song_id          TEXT    NOT NULL,
+    -- 这首歌的第几版，从 1 起
+    version_no       INTEGER NOT NULL,
+    -- lrc_file（导入时旁边的 .lrc）/ embedded（音频内嵌）/ sibling（后来出现在旁边的 .lrc）/
+    -- online（在线搜到的）/ manual_file（你选的文件）/ manual_edit（逐行编辑）/ restored（从旧版恢复）/
+    -- legacy（老库补登记）
+    source_type      TEXT    NOT NULL,
+    -- 在线来源是 provider 名（netease），本地来源是文件名
+    source_name      TEXT    NOT NULL DEFAULT '',
+    -- 路径，或在线条目「曲名 — 歌手」
+    source_ref       TEXT    NOT NULL DEFAULT '',
+    imported_at      TEXT    NOT NULL DEFAULT '',
+    raw_text         TEXT,
+    -- 解析后「时间 + 文本」序列的指纹：同一份歌词重挂一次，指纹相同
+    content_hash     TEXT    NOT NULL DEFAULT '',
+    line_count       INTEGER NOT NULL DEFAULT 0,
+    timed_line_count INTEGER NOT NULL DEFAULT 0,
+    -- 0~1，校验估计的完整度（漏行、截断、乱码会扣分）
+    completeness     REAL,
+    -- 校验结果：问题清单、重复行比例、语言判断
+    validation_json  TEXT    NOT NULL DEFAULT '{}',
+    validated_at     TEXT    NOT NULL DEFAULT '',
+    is_current       INTEGER NOT NULL DEFAULT 0,
+    note             TEXT    NOT NULL DEFAULT '',
+    UNIQUE (song_id, version_no)
+);
+CREATE INDEX IF NOT EXISTS idx_lyric_versions_song ON lyric_versions(song_id, is_current);
+CREATE INDEX IF NOT EXISTS idx_utterances_version ON utterances(version_id);
+
+-- 分词器：引擎、词典、切分模式、配置的一种组合一行。utterances.tokenizer_run_id 指向它。
+-- fingerprint 由其余字段算出：词典或配置一变就是新的一行，旧分词仍指着旧的那行。
+CREATE TABLE IF NOT EXISTS tokenizer_runs (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    fingerprint      TEXT    NOT NULL UNIQUE,
+    engine           TEXT    NOT NULL,
+    engine_version   TEXT    NOT NULL DEFAULT '',
+    dict_description TEXT    NOT NULL DEFAULT '',
+    dict_created_at  TEXT    NOT NULL DEFAULT '',
+    dict_size        INTEGER NOT NULL DEFAULT 0,
+    split_mode       TEXT    NOT NULL DEFAULT '',
+    config_hash      TEXT    NOT NULL DEFAULT '',
+    pos_scheme       TEXT    NOT NULL DEFAULT '',
+    first_used_at    TEXT    NOT NULL DEFAULT ''
+);
+
+-- 修订历史：歌词换版、分词校正 / 撤销、重新分词、改曲目信息……每件事一行，只追加。
+-- 删歌时**不删**这里的行：它是日志，歌手 + 曲名另存一份，删了也看得出是哪首。
+CREATE TABLE IF NOT EXISTS corpus_revisions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    song_id      TEXT    NOT NULL,
+    song_artist  TEXT    NOT NULL DEFAULT '',
+    song_title   TEXT    NOT NULL DEFAULT '',
+    -- lyrics_attached / lyrics_replaced / lyrics_edited / tokens_corrected / tokens_reverted /
+    -- corrections_restored / retokenized / metadata_edited / song_deleted / legacy_registered
+    kind         TEXT    NOT NULL,
+    version_id   INTEGER,
+    utterance_id INTEGER,
+    line_idx     INTEGER,
+    before_json  TEXT    NOT NULL DEFAULT '',
+    after_json   TEXT    NOT NULL DEFAULT '',
+    -- user（你在界面上做的）/ import / scraper / system
+    actor        TEXT    NOT NULL DEFAULT '',
+    note         TEXT    NOT NULL DEFAULT '',
+    created_at   TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_revisions_song ON corpus_revisions(song_id, id);
+
+-- 元数据字段的来源和置信度：songs 的年份、流派、专辑、语言……各是从哪来的；
+-- entity_type = artist 时 entity_id 是歌手名，记刮削到的类型、国家、成立 / 结束、MBID、照片。
+-- source：tag（文件标签）/ filename（从文件名、目录猜的）/ manual（你改的）/
+-- itunes、musicbrainz……（刮削）/ heuristic（程序按歌词推断的）。
+-- confidence 为 NULL 表示「不适用」（标签原值、手改的值没有置信度一说）。
+CREATE TABLE IF NOT EXISTS field_provenance (
+    entity_type TEXT NOT NULL,
+    entity_id   TEXT NOT NULL,
+    field       TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    source_ref  TEXT NOT NULL DEFAULT '',
+    confidence  REAL,
+    updated_at  TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (entity_type, entity_id, field)
+);
+
+-- 存起来的子语料：一组筛选条件（年代、歌手、流派、语言、完整度……）起个名字。
+CREATE TABLE IF NOT EXISTS subcorpora (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    filter_json TEXT NOT NULL,
+    note        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT '',
+    updated_at  TEXT NOT NULL DEFAULT ''
+);
+
+-- 分析记录：一次统计的条件、范围、分词器、口径、结果，全都存下来，能原样重跑、能对比。
+-- scope_json 是当时纳入的每首歌和它的歌词版本；tokenizers_json 是这些歌词行用过的分词器。
+CREATE TABLE IF NOT EXISTS analysis_runs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- corpus_report / frequency
+    kind            TEXT    NOT NULL,
+    label           TEXT    NOT NULL DEFAULT '',
+    filter_json     TEXT    NOT NULL,
+    params_json     TEXT    NOT NULL DEFAULT '{}',
+    scope_json      TEXT    NOT NULL,
+    scope_hash      TEXT    NOT NULL DEFAULT '',
+    tokenizers_json TEXT    NOT NULL DEFAULT '[]',
+    -- 统计口径：词元怎么取、排除哪些词性、TTR / STTR 怎么算
+    method_json     TEXT    NOT NULL DEFAULT '{}',
+    result_json     TEXT    NOT NULL,
+    result_hash     TEXT    NOT NULL DEFAULT '',
+    schema_version  INTEGER NOT NULL DEFAULT 0,
+    app_version     TEXT    NOT NULL DEFAULT '',
+    -- 重跑出来的那次记着原来是哪一次
+    rerun_of        INTEGER,
+    created_at      TEXT    NOT NULL DEFAULT '',
+    -- 当时的库指纹（analysis::snapshot）
+    snapshot_json   TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_analysis_runs_time ON analysis_runs(created_at);
 
 CREATE TABLE IF NOT EXISTS yomitan_freq (
                 term    TEXT PRIMARY KEY,

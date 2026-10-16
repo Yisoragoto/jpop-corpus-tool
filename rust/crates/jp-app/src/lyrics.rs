@@ -59,6 +59,10 @@ pub enum LyricsSource {
     Netease,
     /// 用户自己选的文件
     Manual,
+    /// 从这首歌以前的某一版恢复的
+    Restored,
+    /// 你在界面上逐行改过的
+    Edited,
 }
 
 impl LyricsSource {
@@ -68,7 +72,22 @@ impl LyricsSource {
             Self::Sibling => "sibling",
             Self::Netease => "netease",
             Self::Manual => "manual",
+            Self::Restored => "restored",
+            Self::Edited => "edited",
         }
+    }
+
+    /// 记进 `lyric_versions` 的来源。`matched` 是界面上显示的那个名字（文件名、在线条目）
+    fn lineage(self, matched: &str) -> jp_import::LyricSource {
+        let (kind, name, reference) = match self {
+            Self::Embedded => ("embedded", matched, ""),
+            Self::Sibling => ("sibling", matched, ""),
+            Self::Netease => ("online", "netease", matched),
+            Self::Manual => ("manual_file", matched, ""),
+            Self::Restored => ("restored", matched, ""),
+            Self::Edited => ("manual_edit", matched, ""),
+        };
+        jp_import::LyricSource::new(kind, name, reference, "user")
     }
 }
 
@@ -177,7 +196,7 @@ pub fn apply_lrc_text(
 
     let tx = conn.transaction()?;
     jp_import::maintain::clear_lyrics(&tx, song_id)?;
-    let stats = jp_import::attach_lyrics(&tx, song_id, &dest, analyzer, artist, title)?;
+    let stats = jp_import::attach_lyrics(&tx, song_id, &dest, &source.lineage(matched), analyzer, artist, title)?;
     if stats.lyric_lines == 0 {
         // 解析出 0 行：这份文件不是歌词（空文件、纯标签、纯时间轴）。
         // 回滚，让这首歌继续算「缺歌词」——否则它会从补齐名单里消失，
@@ -213,6 +232,141 @@ fn write_atomic(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
         std::fs::remove_file(dest)?;
     }
     std::fs::rename(&tmp, dest)
+}
+
+/// 界面上逐行编辑之后的一行。
+#[derive(Debug, Clone, serde::Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditedLine {
+    pub time_sec: Option<f64>,
+    pub text: String,
+}
+
+/// 把逐行编辑的结果存成新的一版歌词。
+///
+/// 改错字、补漏的行、删重复贴的行、挪时间戳都走这里。和换一份歌词是同一件事：
+/// 清掉旧行、挂上新行、重新分词、把校正过的分词按原文套回去（没改的行校正不丢），
+/// 旧版原文留在 `lyric_versions` 里能恢复。另外记一条 `lyrics_edited` 修订，
+/// 存改动前后的全部行，修订历史里看得出改了什么。
+///
+/// 行**不经过 LRC 解析器**（它会按时间重排、丢掉像署名的行）；
+/// 原文记的是这些行写成的 LRC，落盘的 `raw/lyrics_lrc/{id}.lrc` 也换成它。
+pub fn save_edited_lines(
+    conn: &mut Connection,
+    lyrics_dir: &Path,
+    song_id: &str,
+    lines: &[EditedLine],
+    note: &str,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+) -> Result<Attached> {
+    let mut clean = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        let text = line.text.trim();
+        if text.is_empty() {
+            continue; // 空行不是歌词
+        }
+        if let Some(t) = line.time_sec
+            && !(t.is_finite() && t >= 0.0)
+        {
+            bail!("第 {} 行的时间不对：{t}", idx + 1);
+        }
+        if text.contains('\n') {
+            bail!("第 {} 行里有换行；一行歌词请拆成两行", idx + 1);
+        }
+        clean.push(jp_import::lrc::LyricLine { time_sec: line.time_sec, text: text.to_string() });
+    }
+    if clean.is_empty() {
+        bail!("一行歌词都没有；要删掉歌词请用「换歌词」");
+    }
+    let (artist, title) = song_names(conn, song_id)?;
+    let before: Vec<(Option<f64>, String)> = {
+        let mut stmt = conn.prepare("SELECT time_sec, text FROM utterances WHERE song_id=?1 ORDER BY line_idx, id")?;
+        stmt.query_map(params![song_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?
+    };
+    let after: Vec<(Option<f64>, String)> = clean.iter().map(|l| (l.time_sec, l.text.clone())).collect();
+    if before == after {
+        bail!("没有改动");
+    }
+
+    let raw = jp_import::lrc::format(&clean);
+    std::fs::create_dir_all(lyrics_dir)
+        .with_context(|| format!("建不出歌词目录：{}", lyrics_dir.display()))?;
+    let dest = lyrics_dir.join(format!("{song_id}.lrc"));
+
+    let tx = conn.transaction()?;
+    jp_import::maintain::clear_lyrics(&tx, song_id)?;
+    let source = LyricsSource::Edited.lineage(note.trim());
+    let stats = jp_import::attach_lines(&tx, song_id, &raw, clean, &source, analyzer, &artist, &title)?;
+    let version_id: Option<i64> = tx.query_row(
+        "SELECT id FROM lyric_versions WHERE song_id=?1 AND is_current=1",
+        params![song_id],
+        |r| r.get(0),
+    )?;
+    let rows = |v: &[(Option<f64>, String)]| serde_json::to_value(v).unwrap_or_default();
+    jp_corpus::lineage::log(
+        &tx,
+        &jp_corpus::lineage::Revision {
+            song_id: song_id.into(),
+            kind: "lyrics_edited".into(),
+            version_id,
+            before: Some(rows(&before)),
+            after: Some(rows(&after)),
+            actor: "user".into(),
+            note: note.trim().into(),
+            ..Default::default()
+        },
+    )?;
+    tx.execute("UPDATE songs SET source_file=?2 WHERE id=?1", params![song_id, dest.display().to_string()])?;
+    // 先落盘再提交：文件写不进去就整个回滚，库和盘上的 .lrc 不会对不上
+    write_atomic(&dest, raw.as_bytes()).with_context(|| format!("写歌词文件失败：{}", dest.display()))?;
+    tx.commit()?;
+
+    Ok(Attached {
+        song_id: song_id.to_string(),
+        source: LyricsSource::Edited,
+        matched: note.trim().to_string(),
+        lyric_lines: stats.lyric_lines,
+        tokens: stats.tokens,
+        credits: stats.credits,
+        corrections_restored: stats.corrections_restored,
+        lrc_path: dest.display().to_string(),
+    })
+}
+
+/// 把这首歌以前的某一版歌词恢复成当前版。
+///
+/// 恢复也是「挂一版新的」（来源记 restored）：历史只追加，回到旧版不会抹掉中间那几版。
+/// 老库补登记的版本没留原文，恢复不了。
+pub fn restore_version(
+    conn: &mut Connection,
+    lyrics_dir: &Path,
+    song_id: &str,
+    version_id: i64,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+) -> Result<Attached> {
+    let (owner, raw) = jp_corpus::lineage::version_raw(conn, version_id)?
+        .with_context(|| format!("找不到歌词版本 {version_id}"))?;
+    if owner != song_id {
+        bail!("歌词版本 {version_id} 不是这首歌的");
+    }
+    let Some(raw) = raw else {
+        bail!("这一版是老库补登记的，当时没有保存原文，恢复不了");
+    };
+    let version_no: i64 = conn.query_row(
+        "SELECT version_no FROM lyric_versions WHERE id=?1",
+        params![version_id],
+        |r| r.get(0),
+    )?;
+    let (artist, title) = song_names(conn, song_id)?;
+    apply_lrc_text(
+        conn,
+        lyrics_dir,
+        SongRef { id: song_id, artist: &artist, title: &title },
+        &raw,
+        LyricsSource::Restored,
+        &format!("第 {version_no} 版"),
+        analyzer,
+    )
 }
 
 /// 用户自己选的一份 .lrc / .txt。
@@ -623,6 +777,67 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ghosts, 0, "旧歌词还留在全文索引里");
+    }
+
+    #[test]
+    fn edited_lines_become_a_new_version_exactly_as_typed() {
+        let mut conn = db();
+        let dir = scratch("edit");
+        apply_lrc_text(
+            &mut conn,
+            &dir,
+            SongRef { id: "001", artist: "サカナクション", title: "ネイティブダンサー" },
+            "[00:10.00]夜に駆けるる\n[00:10.00]夜に駆けるる\n[00:20.00]作詞の夢\n",
+            LyricsSource::Manual,
+            "x.lrc",
+            None,
+        )
+        .unwrap();
+
+        let edited = [
+            EditedLine { time_sec: Some(10.0), text: "夜に駆ける".into() }, // 改错字
+            // 删掉重复贴的那一行
+            EditedLine { time_sec: Some(25.0), text: "作詞：みたいな歌詞".into() }, // 像署名，解析器会吞，这里必须原样留
+            EditedLine { time_sec: Some(15.0), text: "  ".into() },              // 空行丢掉
+            EditedLine { time_sec: None, text: "（間奏）".into() },
+        ];
+        let done = save_edited_lines(&mut conn, &dir, "001", &edited, "改错字", None).unwrap();
+        assert_eq!(done.lyric_lines, 3);
+        let lines: Vec<(Option<f64>, String)> = conn
+            .prepare("SELECT time_sec, text FROM utterances WHERE song_id='001' ORDER BY line_idx")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            lines,
+            vec![
+                (Some(10.0), "夜に駆ける".to_string()),
+                (Some(25.0), "作詞：みたいな歌詞".to_string()),
+                (None, "（間奏）".to_string())
+            ],
+            "顺序和内容原样，不经解析器"
+        );
+
+        let versions = jp_corpus::lineage::versions(&conn, "001").unwrap();
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].source_type, "manual_edit");
+        assert_eq!(versions[0].source_name, "改错字");
+        let log = jp_corpus::lineage::revisions(&conn, "001", 5).unwrap();
+        assert_eq!(log[0].kind, "lyrics_edited");
+        assert_eq!(log[0].before.as_ref().unwrap().as_array().unwrap().len(), 3);
+        assert_eq!(log[0].after.as_ref().unwrap()[0][1], "夜に駆ける");
+        let on_disk = std::fs::read_to_string(dir.join("001.lrc")).unwrap();
+        assert!(on_disk.starts_with("[00:10.00]夜に駆ける\n"), "{on_disk}");
+
+        // 没改动、全是空行、时间不对：都拒绝，库不动
+        assert!(save_edited_lines(&mut conn, &dir, "001", &edited, "", None).unwrap_err().to_string().contains("没有改动"));
+        let blank = [EditedLine { time_sec: None, text: " ".into() }];
+        assert!(save_edited_lines(&mut conn, &dir, "001", &blank, "", None).is_err());
+        let bad = [EditedLine { time_sec: Some(-1.0), text: "あ".into() }];
+        assert!(save_edited_lines(&mut conn, &dir, "001", &bad, "", None).is_err());
+        assert_eq!(jp_corpus::lineage::versions(&conn, "001").unwrap().len(), 2);
     }
 
     /// 解析出 0 行的文件不能让这首歌「看起来有歌词了」——

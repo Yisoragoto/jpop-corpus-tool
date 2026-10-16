@@ -16,13 +16,45 @@ import {
   type CountUnit,
   type FrequencyResult,
   type KeyItem,
+  type KeynessQuery,
   type KeynessResult,
   type Provenance,
   type Subcorpus,
 } from "../api";
+import { ANALYSIS_ARCHIVED, isWholeCorpus, qualityApi, type AnalysisSpec } from "../corpusQuality";
+import { mergeSubcorpus, useSubcorpora, type ActiveScope } from "../subcorpusScope";
 import { PerformerPicker } from "./PerformerPicker";
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/**
+ * 把这次分析存进「分析记录」：连同范围里每首歌的歌词版本、分词器、库指纹一起，之后能原样重跑对比
+ * （`jp-corpus/src/runs.rs`）。这里的 Provenance 只说明「是不是在现在的库上算的」，存档回答「为什么变了」。
+ */
+function ArchiveButton({ spec, label, onError }: { spec: AnalysisSpec; label: string; onError: (m: string) => void }) {
+  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+  useEffect(() => setState("idle"), [JSON.stringify(spec)]); // eslint-disable-line
+  return (
+    <button
+      className="ghost"
+      disabled={state !== "idle"}
+      title="存进下面的「分析记录」，之后可以原样重跑、对比"
+      onClick={async () => {
+        setState("busy");
+        try {
+          await qualityApi.runAnalysis(spec, { performerIds: [], jpOnly: false }, label);
+          setState("done");
+          window.dispatchEvent(new Event(ANALYSIS_ARCHIVED));
+        } catch (e) {
+          onError(message(e));
+          setState("idle");
+        }
+      }}
+    >
+      {state === "done" ? "已存档" : state === "busy" ? "存档中…" : "存档"}
+    </button>
+  );
+}
 
 export function ProvenanceLine({ p }: { p: Provenance }) {
   return (
@@ -39,22 +71,24 @@ export function ProvenanceLine({ p }: { p: Provenance }) {
 // ────────────────────────────── 副歌效应 ──────────────────────────────
 
 export function RepeatEffectCard({
-  performerIds,
+  subcorpus,
   jpOnly,
   onSearchWord,
   onError,
 }: {
-  performerIds: number[];
+  /** 统计页筛选条里的范围（歌手、年代、流派、语言、完整度……） */
+  subcorpus: Subcorpus;
   jpOnly: boolean;
   onSearchWord: (lemma: string) => void;
   onError: (message: string) => void;
 }) {
   const [raw, setRaw] = useState<FrequencyResult | null>(null);
   const [distinct, setDistinct] = useState<FrequencyResult | null>(null);
+  // 对象每次渲染都是新的，按内容判断变没变
+  const scopeKey = JSON.stringify(subcorpus);
 
   useEffect(() => {
     let cancelled = false;
-    const subcorpus: Subcorpus = { performerIds };
     const run = (unit: CountUnit) =>
       api.corpusFrequency({ scope: { subcorpus, unit, jpOnly }, pos: null, limit: 100_000 });
     Promise.all([run("tokens"), run("distinctLines")])
@@ -67,7 +101,9 @@ export function RepeatEffectCard({
     return () => {
       cancelled = true;
     };
-  }, [performerIds, jpOnly, onError]);
+    // scopeKey 就是 subcorpus 的内容（对象每次渲染都是新的）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey, jpOnly, onError]);
 
   const inflated = useMemo(
     () =>
@@ -86,6 +122,13 @@ export function RepeatEffectCard({
     <section className="card">
       <div className="card-head">
         <h2>副歌对词频的影响</h2>
+        <div className="card-tools">
+          <ArchiveButton
+            spec={{ kind: "corpusFrequency", query: { scope: { subcorpus, unit: "distinctLines", jpOnly }, pos: null, limit: 500 } }}
+            label="副歌效应（去重词频）"
+            onError={onError}
+          />
+        </div>
       </div>
       <p className="muted small">
         歌词里的副歌会原样唱好几遍。同一首歌里重复出现的行占了全部词次的{" "}
@@ -138,18 +181,20 @@ interface SideState {
   performerIds: number[];
   yearFrom: string;
   yearTo: string;
+  /** 存过的子语料（「分析」页筛选条里存的）。歌手、年份填了的以这里为准 */
+  saved: ActiveScope | null;
 }
 
-const EMPTY_SIDE: SideState = { performerIds: [], yearFrom: "", yearTo: "" };
+const EMPTY_SIDE: SideState = { performerIds: [], yearFrom: "", yearTo: "", saved: null };
 
 function toSubcorpus(side: SideState): Subcorpus {
   const year = (s: string) => (/^\d{4}$/.test(s.trim()) ? Number(s.trim()) : null);
-  return { performerIds: side.performerIds, yearFrom: year(side.yearFrom), yearTo: year(side.yearTo) };
+  return mergeSubcorpus({ performerIds: side.performerIds, yearFrom: year(side.yearFrom), yearTo: year(side.yearTo) }, side.saved);
 }
 
 function isEmpty(side: SideState) {
   const s = toSubcorpus(side);
-  return !s.performerIds?.length && s.yearFrom == null && s.yearTo == null;
+  return isWholeCorpus({ ...s, performerIds: s.performerIds ?? [], jpOnly: false });
 }
 
 function SidePicker({
@@ -163,9 +208,28 @@ function SidePicker({
   onChange: (s: SideState) => void;
   onError: (m: string) => void;
 }) {
+  const saved = useSubcorpora(onError);
   return (
     <div className="compare-side">
       <span className="muted small compare-label">{label}</span>
+      {saved.length > 0 && (
+        <select
+          className="rate subcorpus-picker"
+          value={side.saved?.id ?? ""}
+          onChange={(e) => {
+            const pick = saved.find((x) => String(x.id) === e.target.value);
+            onChange({ ...side, saved: pick ? { id: pick.id, name: pick.name, filter: pick.filter } : null });
+          }}
+          title="存过的子语料"
+        >
+          <option value="">（不用子语料）</option>
+          {saved.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+            </option>
+          ))}
+        </select>
+      )}
       <PerformerPicker
         selected={side.performerIds}
         onChange={(performerIds) => onChange({ ...side, performerIds })}
@@ -246,6 +310,7 @@ export function KeynessCard({
   const [reference, setReference] = useState<SideState>(EMPTY_SIDE);
   const [unit, setUnit] = useState<CountUnit>("distinctLines");
   const [result, setResult] = useState<KeynessResult | null>(null);
+  const [lastQuery, setLastQuery] = useState<KeynessQuery | null>(null);
   const [busy, setBusy] = useState(false);
 
   const run = async () => {
@@ -255,16 +320,16 @@ export function KeynessCard({
     }
     setBusy(true);
     try {
-      setResult(
-        await api.keyness({
-          target: toSubcorpus(target),
-          reference: isEmpty(reference) ? null : toSubcorpus(reference),
-          unit,
-          jpOnly,
-          minFreq: 5,
-          limit: 25,
-        }),
-      );
+      const query: KeynessQuery = {
+        target: toSubcorpus(target),
+        reference: isEmpty(reference) ? null : toSubcorpus(reference),
+        unit,
+        jpOnly,
+        minFreq: 5,
+        limit: 25,
+      };
+      setResult(await api.keyness(query));
+      setLastQuery(query);
     } catch (e) {
       onError(message(e));
     } finally {
@@ -276,9 +341,12 @@ export function KeynessCard({
     <section className="card">
       <div className="card-head">
         <h2>子语料对比</h2>
+        <div className="card-tools">
+          {result && lastQuery && <ArchiveButton spec={{ kind: "keyness", query: lastQuery }} label="子语料对比" onError={onError} />}
+        </div>
       </div>
       <p className="muted small">
-        选两批歌（按歌手、年份），看哪些词在「目标」里明显偏多、偏少。参照不选就是语料库里其余的歌。
+        选两批歌（存过的子语料，或者按歌手、年份），看哪些词在「目标」里明显偏多、偏少。参照不选就是语料库里其余的歌。
         按对数似然排序，两边合计少于 5 次的词不列出。
       </p>
       <div className="compare-form">

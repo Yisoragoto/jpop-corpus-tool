@@ -153,7 +153,7 @@ pub fn finish(
             // 只有自动采纳的才写 songs 行和封面。需要人工确认的
             // 停在这里等复核——写错的元数据比空的更难发现。
             if result.status == ScrapeStatus::Success {
-                apply_candidate(conn, song_id, c)?;
+                apply_candidate(conn, song_id, c, Some(result.confidence))?;
                 accepted = Some(c.clone());
             }
             format!("{} / {} / {}", c.title, c.artist, c.album)
@@ -173,10 +173,13 @@ pub fn finish(
 ///
 /// **只补空字段，不覆盖已有值**——需求「永远不要覆盖用户本地文件里的
 /// 原始 metadata」。原值另有一份存在 `track_original_metadata` 里。
+///
+/// 补上的字段记下来源（provider）和置信度（自动采纳时的匹配分；你手动确认的是 `None`）。
 fn apply_candidate(
     conn: &rusqlite::Connection,
     song_id: &str,
     candidate: &jp_scraper::ScrapeCandidate,
+    confidence: Option<f64>,
 ) -> Result<usize> {
     // 先看哪几个字段是空的。
     //
@@ -196,6 +199,18 @@ fn apply_candidate(
     .iter()
     .filter(|(empty, value)| *empty && !value.is_empty())
     .count();
+    let provenance = |field: &str| {
+        jp_corpus::lineage::set_provenance(conn, "song", song_id, field, &candidate.provider, &candidate.provider_id, confidence)
+    };
+    for (field, empty, value) in [
+        ("album", album.is_empty(), &candidate.album),
+        ("year", year.is_empty(), &candidate.year),
+        ("genre", genre.is_empty(), &candidate.genre),
+    ] {
+        if empty && !value.is_empty() {
+            provenance(field)?;
+        }
+    }
 
     conn.execute(
         "UPDATE songs SET
@@ -211,13 +226,17 @@ fn apply_candidate(
     // 而且**年份对得上才补**：本地文件写的是 2019、候选说 2020-03-04，那这个日期不是这首歌的
     let date = &candidate.release_date;
     if !date.is_empty() {
-        conn.execute(
-            "UPDATE songs SET release_date = ?1
-             WHERE id = ?2 AND COALESCE(release_date,'') = ''
-               AND (COALESCE(year,'') = '' OR substr(year,1,4) = substr(?1,1,4))",
-            rusqlite::params![date, song_id],
-        )
-        .context("写发行日期失败")?;
+        let written = conn
+            .execute(
+                "UPDATE songs SET release_date = ?1
+                 WHERE id = ?2 AND COALESCE(release_date,'') = ''
+                   AND (COALESCE(year,'') = '' OR substr(year,1,4) = substr(?1,1,4))",
+                rusqlite::params![date, song_id],
+            )
+            .context("写发行日期失败")?;
+        if written > 0 {
+            provenance("release_date")?;
+        }
     }
     Ok(filled)
 }
@@ -684,6 +703,7 @@ pub fn scrape_artist_one(
     out.not_found = facts.is_none() && out.image_path.is_empty();
     if !out.not_found {
         upsert_artist(conn, &out)?;
+        record_artist_provenance(conn, &out)?;
     }
 
     // 成员关系：只在唯一认出了这个条目（有 MBID）时才查，多一次请求
@@ -740,6 +760,40 @@ pub fn apply_relations(
         }
     }
     Ok(written)
+}
+
+/// MusicBrainz 资料的置信度先验：名字或别名归一化后相等、而且**只有一个条目**（拿到了 MBID）
+/// 是 1.0；同名不止一个、没敢认 MBID 时是 0.5（资料可能是同名的另一位的）。
+pub const MB_UNIQUE_CONFIDENCE: f64 = 1.0;
+pub const MB_AMBIGUOUS_CONFIDENCE: f64 = 0.5;
+/// Deezer 照片的置信度先验：名字或别名相等才收，但 Deezer 上不少乐队的「照片」其实是专辑封面
+pub const DEEZER_IMAGE_CONFIDENCE: f64 = 0.7;
+
+/// 刮到的歌手资料各字段记下来源和置信度（`field_provenance`，entity_type = artist，id 是名字）。
+/// 只记这一轮真的拿到值的字段；照片是你手动换的就不记（它没被覆盖）。
+fn record_artist_provenance(conn: &rusqlite::Connection, out: &ArtistOutcome) -> Result<()> {
+    use jp_corpus::lineage::set_provenance;
+    let mb_conf = if out.mbid.is_empty() { MB_AMBIGUOUS_CONFIDENCE } else { MB_UNIQUE_CONFIDENCE };
+    for (field, value) in [
+        ("artist_type", &out.artist_type),
+        ("country", &out.country),
+        ("formed", &out.formed),
+        ("ended", &out.ended),
+        ("mbid", &out.mbid),
+    ] {
+        if !value.is_empty() {
+            set_provenance(conn, "artist", &out.name, field, "musicbrainz", &out.mbid, Some(mb_conf))?;
+        }
+    }
+    if !out.image_path.is_empty() {
+        let manual: bool = conn
+            .query_row("SELECT COALESCE(image_manual,0)=1 FROM artists WHERE name=?1", rusqlite::params![out.name], |r| r.get(0))
+            .unwrap_or(false);
+        if !manual {
+            set_provenance(conn, "artist", &out.name, "image_path", "deezer", "", Some(DEEZER_IMAGE_CONFIDENCE))?;
+        }
+    }
+    Ok(())
 }
 
 /// 写 `artists` 表。**空值不覆盖已有值**——这一轮没查到照片，
@@ -823,6 +877,7 @@ pub fn set_artist_image(
         rusqlite::params![name, path],
     )
     .context("写 artists 失败")?;
+    jp_corpus::lineage::set_provenance(conn, "artist", name, "image_path", "manual", "", None)?;
     Ok(path)
 }
 
@@ -836,6 +891,14 @@ pub fn reset_artist_image(conn: &rusqlite::Connection, artists_dir: &std::path::
         rusqlite::params![name, path],
     )
     .context("写 artists 失败")?;
+    if path.is_empty() {
+        conn.execute(
+            "DELETE FROM field_provenance WHERE entity_type='artist' AND entity_id=?1 AND field='image_path'",
+            rusqlite::params![name],
+        )?;
+    } else {
+        jp_corpus::lineage::set_provenance(conn, "artist", name, "image_path", "deezer", "", Some(DEEZER_IMAGE_CONFIDENCE))?;
+    }
     Ok(path)
 }
 
@@ -1176,7 +1239,8 @@ pub fn apply_manual(
     local_artist: &str,
     candidate: &jp_scraper::ScrapeCandidate,
 ) -> Result<ManualApply> {
-    let fields_filled = apply_candidate(conn, song_id, candidate)?;
+    // 你在复核里点的「就是这条」：置信度不适用（NULL），来源仍记 provider
+    let fields_filled = apply_candidate(conn, song_id, candidate, None)?;
 
     // 已有的信用标成 manual：自动流程从此不许动它们
     let credits_protected = conn.execute(
@@ -1259,7 +1323,10 @@ mod tests {
             ..Default::default()
         };
         super::upsert_artist(&conn, &out).unwrap();
+        super::record_artist_provenance(&conn, &out).unwrap();
         assert_eq!(image(&conn), manual, "刮削把手动换的照片盖掉了");
+        let source = |c: &rusqlite::Connection| jp_corpus::lineage::source_of(c, "artist", "ヨルシカ", "image_path").unwrap();
+        assert_eq!(source(&conn).as_deref(), Some("manual"), "照片来源还是你换的那张");
 
         // 不是图片的文件不收
         let txt = dir.join("note.txt");
@@ -1268,9 +1335,36 @@ mod tests {
 
         assert_eq!(super::reset_artist_image(&conn, &dir, "ヨルシカ").unwrap(), scraped.display().to_string());
         assert!(!std::path::Path::new(&manual).exists());
+        assert_eq!(source(&conn).as_deref(), Some("deezer"));
         super::upsert_artist(&conn, &out).unwrap();
         assert_eq!(image(&conn), scraped.display().to_string());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 刮到的歌手资料记来源和置信度：认出唯一条目的比同名好几个的可信
+    #[test]
+    fn scraped_artist_facts_carry_their_source_and_confidence() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        jp_corpus::Corpus::ensure_schema_on(&conn).unwrap();
+        let unique = super::ArtistOutcome {
+            name: "ヨルシカ".into(),
+            artist_type: "Group".into(),
+            country: "JP".into(),
+            mbid: "mbid-1".into(),
+            ..Default::default()
+        };
+        super::upsert_artist(&conn, &unique).unwrap();
+        super::record_artist_provenance(&conn, &unique).unwrap();
+        let prov = jp_corpus::lineage::provenance(&conn, "artist", "ヨルシカ").unwrap();
+        let fields: Vec<&str> = prov.iter().map(|p| p.field.as_str()).collect();
+        assert_eq!(fields, ["artist_type", "country", "mbid"], "空字段不记");
+        assert!(prov.iter().all(|p| p.source == "musicbrainz" && p.confidence == Some(super::MB_UNIQUE_CONFIDENCE)));
+
+        let ambiguous = super::ArtistOutcome { name: "同名".into(), country: "JP".into(), ..Default::default() };
+        super::upsert_artist(&conn, &ambiguous).unwrap();
+        super::record_artist_provenance(&conn, &ambiguous).unwrap();
+        let prov = jp_corpus::lineage::provenance(&conn, "artist", "同名").unwrap();
+        assert_eq!(prov[0].confidence, Some(super::MB_AMBIGUOUS_CONFIDENCE));
     }
 
     /// 文件里自带封面的，补封面时先用它，不看刮削候选（这首歌根本没刮削过）；

@@ -383,10 +383,14 @@ pub fn word_in_corpus(
     lemma: String,
     current_song_id: Option<String>,
     limit: Option<i64>,
+    scope: Option<jp_corpus::subcorpus::Subcorpus>,
 ) -> CmdResult<WordInCorpus> {
-    Ok(state
-        .corpus()
-        .word_in_corpus(&lemma, current_song_id.as_deref(), limit.unwrap_or(20))?)
+    let corpus = state.corpus();
+    let limit = limit.unwrap_or(20);
+    Ok(match scope.filter(|s| !s.is_all()) {
+        Some(scope) => corpus.word_in_subcorpus(&lemma, current_song_id.as_deref(), limit, &scope)?,
+        None => corpus.word_in_corpus(&lemma, current_song_id.as_deref(), limit)?,
+    })
 }
 
 // ────────────────────────────── 播放历史 ──────────────────────────────
@@ -1618,6 +1622,233 @@ pub async fn stats_report<R: tauri::Runtime>(
         })
     })
     .await
+}
+
+// ──────────────────────── 语料质量与来源追踪 ────────────────────────
+
+/// 整个库的语料质量：歌词来源、完整度、问题分布、分词状态、用过的分词器、最需要看一眼的歌
+#[tauri::command]
+pub async fn quality_overview<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    limit: Option<usize>,
+) -> CmdResult<jp_corpus::lineage::QualityOverview> {
+    blocking(app, move |state| jp_corpus::lineage::quality_overview(state.corpus().connection(), limit.unwrap_or(50).clamp(1, 500))).await
+}
+
+/// 一首歌的来源与质量：歌词各版本和校验结果、逐行时间戳置信度和分词状态、分词器、字段来源、修订历史
+#[tauri::command(async)]
+pub fn song_lineage(state: State<'_, AppState>, song_id: String) -> CmdResult<jp_corpus::lineage::SongLineage> {
+    Ok(jp_corpus::lineage::song_lineage(state.corpus().connection(), &song_id)?)
+}
+
+/// 一个歌手的资料各字段从哪来（MusicBrainz / Deezer / 你换的），带置信度
+#[tauri::command(async)]
+pub fn artist_provenance(state: State<'_, AppState>, name: String) -> CmdResult<Vec<jp_corpus::lineage::FieldProvenance>> {
+    Ok(jp_corpus::lineage::provenance(state.corpus().connection(), "artist", &name)?)
+}
+
+/// 一版歌词挂上时的原文。老库补登记的版本没有原文，是 null
+#[tauri::command(async)]
+pub fn lyric_version_raw(state: State<'_, AppState>, version_id: i64) -> CmdResult<Option<String>> {
+    Ok(jp_corpus::lineage::version_raw(state.corpus().connection(), version_id)?.and_then(|(_, raw)| raw))
+}
+
+/// 把以前的某一版歌词恢复成当前版（记成新的一版，历史不抹）
+#[tauri::command]
+pub async fn lyrics_restore_version<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+    version_id: i64,
+) -> CmdResult<crate::lyrics::Attached> {
+    blocking(app, move |state| {
+        let lyrics_dir = state.lyrics_dir.clone();
+        let mut corpus = state.corpus();
+        crate::lyrics::restore_version(corpus.connection_mut(), &lyrics_dir, &song_id, version_id, state.analyzer().as_deref())
+    })
+    .await
+}
+
+/// 逐行编辑歌词：改错字、补行、删行、挪时间戳。存成新的一版（旧版能恢复），并记一条修订
+#[tauri::command]
+pub async fn lyrics_save_lines<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+    lines: Vec<crate::lyrics::EditedLine>,
+    note: Option<String>,
+) -> CmdResult<crate::lyrics::Attached> {
+    blocking(app, move |state| {
+        let lyrics_dir = state.lyrics_dir.clone();
+        let mut corpus = state.corpus();
+        crate::lyrics::save_edited_lines(
+            corpus.connection_mut(),
+            &lyrics_dir,
+            &song_id,
+            &lines,
+            note.as_deref().unwrap_or(""),
+            state.analyzer().as_deref(),
+        )
+    })
+    .await
+}
+
+/// 拿库里现有的歌词行重新校验（补了时长之后、或者想刷新一下结论）。不给 song_id 就是整个库。返回校验了几首
+#[tauri::command]
+pub async fn lyrics_revalidate<R: tauri::Runtime>(app: tauri::AppHandle<R>, song_id: Option<String>) -> CmdResult<usize> {
+    blocking(app, move |state| {
+        let mut corpus = state.corpus();
+        let tx = corpus.connection_mut().transaction()?;
+        let ids: Vec<String> = match song_id {
+            Some(id) => vec![id],
+            None => {
+                let mut stmt = tx.prepare("SELECT DISTINCT song_id FROM lyric_versions WHERE is_current=1")?;
+                stmt.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?
+            }
+        };
+        let mut n = 0;
+        for id in &ids {
+            n += usize::from(jp_corpus::lineage::revalidate(&tx, id)?);
+        }
+        tx.commit()?;
+        Ok(n)
+    })
+    .await
+}
+
+/// 手动定一首歌的歌词语言（ja / en / ko / zh / mixed；空串是清掉）。手定的值按歌词推断不再覆盖
+#[tauri::command(async)]
+pub fn song_set_language(state: State<'_, AppState>, song_id: String, language: String) -> CmdResult<()> {
+    let corpus = state.corpus();
+    let conn = corpus.connection();
+    let language = language.trim();
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("UPDATE songs SET language=NULLIF(?1,'') WHERE id=?2", rusqlite::params![language, song_id])?;
+    jp_corpus::lineage::set_provenance(&tx, "song", &song_id, "language", "manual", "", None)?;
+    jp_corpus::lineage::log(
+        &tx,
+        &jp_corpus::lineage::Revision {
+            song_id: song_id.clone(),
+            kind: "metadata_edited".into(),
+            after: Some(serde_json::json!({ "language": language })),
+            actor: "user".into(),
+            ..Default::default()
+        },
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+// ───────────────────────── 子语料与可复现分析 ─────────────────────────
+
+/// 建子语料时可选的值：年份范围、流派、语言
+#[tauri::command]
+pub async fn subcorpus_facets<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> CmdResult<jp_corpus::runs::FilterFacets> {
+    blocking(app, move |state| jp_corpus::runs::facets(state.corpus().connection())).await
+}
+
+/// 按条件预览范围：多少首歌、多少行（不存）
+#[tauri::command]
+pub async fn subcorpus_preview<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    filter: jp_corpus::stats::StatsFilter,
+) -> CmdResult<jp_corpus::runs::Scope> {
+    blocking(app, move |state| {
+        let mut scope = jp_corpus::runs::scope(state.corpus().connection(), &filter)?;
+        // 预览只要数目，不把几百首歌的清单传给界面
+        scope.songs.clear();
+        Ok(scope)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn subcorpus_list<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> CmdResult<Vec<jp_corpus::runs::SavedSubcorpus>> {
+    blocking(app, move |state| jp_corpus::runs::subcorpora(state.corpus().connection())).await
+}
+
+#[tauri::command]
+pub async fn subcorpus_save<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    name: String,
+    filter: jp_corpus::stats::StatsFilter,
+    note: Option<String>,
+) -> CmdResult<jp_corpus::runs::SavedSubcorpus> {
+    blocking(app, move |state| {
+        jp_corpus::runs::save_subcorpus(state.corpus().connection(), &name, &filter, note.as_deref().unwrap_or(""))
+    })
+    .await
+}
+
+#[tauri::command(async)]
+pub fn subcorpus_delete(state: State<'_, AppState>, id: i64) -> CmdResult<bool> {
+    Ok(jp_corpus::runs::delete_subcorpus(state.corpus().connection(), id)?)
+}
+
+/// 跑一次分析并存下来：条件、范围（每首歌和它的歌词版本）、分词器、口径、结果
+#[tauri::command]
+pub async fn analysis_run<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    spec: jp_corpus::runs::AnalysisSpec,
+    filter: Option<jp_corpus::stats::StatsFilter>,
+    label: Option<String>,
+) -> CmdResult<jp_corpus::runs::AnalysisRun> {
+    let version = app.package_info().version.to_string();
+    blocking(app, move |state| {
+        jp_corpus::runs::run(
+            state.corpus().connection(),
+            &spec,
+            &filter.unwrap_or_default(),
+            label.as_deref().unwrap_or(""),
+            &version,
+            None,
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn analysis_list<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    limit: Option<i64>,
+) -> CmdResult<Vec<jp_corpus::runs::AnalysisSummary>> {
+    blocking(app, move |state| jp_corpus::runs::list(state.corpus().connection(), limit.unwrap_or(100).clamp(1, 1000))).await
+}
+
+#[tauri::command]
+pub async fn analysis_get<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    id: i64,
+) -> CmdResult<Option<jp_corpus::runs::AnalysisRun>> {
+    blocking(app, move |state| jp_corpus::runs::get(state.corpus().connection(), id)).await
+}
+
+/// 拿一条记录的条件和参数在现在的库上重跑，另存一条，并说明和原来差在哪
+#[tauri::command]
+pub async fn analysis_rerun<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    id: i64,
+) -> CmdResult<jp_corpus::runs::Comparison> {
+    let version = app.package_info().version.to_string();
+    blocking(app, move |state| jp_corpus::runs::rerun(state.corpus().connection(), id, &version)).await
+}
+
+/// 任意两条记录逐项对比
+#[tauri::command]
+pub async fn analysis_compare<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    before: i64,
+    after: i64,
+) -> CmdResult<jp_corpus::runs::Comparison> {
+    blocking(app, move |state| {
+        let corpus = state.corpus();
+        let get = |id| jp_corpus::runs::get(corpus.connection(), id)?.ok_or_else(|| anyhow::anyhow!("找不到分析记录 {id}"));
+        Ok(jp_corpus::runs::compare(&get(before)?, &get(after)?))
+    })
+    .await
+}
+
+#[tauri::command(async)]
+pub fn analysis_delete(state: State<'_, AppState>, id: i64) -> CmdResult<bool> {
+    Ok(jp_corpus::runs::delete(state.corpus().connection(), id)?)
 }
 
 /// 挖词报告：读 Anki 的 collection（复制一份再读），写 `output/corpus_report.html` 并用浏览器打开。

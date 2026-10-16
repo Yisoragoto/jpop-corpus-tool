@@ -30,6 +30,10 @@ mod quick;
 pub mod corrections;
 pub mod fixture;
 pub mod migrations;
+pub mod quality;
+pub mod lineage;
+/// 存档的分析、存起来的子语料（可复现分析，见 docs/provenance.md）
+pub mod runs;
 pub mod stats;
 // 语料分析与播放器的连接层。两个客户端（Tauri、macOS）都只经过这几个模块，规则只写一处
 pub mod analysis;
@@ -266,7 +270,18 @@ impl Corpus {
         current_song_id: Option<&str>,
         example_limit: i64,
     ) -> Result<WordInCorpus> {
-        corpus::word_in_corpus(&self.conn, lemma, current_song_id, example_limit)
+        corpus::word_in_corpus(&self.conn, lemma, current_song_id, example_limit, None)
+    }
+
+    /// 同上，但只在一块子语料里看（只用范围条件）。
+    pub fn word_in_subcorpus(
+        &self,
+        lemma: &str,
+        current_song_id: Option<&str>,
+        example_limit: i64,
+        scope: &subcorpus::Subcorpus,
+    ) -> Result<WordInCorpus> {
+        corpus::word_in_corpus(&self.conn, lemma, current_song_id, example_limit, Some(scope))
     }
 
     // ── 播放历史 ──
@@ -321,6 +336,14 @@ impl Corpus {
     /// 给没有导入时间的歌补上（音频文件的创建时间）。需要可写连接。返回补了几首。
     pub fn backfill_added_at(&mut self) -> Result<usize> {
         home::backfill_added_at(&mut self.conn)
+    }
+
+    /// 老库补登记歌词版本和逐行状态（见 [`lineage::backfill_legacy`]）。需要可写连接。返回补了几首。
+    pub fn backfill_lineage(&mut self) -> Result<usize> {
+        let tx = self.conn.transaction()?;
+        let n = lineage::backfill_legacy(&tx)?;
+        tx.commit()?;
+        Ok(n)
     }
 
     /// 库的完整度（识别、封面、歌词、时长各齐了多少）。刮削页用

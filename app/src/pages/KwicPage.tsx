@@ -37,6 +37,8 @@ import {
   type Subcorpus,
 } from "../api";
 import { PerformerPicker } from "../components/PerformerPicker";
+import { SubcorpusPicker } from "../components/SubcorpusPicker";
+import { mergeSubcorpus, useActiveScope } from "../subcorpusScope";
 import { VirtualList } from "../components/VirtualList";
 import { TokenCorrectionDialog } from "../components/TokenCorrectionDialog";
 import { audition, isPlayingSpan, playFrom } from "../listen";
@@ -107,6 +109,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
   const [dedup, setDedup] = useState(true);
   const [jpOnly, setJpOnly] = useState(false);
   const [personIds, setPersonIds] = useState<number[]>([]);
+  const scope = useActiveScope();
   const [yearFrom, setYearFrom] = useState("");
   const [yearTo, setYearTo] = useState("");
   /** 搭配面板点出来的「附近有某词」 */
@@ -128,7 +131,11 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
   const [contentOnly, setContentOnly] = useState(true);
   const [measure, setMeasure] = useState<CollocationMeasure>("logDice");
 
-  const subcorpus = useMemo(() => yearSubcorpus(yearFrom, yearTo, personIds), [yearFrom, yearTo, personIds]);
+  // 这一页自己选的歌手、年份叠在「当前子语料」上：这里填了的条件以这里为准
+  const subcorpus = useMemo(
+    () => mergeSubcorpus(yearSubcorpus(yearFrom, yearTo, personIds), scope),
+    [yearFrom, yearTo, personIds, scope],
+  );
   /** 上一次 KWIC 查的是什么。搭配面板跟着它走，而不是跟着输入框里正在打的字 */
   const [searched, setSearched] = useState<{ query: string; field: MatchField } | null>(null);
 
@@ -341,6 +348,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
               ))}
             </select>
             <PerformerPicker selected={personIds} onChange={setPersonIds} onError={onError} />
+            <SubcorpusPicker onError={onError} />
             <span className="year-range" title="按歌曲年份筛选（含两端）。没有年份的歌在设了年份时不计入">
               <input
                 className="year-input"

@@ -465,10 +465,34 @@ fn parse_credit(body: &str) -> Option<CreditLine> {
         .then_some(CreditLine::Other)
 }
 
+/// 歌词行写回 LRC 文本：有时间的 `[mm:ss.xx]歌词`，没时间的原样一行。
+///
+/// 给「逐行编辑歌词」用：改完的行记成新的一版，原文（`lyric_versions.raw_text`）就是这份。
+/// 不写署名、不写元数据标签——那些不是歌词行。
+pub fn format(lines: &[LyricLine]) -> String {
+    let mut out = String::new();
+    for line in lines {
+        if let Some(t) = line.time_sec {
+            let centis = (t.max(0.0) * 100.0).round() as u64;
+            out.push_str(&format!("[{:02}:{:02}.{:02}]", centis / 6000, centis / 100 % 60, centis % 100));
+        }
+        out.push_str(&line.text);
+        out.push('\n');
+    }
+    out
+}
+
 /// 读文件并解析。编码按 UTF-8 → CP932 → GBK 依次尝试。
 pub fn parse_file(path: &std::path::Path) -> anyhow::Result<ParsedLrc> {
+    Ok(parse(&read_file(path)?))
+}
+
+/// 读文件、解码成文本（去掉 BOM），不解析。编码规则同 [`parse_file`]。
+///
+/// 挂歌词时要的是**原文**：它原样存进 `lyric_versions.raw_text`，解析规则以后改了也能从它重来。
+pub fn read_file(path: &std::path::Path) -> anyhow::Result<String> {
     let bytes = std::fs::read(path)?;
-    Ok(parse(decode(&bytes).trim_start_matches('\u{feff}')))
+    Ok(decode(&bytes).trim_start_matches('\u{feff}').to_string())
 }
 
 /// 字节 → 文本。UTF-8 → CP932 → GBK，第一个**不出错**的解释胜出。
@@ -500,6 +524,23 @@ fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     // 三种都不干净：按 UTF-8 尽力而为，坏字节变 U+FFFD。
     // 走到这里的文件本身就是坏的，报错反而会让一首歌整个导不进来。
     String::from_utf8_lossy(bytes)
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+
+    #[test]
+    fn timed_lines_round_trip_through_the_parser() {
+        let lines = vec![
+            LyricLine { time_sec: Some(3.1), text: "春も　思い出した日々".into() },
+            LyricLine { time_sec: Some(61.25), text: "打ち込んでいませんでした".into() },
+            LyricLine { time_sec: None, text: "（間奏）".into() },
+        ];
+        let text = format(&lines);
+        assert_eq!(text, "[00:03.10]春も　思い出した日々\n[01:01.25]打ち込んでいませんでした\n（間奏）\n");
+        assert_eq!(parse(&text).lines, lines);
+    }
 }
 
 #[cfg(test)]

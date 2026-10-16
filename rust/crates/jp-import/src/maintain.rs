@@ -147,6 +147,33 @@ pub fn edit_song(conn: &Connection, song_id: &str, edit: &SongEdit) -> Result<Ed
         params![edit.title, edit.artist, edit.year, edit.album, edit.genre, song_id],
     )?;
 
+    // 你改过的字段记成 manual：刮削只补空字段，语言推断看到 manual 就不碰
+    for field in &report.changed {
+        jp_corpus::lineage::set_provenance(conn, "song", song_id, field, "manual", "", None)?;
+    }
+    let pick = |e: &SongEdit| {
+        let all = [("title", &e.title), ("artist", &e.artist), ("year", &e.year), ("album", &e.album), ("genre", &e.genre)];
+        let map: serde_json::Map<String, serde_json::Value> = all
+            .into_iter()
+            .filter(|(k, _)| report.changed.iter().any(|c| c == k))
+            .map(|(k, v)| (k.to_string(), serde_json::Value::from(v.as_str())))
+            .collect();
+        serde_json::Value::Object(map)
+    };
+    jp_corpus::lineage::log(
+        conn,
+        &jp_corpus::lineage::Revision {
+            song_id: song_id.into(),
+            song_artist: edit.artist.clone(),
+            song_title: edit.title.clone(),
+            kind: "metadata_edited".into(),
+            before: Some(pick(&old)),
+            after: Some(pick(&edit)),
+            actor: "user".into(),
+            ..Default::default()
+        },
+    )?;
+
     let mut touched_people = BTreeSet::new();
     if changed("artist") {
         let mut stmt = conn.prepare("SELECT person_id FROM track_credits WHERE song_id=?1 AND role='performer'")?;
@@ -237,6 +264,22 @@ pub fn delete_song(conn: &Connection, song_id: &str) -> Result<DeleteReport> {
         conn.execute("DELETE FROM scrape_attempts WHERE file_path=?1", params![audio_path])?;
     }
 
+    if table_exists(conn, "lyric_versions")? {
+        jp_corpus::lineage::forget_song(conn, song_id)?;
+        jp_corpus::lineage::log(
+            conn,
+            &jp_corpus::lineage::Revision {
+                song_id: song_id.into(),
+                song_artist: report.artist.clone(),
+                song_title: report.title.clone(),
+                kind: "song_deleted".into(),
+                before: Some(serde_json::json!({ "lines": report.lyric_lines, "audioPath": report.audio_path })),
+                actor: "user".into(),
+                ..Default::default()
+            },
+        )?;
+    }
+
     conn.execute("DELETE FROM songs WHERE id=?1", params![song_id])?;
     report.albums_removed = remove_orphan_album(conn, album_id)?;
     report.people_removed = remove_orphan_people(conn, &people)?;
@@ -272,6 +315,10 @@ pub fn clear_lyrics(conn: &Connection, song_id: &str) -> Result<ClearedLyrics> {
         report.tokens += conn.execute("DELETE FROM tokens WHERE utterance_id=?1", params![id])?;
     }
     conn.execute("DELETE FROM utterances WHERE song_id=?1", params![song_id])?;
+    // 旧版的原文留在 lyric_versions 里，只是不再是当前版
+    if table_exists(conn, "lyric_versions")? {
+        jp_corpus::lineage::retire_current(conn, song_id)?;
+    }
     Ok(report)
 }
 
@@ -464,8 +511,9 @@ pub(crate) mod tests {
         std::fs::write(&old, "[00:10.00]夜が明けるまで\n[00:15.00]君を待っている\n").unwrap();
         std::fs::write(&new, "[00:12.00]月が綺麗ですね\n").unwrap();
 
+        let file = crate::import::LyricSource::new("lrc_file", "old.lrc", "", "import");
         let first =
-            crate::import::attach_lyrics(&conn, "001", &old, None, "ヨルシカ", "夜行").unwrap();
+            crate::import::attach_lyrics(&conn, "001", &old, &file, None, "ヨルシカ", "夜行").unwrap();
         assert_eq!(first.lyric_lines, 2);
         assert_eq!(fts_hits(&conn, "夜が明"), 1);
 
@@ -473,8 +521,9 @@ pub(crate) mod tests {
         assert_eq!(cleared.lyric_lines, 2);
         assert_eq!(fts_hits(&conn, "夜が明"), 0, "清掉之后还搜得到旧歌词");
 
+        let online = crate::import::LyricSource::new("online", "netease", "夜行 — ヨルシカ", "user");
         let second =
-            crate::import::attach_lyrics(&conn, "001", &new, None, "ヨルシカ", "夜行").unwrap();
+            crate::import::attach_lyrics(&conn, "001", &new, &online, None, "ヨルシカ", "夜行").unwrap();
         assert_eq!(second.lyric_lines, 1);
         assert_eq!(fts_hits(&conn, "月が綺"), 1, "新歌词搜不到");
         assert_eq!(fts_hits(&conn, "夜が明"), 0);
@@ -488,6 +537,44 @@ pub(crate) mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(idx, vec![0]);
+
+        // 旧版没删：原文还在，只是不再是当前版；新的歌词行指向新版
+        let versions = jp_corpus::lineage::versions(&conn, "001").unwrap();
+        assert_eq!(versions.len(), 2);
+        assert!(versions[0].is_current && versions[0].source_type == "online");
+        assert!(!versions[1].is_current);
+        let (_, raw) = jp_corpus::lineage::version_raw(&conn, versions[1].id).unwrap().unwrap();
+        assert_eq!(raw.as_deref(), Some("[00:10.00]夜が明けるまで\n[00:15.00]君を待っている\n"), "原文一字不改");
+        let (version_id, status): (i64, String) = conn
+            .query_row("SELECT version_id, token_status FROM utterances WHERE song_id='001'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(version_id, versions[0].id);
+        assert_eq!(status, "pending", "没有词典时是待分词");
+    }
+
+    #[test]
+    fn edits_and_deletes_leave_a_trail() {
+        let conn = full_db();
+        conn.execute(
+            "INSERT INTO songs (id, title, artist, year, corpus_type) VALUES ('001','夜行','ヨルシカ','2019','song')",
+            [],
+        )
+        .unwrap();
+        let edit = SongEdit { title: "夜行".into(), artist: "ヨルシカ".into(), year: "2020".into(), album: String::new(), genre: "J-Pop".into() };
+        edit_song(&conn, "001", &edit).unwrap();
+        let prov = jp_corpus::lineage::provenance(&conn, "song", "001").unwrap();
+        let fields: Vec<(&str, &str)> = prov.iter().map(|p| (p.field.as_str(), p.source.as_str())).collect();
+        assert_eq!(fields, [("genre", "manual"), ("year", "manual")]);
+        let log = jp_corpus::lineage::revisions(&conn, "001", 10).unwrap();
+        assert_eq!(log[0].kind, "metadata_edited");
+        assert_eq!(log[0].before.as_ref().unwrap()["year"], "2019");
+        assert_eq!(log[0].after.as_ref().unwrap()["year"], "2020");
+
+        delete_song(&conn, "001").unwrap();
+        assert!(jp_corpus::lineage::provenance(&conn, "song", "001").unwrap().is_empty());
+        let log = jp_corpus::lineage::revisions(&conn, "001", 10).unwrap();
+        assert_eq!(log[0].kind, "song_deleted");
+        assert_eq!(log.len(), 2, "删歌不删日志");
     }
 
     fn fts_hits(conn: &Connection, needle: &str) -> i64 {
@@ -758,27 +845,31 @@ pub fn tokenize_song(
         params![song_id],
     )?;
 
+    // 规则和导入完全一致，用的是同一份代码（`import::write_line_tokens`）
+    use jp_corpus::lineage::token_status;
+    let run_id = crate::import::tokenizer_run_id(conn, analyzer)?;
     for (utterance_id, text) in &lines {
-        let tokens = analyzer
-            .analyze(text)
-            .with_context(|| format!("分词失败：{text}"))?;
-        let meaningful = tokens.iter().filter(|t| !t.surface.trim().is_empty());
-        for (token_idx, token) in meaningful.enumerate() {
-            conn.execute(
-                "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) \
-                 VALUES (?1,?2,?3,?4,?5)",
-                params![
-                    utterance_id,
-                    token_idx as i64,
-                    token.surface,
-                    token.lemma,
-                    token.upos
-                ],
-            )?;
-            stats.tokens += 1;
-        }
+        let written = crate::import::write_line_tokens(conn, *utterance_id, text, analyzer)?;
+        stats.tokens += written;
+        let status = if written == 0 { token_status::EMPTY } else { token_status::AUTO };
+        jp_corpus::lineage::mark_tokens(conn, *utterance_id, status, Some(run_id))?;
         stats.lines += 1;
     }
+    jp_corpus::lineage::log(
+        conn,
+        &jp_corpus::lineage::Revision {
+            song_id: song_id.into(),
+            kind: "retokenized".into(),
+            after: Some(serde_json::json!({
+                "lines": stats.lines,
+                "tokens": stats.tokens,
+                "tokenizer": analyzer.info().label(),
+                "tokenizerRunId": run_id,
+            })),
+            actor: "system".into(),
+            ..Default::default()
+        },
+    )?;
 
     let (artist, title): (String, String) = conn.query_row(
         "SELECT artist, title FROM songs WHERE id = ?1",

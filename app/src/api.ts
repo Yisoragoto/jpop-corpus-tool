@@ -194,6 +194,10 @@ export interface Subcorpus {
   albumIds?: number[];
   genres?: string[];
   songIds?: string[];
+  /** 歌词语言（ja / en / ko / zh / mixed） */
+  languages?: string[];
+  /** 当前歌词版本的完整度下限，0~1 */
+  minCompleteness?: number | null;
 }
 
 /** 行的结束时间是怎么来的：下一行开始 / 间奏太长按字数估 / 曲目结束 */
@@ -266,6 +270,13 @@ export interface FrequencyItem {
 export interface FrequencyResult {
   items: FrequencyItem[];
   provenance: Provenance;
+}
+
+/** 重复感知的词频查询（analysis.rs 的 FrequencyQuery） */
+export interface FrequencyQuery {
+  scope?: AnalysisScope;
+  pos?: string | null;
+  limit?: number;
 }
 
 export type CollocationMeasure = "logDice" | "mi" | "logLikelihood" | "frequency";
@@ -464,10 +475,25 @@ export interface WordFrequency {
   surfaces: string[];
 }
 
-/** 统计页、报告共用的筛选。演唱者用 people.id，空数组是全部 */
+/**
+ * 统计页、报告共用的筛选，也就是「子语料」。演唱者用 people.id，空数组是全部。
+ * 其余条件不给就是不限（对应 `jp_corpus::stats::StatsFilter`，见 `corpusQuality.ts`）。
+ */
 export interface StatsFilter {
   performerIds: number[];
   jpOnly: boolean;
+  /** 发行年份范围（含两端）。设了年份条件时，年份不明的歌不算进来 */
+  yearFrom?: number | null;
+  yearTo?: number | null;
+  genres?: string[];
+  /** 歌词语言：ja / en / ko / zh / mixed */
+  languages?: string[];
+  albumIds?: number[];
+  songIds?: string[];
+  /** 当前歌词版本的完整度下限，0~1 */
+  minCompleteness?: number | null;
+  /** 同一首歌里文本相同的行只算一次（副歌只算一遍） */
+  distinctLines?: boolean;
 }
 
 /** 统计表一行：词元 × 词性，带 JLPT（本地 jlpt_cache，没有是空串） */
@@ -798,7 +824,7 @@ export const api = {
   listenWindow: (utteranceId: number, before = 0, after = 0) =>
     call<ListenWindow | null>("listen_window", { utteranceId, before, after }),
   corpusSnapshot: () => call<CorpusSnapshot>("corpus_snapshot"),
-  corpusFrequency: (query: { scope?: AnalysisScope; pos?: string | null; limit?: number }) =>
+  corpusFrequency: (query: FrequencyQuery) =>
     call<FrequencyResult>("corpus_frequency", { query }),
   collocations: (query: CollocationQuery) => call<CollocationResult>("collocations", { query }),
   keyness: (query: KeynessQuery) => call<KeynessResult>("keyness", { query }),
@@ -814,8 +840,9 @@ export const api = {
   timeline: () => call<YearStats[]>("timeline"),
   wordFrequency: (pos?: string, limit?: number) =>
     call<WordFrequency[]>("word_frequency", { pos, limit }),
-  wordInCorpus: (lemma: string, currentSongId?: string, limit?: number) =>
-    call<WordInCorpus>("word_in_corpus", { lemma, currentSongId, limit }),
+  /** scope：只在这块子语料里看（不给就是整个库） */
+  wordInCorpus: (lemma: string, currentSongId?: string, limit?: number, scope?: Subcorpus | null) =>
+    call<WordInCorpus>("word_in_corpus", { lemma, currentSongId, limit, scope: scope ?? null }),
 
   // 统计
   /** 统计表：词元 × 词性的频次，带 JLPT。默认前 300 */

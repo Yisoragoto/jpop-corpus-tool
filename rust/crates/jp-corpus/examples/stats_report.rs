@@ -20,8 +20,8 @@ fn main() -> anyhow::Result<()> {
 
     let started = std::time::Instant::now();
     let all = StatsFilter::default();
-    let artist = StatsFilter { performer_ids: vec![yorushika], jp_only: false };
-    let jp = StatsFilter { performer_ids: vec![], jp_only: true };
+    let artist = StatsFilter { performer_ids: vec![yorushika], ..Default::default() };
+    let jp = StatsFilter { jp_only: true, ..Default::default() };
     let reports = [
         ("report_all", corpus_report(conn, &all)?, Vec::<String>::new(), false),
         ("report_yorushika", corpus_report(conn, &artist)?, vec!["ヨルシカ".to_owned()], false),

@@ -27,9 +27,13 @@ import {
   type StatsReport,
   type YearStats,
 } from "../api";
+import { AnalysisRuns } from "../components/AnalysisRuns";
 import { KeynessCard, RepeatEffectCard } from "../components/CorpusCompare";
 import { PerformerPicker } from "../components/PerformerPicker";
+import { QualityCard } from "../components/QualityCard";
+import { SubcorpusFilters } from "../components/SubcorpusFilters";
 import { Stat } from "../components/Stat";
+import { describeFilter, toSubcorpus } from "../corpusQuality";
 import { pyFixed, pyGrouped } from "../pyFormat";
 import type { LibraryActions } from "../useLibrary";
 
@@ -136,8 +140,7 @@ export function AnalyticsPage({
     }
   };
 
-  const filterDesc =
-    (report?.performers.length ? report.performers.join("、") : "全部歌手") + (report?.jpOnly ? " / 仅日文" : "");
+  const filterDesc = describeFilter(filter, report?.performers ?? []);
 
   return (
     <div className="page analytics">
@@ -209,6 +212,13 @@ export function AnalyticsPage({
         </section>
       )}
 
+      <QualityCard
+        onOpenSong={(songId) => {
+          void actions.openTrackById(songId).then((ok) => ok && onNavigate());
+        }}
+        onError={onError}
+      />
+
       <section className="card">
         <h2>时间线</h2>
         <p className="muted small">按年份的作品数与词汇量。年份为空的曲目不计入。</p>
@@ -245,7 +255,8 @@ export function AnalyticsPage({
           />
           仅日文
         </label>
-        <span className="muted small">词频表和报告都按这里筛选</span>
+        <span className="muted small">词频表、报告和存档都按这里筛选</span>
+        <SubcorpusFilters filter={filter} onChange={setFilter} onError={onError} />
       </div>
 
       <button className="cloud-moved" onClick={onOpenCloud}>
@@ -329,7 +340,7 @@ export function AnalyticsPage({
       </section>
 
       <RepeatEffectCard
-        performerIds={filter.performerIds}
+        subcorpus={toSubcorpus(filter)}
         jpOnly={filter.jpOnly}
         onSearchWord={onSearchWord}
         onError={onError}
@@ -359,6 +370,8 @@ export function AnalyticsPage({
         </p>
         {report && <ReportBody data={report} filterDesc={filterDesc} stale={loadingReport} onWord={openWord} />}
       </section>
+
+      <AnalysisRuns filter={filter} pos={pos} frequencyLimit={TABLE_LIMIT} onError={onError} />
     </div>
   );
 }

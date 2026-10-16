@@ -29,6 +29,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 
 use crate::filename::matching_key;
+pub use jp_corpus::lineage::LyricSource;
 use crate::plan::{ImportPlan, PlannedTrack};
 use crate::scan::ScannedTrack;
 
@@ -267,17 +268,27 @@ fn import_one(
     // ── 专辑 ──
     link_album(tx, song_id, track.album(), track.artist(), &track.tag_year)?;
 
+    // ── 字段来源 ──
+    record_import_provenance(tx, song_id, track)?;
+
     // ── 歌词 ──
     match lyrics {
         Some(crate::scan::LyricsPick::Embedded(text)) => {
-            stats += attach_lyrics_text(tx, song_id, text, analyzer, track.artist(), track.title())
+            let source = LyricSource::new("embedded", &track.file_name, &track.path, "import");
+            stats += attach_lyrics_text(tx, song_id, text, &source, analyzer, track.artist(), track.title())
                 .with_context(|| format!("内嵌歌词入库失败：{}", track.path))?;
         }
         Some(crate::scan::LyricsPick::File(path)) => {
+            let name = std::path::Path::new(path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let source = LyricSource::new("lrc_file", &name, path, "import");
             stats += attach_lyrics(
                 tx,
                 song_id,
                 std::path::Path::new(path),
+                &source,
                 analyzer,
                 track.artist(),
                 track.title(),
@@ -289,6 +300,35 @@ fn import_one(
     Ok(stats)
 }
 
+/// 导入时每个元数据字段是从哪来的：文件标签，还是从文件名、目录猜的。空字段不记。
+fn record_import_provenance(tx: &Connection, song_id: &str, track: &ScannedTrack) -> Result<()> {
+    use jp_corpus::lineage::set_provenance;
+    let filled = |s: &str| !s.trim().is_empty();
+    let title = if filled(&track.tag_title) { "tag" } else { "filename" };
+    let artist = match track.artist_source() {
+        crate::scan::ArtistSource::Tag => "tag",
+        crate::scan::ArtistSource::FileName => "filename",
+        crate::scan::ArtistSource::Folder => "folder",
+        crate::scan::ArtistSource::None => "",
+    };
+    let album = if filled(&track.tag_album) { "tag" } else { "folder" };
+    for (field, value, source) in [
+        ("title", track.title(), title),
+        ("artist", track.artist(), artist),
+        ("album", track.album(), album),
+        ("year", track.tag_year.as_str(), "tag"),
+        ("genre", track.tag_genre.as_str(), "tag"),
+    ] {
+        if filled(value) && !source.is_empty() {
+            set_provenance(tx, "song", song_id, field, source, &track.path, None)?;
+        }
+    }
+    if track.duration_sec.is_some() {
+        set_provenance(tx, "song", song_id, "duration_sec", "audio", &track.path, None)?;
+    }
+    Ok(())
+}
+
 impl std::ops::AddAssign for Stats {
     fn add_assign(&mut self, other: Self) {
         self.lyric_lines += other.lyric_lines;
@@ -298,7 +338,7 @@ impl std::ops::AddAssign for Stats {
     }
 }
 
-/// 把一份 LRC 挂到一首已经在库里的歌上：歌词行、全文索引、分词、作词作曲、分词校正。
+/// 把一份 LRC 挂到一首已经在库里的歌上：歌词版本、歌词行、全文索引、分词、作词作曲、分词校正。
 ///
 /// 导入时顺手做的就是这一步；「补齐缺失歌词」在线下回 .lrc、以及用户自己
 /// 指定一个 .lrc 之后，也走同一份代码——**两条路写出来的库必须长得一样**，
@@ -307,47 +347,154 @@ impl std::ops::AddAssign for Stats {
 /// **调用方负责保证这首歌还没有歌词**（`utterances` 为空，必要时先
 /// `maintain::clear_lyrics`）：这里只插不删，重复调会得到两份歌词行。
 ///
+/// `source` 是这份歌词的来处，连同原文记成一版（`lyric_versions`，见 `jp_corpus::lineage`）。
+///
 /// 接 `&Connection` 而不是 `&Transaction`：导入这边传事务（解引用就是
 /// `Connection`），补齐歌词那边手上只有一条自己的连接。
 pub fn attach_lyrics(
     tx: &Connection,
     song_id: &str,
     lrc_path: &std::path::Path,
+    source: &LyricSource,
     analyzer: Option<&jp_tokenizer::Analyzer>,
     artist: &str,
     title: &str,
 ) -> Result<Stats> {
-    let parsed = crate::lrc::parse_file(lrc_path)
+    let raw = crate::lrc::read_file(lrc_path)
         .with_context(|| format!("读歌词失败：{}", lrc_path.display()))?;
-    attach_parsed(tx, song_id, &parsed, analyzer, artist, title)
+    attach_lyrics_text(tx, song_id, &raw, source, analyzer, artist, title)
 }
 
-/// 同 [`attach_lyrics`]，歌词已经在手上（音频文件里内嵌的那份）。
+/// 同 [`attach_lyrics`]，歌词已经在手上（音频文件里内嵌的那份、在线下回来的那份）。
 pub fn attach_lyrics_text(
     tx: &Connection,
     song_id: &str,
     lrc_text: &str,
+    source: &LyricSource,
     analyzer: Option<&jp_tokenizer::Analyzer>,
     artist: &str,
     title: &str,
 ) -> Result<Stats> {
-    attach_parsed(tx, song_id, &crate::lrc::parse(lrc_text), analyzer, artist, title)
+    let parsed = crate::lrc::parse(lrc_text);
+    attach_parsed(tx, song_id, lrc_text, &parsed, source, analyzer, artist, title)
 }
 
+/// 同 [`attach_lyrics_text`]，但歌词行已经是现成的（逐行编辑之后的结果），**不再经过解析器**：
+/// 解析器会按时间重排、丢掉像署名或翻译的行，而编辑的结果必须原样落库。
+/// `raw_text` 是这些行写成的 LRC（见 [`crate::lrc::format`]），记进版本当原文。
+#[allow(clippy::too_many_arguments)]
+pub fn attach_lines(
+    tx: &Connection,
+    song_id: &str,
+    raw_text: &str,
+    lines: Vec<crate::lrc::LyricLine>,
+    source: &LyricSource,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+    artist: &str,
+    title: &str,
+) -> Result<Stats> {
+    let parsed = crate::lrc::ParsedLrc { lines, credits: Vec::new() };
+    attach_parsed(tx, song_id, raw_text, &parsed, source, analyzer, artist, title)
+}
+
+/// 这个分词器在库里登记的 id（没登记过就登记一行）
+pub fn tokenizer_run_id(conn: &Connection, analyzer: &jp_tokenizer::Analyzer) -> Result<i64> {
+    let info = analyzer.info();
+    jp_corpus::lineage::ensure_tokenizer_run(
+        conn,
+        &jp_corpus::lineage::TokenizerRun {
+            engine: info.engine.clone(),
+            engine_version: info.engine_version.clone(),
+            dict_description: info.dict_description.clone(),
+            dict_created_at: info.dict_created_at.clone(),
+            dict_size: info.dict_size,
+            split_mode: info.split_mode.clone(),
+            config_hash: info.config_hash.clone(),
+            pos_scheme: info.pos_scheme.clone(),
+        },
+    )
+}
+
+/// 分一行、写 `tokens`，返回写了几个。空白不入语料。
+///
+/// GiNZA 建库时就没收空白，实测拿 6,427 句两边都有的歌词比过：**只**差在空白 token 上，
+/// 滤掉之后逐词一致率 100.00%。不滤的话词频统计里会混进空格。
+///
+/// pos 列存 UPOS——库里存量就是 NOUN/VERB 这套，写日语词性进去会让整个语料的词性统计对不上。
+/// dep/head 留空：sudachi.rs 没有依存分析。
+pub(crate) fn write_line_tokens(
+    tx: &Connection,
+    utterance_id: i64,
+    text: &str,
+    analyzer: &jp_tokenizer::Analyzer,
+) -> Result<usize> {
+    let tokens = analyzer.analyze(text).with_context(|| format!("分词失败：{text}"))?;
+    let meaningful = tokens.iter().filter(|t| !t.surface.trim().is_empty());
+    let mut written = 0;
+    for (token_idx, token) in meaningful.enumerate() {
+        tx.execute(
+            "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) \
+             VALUES (?1,?2,?3,?4,?5)",
+            params![utterance_id, token_idx as i64, token.surface, token.lemma, token.upos],
+        )?;
+        written += 1;
+    }
+    Ok(written)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn attach_parsed(
     tx: &Connection,
     song_id: &str,
+    raw_text: &str,
     parsed: &crate::lrc::ParsedLrc,
+    source: &LyricSource,
     analyzer: Option<&jp_tokenizer::Analyzer>,
     artist: &str,
     title: &str,
 ) -> Result<Stats> {
+    use jp_corpus::lineage::token_status;
     let mut stats = Stats::default();
 
+    // ── 歌词版本 ──
+    // 先记版本（含校验），每行的版本 id、时间戳置信度从这里来。
+    // 解析出 0 行（纯署名、空文件）不记：补歌词那边会回滚，导入这边只收署名，
+    // 一个空版本只会污染质量清单。
+    let inputs: Vec<jp_corpus::quality::LineInput<'_>> = parsed
+        .lines
+        .iter()
+        .map(|l| jp_corpus::quality::LineInput { time_sec: l.time_sec, text: &l.text })
+        .collect();
+    let version = if inputs.is_empty() {
+        None
+    } else {
+        Some(
+            jp_corpus::lineage::record_version(tx, song_id, source, Some(raw_text), &inputs)
+                .context("记歌词版本失败")?,
+        )
+    };
+    let run_id = match (analyzer, &version) {
+        (Some(a), Some(_)) => Some(tokenizer_run_id(tx, a)?),
+        _ => None,
+    };
+
     for (line_idx, line) in parsed.lines.iter().enumerate() {
+        let confidence = version
+            .as_ref()
+            .and_then(|v| v.validation.line_confidence.get(line_idx).copied().flatten());
         tx.execute(
-            "INSERT INTO utterances (song_id, line_idx, time_sec, text) VALUES (?1,?2,?3,?4)",
-            params![song_id, line_idx as i64, line.time_sec, line.text],
+            "INSERT INTO utterances (song_id, line_idx, time_sec, text, version_id, time_confidence, token_status, tokenizer_run_id) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![
+                song_id,
+                line_idx as i64,
+                line.time_sec,
+                line.text,
+                version.as_ref().map(|v| v.id),
+                confidence,
+                token_status::PENDING,
+                run_id
+            ],
         )?;
         let utterance_id = tx.last_insert_rowid();
         stats.lyric_lines += 1;
@@ -360,30 +507,10 @@ fn attach_parsed(
         )?;
 
         if let Some(analyzer) = analyzer {
-            let tokens = analyzer
-                .analyze(&line.text)
-                .with_context(|| format!("分词失败：{}", line.text))?;
-            // 空白不入语料。GiNZA 建库时就没收，实测拿 6,427 句
-            // 两边都有的歌词比过：**只**差在空白 token 上，滤掉之后
-            // 逐词一致率 100.00%。不滤的话词频统计里会混进空格。
-            let meaningful = tokens.iter().filter(|t| !t.surface.trim().is_empty());
-            for (token_idx, token) in meaningful.enumerate() {
-                // pos 列存 UPOS——库里存量就是 NOUN/VERB 这套，
-                // 写日语词性进去会让整个语料的词性统计对不上。
-                // dep/head 留空：sudachi.rs 没有依存分析。
-                tx.execute(
-                    "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) \
-                     VALUES (?1,?2,?3,?4,?5)",
-                    params![
-                        utterance_id,
-                        token_idx as i64,
-                        token.surface,
-                        token.lemma,
-                        token.upos
-                    ],
-                )?;
-                stats.tokens += 1;
-            }
+            let written = write_line_tokens(tx, utterance_id, &line.text, analyzer)?;
+            stats.tokens += written;
+            let status = if written == 0 { token_status::EMPTY } else { token_status::AUTO };
+            jp_corpus::lineage::mark_tokens(tx, utterance_id, status, run_id)?;
         }
     }
 
