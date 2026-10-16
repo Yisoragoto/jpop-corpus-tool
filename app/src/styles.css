@@ -2499,3 +2499,13 @@ button.primary:not(:disabled):active { transform: scale(.96); transition-duratio
 .compare-label { min-width: 2.5em; }
 .key-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 28px; }
 .key-col h3 { margin: 4px 0 6px; font-size: 13px; font-weight: 600; }
+
+/* 例句旁边的试听键、曲库右栏的语料画像 */
+.example-row { display: flex; align-items: center; gap: 2px; }
+.example-row > .example { flex: 1; min-width: 0; }
+.example-row > .kwic-play { flex-shrink: 0; opacity: .5; }
+.example-row:hover > .kwic-play { opacity: 1; }
+.song-profile { margin-top: 18px; }
+.song-profile p { margin: 0 0 6px; line-height: 1.6; }
+.chip.link { cursor: pointer; }
+.chip.link:hover { color: var(--accent); border-color: var(--accent); }

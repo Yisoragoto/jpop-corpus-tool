@@ -751,16 +751,24 @@ pub fn song_profile(conn: &Connection, song_id: &str, limit: usize) -> Result<So
             jp_only: true,
             pos: None,
             min_freq: 2,
-            limit: Some(limit),
+            // 先多取一些：功能词（だ、て、の）筛掉之后还要剩够 limit 个
+            limit: Some(limit * 4),
         },
     )?;
+    // 特征词只要实词。「だ」「て」在某首歌里偏多说明不了这首歌写了什么
+    let keywords: Vec<KeyItem> = keys
+        .over
+        .into_iter()
+        .filter(|k| !FUNCTION_POS.contains(&k.pos.as_str()) && k.pos != "PRON" && k.pos != "NUM")
+        .take(limit)
+        .collect();
     Ok(SongProfile {
         song_id: song_id.to_string(),
         lines: lines.len() as i64,
         repeated_lines: lines.iter().filter(|l| l.repeat).count() as i64,
         tokens: lines.iter().map(|l| l.tokens.len() as i64).sum(),
         distinct_tokens: lines.iter().filter(|l| !l.repeat).map(|l| l.tokens.len() as i64).sum(),
-        keywords: keys.over,
+        keywords,
         provenance: provenance(conn, &scope, &lines, serde_json::json!({ "songId": song_id, "limit": limit }))?,
     })
 }
@@ -866,5 +874,7 @@ mod tests {
         let p = song_profile(corpus.connection(), crate::fixture::RICH_SONG, 10).unwrap();
         assert!(p.repeated_lines >= 1);
         assert!(p.distinct_tokens < p.tokens);
+        assert!(p.keywords.iter().all(|k| !FUNCTION_POS.contains(&k.pos.as_str())));
+        assert!(p.keywords.len() <= 10);
     }
 }

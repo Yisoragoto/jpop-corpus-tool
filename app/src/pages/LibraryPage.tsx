@@ -42,6 +42,8 @@ import { morph } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import type { LibraryActions, LibraryState } from "../useLibrary";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
+import { audition } from "../listen";
+import { SongProfile } from "../components/SongProfile";
 import { dictApi, type FindTermsResult } from "../dict/api";
 import { LookupResults } from "../dict/LookupResults";
 import { MineButton } from "../dict/MineButton";
@@ -660,22 +662,33 @@ export function LibraryPage({
   const examplesSection = word && !wordLoading && (
     <div className="examples">
       {word.examples.map((ex) => (
-        <button
-          key={ex.utteranceId}
-          className={`example ${ex.songId === selected?.id ? "same" : ""}`}
-          onClick={() =>
-            void actions.openTrackById(ex.songId, {
-              scrollTo: ex.utteranceId,
-              seekTo: ex.timeSec,
-              autoPlay: false,
-            })
-          }
-        >
-          <span className="ex-text">{ex.text}</span>
-          <span className="ex-meta">
-            {ex.artist} · {ex.title}
-          </span>
-        </button>
+        <div key={ex.utteranceId} className="example-row">
+          <button
+            className={`example ${ex.songId === selected?.id ? "same" : ""}`}
+            onClick={() =>
+              void actions.openTrackById(ex.songId, {
+                scrollTo: ex.utteranceId,
+                seekTo: ex.timeSec,
+                autoPlay: false,
+              })
+            }
+          >
+            <span className="ex-text">{ex.text}</span>
+            <span className="ex-meta">
+              {ex.artist} · {ex.title}
+            </span>
+          </button>
+          {ex.timeSec !== null && (
+            <button
+              className="kwic-play"
+              onClick={() => void audition(actions, ex.utteranceId).catch((e) => onAudioError(String(e)))}
+              title="试听这一句（到行尾自动停）"
+              aria-label="试听这一句"
+            >
+              ▶
+            </button>
+          )}
+        </div>
       ))}
       {word.examples.length === 0 && <p className="muted">没有例句</p>}
     </div>
@@ -707,6 +720,7 @@ export function LibraryPage({
               ))}
             </>
           )}
+          <SongProfile songId={selected.id} onSearchWord={onSearchWord} />
           <p className="muted small hint">点歌词里的词，这里换成释义和它在整个语料里的例句</p>
         </div>
       )}
