@@ -2,6 +2,7 @@ import JPCore
 import SwiftUI
 
 /// 曲库：所有歌，双击放、右边歌词跟着走
+@MainActor
 struct LibraryView: View {
     @Environment(AppModel.self) private var app
     @State private var filter = ""

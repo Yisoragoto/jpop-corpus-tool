@@ -3,6 +3,7 @@ import SwiftUI
 
 /// 搭配表：节点词左右 3 个词内（不跨行）常一起出现的词。
 /// 点一个词 → KWIC 只留附近有它的行；▶ 听一句两者一起出现的歌词。
+@MainActor
 struct CollocationPanel: View {
     @Environment(AppModel.self) private var app
     let node: String

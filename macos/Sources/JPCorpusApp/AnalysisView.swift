@@ -2,6 +2,7 @@ import JPCore
 import SwiftUI
 
 /// 分析：重复感知的词频、子语料对比。每个词都能双击回到检索页看具体的句子、再去听。
+@MainActor
 struct AnalysisView: View {
     @State private var tab = 0
 
@@ -22,6 +23,7 @@ struct AnalysisView: View {
     }
 }
 
+@MainActor
 private struct FrequencyPane: View {
     @Environment(AppModel.self) private var app
     @State private var unit: CountUnit = .distinctLines
@@ -92,6 +94,7 @@ private struct FrequencyPane: View {
     }
 }
 
+@MainActor
 private struct KeynessPane: View {
     @Environment(AppModel.self) private var app
     @State private var targetFrom = "2020"
@@ -186,6 +189,7 @@ private struct KeynessPane: View {
 }
 
 /// 结果的出处：哪些歌、多少词、怎么数、库指纹
+@MainActor
 struct ProvenanceFooter: View {
     let p: Provenance
     var label: String?

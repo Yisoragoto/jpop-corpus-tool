@@ -7,6 +7,7 @@ import SwiftUI
 /// - 回车 / 双击：从这一句接着放，歌词面板滚到这一行
 /// - 右键：试听、连前后文试听、查搭配
 /// - 右边的搭配表点一个词：只看「附近有这个词」的行
+@MainActor
 struct SearchView: View {
     @Environment(AppModel.self) private var app
 
@@ -262,6 +263,7 @@ struct SearchView: View {
 }
 
 /// 正在放的那一条前面亮一个喇叭
+@MainActor
 private struct PlayingMark: View {
     @Environment(AppModel.self) private var app
     let hit: KwicHit

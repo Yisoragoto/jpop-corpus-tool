@@ -5,6 +5,7 @@ import SwiftUI
 ///
 /// 从播放反向进入语料：右键一行可以检索行里的任何一个实词、循环这一句；
 /// 顶上「语料画像」看这首歌的重复行比例和它相对其余歌的特征词。
+@MainActor
 struct LyricsPanel: View {
     @Environment(AppModel.self) private var app
     @State private var showProfile = false
@@ -110,6 +111,7 @@ struct LyricsPanel: View {
 }
 
 /// 一首歌的语料画像：重复行、特征词。特征词点了去检索
+@MainActor
 private struct ProfileView: View {
     @Environment(AppModel.self) private var app
     let songId: String
@@ -153,6 +155,7 @@ private struct ProfileView: View {
 }
 
 /// 底部播放条
+@MainActor
 struct PlayerBar: View {
     @Environment(AppModel.self) private var app
     @State private var scrubbing: Double?

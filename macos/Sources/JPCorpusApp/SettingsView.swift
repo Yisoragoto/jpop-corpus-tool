@@ -3,6 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// 设置（⌘,）：语料库在哪、音频在哪
+@MainActor
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @State private var pickingLibrary = false

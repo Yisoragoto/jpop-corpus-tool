@@ -2,6 +2,7 @@ import JPCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
 struct ContentView: View {
     @Environment(AppModel.self) private var app
 
@@ -52,6 +53,7 @@ struct ContentView: View {
 }
 
 /// 侧栏底部：当前打开的是哪个库
+@MainActor
 private struct LibraryBadge: View {
     @Environment(AppModel.self) private var app
 
@@ -69,6 +71,7 @@ private struct LibraryBadge: View {
 }
 
 /// 还没有库的时候
+@MainActor
 struct WelcomeView: View {
     @Environment(AppModel.self) private var app
     @State private var picking = false

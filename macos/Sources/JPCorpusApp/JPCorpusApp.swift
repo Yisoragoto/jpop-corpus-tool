@@ -3,6 +3,7 @@ import JPCore
 import SwiftUI
 
 @main
+@MainActor
 struct JPCorpusApp: App {
     @State private var app = AppModel()
 
