@@ -31,6 +31,11 @@ pub mod corrections;
 pub mod fixture;
 pub mod migrations;
 pub mod stats;
+// 语料分析与播放器的连接层。两个客户端（Tauri、macOS）都只经过这几个模块，规则只写一处
+pub mod analysis;
+pub mod media;
+pub mod segments;
+pub mod subcorpus;
 
 use std::path::Path;
 
@@ -373,6 +378,38 @@ impl Corpus {
 
     pub fn decades(&self, limit: i64) -> Result<Vec<FacetCount>> {
         library::decades(&self.conn, limit)
+    }
+
+    // ── 分析与定位 ──
+
+    /// 一首歌每行在音频里的区间（只到行级，规则见 [`segments`]）
+    pub fn line_spans(&self, song_id: &str) -> Result<Vec<segments::LineSpan>> {
+        segments::line_spans(&self.conn, song_id)
+    }
+
+    /// 以某一行为中心的试听区间
+    pub fn listen_window(&self, utterance_id: i64, before: usize, after: usize) -> Result<Option<segments::ListenWindow>> {
+        segments::context_window(&self.conn, utterance_id, before, after, segments::DEFAULT_PREROLL_SEC)
+    }
+
+    pub fn snapshot(&self) -> Result<analysis::CorpusSnapshot> {
+        analysis::snapshot(&self.conn)
+    }
+
+    pub fn frequency(&self, query: &analysis::FrequencyQuery) -> Result<analysis::FrequencyResult> {
+        analysis::frequency(&self.conn, query)
+    }
+
+    pub fn collocations(&self, query: &analysis::CollocationQuery) -> Result<analysis::CollocationResult> {
+        analysis::collocations(&self.conn, query)
+    }
+
+    pub fn keyness(&self, query: &analysis::KeynessQuery) -> Result<analysis::KeynessResult> {
+        analysis::keyness(&self.conn, query)
+    }
+
+    pub fn song_profile(&self, song_id: &str, limit: usize) -> Result<analysis::SongProfile> {
+        analysis::song_profile(&self.conn, song_id, limit)
     }
 }
 

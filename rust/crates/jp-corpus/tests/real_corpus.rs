@@ -17,7 +17,12 @@ mod invariants;
 
 use jp_corpus::Corpus;
 
+/// 默认是仓库根目录的 `corpus.db`。设了 `JP_CORPUS_DB` 就用它——
+/// 拿用户真实库的**副本**验证时用，不碰仓库根目录那个可能是空壳的文件。
 fn db_path() -> PathBuf {
+    if let Some(path) = std::env::var_os("JP_CORPUS_DB") {
+        return PathBuf::from(path);
+    }
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(3)
