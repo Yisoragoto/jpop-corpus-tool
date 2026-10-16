@@ -199,17 +199,6 @@ npm install
 npm run app:dev
 ```
 
-### Try a build on your own library
-
-No release, no install: build the current code, copy your library, and launch the new build on the copy.
-The installed version can stay open next to it; your library and its settings are left untouched
-(audio is read from the original files, and mining still goes to your real Anki).
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\try-dev.ps1              # build + fresh copy + launch
-powershell -ExecutionPolicy Bypass -File scripts\try-dev.ps1 -SkipBuild   # fresh copy + launch only
-```
-
 ### Build
 
 ```powershell
@@ -246,7 +235,7 @@ rust/          Rust workspace
   jp-normalize/  Title / artist normalisation
 docs/          Design notes and reconciliation records per subsystem
 legacy/        The 0.1.x PyQt app, kept for reference: gui.py, dialogs/, scripts/, packaging/
-scripts/       Try a build on your library (try-dev.ps1), release self-check (release-check.ps1)
+scripts/       Release self-check (release-check.ps1)
 assets/fonts/  Bundled OFL fonts and their licences
 examples/      Data-format samples with no copyrighted content
 raw/           Local audio and lyrics; contents are git-ignored

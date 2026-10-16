@@ -1013,22 +1013,6 @@ SQLite 自己的 `integrity-check` 通过。
 顺带发现：`.gitattributes` 之前，`jp-tokenizer/resources/*.def` 在索引里是被
 改过行尾的——也就是**从仓库克隆出来构建的那一份，和我本机测的不是同一批字节**。
 
-### 用自己的库试新版
-
-`scripts/try-dev.ps1`（2026-10-16）。原来想看一处改动只能等发版、装上——发版是用户的决定，
-不该成为「看一眼」的前提。脚本做四件事：构建（前端 + release 的 jp-app + 拷库工具）→
-关掉上一次开的副本（只认副本目录里那个 exe）→ 拷库 → 用副本启动。
-
-**互不影响靠三处隔离**：`JPOP_CORPUS_HOME` 指副本库；`LOCALAPPDATA` 指副本目录（`settings.json`
-在那下面，副本里换库目录不会改到真的）；`WEBVIEW2_USER_DATA_FOLDER` 独立（界面设置在 localStorage 里，
-也不和装好的那份共用 WebView2 进程）。
-
-拷库是 `jp-corpus/examples/sandbox_copy.rs`：`VACUUM INTO` 拿一致快照（装好的版本开着、库在 WAL 模式也安全，
-直接复制文件会漏掉还在 `-wal` 里的事务）；封面、歌手照片、外挂歌词的绝对路径从原库目录换成副本目录——
-不换的话副本程序读不到图（放行的是副本目录）。路径要原样写，**不能用 `canonicalize` 的结果**：
-它会改大小写、加 `\\?\`，和启动时放行的目录对不上。`raw/audio` 不拷，音频只读，照旧指原文件。
-真库实测：corpus.db 3–4 秒，词典库第一次 12 秒（之后沿用，`-FreshDictionaries` 才重拷）。
-
 ### 发版自检
 
 `scripts/release-check.ps1`。守的是 v0.2.1 那个坑：安装包装好了、双击没反应，
