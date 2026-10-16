@@ -812,6 +812,33 @@ mod tests {
     }
 
     #[test]
+    fn kwic_and_word_examples_stay_inside_the_subcorpus() {
+        let conn = db();
+        // 「夜」在 001（2019）和 002（2023）里都有
+        let query = |scope: Option<StatsFilter>| crate::KwicQuery {
+            keywords: vec!["夜".into()],
+            field: crate::MatchField::Lemma,
+            dedup: false,
+            scope,
+            ..Default::default()
+        };
+        let all = crate::search::kwic(&conn, &query(None)).unwrap();
+        assert_eq!(all.iter().map(|h| h.song_id.as_str()).collect::<BTreeSet<_>>().len(), 2);
+        // distinct_lines 是口径，KWIC 不吃它（KWIC 有自己的 dedup）
+        let late = StatsFilter { year_from: Some(2021), distinct_lines: true, ..Default::default() };
+        let hits = crate::search::kwic(&conn, &query(Some(late.clone()))).unwrap();
+        assert!(!hits.is_empty() && hits.iter().all(|h| h.song_id == "002"));
+
+        let word = crate::corpus::word_in_corpus(&conn, "夜", None, 10, Some(&late)).unwrap();
+        assert_eq!(word.song_count, 1);
+        assert_eq!(word.occurrences, 1);
+        assert!(word.examples.iter().all(|e| e.song_id == "002"));
+        let whole = crate::corpus::word_in_corpus(&conn, "夜", Some("002"), 10, None).unwrap();
+        assert_eq!(whole.occurrences, 3);
+        assert_eq!(whole.examples[0].song_id, "002", "当前这首的例句排最前");
+    }
+
+    #[test]
     fn facets_list_years_genres_and_languages() {
         let conn = db();
         let f = facets(&conn).unwrap();

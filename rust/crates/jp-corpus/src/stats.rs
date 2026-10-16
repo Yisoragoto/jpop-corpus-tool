@@ -65,6 +65,12 @@ impl StatsFilter {
             && self.min_completeness.is_none()
     }
 
+    /// 只留范围条件（演唱者、年代、流派、语言、专辑、歌、完整度），去掉口径（仅日文、副歌只算一遍）。
+    /// KWIC、例句这些「找」的功能用它：它们有自己的去重和日文开关
+    pub fn scope_only(&self) -> Self {
+        Self { jp_only: false, distinct_lines: false, ..self.clone() }
+    }
+
     /// `AND ...` 子句和它的参数（接在已经 JOIN 了 utterances u 的查询后面）
     pub(crate) fn clause(&self) -> (String, Vec<rusqlite::types::Value>) {
         use rusqlite::types::Value;

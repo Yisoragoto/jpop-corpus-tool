@@ -98,6 +98,11 @@ fn fetch_hits(conn: &Connection, query: &KwicQuery) -> Result<Vec<RawHit>> {
             params.push(Box::new(*id));
         }
     }
+    if let Some(scope) = &query.scope {
+        let (clause, values) = scope.scope_only().clause();
+        wheres.push_str(&clause);
+        params.extend(values.into_iter().map(|v| Box::new(v) as Box<dyn rusqlite::ToSql>));
+    }
 
     // dedup：同一首歌里文本相同的行折叠成一条，重复次数放进 repeat_count。
     // 取 MIN(token_idx) 是为了让左右语境切分点稳定，否则同一行的不同

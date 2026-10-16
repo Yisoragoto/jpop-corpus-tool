@@ -222,7 +222,8 @@ CREATE TABLE IF NOT EXISTS lyric_versions (
     -- 这首歌的第几版，从 1 起
     version_no       INTEGER NOT NULL,
     -- lrc_file（导入时旁边的 .lrc）/ embedded（音频内嵌）/ sibling（后来出现在旁边的 .lrc）/
-    -- online（在线搜到的）/ manual_file（你选的文件）/ restored（从旧版恢复）/ legacy（老库补登记）
+    -- online（在线搜到的）/ manual_file（你选的文件）/ manual_edit（逐行编辑）/ restored（从旧版恢复）/
+    -- legacy（老库补登记）
     source_type      TEXT    NOT NULL,
     -- 在线来源是 provider 名（netease），本地来源是文件名
     source_name      TEXT    NOT NULL DEFAULT '',
@@ -269,8 +270,8 @@ CREATE TABLE IF NOT EXISTS corpus_revisions (
     song_id      TEXT    NOT NULL,
     song_artist  TEXT    NOT NULL DEFAULT '',
     song_title   TEXT    NOT NULL DEFAULT '',
-    -- lyrics_attached / lyrics_replaced / tokens_corrected / tokens_reverted / corrections_restored /
-    -- retokenized / metadata_edited / song_deleted / legacy_registered
+    -- lyrics_attached / lyrics_replaced / lyrics_edited / tokens_corrected / tokens_reverted /
+    -- corrections_restored / retokenized / metadata_edited / song_deleted / legacy_registered
     kind         TEXT    NOT NULL,
     version_id   INTEGER,
     utterance_id INTEGER,
@@ -284,7 +285,8 @@ CREATE TABLE IF NOT EXISTS corpus_revisions (
 );
 CREATE INDEX IF NOT EXISTS idx_revisions_song ON corpus_revisions(song_id, id);
 
--- 元数据字段的来源和置信度：songs 的年份、流派、专辑、语言……各是从哪来的。
+-- 元数据字段的来源和置信度：songs 的年份、流派、专辑、语言……各是从哪来的；
+-- entity_type = artist 时 entity_id 是歌手名，记刮削到的类型、国家、成立 / 结束、MBID、照片。
 -- source：tag（文件标签）/ filename（从文件名、目录猜的）/ manual（你改的）/
 -- itunes、musicbrainz……（刮削）/ heuristic（程序按歌词推断的）。
 -- confidence 为 NULL 表示「不适用」（标签原值、手改的值没有置信度一说）。

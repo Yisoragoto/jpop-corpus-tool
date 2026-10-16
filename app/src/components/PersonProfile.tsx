@@ -11,6 +11,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { api, ROLE_LABELS, type Album, type Collaborator, type DirectoryEntry, type Membership, type PersonWork, type Track } from "../api";
+import { FIELD_SOURCE_LABELS, percent, qualityApi, type FieldProvenance } from "../corpusQuality";
 import { messageOf } from "../errors";
 import { rolesOf, sectionWorks, spanOf, type WorkSection } from "../libraryIndex";
 import { prefersReducedMotion } from "../motion";
@@ -232,6 +233,7 @@ export function PersonProfile({
               {b.leftAt ? `曾属 ${b.bandName} · ${spanOf(b.joined, b.leftAt)}` : `${b.bandName} 成员${b.part ? ` · ${b.part}` : ""}`}
             </button>
           ))}
+          <ArtistProvenance name={name} refreshKey={`${image}|${entry?.imageManual ?? ""}`} />
           <div className="profile-stats">
             {entry && entry.performer > 0 && <Fact value={entry.performer} label={bands.length > 0 ? "个人演唱" : "演唱"} />}
             {entry && entry.songs - entry.performer > 0 && <Fact value={entry.songs - entry.performer} label="幕后署名" />}
@@ -327,6 +329,38 @@ export function PersonProfile({
 }
 
 /** 「2014–2019」；只有一年就写一年 */
+/** 歌手资料从哪来：MusicBrainz（带置信度）、Deezer 照片、你换的照片。没记录就不显示 */
+function ArtistProvenance({ name, refreshKey }: { name: string; refreshKey: string }) {
+  const [rows, setRows] = useState<FieldProvenance[]>([]);
+  useEffect(() => {
+    if (!name) return;
+    let alive = true;
+    // 读不到来源不影响看档案，静默
+    qualityApi.artistProvenance(name).then((r) => alive && setRows(r)).catch(() => alive && setRows([]));
+    return () => {
+      alive = false;
+    };
+  }, [name, refreshKey]);
+  if (rows.length === 0) return null;
+  const bySource = new Map<string, FieldProvenance[]>();
+  for (const r of rows) bySource.set(r.source, [...(bySource.get(r.source) ?? []), r]);
+  const parts = [...bySource].map(([source, list]) => {
+    const fields = list.map((r) => ARTIST_FIELD_LABELS[r.field] ?? r.field).join("、");
+    const conf = list[0]?.confidence;
+    return `${fields}：${FIELD_SOURCE_LABELS[source] ?? source}${conf != null ? `（置信度 ${percent(conf)}）` : ""}`;
+  });
+  return <p className="muted small artist-provenance" title="资料来源">资料来源 · {parts.join(" · ")}</p>;
+}
+
+const ARTIST_FIELD_LABELS: Record<string, string> = {
+  artist_type: "类型",
+  country: "国家",
+  formed: "成立",
+  ended: "结束",
+  mbid: "MusicBrainz 编号",
+  image_path: "照片",
+};
+
 function yearSpan(entry: DirectoryEntry | undefined): string {
   if (!entry?.firstYear) return "";
   const from = entry.firstYear.slice(0, 4);

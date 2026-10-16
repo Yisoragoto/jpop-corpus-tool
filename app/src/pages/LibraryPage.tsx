@@ -31,7 +31,9 @@ import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
 import { LyricsStage } from "../components/LyricsStage";
 import { SongEditor } from "../components/SongEditor";
+import { LyricsEditor } from "../components/LyricsEditor";
 import { SongLineagePanel } from "../components/SongLineagePanel";
+import { SubcorpusPicker } from "../components/SubcorpusPicker";
 import { LyricsTools } from "../components/LyricsTools";
 import { LyricsFill } from "../components/LyricsFill";
 import { lyricFontStack, useLyricFontFiles } from "../fonts";
@@ -224,7 +226,7 @@ export function LibraryPage({
   const coverOf = useCallback((songId: string) => tracks.find((t) => t.id === songId)?.coverPath ?? "", [tracks]);
 
   // 曲库维护：编辑、删除（两步确认，不弹窗）、找回丢了的音频
-  const [panel, setPanel] = useState<null | "edit" | "repair" | "lineage">(null);
+  const [panel, setPanel] = useState<null | "edit" | "repair" | "lineage" | "lyrics">(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // 维护操作的结果说明，记着是哪首歌的：删掉之后（没有选中的歌）也要看得到删了什么
   const [maintainNote, setMaintainNote] = useState<{ forSong: string | null; text: string } | null>(null);
@@ -743,6 +745,7 @@ export function LibraryPage({
             <Stat label="歌曲" value={word.songCount} align="start" />
             <Stat label="歌手" value={word.artistCount} align="start" />
           </div>
+          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma)} />
           {word.firstYear && (
             <p className="muted small">
               {word.firstYear} — {word.lastYear}
@@ -1006,6 +1009,11 @@ export function LibraryPage({
                           来源与校验
                         </button>
                         {lyrics.length > 0 && (
+                          <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lyrics" ? null : "lyrics"); }}>
+                            逐行编辑歌词
+                          </button>
+                        )}
+                        {lyrics.length > 0 && (
                           <LyricsFill songId={selected.id} hasLyrics onAttached={() => void actions.reloadLyrics()} onError={onAudioError} />
                         )}
                         <hr />
@@ -1040,6 +1048,20 @@ export function LibraryPage({
                   onLibraryChanged();
                   const problem = csvProblem(report.csv);
                   if (problem) onAudioError(problem);
+                }}
+                onCancel={() => setPanel(null)}
+                onError={onAudioError}
+              />
+            )}
+            {panel === "lyrics" && (
+              <LyricsEditor
+                key={selected.id}
+                songId={selected.id}
+                lines={lyrics}
+                onSaved={(text) => {
+                  setPanel(null);
+                  setMaintainNote({ forSong: selected.id, text });
+                  void actions.reloadLyrics();
                 }}
                 onCancel={() => setPanel(null)}
                 onError={onAudioError}

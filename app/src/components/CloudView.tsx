@@ -15,6 +15,8 @@ import { messageOf } from "../errors";
 import { useFontOptions, useLyricFontFiles } from "../fonts";
 import { updateSettings, useAppSettings } from "../settings";
 import { PerformerPicker } from "./PerformerPicker";
+import { SubcorpusPicker } from "./SubcorpusPicker";
+import { useActiveScope, withScope } from "../subcorpusScope";
 import { WordCloud, type NowLine } from "./WordCloud";
 
 /** 可选的词性。「全部」= 不限 */
@@ -65,6 +67,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
   const [loading, setLoading] = useState(false);
   const [present, setPresent] = useState(memory.present);
   const request = useRef(0);
+  const scope = useActiveScope();
 
   // 改了就记下来
   useEffect(() => {
@@ -74,7 +77,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
   useEffect(() => {
     const id = ++request.current;
     setLoading(true);
-    const filter = { performerIds, jpOnly };
+    const filter = withScope({ performerIds, jpOnly }, scope);
     const job =
       pos.length === 0
         ? api.statsFrequency(filter, undefined, PER_POS * 2)
@@ -83,7 +86,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
       .then((result) => id === request.current && setRows(result))
       .catch((err: unknown) => id === request.current && onError(`读不出词频：${messageOf(err)}`))
       .finally(() => id === request.current && setLoading(false));
-  }, [performerIds, pos, jpOnly, onError]);
+  }, [performerIds, pos, jpOnly, scope, onError]);
 
   const togglePos = (p: string) =>
     setPos((cur) => {
@@ -117,6 +120,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
   const toolbar = (
     <div className="wc-filters">
       <PerformerPicker selected={performerIds} onChange={setPerformerIds} onError={onError} />
+      <SubcorpusPicker onError={onError} />
       <div className="segmented wc-pos" role="group" aria-label="词性">
         <button className={pos.length === 0 ? "on" : ""} onClick={() => togglePos("")}>
           全部

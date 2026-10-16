@@ -28,7 +28,7 @@ pub mod watch;
 
 pub use lrc::{ParsedLrc, parse_file as parse_lrc_file};
 pub use import::{
-    ImportReport, ImportedTrack, LyricSource, Outcome, Stats, add_credit, attach_lyrics, attach_lyrics_text, execute,
+    ImportReport, ImportedTrack, LyricSource, Outcome, Stats, add_credit, attach_lines, attach_lyrics, attach_lyrics_text, execute,
     execute_cancellable, execute_with_progress, get_or_create_person,
 };
 pub use plan::{Action, ImportPlan, LibraryIndex, PlanSummary, PlannedTrack, plan};

@@ -379,6 +379,24 @@ pub fn attach_lyrics_text(
     attach_parsed(tx, song_id, lrc_text, &parsed, source, analyzer, artist, title)
 }
 
+/// 同 [`attach_lyrics_text`]，但歌词行已经是现成的（逐行编辑之后的结果），**不再经过解析器**：
+/// 解析器会按时间重排、丢掉像署名或翻译的行，而编辑的结果必须原样落库。
+/// `raw_text` 是这些行写成的 LRC（见 [`crate::lrc::format`]），记进版本当原文。
+#[allow(clippy::too_many_arguments)]
+pub fn attach_lines(
+    tx: &Connection,
+    song_id: &str,
+    raw_text: &str,
+    lines: Vec<crate::lrc::LyricLine>,
+    source: &LyricSource,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+    artist: &str,
+    title: &str,
+) -> Result<Stats> {
+    let parsed = crate::lrc::ParsedLrc { lines, credits: Vec::new() };
+    attach_parsed(tx, song_id, raw_text, &parsed, source, analyzer, artist, title)
+}
+
 /// 这个分词器在库里登记的 id（没登记过就登记一行）
 pub fn tokenizer_run_id(conn: &Connection, analyzer: &jp_tokenizer::Analyzer) -> Result<i64> {
     let info = analyzer.info();

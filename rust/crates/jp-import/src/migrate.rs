@@ -91,6 +91,10 @@ pub struct MigrateReport {
     pub corrections: usize,
     pub dict_terms: usize,
     pub jlpt_rows: usize,
+    /// 搬过来的歌词版本（源库是 20261018 之后的才有；没有的那些歌搬完补登记成 legacy）
+    pub lyric_versions: usize,
+    /// 搬过来的修订历史条数
+    pub revisions: usize,
     pub skipped: usize,
     /// (旧 id, 新 id)，按旧 id 排序
     pub id_map: Vec<(String, String)>,
@@ -115,6 +119,107 @@ fn detach(target: &Connection) {
 
 fn count(conn: &Connection, sql: &str) -> Result<usize> {
     Ok(conn.query_row(sql, [], |row| row.get::<_, i64>(0))? as usize)
+}
+
+fn column_exists(conn: &Connection, schema: &str, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA {schema}.table_info({table})"))?;
+    let names = stmt.query_map([], |row| row.get::<_, String>(1))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(names.iter().any(|n| n == column))
+}
+
+/// 来源追踪的几张表（见 `docs/provenance.md`）。源库没有（20261018 之前建的）就什么都不做，
+/// 搬完由 `backfill_legacy` 把这些歌补登记成 legacy。
+///
+/// id 都要改写：歌换了新 id，歌词行按 `temp.utt_map`，歌词版本按这里新建的 `temp.ver_map`，
+/// 分词器按指纹对上（同一套分词器两个库里只留一行）。
+fn move_lineage(tx: &Connection, report: &mut MigrateReport) -> Result<()> {
+    if column_exists(tx, "src", "songs", "language")? {
+        tx.execute(
+            "UPDATE main.songs SET language = \
+               (SELECT s.language FROM src.songs s JOIN temp.song_map m ON m.old_id = s.id WHERE m.new_id = main.songs.id) \
+             WHERE id IN (SELECT new_id FROM temp.song_map)",
+            [],
+        )?;
+    }
+    if !table_exists(tx, "src", "lyric_versions")? {
+        return Ok(());
+    }
+
+    // ── 分词器：按指纹去重 ──
+    tx.execute(
+        "INSERT OR IGNORE INTO main.tokenizer_runs (fingerprint, engine, engine_version, dict_description, \
+           dict_created_at, dict_size, split_mode, config_hash, pos_scheme, first_used_at) \
+         SELECT fingerprint, engine, engine_version, dict_description, dict_created_at, dict_size, split_mode, \
+           config_hash, pos_scheme, first_used_at FROM src.tokenizer_runs",
+        [],
+    )?;
+
+    // ── 歌词版本 ──
+    tx.execute_batch(
+        "DROP TABLE IF EXISTS temp.ver_map;
+         CREATE TEMP TABLE ver_map AS
+         SELECT v.id AS old_id,
+                (SELECT COALESCE(MAX(id), 0) FROM main.lyric_versions) + ROW_NUMBER() OVER (ORDER BY v.id) AS new_id
+         FROM src.lyric_versions v WHERE v.song_id IN (SELECT old_id FROM temp.song_map);",
+    )?;
+    report.lyric_versions = tx.execute(
+        "INSERT INTO main.lyric_versions (id, song_id, version_no, source_type, source_name, source_ref, imported_at, \
+           raw_text, content_hash, line_count, timed_line_count, completeness, validation_json, validated_at, is_current, note) \
+         SELECT vm.new_id, sm.new_id, v.version_no, v.source_type, v.source_name, v.source_ref, v.imported_at, \
+           v.raw_text, v.content_hash, v.line_count, v.timed_line_count, v.completeness, v.validation_json, \
+           v.validated_at, v.is_current, v.note \
+         FROM src.lyric_versions v JOIN temp.ver_map vm ON vm.old_id = v.id JOIN temp.song_map sm ON sm.old_id = v.song_id",
+        [],
+    )?;
+
+    // ── 每行的状态 ──
+    tx.execute(
+        "UPDATE main.utterances SET \
+           version_id = (SELECT vm.new_id FROM src.utterances u JOIN temp.utt_map um ON um.old_id = u.id \
+                         JOIN temp.ver_map vm ON vm.old_id = u.version_id WHERE um.new_id = main.utterances.id), \
+           time_confidence = (SELECT u.time_confidence FROM src.utterances u JOIN temp.utt_map um ON um.old_id = u.id \
+                              WHERE um.new_id = main.utterances.id), \
+           token_status = (SELECT u.token_status FROM src.utterances u JOIN temp.utt_map um ON um.old_id = u.id \
+                           WHERE um.new_id = main.utterances.id), \
+           tokenizer_run_id = (SELECT r2.id FROM src.utterances u JOIN temp.utt_map um ON um.old_id = u.id \
+                               JOIN src.tokenizer_runs r1 ON r1.id = u.tokenizer_run_id \
+                               JOIN main.tokenizer_runs r2 ON r2.fingerprint = r1.fingerprint \
+                               WHERE um.new_id = main.utterances.id) \
+         WHERE id IN (SELECT new_id FROM temp.utt_map)",
+        [],
+    )?;
+
+    // ── 字段来源 ──
+    tx.execute(
+        "INSERT OR REPLACE INTO main.field_provenance (entity_type, entity_id, field, source, source_ref, confidence, updated_at) \
+         SELECT 'song', sm.new_id, f.field, f.source, f.source_ref, f.confidence, f.updated_at \
+         FROM src.field_provenance f JOIN temp.song_map sm ON sm.old_id = f.entity_id WHERE f.entity_type = 'song'",
+        [],
+    )?;
+
+    // ── 修订历史 ──
+    // 日志里的歌词行 / 版本 id 跟着改写；对不上的（那一版或那一行后来没了）留空，记录本身照搬
+    report.revisions = tx.execute(
+        "INSERT INTO main.corpus_revisions (song_id, song_artist, song_title, kind, version_id, utterance_id, line_idx, \
+           before_json, after_json, actor, note, created_at) \
+         SELECT sm.new_id, r.song_artist, r.song_title, r.kind, \
+           (SELECT new_id FROM temp.ver_map WHERE old_id = r.version_id), \
+           (SELECT new_id FROM temp.utt_map WHERE old_id = r.utterance_id), \
+           r.line_idx, r.before_json, r.after_json, r.actor, r.note, r.created_at \
+         FROM src.corpus_revisions r JOIN temp.song_map sm ON sm.old_id = r.song_id ORDER BY r.id",
+        [],
+    )?;
+
+    // ── 存过的子语料 ──
+    // 同名的不覆盖当前库的。分析记录不搬：它的范围是那个库里的歌和版本，换了库就不是「原样重跑」了
+    if table_exists(tx, "src", "subcorpora")? {
+        tx.execute(
+            "INSERT OR IGNORE INTO main.subcorpora (name, filter_json, note, created_at, updated_at) \
+             SELECT name, filter_json, note, created_at, updated_at FROM src.subcorpora",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 fn table_exists(conn: &Connection, schema: &str, name: &str) -> Result<bool> {
@@ -421,6 +526,11 @@ pub fn run(
             }
         }
 
+        // ── 来源追踪 ──
+        move_lineage(&tx, &mut report)?;
+        // 源库没有来源记录的那些歌，现在就补登记，不等下次启动
+        jp_corpus::lineage::backfill_legacy(&tx)?;
+
         tx.commit()?;
         Ok(report)
     })();
@@ -499,6 +609,56 @@ mod tests {
             params![id],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn lyric_versions_revisions_and_line_states_move_with_the_song() {
+        let dir = dir("lineage");
+        let source_path = dir.join("src.db");
+        let src = library(&source_path);
+        src.execute("INSERT INTO songs (id, title, artist, corpus_type) VALUES ('001','夜行','ヨルシカ','song')", [])
+            .unwrap();
+        let first = crate::import::LyricSource::new("lrc_file", "a.lrc", "", "import");
+        crate::import::attach_lyrics_text(&src, "001", "[00:01.00]夜が明ける\n", &first, None, "ヨルシカ", "夜行").unwrap();
+        crate::maintain::clear_lyrics(&src, "001").unwrap();
+        let second = crate::import::LyricSource::new("online", "netease", "", "user");
+        crate::import::attach_lyrics_text(&src, "001", "[00:02.00]月が綺麗\n", &second, None, "ヨルシカ", "夜行").unwrap();
+        jp_corpus::lineage::set_provenance(&src, "song", "001", "year", "manual", "", None).unwrap();
+        src.execute(
+            "INSERT INTO subcorpora (name, filter_json) VALUES ('全部', '{\"performerIds\":[],\"jpOnly\":false}')",
+            [],
+        )
+        .unwrap();
+        drop(src);
+
+        let mut target = library(&dir.join("target.db"));
+        add_song(&target, "001", "ずっと真夜中でいいのに。", "勘ぐれい", "E:/music/c.flac");
+        let report = run(&mut target, &source_path, MigrateOptions::default()).unwrap();
+        assert_eq!(report.lyric_versions, 2);
+        assert_eq!(report.revisions, 2);
+        let new_id = &report.id_map[0].1;
+
+        let versions = jp_corpus::lineage::versions(&target, new_id).unwrap();
+        assert_eq!(versions.len(), 2);
+        assert!(versions[0].is_current && versions[0].source_type == "online");
+        assert_eq!(
+            jp_corpus::lineage::version_raw(&target, versions[1].id).unwrap().unwrap().1.as_deref(),
+            Some("[00:01.00]夜が明ける\n"),
+            "旧版原文跟着搬过来"
+        );
+        let (version_id, status): (i64, String) = target
+            .query_row("SELECT version_id, token_status FROM utterances WHERE song_id=?1", [new_id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(version_id, versions[0].id, "歌词行指向改写后的版本 id");
+        assert_eq!(status, "pending");
+        let prov = jp_corpus::lineage::provenance(&target, "song", new_id).unwrap();
+        assert!(prov.iter().any(|p| p.field == "year" && p.source == "manual"));
+        assert_eq!(jp_corpus::analysis::subcorpora(&target).unwrap().len(), 1);
+
+        // 当前库原有的那首（没走导入）也在搬完时补登记了
+        assert_eq!(jp_corpus::lineage::versions(&target, "001").unwrap()[0].source_type, "legacy");
     }
 
     #[test]

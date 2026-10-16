@@ -2540,3 +2540,17 @@ table.data tr.current td { background: var(--accent-soft); }
   .lineage-summary { flex-direction: column; }
   .provenance-list li, .revision-list li { grid-template-columns: 1fr; gap: 0; }
 }
+
+/* 逐行编辑歌词 */
+.lyrics-editor {
+  margin: 0 0 16px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+}
+.lyrics-editor h3 { margin: 0; font-size: 15px; }
+.lyrics-editor-rows { display: flex; flex-direction: column; gap: 4px; max-height: 420px; overflow-y: auto; margin: 8px 0; }
+.lyrics-editor-row { display: grid; grid-template-columns: 2.5em 7em 1fr auto auto; gap: 6px; align-items: center; }
+.lyrics-editor-row .num { text-align: right; }
+.lyrics-editor-row input.stamp { font-variant-numeric: tabular-nums; }
+.lyrics-editor-row.bad input.stamp { border-color: var(--danger); }
+.lyrics-editor-actions { display: flex; gap: 8px; align-items: center; }
+.lyrics-editor-actions input { flex: 1; }
+.artist-provenance { margin: 4px 0 0; }

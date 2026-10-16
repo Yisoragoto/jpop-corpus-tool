@@ -12,6 +12,7 @@
 import { useCallback, useState } from "react";
 
 import { api, type Credit, type LyricLine, type Track, type WordInCorpus } from "./api";
+import { getActiveScope } from "./subcorpusScope";
 
 export interface LibraryState {
   tracks: Track[];
@@ -117,7 +118,7 @@ export function useLibrary(
       setActiveLemma(lemma);
       setWordLoading(true);
       try {
-        setWord(await api.wordInCorpus(lemma, selected?.id, 24));
+        setWord(await api.wordInCorpus(lemma, selected?.id, 24, getActiveScope()?.filter));
       } catch (err) {
         onError(err instanceof Error ? err.message : String(err));
       } finally {

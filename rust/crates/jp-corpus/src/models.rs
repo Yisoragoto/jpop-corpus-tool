@@ -222,6 +222,9 @@ pub struct KwicQuery {
     /// 只留关键词里有假名或汉字的命中（Python `_JP_RE.search(match)`），先筛再截断到 `limit`
     pub jp_only: bool,
     pub limit: Option<i64>,
+    /// 子语料：只在这块语料里找（年代、流派、语言、完整度……见 [`crate::stats::StatsFilter`]）。
+    /// 只用它的**范围**条件；`jp_only` / `distinct_lines` 是统计口径，KWIC 有自己的那两个开关
+    pub scope: Option<crate::stats::StatsFilter>,
 }
 
 impl Default for KwicQuery {
@@ -235,6 +238,7 @@ impl Default for KwicQuery {
             dedup: true,
             jp_only: false,
             limit: None,
+            scope: None,
         }
     }
 }

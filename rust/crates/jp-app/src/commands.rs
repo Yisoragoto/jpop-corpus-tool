@@ -319,10 +319,14 @@ pub fn word_in_corpus(
     lemma: String,
     current_song_id: Option<String>,
     limit: Option<i64>,
+    scope: Option<jp_corpus::stats::StatsFilter>,
 ) -> CmdResult<WordInCorpus> {
-    Ok(state
-        .corpus()
-        .word_in_corpus(&lemma, current_song_id.as_deref(), limit.unwrap_or(20))?)
+    let corpus = state.corpus();
+    let limit = limit.unwrap_or(20);
+    Ok(match scope.filter(|f| !f.is_whole_corpus()) {
+        Some(scope) => corpus.word_in_subcorpus(&lemma, current_song_id.as_deref(), limit, &scope)?,
+        None => corpus.word_in_corpus(&lemma, current_song_id.as_deref(), limit)?,
+    })
 }
 
 // ────────────────────────────── 播放历史 ──────────────────────────────
@@ -1644,6 +1648,12 @@ pub fn song_lineage(state: State<'_, AppState>, song_id: String) -> CmdResult<jp
     Ok(jp_corpus::lineage::song_lineage(state.corpus().connection(), &song_id)?)
 }
 
+/// 一个歌手的资料各字段从哪来（MusicBrainz / Deezer / 你换的），带置信度
+#[tauri::command(async)]
+pub fn artist_provenance(state: State<'_, AppState>, name: String) -> CmdResult<Vec<jp_corpus::lineage::FieldProvenance>> {
+    Ok(jp_corpus::lineage::provenance(state.corpus().connection(), "artist", &name)?)
+}
+
 /// 一版歌词挂上时的原文。老库补登记的版本没有原文，是 null
 #[tauri::command(async)]
 pub fn lyric_version_raw(state: State<'_, AppState>, version_id: i64) -> CmdResult<Option<String>> {
@@ -1661,6 +1671,29 @@ pub async fn lyrics_restore_version<R: tauri::Runtime>(
         let lyrics_dir = state.lyrics_dir.clone();
         let mut corpus = state.corpus();
         crate::lyrics::restore_version(corpus.connection_mut(), &lyrics_dir, &song_id, version_id, state.analyzer().as_deref())
+    })
+    .await
+}
+
+/// 逐行编辑歌词：改错字、补行、删行、挪时间戳。存成新的一版（旧版能恢复），并记一条修订
+#[tauri::command]
+pub async fn lyrics_save_lines<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+    lines: Vec<crate::lyrics::EditedLine>,
+    note: Option<String>,
+) -> CmdResult<crate::lyrics::Attached> {
+    blocking(app, move |state| {
+        let lyrics_dir = state.lyrics_dir.clone();
+        let mut corpus = state.corpus();
+        crate::lyrics::save_edited_lines(
+            corpus.connection_mut(),
+            &lyrics_dir,
+            &song_id,
+            &lines,
+            note.as_deref().unwrap_or(""),
+            state.analyzer().as_deref(),
+        )
     })
     .await
 }

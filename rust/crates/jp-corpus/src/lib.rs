@@ -264,7 +264,18 @@ impl Corpus {
         current_song_id: Option<&str>,
         example_limit: i64,
     ) -> Result<WordInCorpus> {
-        corpus::word_in_corpus(&self.conn, lemma, current_song_id, example_limit)
+        corpus::word_in_corpus(&self.conn, lemma, current_song_id, example_limit, None)
+    }
+
+    /// 同上，但只在一块子语料里看（只用范围条件）。
+    pub fn word_in_subcorpus(
+        &self,
+        lemma: &str,
+        current_song_id: Option<&str>,
+        example_limit: i64,
+        scope: &stats::StatsFilter,
+    ) -> Result<WordInCorpus> {
+        corpus::word_in_corpus(&self.conn, lemma, current_song_id, example_limit, Some(scope))
     }
 
     // ── 播放历史 ──

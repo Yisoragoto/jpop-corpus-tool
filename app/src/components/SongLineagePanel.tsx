@@ -300,6 +300,8 @@ function revisionDetail(kind: string, after: unknown): string {
       return String(a.tokenizer ?? "");
     case "corrections_restored":
       return `${a.lines ?? "?"} 行`;
+    case "lyrics_edited":
+      return Array.isArray(after) ? `改完 ${after.length} 行` : "";
     case "metadata_edited":
       return Object.entries(a)
         .map(([k, v]) => `${FIELD_NAMES[k] ?? k}：${String(v)}`)

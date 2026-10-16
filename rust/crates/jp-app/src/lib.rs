@@ -135,8 +135,10 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             // 语料质量与来源追踪
             commands::quality_overview,
             commands::song_lineage,
+            commands::artist_provenance,
             commands::lyric_version_raw,
             commands::lyrics_restore_version,
+            commands::lyrics_save_lines,
             commands::lyrics_revalidate,
             commands::song_set_language,
             // 子语料与可复现分析

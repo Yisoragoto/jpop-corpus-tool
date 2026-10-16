@@ -174,6 +174,8 @@ export interface KwicQuery {
   /** 只留关键词里有假名或汉字的命中（Python「日本語のみ」），先筛再截断 */
   jpOnly?: boolean;
   limit?: number | null;
+  /** 只在这块子语料里找（只用它的范围条件） */
+  scope?: StatsFilter | null;
 }
 
 export interface KwicHit {
@@ -642,8 +644,9 @@ export const api = {
   timeline: () => call<YearStats[]>("timeline"),
   wordFrequency: (pos?: string, limit?: number) =>
     call<WordFrequency[]>("word_frequency", { pos, limit }),
-  wordInCorpus: (lemma: string, currentSongId?: string, limit?: number) =>
-    call<WordInCorpus>("word_in_corpus", { lemma, currentSongId, limit }),
+  /** scope：只在这块子语料里看（不给就是整个库） */
+  wordInCorpus: (lemma: string, currentSongId?: string, limit?: number, scope?: StatsFilter | null) =>
+    call<WordInCorpus>("word_in_corpus", { lemma, currentSongId, limit, scope: scope ?? null }),
 
   // 统计
   /** 统计表：词元 × 词性的频次，带 JLPT。默认前 300 */

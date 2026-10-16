@@ -36,12 +36,22 @@ analysis_runs（一次分析的条件、范围、分词器、口径、结果）
 
 | 列 | 说明 |
 |---|---|
-| `source_type` | `lrc_file`（导入时旁边的 .lrc）/ `embedded`（音频内嵌）/ `sibling`（后来出现在旁边的 .lrc）/ `online`（在线）/ `manual_file`（你选的文件）/ `restored`（从旧版恢复）/ `legacy`（老库补登记） |
+| `source_type` | `lrc_file`（导入时旁边的 .lrc）/ `embedded`（音频内嵌）/ `sibling`（后来出现在旁边的 .lrc）/ `online`（在线）/ `manual_file`（你选的文件）/ `manual_edit`（逐行编辑）/ `restored`（从旧版恢复）/ `legacy`（老库补登记） |
 | `source_name` / `source_ref` | provider 名或文件名 / 路径或在线条目「曲名 — 歌手」 |
 | `raw_text` | 挂上时的**原文**（解析前）。重新分词、校正分词都不碰它；解析规则以后改了也能从它重来 |
 | `content_hash` | 解析后「时间 + 文本」序列的指纹：同一份歌词重挂一次，指纹相同 |
 | `completeness` / `validation_json` | 校验结果（见下） |
 | `is_current` | 当前在用的那一版。换歌词 = 加一版、旧版置 0，**不删** |
+
+### 逐行编辑
+
+「资料库 → 歌 → ⋯ → 逐行编辑歌词」：改错字、补漏的行、删重复贴的行、挪时间戳（`1:02.50`，留空是没有时间）。
+存下来是**新的一版**（`manual_edit`，备注记在 `source_name`），和换一份歌词走同一条路：清旧行、挂新行、
+重新分词、校正过的分词按原文套回（没改的行校正不丢）。另记一条 `lyrics_edited` 修订，存改动前后的全部行。
+
+编辑结果**不经过 LRC 解析器**：解析器会按时间重排、丢掉像署名或翻译的行，而你打的字必须原样落库。
+版本原文记的是这些行写成的 LRC（`jp_import::lrc::format`），`raw/lyrics_lrc/{id}.lrc` 也换成它。
+恢复这样一版时会再解析一遍那份 LRC，「作詞：…」这种像署名的行会被当成署名收走——这是恢复和编辑唯一不对称的地方。
 
 旧版可以在「资料库 → 歌 → ⋯ → 来源与校验」里看原文、一键恢复。恢复也是挂一版新的（`restored`），
 历史只追加，回到旧版不会抹掉中间那几版；校正过的分词按「歌手 + 曲名 + 原文」套回去。
@@ -71,7 +81,7 @@ analysis_runs（一次分析的条件、范围、分词器、口径、结果）
 ### 修订历史（`corpus_revisions`）
 
 记的事：`lyrics_attached` / `lyrics_replaced` / `tokens_corrected` / `tokens_reverted` /
-`corrections_restored` / `retokenized` / `metadata_edited` / `song_deleted` / `legacy_registered`。
+`corrections_restored` / `retokenized` / `metadata_edited` / `song_deleted` / `legacy_registered` / `lyrics_edited`。
 `before_json` / `after_json` 存改动前后（分词校正存的是整行的分词），`actor` 是 `user` / `import` / `system`。
 歌手、曲名另存一份：删了歌也看得出是哪首。
 
@@ -87,6 +97,17 @@ analysis_runs（一次分析的条件、范围、分词器、口径、结果）
 | `heuristic` | 按歌词字符推断的语言 | 主导字符占比 |
 
 **手改的不被覆盖**：语言推断看到 `manual` 就不动；刮削本来就只补空字段。
+
+歌手资料（`entity_type = artist`，`entity_id` 是名字）也记：
+
+| 字段 | 来源 | 置信度 |
+|---|---|---|
+| 类型、国家、成立、结束、MBID | `musicbrainz` | 名字 / 别名相等且只有一个条目（认了 MBID）1.0；同名不止一个、没敢认 MBID 时 0.5 |
+| 照片 | `deezer` | 0.7（Deezer 上不少乐队的「照片」其实是专辑封面） |
+| 照片 | `manual` | 你在档案里换的；恢复刮削的照片后改回 `deezer` |
+
+档案头下面一行「资料来源」显示这些。刮削不写歌曲的作词作曲署名（那些来自 LRC 和文件标签，`track_credits.source` 已经记着）；
+乐队成员关系的来源记在 `band_members.source`。
 
 ## 校验规则（`quality.rs`）
 
@@ -139,6 +160,11 @@ analysis_runs（一次分析的条件、范围、分词器、口径、结果）
 条件可以起名存成子语料（`subcorpora`），存的是整份条件（含演唱者）。
 词频表、语料报告、分析存档都用这一个结构，所以「范围」在三处是同一个意思。
 
+**检索、词云、单词例句**也能限定在子语料里：这三处各有一个「整个库 / 子语料：…」下拉框，选的是同一个
+「当前子语料」（记在本机，见 `app/src/subcorpusScope.ts`）。它们只用子语料的**范围**条件
+（`StatsFilter::scope_only`），「仅日文」「副歌只算一遍」是统计口径，这几处有自己的开关（KWIC 的去重、日文过滤）。
+词云的演唱者以词云上选的为准，没选才用子语料里的。
+
 ## 可复现分析（`analysis_runs`）
 
 「分析 → 分析记录 → 存档报告 / 存档词频表」把当前这份统计连同下面这些一起存下来：
@@ -172,10 +198,13 @@ analysis_runs（一次分析的条件、范围、分词器、口径、结果）
 - **资料库 → 歌 → ⋯ → 来源与校验**：当前版的来源、完整度、问题清单、逐行状态汇总、分词器、语言（可改），
   全部版本（看原文、恢复），字段来源，修订历史。
 
-## 已知缺口
+## 迁移
 
-- KWIC、词云、单词的「例句」页还不吃 `StatsFilter`，只有统计页和分析存档用子语料。
-- 「从别的语料库目录迁移数据」（`jp-import/src/migrate.rs`）不搬来源表；搬过来的歌启动时补登记成 `legacy`。
-- 歌词行的文本还不能在界面上直接改（只能换一整份歌词）；`corpus_revisions` 已经能记这类修订，
-  将来加编辑时记成新的一版即可。
-- 刮削还不写作词作曲等人物的来源置信度（`track_credits.source` 仍是原来那一套）。
+「从别的语料库目录迁移数据」（`jp-import/src/migrate.rs`）连来源记录一起搬：歌词版本（含原文）、
+每行的版本 / 时间戳置信度 / 分词状态、分词器（按指纹去重，两个库里同一套只留一行）、字段来源、修订历史、
+存过的子语料（同名的不覆盖当前库）。id 全部按新库改写。**分析记录不搬**：它的范围是那个库里的歌和版本，
+换了库就不是原样重跑了。源库是 20261018 之前的、没有这些表的，搬完当场补登记成 `legacy`。
+
+## 还没做的
+
+- 歌词版本之间还不能逐行对比（只能分别看原文）；修订历史里 `lyrics_edited` 存了前后全部行，以后可以据此画 diff。

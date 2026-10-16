@@ -1404,3 +1404,29 @@ fn an_analysis_can_be_saved_rerun_and_compared() {
     assert_eq!(ok(w, "analysis_delete", json!({ "id": id })), json!(true));
     assert_eq!(ok(w, "subcorpus_delete", json!({ "id": saved["id"] })), json!(true));
 }
+
+/// 子语料对 KWIC 和单词例句也生效：只在那几年的歌里找。
+#[test]
+fn kwic_and_word_examples_can_be_limited_to_a_subcorpus() {
+    let f = Fixture::new("scoped-search");
+    let w = f.w();
+    let early = json!({ "performerIds": [], "jpOnly": false, "yearTo": 2019 });
+
+    let all = ok(w, "word_in_corpus", json!({ "lemma": "風" }));
+    let scoped = ok(w, "word_in_corpus", json!({ "lemma": "風", "scope": early }));
+    assert!(scoped["occurrences"].as_i64().unwrap() <= all["occurrences"].as_i64().unwrap());
+    for ex in scoped["examples"].as_array().unwrap() {
+        assert!(["001", "002"].contains(&ex["songId"].as_str().unwrap()), "2019 年之后的歌混进来了：{ex}");
+    }
+
+    let hits = ok(
+        w,
+        "kwic",
+        json!({ "query": { "keywords": ["風"], "field": "lemma", "scope": early } }),
+    );
+    for hit in hits.as_array().unwrap() {
+        assert!(["001", "002"].contains(&hit["songId"].as_str().unwrap()), "{hit}");
+    }
+    let late = json!({ "performerIds": [], "jpOnly": false, "yearFrom": 2030 });
+    assert_eq!(len(&ok(w, "kwic", json!({ "query": { "keywords": ["風"], "field": "lemma", "scope": late } }))), 0);
+}

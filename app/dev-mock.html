@@ -245,6 +245,12 @@ window.__TAURI_INTERNALS__ = {
                    { field: "title", source: "tag", sourceRef: "", confidence: null, updatedAt: "2026-09-07T13:04:35Z" }],
       revisions: [{ id: 9, songId: args.songId, songArtist: "テスト", songTitle: "打ち込む歌", kind: "tokens_corrected", versionId: null, utteranceId: 2, lineIdx: 1, before: [], after: [], actor: "user", note: "", createdAt: "2026-10-16T05:20:00Z" },
                   { id: 8, songId: args.songId, songArtist: "テスト", songTitle: "打ち込む歌", kind: "lyrics_replaced", versionId: 12, utteranceId: null, lineIdx: null, before: { versionId: 3 }, after: { sourceType: "online", lines: 42 }, actor: "user", note: "", createdAt: "2026-10-16T05:12:00Z" }] });
+    if (cmd === "word_frequency") return Promise.resolve([]);
+    if (cmd === "lyrics_save_lines") return Promise.resolve({ lyricLines: args.lines.length, tokens: 10, correctionsRestored: 1 });
+    if (cmd === "artist_provenance") return Promise.resolve([
+      { field: "artist_type", source: "musicbrainz", sourceRef: "mbid", confidence: 1, updatedAt: "" },
+      { field: "country", source: "musicbrainz", sourceRef: "mbid", confidence: 1, updatedAt: "" },
+      { field: "image_path", source: "deezer", sourceRef: "", confidence: 0.7, updatedAt: "" }]);
     if (cmd === "lyric_version_raw") return Promise.resolve("[00:03.10]春も　思い出した日々\n[00:12.30]打ち込んでいませんでした\n");
     if (cmd === "subcorpus_facets") return Promise.resolve({ yearMin: 1998, yearMax: 2026, songsWithoutYear: 12,
       genres: [["J-Pop", 120], ["Rock", 40], ["Anime", 21]], languages: [["ja", 199], ["en", 4], ["mixed", 3]] });

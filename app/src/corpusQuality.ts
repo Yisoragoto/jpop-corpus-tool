@@ -74,6 +74,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   online: "在线",
   manual_file: "你选的文件",
   restored: "从旧版恢复",
+  manual_edit: "逐行编辑",
   legacy: "老库（未记来源）",
 };
 
@@ -100,6 +101,7 @@ export const TOKEN_STATUS_LABELS: Record<string, string> = {
 export const REVISION_LABELS: Record<string, string> = {
   lyrics_attached: "挂上歌词",
   lyrics_replaced: "换了歌词",
+  lyrics_edited: "逐行编辑",
   tokens_corrected: "校正分词",
   tokens_reverted: "撤销校正",
   corrections_restored: "套回校正",
@@ -421,6 +423,11 @@ export const qualityApi = {
   versionRaw: (versionId: number) => call<string | null>("lyric_version_raw", { versionId }),
   restoreVersion: (songId: string, versionId: number) =>
     call<{ lyricLines: number; tokens: number; correctionsRestored: number }>("lyrics_restore_version", { songId, versionId }),
+  /** 逐行编辑之后存成新的一版歌词 */
+  saveLines: (songId: string, lines: { timeSec: number | null; text: string }[], note = "") =>
+    call<{ lyricLines: number; tokens: number; correctionsRestored: number }>("lyrics_save_lines", { songId, lines, note }),
+  /** 一个歌手资料各字段的来源 */
+  artistProvenance: (name: string) => call<FieldProvenance[]>("artist_provenance", { name }),
   revalidate: (songId?: string) => call<number>("lyrics_revalidate", { songId: songId ?? null }),
   setLanguage: (songId: string, language: string) => call<void>("song_set_language", { songId, language }),
 

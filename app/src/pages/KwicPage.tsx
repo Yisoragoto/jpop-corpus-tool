@@ -23,6 +23,8 @@ import {
   type MatchField,
 } from "../api";
 import { PerformerPicker } from "../components/PerformerPicker";
+import { SubcorpusPicker } from "../components/SubcorpusPicker";
+import { useActiveScope } from "../subcorpusScope";
 import { VirtualList } from "../components/VirtualList";
 import { TokenCorrectionDialog } from "../components/TokenCorrectionDialog";
 import { kwicCsv } from "../pyFormat";
@@ -74,6 +76,7 @@ export function KwicPage({ actions, onNavigate, onError, request, onRequestConsu
   const [dedup, setDedup] = useState(true);
   const [jpOnly, setJpOnly] = useState(false);
   const [personIds, setPersonIds] = useState<number[]>([]);
+  const scope = useActiveScope();
   // 还没查过时给几个高频词当起点：一页空白比什么都不写更劝退
   const [suggestions, setSuggestions] = useState<WordFrequency[]>([]);
 
@@ -103,6 +106,7 @@ export function KwicPage({ actions, onNavigate, onError, request, onRequestConsu
             dedup,
             jpOnly,
             limit: KWIC_LIMIT,
+            scope: scope?.filter ?? null,
           }),
         );
       } catch (err) {
@@ -111,7 +115,7 @@ export function KwicPage({ actions, onNavigate, onError, request, onRequestConsu
         setBusy(false);
       }
     },
-    [pos, personIds, crossLine, dedup, jpOnly, onError],
+    [pos, personIds, crossLine, dedup, jpOnly, scope, onError],
   );
 
   const search = useCallback(async () => {
@@ -232,6 +236,7 @@ export function KwicPage({ actions, onNavigate, onError, request, onRequestConsu
               ))}
             </select>
             <PerformerPicker selected={personIds} onChange={setPersonIds} onError={onError} />
+            <SubcorpusPicker onError={onError} />
             <label className="check" title="把命中行上下各一行拼进语境">
               <input
                 type="checkbox"

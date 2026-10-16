@@ -1,7 +1,7 @@
 //! 语料统计与 Research Mode 的核心查询。
 
 use anyhow::Result;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, params, params_from_iter};
 
 use crate::models::{
     Overview, PlayEvent, PlayedTrack, PosCount, WordExample, WordFrequency, WordInCorpus, YearStats,
@@ -105,29 +105,40 @@ pub(crate) fn word_in_corpus(
     lemma: &str,
     current_song_id: Option<&str>,
     example_limit: i64,
+    scope: Option<&crate::stats::StatsFilter>,
 ) -> Result<WordInCorpus> {
+    use rusqlite::types::Value;
+    // 子语料只取范围条件；没给就是整个库（子句为空）
+    let (clause, scope_values) = scope.map(|f| f.scope_only().clause()).unwrap_or_default();
+    let with = |head: Vec<Value>| -> Vec<Value> { head.into_iter().chain(scope_values.iter().cloned()).collect() };
+    let lemma_v = || Value::from(lemma.to_string());
+
     let (occurrences, song_count, artist_count) = conn.query_row(
-        "SELECT COUNT(*), COUNT(DISTINCT u.song_id), COUNT(DISTINCT s.artist) \
-         FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
-         JOIN songs s ON s.id = u.song_id WHERE t.lemma = ?1",
-        params![lemma],
+        &format!(
+            "SELECT COUNT(*), COUNT(DISTINCT u.song_id), COUNT(DISTINCT s.artist) \
+             FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
+             JOIN songs s ON s.id = u.song_id WHERE t.lemma = ?{clause}"
+        ),
+        params_from_iter(with(vec![lemma_v()])),
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )?;
 
     let (first_year, last_year) = conn.query_row(
-        "SELECT MIN(NULLIF(trim(s.year),'')), MAX(NULLIF(trim(s.year),'')) \
-         FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
-         JOIN songs s ON s.id = u.song_id WHERE t.lemma = ?1",
-        params![lemma],
+        &format!(
+            "SELECT MIN(NULLIF(trim(s.year),'')), MAX(NULLIF(trim(s.year),'')) \
+             FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
+             JOIN songs s ON s.id = u.song_id WHERE t.lemma = ?{clause}"
+        ),
+        params_from_iter(with(vec![lemma_v()])),
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
 
-    let mut stmt = conn.prepare(
-        "SELECT COALESCE(pos,''), COUNT(*) FROM tokens WHERE lemma = ?1 \
-         GROUP BY pos ORDER BY COUNT(*) DESC",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT COALESCE(t.pos,''), COUNT(*) FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
+         WHERE t.lemma = ?{clause} GROUP BY t.pos ORDER BY COUNT(*) DESC"
+    ))?;
     let pos_distribution = stmt
-        .query_map(params![lemma], |row| {
+        .query_map(params_from_iter(with(vec![lemma_v()])), |row| {
             Ok(PosCount {
                 pos: row.get(0)?,
                 count: row.get(1)?,
@@ -135,17 +146,21 @@ pub(crate) fn word_in_corpus(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
+    // 参数顺序跟着 SQL 里 `?` 出现的顺序：词元、子语料条件、当前歌、上限
     let current = current_song_id.unwrap_or("");
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare(&format!(
         "SELECT u.song_id, s.artist, s.title, u.id, u.time_sec, u.text \
          FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
          JOIN songs s ON s.id = u.song_id \
-         WHERE t.lemma = ?1 GROUP BY u.id \
-         ORDER BY CASE WHEN u.song_id = ?2 THEN 0 ELSE 1 END, s.artist, s.title, u.time_sec \
-         LIMIT ?3",
-    )?;
+         WHERE t.lemma = ?{clause} GROUP BY u.id \
+         ORDER BY CASE WHEN u.song_id = ? THEN 0 ELSE 1 END, s.artist, s.title, u.time_sec \
+         LIMIT ?"
+    ))?;
+    let mut values = with(vec![lemma_v()]);
+    values.push(Value::from(current.to_string()));
+    values.push(Value::from(example_limit));
     let examples = stmt
-        .query_map(params![lemma, current, example_limit], |row| {
+        .query_map(params_from_iter(values), |row| {
             Ok(WordExample {
                 song_id: row.get(0)?,
                 artist: row.get(1)?,

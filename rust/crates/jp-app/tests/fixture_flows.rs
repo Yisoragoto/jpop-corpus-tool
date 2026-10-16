@@ -475,6 +475,37 @@ fn importing_one_file_then_its_lyrics_works_end_to_end() {
     assert!(!finds("ふたつめ", &song_id), "旧歌词还留在全文索引里");
     assert!(finds("あたらしい", &song_id));
 
+    // 逐行编辑：改字、加一行，存成第三版；全文索引跟着变
+    let edited = ok(
+        w,
+        "lyrics_save_lines",
+        json!({ "songId": song_id, "note": "改字", "lines": [
+            { "timeSec": 5.0, "text": "あたらしい歌" },
+            { "timeSec": null, "text": "おまけの行" },
+        ] }),
+    );
+    assert_eq!(edited["source"], "edited");
+    assert_eq!(edited["lyricLines"].as_i64(), Some(2));
+    assert!(finds("あたらしい歌", &song_id));
+    let lineage = ok(w, "song_lineage", json!({ "songId": song_id }));
+    assert_eq!(len(&lineage["versions"]), 3, "三次挂歌词三版，旧版不删");
+    assert_eq!(lineage["versions"][0]["sourceType"], "manual_edit");
+    assert_eq!(lineage["revisions"][0]["kind"], "lyrics_edited");
+    // 没改动的拒绝
+    let unchanged = refused(
+        w,
+        "lyrics_save_lines",
+        json!({ "songId": song_id, "lines": [{ "timeSec": 5.0, "text": "あたらしい歌" }, { "timeSec": null, "text": "おまけの行" }] }),
+    );
+    assert!(unchanged.contains("没有改动"), "{unchanged}");
+
+    // 恢复第一版（那份有原文）：又是新的一版，第一版的行回来了
+    let first = lineage["versions"].as_array().unwrap().iter().find(|v| v["versionNo"] == json!(1)).unwrap()["id"].clone();
+    let restored = ok(w, "lyrics_restore_version", json!({ "songId": song_id, "versionId": first }));
+    assert_eq!(restored["lyricLines"].as_i64(), Some(2));
+    assert!(finds("ふたつめ", &song_id));
+    assert_eq!(len(&ok(w, "song_lineage", json!({ "songId": song_id }))["versions"]), 4);
+
     // 已经有歌词的歌不走在线补齐——绝不用网上搜到的悄悄覆盖用户手上那一份
     let message = refused(w, "lyrics_fill_one", json!({ "songId": song_id }));
     assert!(message.contains("已经有歌词"), "错误信息要说清为什么拒绝：{message}");
