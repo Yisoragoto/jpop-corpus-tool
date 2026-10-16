@@ -584,7 +584,7 @@ export function LibraryPage({
     holdFullscreen("stage");
     setStageOpen(true);
   }, [stageFor, selected?.id]);
-  // 全屏歌词关了：放开窗口全屏（演示还开着的话窗口照旧全屏）
+  // 全屏歌词关了：放开窗口全屏（词云全屏、F11 还开着的话窗口照旧全屏）
   useEffect(() => {
     if (!stageOpen) releaseFullscreen("stage");
   }, [stageOpen]);

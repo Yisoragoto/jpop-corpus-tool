@@ -59,7 +59,7 @@ interface Props {
   onSearchWord: (lemma: string) => void;
   /** 去看这个词的例句 */
   onShowExamples: (lemma: string) => void;
-  /** 演示：窗口全屏，录视频用 */
+  /** 全屏：窗口全屏显示词云 */
   present: boolean;
   /** 上面盖着全屏歌词：词云这边不响应 Esc，也退到播放条底下 */
   covered: boolean;
@@ -234,14 +234,14 @@ export function WordCloud({
     };
   }, [onError]);
 
-  // 演示 = 窗口真正全屏（盖住任务栏）。离开词云时一并退出
+  // 全屏 = 窗口真正全屏（盖住任务栏）。离开词云时一并退出
   useEffect(() => {
     if (!present) return;
-    holdFullscreen("present");
-    return () => releaseFullscreen("present");
+    holdFullscreen("cloud");
+    return () => releaseFullscreen("cloud");
   }, [present]);
 
-  // 演示时按 Esc 退出（上面盖着全屏歌词时，Esc 归歌词）
+  // 全屏时按 Esc 退出（上面盖着全屏歌词时，Esc 归歌词）
   useEffect(() => {
     if (!present || covered) return;
     const onKey = (e: KeyboardEvent) => {
@@ -300,7 +300,7 @@ export function WordCloud({
       ctx.font = `${fontSize}px ${stack}`;
       return ctx.measureText(text).width;
     };
-    // 字号跟着画面大小走：演示铺满屏幕时整片放大，不是只多出一圈空白
+    // 字号跟着画面大小走：全屏时整片放大，不是只多出一圈空白
     const scale = Math.sqrt((size.w * size.h) / (900 * 440));
     return layoutCloud(words, {
       width: size.w,
@@ -485,8 +485,8 @@ export function WordCloud({
               {saving ? "保存中…" : "保存 PNG"}
             </button>
           )}
-          <button className="wc-btn primary" onClick={() => onPresent(!present)} title={present ? "退出演示（Esc）" : "全屏显示词云，录视频用"}>
-            {present ? "退出演示" : "演示"}
+          <button className="wc-btn primary" onClick={() => onPresent(!present)} title={present ? "退出全屏（Esc）" : "全屏显示词云"}>
+            {present ? "退出全屏" : "全屏"}
           </button>
         </div>
       </div>
@@ -658,7 +658,7 @@ function SongPanel({
     };
   }, [word, performerIds, onError]);
 
-  // Esc 关掉这一栏（演示时第二下 Esc 才退出演示）。盖着全屏歌词时不管
+  // Esc 关掉这一栏（全屏时第二下 Esc 才退出全屏）。盖着全屏歌词时不管
   useEffect(() => {
     if (covered) return;
     const onKey = (e: KeyboardEvent) => {

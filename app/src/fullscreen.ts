@@ -1,8 +1,8 @@
 /**
  * 窗口真正的全屏（盖住任务栏），不是只铺满窗口。
  *
- * 几个地方都可能要全屏：词云的演示、从词云点歌进去的全屏歌词。各自「占用」一下，
- * 都放手了才退出——从演示里点歌进全屏歌词、再退出歌词时，窗口还得是全屏的。
+ * 几个地方都可能要全屏：F11（整个软件）、词云的全屏、从词云点歌进去的全屏歌词。各自「占用」一下，
+ * 都放手了才退出——从词云全屏里点歌进全屏歌词、再退出歌词时，窗口还得是全屏的。
  *
  * 走 Tauri 的窗口接口；在浏览器里（开发用的 mock）退回 Fullscreen API，再不行就算了。
  */
@@ -35,6 +35,12 @@ export function holdFullscreen(key: string) {
 export function releaseFullscreen(key: string) {
   if (!holders.delete(key)) return;
   if (holders.size === 0) void apply(false);
+}
+
+/** F11：整个软件全屏 / 退出。和别处的占用互不干扰 */
+export function toggleFullscreen(key = "f11") {
+  if (holders.has(key)) releaseFullscreen(key);
+  else holdFullscreen(key);
 }
 
 export function isFullscreenHeld(key: string): boolean {

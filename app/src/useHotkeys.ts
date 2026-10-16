@@ -15,6 +15,7 @@
  */
 
 import { useEffect } from "react";
+import { toggleFullscreen } from "./fullscreen";
 
 import { api } from "./api";
 
@@ -52,6 +53,13 @@ export function useHotkeys({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
+
+      // F11：整个软件全屏，再按一次退出（和浏览器、资源管理器一样）
+      if (e.key === "F11") {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
 
       // 面板快捷键在输入框里也要能用——正在搜索时想切命令模式是合理的
       if (mod && (e.key === "k" || e.key === "K")) {

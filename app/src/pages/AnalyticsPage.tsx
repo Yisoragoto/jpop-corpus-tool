@@ -255,7 +255,7 @@ export function AnalyticsPage({
         </span>
         <span>
           <strong>词云搬到「资料库」了</strong>
-          <small>可以选词性（默认名词）、换字体、点歌就从那一句开始放，还有铺满窗口的演示模式</small>
+          <small>可以选词性（默认名词）、换字体、点歌就从那一句开始放，还能全屏</small>
         </span>
         <span className="cloud-moved-go">打开 →</span>
       </button>

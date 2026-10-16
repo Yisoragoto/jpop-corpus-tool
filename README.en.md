@@ -57,7 +57,7 @@ in the repository under `legacy/` for reference, and `corpus.db` works with both
 - A word cloud on frosted glass over blurred artist photos, with selectable parts of speech (nouns by default) and
   its own font. Click a word to list the songs it appears in; click a song and it **plays from that line in full-screen
   lyrics**, returning to the cloud when you close them. The playing line shows as a caption under the cloud; there is a
-  full-screen presentation mode, and PNG export.
+  full-screen mode, and PNG export. F11 puts the whole app in full screen.
 - Songs have a breadcrumb (artist › album › title) and clickable credits; edit, replace lyrics and delete live in the "⋯" menu.
 - Lyrics follow playback line by line; click a line to jump there, or loop a single line.
 - Speed changes go through WSOLA time-stretching (**pitch stays put**); key changes are rendered once per song by the built-in Rubber Band library and cached.

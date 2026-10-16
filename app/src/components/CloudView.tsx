@@ -29,7 +29,7 @@ interface Memory {
   pos: string[];
   jpOnly: boolean;
   picked: string | null;
-  /** 演示开着：从歌词页回来时还开着 */
+  /** 全屏开着：从全屏歌词、歌词页回来时还开着 */
   present: boolean;
 }
 

@@ -34,6 +34,7 @@ import { KwicPage, type KwicRequest } from "./pages/KwicPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { useLibrary } from "./useLibrary";
+import { toggleFullscreen } from "./fullscreen";
 import { useHotkeys } from "./useHotkeys";
 import { usePlaybackState } from "./usePlayback";
 
@@ -292,6 +293,7 @@ export default function App() {
         ...(playback.loopRegion ? {} : { disabled: "当前没有循环" }),
         run: () => void api.audioSetLoop(),
       },
+      { id: "fullscreen", label: "全屏 / 退出全屏", hint: "F11", run: () => toggleFullscreen() },
       { id: "go-home", label: "打开 首页", hint: "继续听 · 今日 · 语料库", run: () => setRoute("home") },
       { id: "go-kwic", label: "打开 检索", hint: "KWIC", run: () => setRoute("kwic") },
       { id: "go-library", label: "打开 资料库", hint: "音乐人 · 专辑 · 歌曲", run: () => setRoute("library") },
