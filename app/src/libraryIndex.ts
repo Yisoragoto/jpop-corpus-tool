@@ -180,7 +180,9 @@ export type LibraryView =
   | { kind: "album"; albumId: number; title: string }
   /** 全局关系网；focus = 打开时选中的人 */
   | { kind: "graph"; focus?: number | null }
-  | { kind: "timeline" };
+  | { kind: "timeline" }
+  /** 词云（筛选记在 CloudView 的模块里） */
+  | { kind: "cloud" };
 
 export function sameView(a: LibraryView, b: LibraryView): boolean {
   if (a.kind !== b.kind) return false;

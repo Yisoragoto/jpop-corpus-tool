@@ -8,6 +8,14 @@ const row = (lemma: string, pos: string, freq: number, songCount = 1): Frequency
 });
 
 describe("mergeByLemma", () => {
+  it("把各种写法收在一起（字幕里标亮用）", () => {
+    const words = mergeByLemma(
+      [{ ...row("見る", "VERB", 9), surfaces: ["見", "見る"] }, { ...row("見る", "AUX", 3), surfaces: ["見", "みる"] }],
+      5,
+    );
+    expect(words[0]!.surfaces).toEqual(["見", "見る", "みる"]);
+  });
+
   it("同一词元的几种词性合成一个，次数相加，曲数取最大", () => {
     const words = mergeByLemma([row("好き", "ADJ", 30, 12), row("君", "PRON", 50, 40), row("好き", "NOUN", 25, 9)], 10);
     expect(words.map((w) => [w.lemma, w.freq, w.songCount])).toEqual([
@@ -44,6 +52,7 @@ describe("layoutCloud", () => {
     freq: 1000 - i * 7,
     songCount: 1,
     pos: null,
+    surfaces: [],
   }));
   // 每个字按字号宽，近似全角字
   const measure = (text: string, size: number) => [...text].length * size;

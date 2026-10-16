@@ -1480,11 +1480,22 @@ button.chip:hover { color: var(--fg); }
    歌手照片放大、重度虚化铺满整张卡，词浮在一块毛玻璃上。
    词的位移和缩放由 WordCloud.tsx 里的弹簧写 transform；这里只管静态样式、出场和点击动画。 */
 .wc-stage {
-  position: relative; isolation: isolate; overflow: hidden;
-  display: grid; gap: 14px; padding: 18px;
-  border-radius: 14px; border: 1px solid var(--line);
+  position: relative; isolation: isolate; overflow: hidden; height: 100%;
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 12px; padding: 18px;
   --wc-spring: cubic-bezier(.2, .9, .25, 1.15);
+  transition: padding .3s ease;
 }
+/* 资料库里：占中栏 + 右栏，整块就是这张卡 */
+.cloud-pane > .nav-back { top: 22px; left: 20px; }
+.cloud-view { position: absolute; inset: 0; animation: fade-in 400ms ease backwards; }
+.cloud-view .wc-head { padding-left: 40px; }
+/* 演示：铺满整个窗口（盖住导航和播放条），录视频用。Esc 或右上角退出 */
+.wc-stage.present { grid-template-rows: auto minmax(0, 1fr); position: fixed; inset: 0; z-index: 90; padding: 28px 36px 32px; animation: wc-present-in .5s var(--ease-out) backwards; }
+.wc-stage.present .wc-head { padding-left: 0; }
+.wc-stage.present .wc-who h2 { font-size: 26px; }
+.wc-stage.present .wc-tools .wc-btn { opacity: .35; transition: opacity .2s; }
+.wc-stage.present:hover .wc-tools .wc-btn { opacity: 1; }
+@keyframes wc-present-in { from { opacity: 0; transform: scale(.98); } }
 .wc-bg { position: absolute; inset: -18%; z-index: -2; will-change: translate; pointer-events: none; }
 .wc-bg img { position: absolute; object-fit: cover; filter: blur(48px) saturate(1.5); }
 .wc-bg img.single { inset: 0; width: 100%; height: 100%; }
@@ -1494,7 +1505,7 @@ button.chip:hover { color: var(--fg); }
 .wc-dim { position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background: radial-gradient(120% 90% at 50% 30%, rgba(10, 10, 16, .15), rgba(10, 10, 16, .65)); }
 
-.wc-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
+.wc-head { position: relative; z-index: 4; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
 .wc-faces { display: flex; }
 .wc-faces .avatar { border: 2px solid rgba(255, 255, 255, .35); box-shadow: 0 6px 20px rgba(0, 0, 0, .35); }
 .wc-faces .avatar + .avatar { margin-left: -12px; }
@@ -1502,14 +1513,30 @@ button.chip:hover { color: var(--fg); }
 .wc-who { display: grid; min-width: 0; }
 .wc-who h2 { margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wc-who span { font-size: 12px; color: rgba(255, 255, 255, .72); font-variant-numeric: tabular-nums; }
-.wc-tools { margin-left: auto; display: flex; gap: 8px; }
+.wc-tools { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.wc-btn.primary { background: rgba(255, 255, 255, .9); color: #111; font-weight: 600; border-color: transparent; }
+.wc-btn.primary:not(:disabled):hover { background: #fff; }
+/* 卡片头上的筛选：玻璃上的小控件 */
+.wc-bar { position: relative; z-index: 4; animation: rise-in 420ms 80ms var(--ease-out) backwards; }
+.wc-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wc-filters .picker-button, .wc-select {
+  padding: 4px 10px; border-radius: var(--radius); font: 12px var(--font-ui, inherit); color: var(--fg);
+  background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .18);
+}
+.wc-select.font { max-width: 150px; }
+.wc-select option { background: #1e1e26; color: var(--fg); }
+.wc-pos { display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: rgba(0, 0, 0, .22); border: 1px solid rgba(255, 255, 255, .12); }
+.wc-pos button { padding: 3px 10px; border-radius: 7px; font-size: 12px; color: rgba(255, 255, 255, .7); transition: background .2s, color .2s; }
+.wc-pos button:hover { color: #fff; }
+.wc-pos button.on { background: rgba(255, 255, 255, .88); color: #111; font-weight: 600; }
+.wc-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: rgba(255, 255, 255, .85); }
 .wc-btn { padding: 5px 14px; border-radius: var(--radius); font-size: 12px;
   background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .18); transition: background .15s; }
 .wc-btn:not(:disabled):hover { background: rgba(255, 255, 255, .2); }
 .wc-btn:disabled { opacity: .5; cursor: default; }
 
 .wc-glass {
-  position: relative; border-radius: 12px; padding: 10px;
+  position: relative; border-radius: 12px; padding: 10px; min-height: 0;
   background: linear-gradient(160deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .04) 45%, rgba(255, 255, 255, .07));
   border: 1px solid rgba(255, 255, 255, .18);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 20px 50px rgba(0, 0, 0, .35);
@@ -1523,7 +1550,10 @@ button.chip:hover { color: var(--fg); }
   background: radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .75), transparent 70%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
 
-.wc-cloud { position: relative; width: 100%; transition: opacity .2s; }
+.wc-cloud { position: relative; width: 100%; height: 100%; transform-origin: 0 50%; transition: opacity .2s, transform .55s var(--ease-out); }
+/* 选中一个词：它一直亮着，其余的退后一点 */
+.wc-cloud.has-pick:not(.hovering) .wc-word:not(.chosen) .wc-inner { opacity: .55; }
+.wc-word.chosen .wc-inner { text-shadow: 0 0 22px var(--glow), 0 0 3px rgba(255, 255, 255, .7) !important; transform: scale(1.08); }
 .wc-cloud.stale { opacity: .5; }
 .wc-word { position: absolute; cursor: pointer; will-change: transform; border-radius: 6px; }
 .wc-word:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1548,23 +1578,20 @@ button.chip:hover { color: var(--fg); }
   background: rgba(28, 28, 36, .82); border: 1px solid var(--line-strong); backdrop-filter: blur(16px);
   font-size: 12px; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* 点词弹出的歌曲列表。挂在 body 上（portal），不受卡片的 overflow 和 backdrop-filter 影响 */
-.wc-pop {
-  position: fixed; z-index: 70; width: min(360px, calc(100vw - 32px)); max-height: min(520px, calc(100vh - 40px));
+/* 选中一个词：右边滑出一栏，列出出现它的歌。点一首就从那一句放，不离开词云 */
+.wc-panel {
+  position: absolute; z-index: 3; top: 10px; right: 10px; bottom: 10px; width: min(340px, 36%);
   display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; border-radius: 16px; overflow: hidden;
-  background: rgba(26, 26, 34, .88); border: 1px solid var(--line-strong);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .18);
+  background: rgba(22, 22, 30, .72); border: 1px solid rgba(255, 255, 255, .16);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .16);
   backdrop-filter: blur(30px) saturate(180%);
-  transform-origin: var(--ox, 50%) var(--oy, 0);
-  animation: wc-pop-in .45s cubic-bezier(.2, .9, .25, 1.15) both;
+  animation: wc-panel-in .5s var(--wc-spring) backwards;
 }
-.wc-pop.closing { animation: wc-pop-out .18s ease-in forwards; }
-@keyframes wc-pop-in { from { opacity: 0; transform: scale(.6); filter: blur(10px); } }
-@keyframes wc-pop-out { to { opacity: 0; transform: scale(.85); filter: blur(6px); } }
+@keyframes wc-panel-in { from { opacity: 0; transform: translateX(40px); filter: blur(8px); } }
 .wc-pop-head { position: relative; padding: 16px 18px 10px; display: grid; gap: 2px; overflow: hidden; }
-.wc-pop-head b { font-size: 38px; line-height: 1.15; font-weight: 400; color: var(--hl); }
+.wc-pop-head b { font-size: 40px; line-height: 1.15; font-weight: 400; color: var(--hl); animation: wc-pop .6s var(--wc-spring) backwards; }
 .wc-pop-head > span:not(.wc-pop-ghost) { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.wc-pop-ghost { position: absolute; right: -8px; top: -18px; font-size: 96px; line-height: 1; opacity: .07; pointer-events: none; white-space: nowrap; }
+.wc-pop-ghost { position: absolute; right: -8px; top: -18px; font-size: 104px; line-height: 1; opacity: .07; pointer-events: none; white-space: nowrap; }
 .wc-pop-close { position: absolute; right: 10px; top: 10px; width: 28px; height: 28px; border-radius: 50%; color: var(--muted); }
 .wc-pop-close:hover { background: var(--control-hover); color: var(--fg); }
 .wc-pop-by { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 18px 10px; }
@@ -1573,27 +1600,56 @@ button.chip:hover { color: var(--fg); }
 .wc-pop-list { overflow: auto; padding: 0 8px 8px; display: grid; gap: 2px; align-content: start; }
 .wc-pop-none { padding: 8px 10px; margin: 0; }
 .wc-song {
-  display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; align-items: center;
-  width: 100%; padding: 8px 10px; border-radius: 10px; text-align: left;
-  animation: wc-row-in .5s cubic-bezier(.2, .9, .25, 1.15) both;
-  transition: background .2s, transform .25s cubic-bezier(.2, .9, .25, 1.15);
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 10px;
+  animation: wc-row-in .5s var(--wc-spring) both; transition: background .2s;
 }
-.wc-song:hover { background: var(--control-hover); transform: translateX(3px); }
-.wc-song:hover .wc-go, .wc-song:focus-visible .wc-go { opacity: 1; transform: none; }
+.wc-song:hover { background: var(--control-hover); }
+.wc-song.now { background: color-mix(in srgb, var(--hl) 14%, transparent); }
+.wc-song.now::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--hl); animation: bar-grow .35s var(--spring) backwards; }
 @keyframes wc-row-in { from { opacity: 0; transform: translateY(10px); } }
+.wc-song-play { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 6px 8px 10px; text-align: left; min-width: 0; }
+.wc-song-face { position: relative; display: block; width: 40px; height: 40px; }
+.wc-song-icon {
+  position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; font-size: 13px; color: #fff;
+  background: rgba(0, 0, 0, .45); opacity: 0; transform: scale(.8); transition: opacity .2s, transform .3s var(--wc-spring);
+}
+.wc-song:hover .wc-song-icon, .wc-song.now .wc-song-icon { opacity: 1; transform: none; }
+.wc-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.wc-eq b { width: 3px; height: 100%; border-radius: 1px; background: #fff; animation: wc-eq .9s ease-in-out infinite; transform-origin: bottom; }
+.wc-eq b:nth-child(2) { animation-delay: -.3s; }
+.wc-eq b:nth-child(3) { animation-delay: -.6s; }
+@keyframes wc-eq { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
 .wc-song-meta { display: grid; min-width: 0; }
 .wc-song-meta strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wc-song-meta small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wc-song-meta small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .wc-song-meta em { font-style: normal; font-size: 13px; color: rgba(255, 255, 255, .78); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wc-song-meta mark { background: none; color: var(--hl); box-shadow: inset 0 -.45em 0 color-mix(in srgb, var(--hl) 30%, transparent); }
-.wc-song-side { display: grid; justify-items: end; gap: 2px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.wc-go { opacity: 0; transform: translateX(-6px); color: var(--fg); transition: opacity .2s, transform .25s cubic-bezier(.2, .9, .25, 1.15); }
+.wc-song-open {
+  margin-right: 8px; padding: 3px 9px; border-radius: 999px; font-size: 11px; color: var(--muted); white-space: nowrap;
+  opacity: 0; transform: translateX(-4px); transition: opacity .2s, transform .25s var(--wc-spring), background .15s, color .15s;
+}
+.wc-song:hover .wc-song-open, .wc-song-open:focus-visible { opacity: 1; transform: none; }
+.wc-song-open:hover { background: var(--control-hover); color: var(--fg); }
 .wc-pop-foot { display: flex; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--line); }
 .wc-pop-foot button { flex: 1; padding: 6px 10px; border-radius: var(--radius); font-size: 12px; background: var(--control); border: 1px solid var(--line); }
 .wc-pop-foot button:hover { background: var(--control-hover); }
 
+/* 正在放的那一句：字幕，摆在玻璃下沿 */
+.wc-caption {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2; max-width: calc(100% - 40px);
+  display: grid; justify-items: center; gap: 2px; padding: 8px 20px 10px; border-radius: 14px; text-align: center;
+  background: rgba(14, 14, 20, .55); border: 1px solid rgba(255, 255, 255, .12); backdrop-filter: blur(20px);
+  pointer-events: none; animation: card-pop .4s var(--wc-spring) backwards;
+}
+.wc-caption small { font-size: 11px; color: rgba(255, 255, 255, .62); }
+.wc-caption p { margin: 0; font-size: 20px; line-height: 1.45; color: #fff; animation: wc-line-in .5s var(--ease-out) backwards; }
+.wc-caption mark { background: none; font-weight: 700; text-shadow: 0 0 16px currentColor; }
+.wc-stage.present .wc-caption p { font-size: 30px; }
+.wc-stage.with-panel .wc-caption { left: calc((100% - min(340px, 36%)) / 2); max-width: calc(100% - min(340px, 36%) - 40px); }
+@keyframes wc-line-in { from { opacity: 0; transform: translateY(8px); filter: blur(4px); } }
+
 @media (prefers-reduced-motion: reduce) {
-  .wc-inner, .wc-pop, .wc-song, .wc-ripple { animation: none !important; }
+  .wc-inner, .wc-panel, .wc-song, .wc-ripple, .wc-caption, .wc-caption p { animation: none !important; }
 }
 
 /* ── 资料库（曲库 + 人物合并）──────────────────────────
@@ -1726,6 +1782,31 @@ button.chip:hover { color: var(--fg); }
 }
 .play-all:hover { transform: scale(1.05); box-shadow: 0 8px 22px rgba(0, 0, 0, .35); }
 .play-all:active { transform: scale(.96); transition-duration: 80ms; }
+
+.hero-actions { align-self: end; display: flex; gap: 8px; }
+.hero-cloud {
+  padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; color: #fff;
+  background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .22);
+  transition: background .15s, transform 260ms var(--spring);
+}
+.hero-cloud:hover { background: rgba(255, 255, 255, .24); transform: scale(1.05); }
+/* 分析页上：词云搬走了，留一张跳过去的卡片 */
+.cloud-moved {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; width: 100%;
+  padding: 16px 20px; border-radius: 14px; text-align: left; position: relative; overflow: hidden;
+  background: linear-gradient(120deg, rgba(76, 194, 255, .16), rgba(160, 110, 255, .14)); border: 1px solid var(--line-strong);
+  transition: transform 300ms var(--spring), box-shadow 300ms;
+}
+.cloud-moved:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0, 0, 0, .3); }
+.cloud-moved span { display: grid; gap: 2px; }
+.cloud-moved strong { font-size: 15px; }
+.cloud-moved small { color: var(--muted); font-size: 12px; }
+.cloud-moved-art { position: relative; width: 74px; height: 48px; font-family: "Klee One", serif; }
+.cloud-moved-art b, .cloud-moved-art i, .cloud-moved-art em { position: absolute; font-style: normal; line-height: 1; }
+.cloud-moved-art b { left: 0; top: 2px; font-size: 30px; color: #9fd8ff; }
+.cloud-moved-art i { left: 36px; top: 0; font-size: 20px; }
+.cloud-moved-art em { left: 30px; top: 26px; font-size: 16px; opacity: .7; }
+.cloud-moved-go { font-size: 13px; color: var(--accent); }
 
 /* 发行轴 */
 .release-axis { position: relative; height: 64px; margin: 4px 14px 0; animation: fade-in 500ms 200ms ease backwards; }

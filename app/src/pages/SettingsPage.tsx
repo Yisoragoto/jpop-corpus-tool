@@ -468,7 +468,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
         <SettingCard
           icon={Icons.font}
           title="词云字体"
-          description="统计页词云用的字体。想要手写、毛笔这类风格，把字体文件导进来再在这里选"
+          description="资料库里词云用的字体（词云卡片上也能直接换）。想要手写、毛笔这类风格，把字体文件导进来再在这里选"
         >
           <SettingSelect
             value={settings.wordCloudFont}

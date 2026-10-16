@@ -66,6 +66,8 @@ interface ProfileProps {
   onPlayAll: (tracks: Track[]) => void;
   /** 改了成员：目录要重拉 */
   onMembersChanged: () => void;
+  /** 看这个人的词云 */
+  onOpenCloud: () => void;
   onError: (message: string) => void;
 }
 
@@ -78,6 +80,7 @@ export function PersonProfile({
   onOpenTrack,
   onPlayAll,
   onMembersChanged,
+  onOpenCloud,
   onError,
 }: ProfileProps) {
   const [works, setWorks] = useState<PersonWork[] | null>(null);
@@ -198,12 +201,19 @@ export function PersonProfile({
           </div>
         </div>
         {works !== null && works.length > 0 && (
-          <button className="play-all" onClick={() => onPlayAll(sections[0]?.works ?? works)}>
-            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-              <path d="M7 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 7 5.5Z" fill="currentColor" />
-            </svg>
-            播放
-          </button>
+          <div className="hero-actions">
+            <button className="play-all" onClick={() => onPlayAll(sections[0]?.works ?? works)}>
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                <path d="M7 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 7 5.5Z" fill="currentColor" />
+              </svg>
+              播放
+            </button>
+            {entry !== undefined && entry.performer > 0 && (
+              <button className="hero-cloud" onClick={onOpenCloud} title="这个人唱的歌里最常出现的词">
+                词云
+              </button>
+            )}
+          </div>
         )}
       </header>
 

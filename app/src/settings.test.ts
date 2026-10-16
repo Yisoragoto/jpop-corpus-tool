@@ -48,3 +48,11 @@ describe("应用设置", () => {
     expect(parseSettings(JSON.stringify({ wordCloudFont: "x".repeat(500) })).wordCloudFont).toBe(DEFAULT_SETTINGS.wordCloudFont);
   });
 });
+
+describe("词云词数", () => {
+  it("夹在可调范围里，坏值用默认", () => {
+    expect(parseSettings(JSON.stringify({ wordCloudCount: 5 })).wordCloudCount).toBe(30);
+    expect(parseSettings(JSON.stringify({ wordCloudCount: 9999 })).wordCloudCount).toBe(250);
+    expect(parseSettings(JSON.stringify({ wordCloudCount: "多" })).wordCloudCount).toBe(DEFAULT_SETTINGS.wordCloudCount);
+  });
+});

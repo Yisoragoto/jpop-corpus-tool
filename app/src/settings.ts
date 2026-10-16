@@ -31,10 +31,13 @@ export interface AppSettings {
   dailyGoalMinutes: number;
   /** 统计页词云的字体（CSS 字体名）。可以是自带、导入或本机的任何一种；空串用界面字体 */
   wordCloudFont: string;
+  /** 词云放多少个词 */
+  wordCloudCount: number;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
 export const DAILY_GOAL_LIMITS = [5, 180] as const;
+export const WORD_CLOUD_COUNT_LIMITS = [30, 250] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   stageCoverBlur: true,
@@ -47,6 +50,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dailyGoalMinutes: 30,
   // 自带的手写风格字体，装好就有
   wordCloudFont: "Klee One",
+  wordCloudCount: 120,
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -77,6 +81,7 @@ export function parseSettings(raw: string | null): AppSettings {
         typeof parsed.wordCloudFont === "string" && parsed.wordCloudFont.length <= 200
           ? parsed.wordCloudFont.trim()
           : d.wordCloudFont,
+      wordCloudCount: clamp(parsed.wordCloudCount, WORD_CLOUD_COUNT_LIMITS, d.wordCloudCount),
     };
   } catch {
     return DEFAULT_SETTINGS;

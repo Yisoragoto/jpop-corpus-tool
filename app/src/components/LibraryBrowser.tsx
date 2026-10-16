@@ -112,6 +112,7 @@ interface Props {
   onOpenGraph: () => void;
   /** 没给就不显示时间轴按钮 */
   onOpenTimeline?: () => void;
+  onOpenCloud: () => void;
 }
 
 export function LibraryBrowser({
@@ -126,6 +127,7 @@ export function LibraryBrowser({
   banner,
   onOpenGraph,
   onOpenTimeline,
+  onOpenCloud,
 }: Props) {
   const [mode, setModeState] = useState<BrowseMode>(readMode);
   const [query, setQuery] = useState("");
@@ -179,6 +181,14 @@ export function LibraryBrowser({
             <circle cx="18" cy="6" r="2" />
             <circle cx="12" cy="17" r="2.8" />
             <path d="m8 8.4 2.6 6.4M16.4 7.5 13.6 14.6M8.3 6.7 16 6.1" />
+          </svg>
+        </button>
+        <button className={`browser-view-btn ${view.kind === "cloud" ? "on" : ""}`} onClick={onOpenCloud} title="词云：歌词里最常出现的词" aria-label="词云">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+            <text x="1" y="12" fontSize="10" fontWeight="700">あ</text>
+            <text x="11" y="10" fontSize="7">夢</text>
+            <text x="9" y="21" fontSize="9" fontWeight="700">君</text>
+            <text x="2" y="20" fontSize="5.5" opacity=".6">空</text>
           </svg>
         </button>
         {onOpenTimeline && <button className={`browser-view-btn ${view.kind === "timeline" ? "on" : ""}`} onClick={onOpenTimeline} title="时间轴：谁在哪年发了什么" aria-label="时间轴">

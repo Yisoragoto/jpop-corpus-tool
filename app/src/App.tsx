@@ -45,8 +45,8 @@ type Route = "home" | "kwic" | "library" | "analytics" | "import" | "scrape" | "
 const ROUTES: { key: Route; label: string; hint: string }[] = [
   { key: "home", label: "首页", hint: "继续听 · 今日 · 语料库" },
   { key: "kwic", label: "检索", hint: "KWIC 语境检索与歌词全文" },
-  { key: "library", label: "资料库", hint: "音乐人 · 幕后 · 专辑 · 歌曲 · 歌词" },
-  { key: "analytics", label: "分析", hint: "总览 · 时间线 · 词云 · 词频统计 · 语料报告" },
+  { key: "library", label: "资料库", hint: "音乐人 · 专辑 · 歌曲 · 关系网 · 时间轴 · 词云" },
+  { key: "analytics", label: "分析", hint: "总览 · 时间线 · 词频统计 · 语料报告" },
   { key: "import", label: "导入", hint: "扫描目录 · 复核 · 写入语料" },
   { key: "scrape", label: "刮削", hint: "识别 · 补 metadata · 封面" },
   { key: "anki", label: "Anki", hint: "选词 · 用语料例句做卡片" },
@@ -84,6 +84,13 @@ export default function App() {
     setStageWanted(true);
   }, []);
   const consumeStage = useCallback(() => setStageWanted(false), []);
+  /** 分析页点「打开词云」：去资料库开词云（请求 + 消费，和全屏歌词一样） */
+  const [cloudWanted, setCloudWanted] = useState(false);
+  const openCloud = useCallback(() => {
+    setRoute("library");
+    setCloudWanted(true);
+  }, []);
+  const consumeCloud = useCallback(() => setCloudWanted(false), []);
 
   // 变调缓存的上限记在这边的设置里，后端每次启动都从默认值开始：启动时、改了之后各报一次
   useEffect(() => {
@@ -468,6 +475,9 @@ export default function App() {
             libraryVersion={libraryVersion}
             focusPersonId={focusPersonId}
             onFocusConsumed={consumeFocus}
+            onSearchWord={searchWord}
+            cloudWanted={cloudWanted}
+            onCloudConsumed={consumeCloud}
             stageWanted={stageWanted}
             onStageConsumed={consumeStage}
           />
@@ -496,6 +506,7 @@ export default function App() {
             actions={actions}
             onNavigate={goLibrary}
             onSearchWord={searchWord}
+            onOpenCloud={openCloud}
             onError={onError}
           />
         )}

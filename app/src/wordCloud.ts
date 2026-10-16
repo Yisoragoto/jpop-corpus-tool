@@ -15,6 +15,8 @@ export interface CloudWord {
   songCount: number;
   /** 只有一种词性时才有：点开查歌时带上，结果更准 */
   pos: string | null;
+  /** 歌词里实际出现的写法（字幕里标亮用） */
+  surfaces: string[];
 }
 
 /**
@@ -29,8 +31,16 @@ export function mergeByLemma(rows: FrequencyRow[], limit: number): CloudWord[] {
       hit.freq += row.freq;
       hit.songCount = Math.max(hit.songCount, row.songCount);
       hit.posSet.add(row.pos);
+      for (const s of row.surfaces) if (!hit.surfaces.includes(s)) hit.surfaces.push(s);
     } else {
-      byLemma.set(row.lemma, { lemma: row.lemma, freq: row.freq, songCount: row.songCount, pos: row.pos, posSet: new Set([row.pos]) });
+      byLemma.set(row.lemma, {
+        lemma: row.lemma,
+        freq: row.freq,
+        songCount: row.songCount,
+        pos: row.pos,
+        surfaces: [...row.surfaces],
+        posSet: new Set([row.pos]),
+      });
     }
   }
   return [...byLemma.values()]

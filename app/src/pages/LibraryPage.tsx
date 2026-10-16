@@ -25,6 +25,7 @@ import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
 import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
 import { GraphView } from "../components/GraphView";
 import { TimelineView } from "../components/TimelineView";
+import { CloudView, focusCloudOn } from "../components/CloudView";
 import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
@@ -107,6 +108,11 @@ interface Props {
   /** 从命令面板跳过来时要看的人。消费掉就清空 */
   focusPersonId: number | null;
   onFocusConsumed: () => void;
+  /** 词云里点「在检索页看」 */
+  onSearchWord: (lemma: string) => void;
+  /** 外面（分析页）请求打开词云 */
+  cloudWanted?: boolean;
+  onCloudConsumed?: () => void;
   /** 外面（播放条左下角那张卡片）请求打开全屏歌词 */
   stageWanted?: boolean;
   /** 收到了，把请求清掉 */
@@ -123,6 +129,9 @@ export function LibraryPage({
   libraryVersion,
   focusPersonId,
   onFocusConsumed,
+  onSearchWord,
+  cloudWanted = false,
+  onCloudConsumed,
   stageWanted = false,
   onStageConsumed,
 }: Props) {
@@ -554,6 +563,22 @@ export function LibraryPage({
     );
   };
 
+  /** 词云里点一首歌：从那一句开始放，人留在词云里（不切到歌词） */
+  const playLine = useCallback(
+    (songId: string, utteranceId: number, timeSec: number | null) => {
+      lastSongId.current = songId;
+      void actions.openTrackById(songId, { scrollTo: utteranceId, seekTo: timeSec, autoPlay: true });
+    },
+    [actions],
+  );
+
+  // 分析页点「打开词云」
+  useEffect(() => {
+    if (!cloudWanted) return;
+    go({ kind: "cloud" });
+    onCloudConsumed?.();
+  }, [cloudWanted, go, onCloudConsumed]);
+
   const playAll = useCallback(
     (list: Track[]) => {
       const first = list.find((t) => t.audioPath) ?? list[0];
@@ -721,7 +746,7 @@ export function LibraryPage({
   );
   const songView = view?.kind === "song" || view === null;
   /** 关系网、时间轴占中栏加右栏 */
-  const wide = view?.kind === "graph" || view?.kind === "timeline";
+  const wide = view?.kind === "graph" || view?.kind === "timeline" || view?.kind === "cloud";
 
   return (
     <div className="columns library-page" style={columns.style} ref={columns.container}>
@@ -736,6 +761,7 @@ export function LibraryPage({
         onOpenTrack={openWithMorph}
         onOpenGraph={() => go({ kind: "graph", focus: view?.kind === "person" ? view.id : null })}
         onOpenTimeline={() => go({ kind: "timeline" })}
+        onOpenCloud={() => go({ kind: "cloud" })}
         banner={
           missing.length > 0 && (
             <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title="扫文件夹或逐首选文件找回">
@@ -757,6 +783,32 @@ export function LibraryPage({
         <main className="pane graph-pane">
           {backButton}
           <GraphView data={data} initialFocus={view.focus ?? null} onOpenPerson={(id) => go({ kind: "person", id })} />
+        </main>
+      )}
+
+      {view?.kind === "cloud" && (
+        <main className="pane graph-pane cloud-pane">
+          {backButton}
+          <CloudView
+            playing={playback.songId !== null ? { songId: playback.songId, utteranceId: lyrics[currentLine]?.utteranceId ?? -1 } : null}
+            nowLine={
+              lyricsArePlaying && selected !== null && lyrics[currentLine] !== undefined
+                ? { songId: selected.id, title: selected.title, artist: selected.artist, text: lyrics[currentLine]!.text }
+                : null
+            }
+            onPlayLine={playLine}
+            onOpenSong={(songId, utteranceId, timeSec) => {
+              go({ kind: "song" });
+              lastSongId.current = songId;
+              void actions.openTrackById(songId, { scrollTo: utteranceId, seekTo: timeSec, autoPlay: true });
+            }}
+            onSearchWord={onSearchWord}
+            onShowExamples={(lemma) => {
+              go({ kind: "song" });
+              void actions.openWord(lemma);
+            }}
+            onError={onAudioError}
+          />
         </main>
       )}
 
@@ -789,6 +841,10 @@ export function LibraryPage({
               onOpenTrack={openWithMorph}
               onPlayAll={playAll}
               onMembersChanged={bumpMembers}
+              onOpenCloud={() => {
+                focusCloudOn(view.id);
+                go({ kind: "cloud" });
+              }}
               onError={onAudioError}
             />
           ) : (
