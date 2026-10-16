@@ -185,6 +185,16 @@ npm install
 npm run app:dev
 ```
 
+### 用自己的库试新版
+
+不用发版、不用装：构建当前代码，把你的库拷一份，用副本启动新版。装好的版本可以同时开着，
+你的库和它的设置都不会被动到（音频直接读原文件；制卡仍然写进真实的 Anki）。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\try-dev.ps1              # 构建 + 重新拷库 + 启动
+powershell -ExecutionPolicy Bypass -File scripts\try-dev.ps1 -SkipBuild   # 只重新拷库、再开一次
+```
+
 ### 打包
 
 ```powershell
@@ -220,7 +230,7 @@ rust/          Rust workspace
   jp-normalize/  曲名 / 歌手名归一化
 docs/          每个子系统的设计与对账记录
 legacy/        0.1.x 的 PyQt 版，保留作参考：gui.py、dialogs/、scripts/、packaging/
-scripts/       发版前的自检脚本（release-check.ps1）
+scripts/       用自己的库试新版（try-dev.ps1）、发版前的自检（release-check.ps1）
 assets/fonts/  随软件分发的 OFL 字体及许可证
 examples/      不含版权内容的数据格式示例
 raw/           本地音频和歌词目录，Git 默认忽略内容
