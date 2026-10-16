@@ -832,10 +832,13 @@ export function LibraryPage({
           <TimelineView
             data={data}
             version={libraryVersion}
+            playingSongId={playback.songId}
             onOpenPerson={(id) => go({ kind: "person", id })}
-            onOpenRelease={(rel) => {
-              if (rel.albumId !== null) go({ kind: "person", id: rel.personId, albumId: rel.albumId });
-              else void actions.openTrackById(rel.songId, { autoPlay: false });
+            onOpenAlbum={(id, albumId) => go({ kind: "person", id, albumId })}
+            onPlaySong={(songId) => {
+              // 人留在时间树里：先记下这首，免得「换了歌」把中栏切到歌词
+              lastSongId.current = songId;
+              void actions.openTrackById(songId, { autoPlay: true });
             }}
             onError={onAudioError}
           />

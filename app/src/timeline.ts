@@ -6,7 +6,7 @@
  * 下一行就是 佐藤千亜妃，线从 2019 接到她 2020 的第一张。
  */
 
-import type { TimelineRelease } from "./api";
+import type { PersonWork, TimelineRelease } from "./api";
 import type { Directory } from "./libraryIndex";
 
 /** 日期换成带小数的年份：2014-07-01 ≈ 2014.5；只有年份的放在那一年正中 */
@@ -138,4 +138,105 @@ export function buildTimeline(dir: Directory, releases: TimelineRelease[], query
     min: all.length ? Math.floor(Math.min(...all)) : 2000,
     max: all.length ? Math.ceil(Math.max(...all)) : 2001,
   };
+}
+
+/* ── 总览里的封面：挨得太近的错开上下，再挤的合成「+N」 ── */
+
+export interface CoverSpot {
+  /** 在原数组里的下标 */
+  index: number;
+  cx: number;
+  /** 0 = 在线上，-1 / 1 = 往上 / 往下错开半格 */
+  tier: -1 | 0 | 1;
+  /** 合进这一张的还有几张（显示「+N」） */
+  extra: number[];
+}
+
+/**
+ * 按时间先后放封面。每张先试线上，撞了试上一层、再试下一层；三层都撞了就并进线上最近那张，记成「+N」。
+ * `size` 是封面边长，两张之间至少留 `gap`。
+ */
+export function placeCovers(items: { x: number; size: number }[], gap = 4): CoverSpot[] {
+  const spots: CoverSpot[] = [];
+  const lastByTier = new Map<number, { x: number; size: number; spot: CoverSpot }>();
+  items.forEach((it, index) => {
+    for (const tier of [0, -1, 1] as const) {
+      const last = lastByTier.get(tier);
+      if (last === undefined || it.x - last.x >= (last.size + it.size) / 2 + gap) {
+        const spot: CoverSpot = { index, cx: it.x, tier, extra: [] };
+        spots.push(spot);
+        lastByTier.set(tier, { x: it.x, size: it.size, spot });
+        return;
+      }
+    }
+    lastByTier.get(0)!.spot.extra.push(index);
+  });
+  return spots;
+}
+
+/* ── 放大后的时间树：一位音乐人的发行，乐队解散后接上单飞的成员 ── */
+
+export interface TreeRelease {
+  release: TimelineRelease & { at: number };
+  songs: PersonWork[];
+  /** 这一张是谁的（乐队解散后接上的成员作品，和树的主人不是同一个人） */
+  personId: number;
+}
+
+export interface TreePart {
+  personId: number;
+  name: string;
+  /** 乐队解散后接上的那一段：前面画「解散」那张卡片 */
+  after: { bandName: string; ended: string } | null;
+  items: TreeRelease[];
+}
+
+/** 这个人在这张发行里唱的歌：有专辑按专辑，单曲就是那一首 */
+function songsOf(release: TimelineRelease, works: PersonWork[]): PersonWork[] {
+  const own = works.filter((w) => w.performerIds.includes(release.personId));
+  return release.albumId !== null ? own.filter((w) => w.albumId === release.albumId) : own.filter((w) => w.id === release.songId);
+}
+
+/**
+ * 一棵树的几段：先是这个人自己的发行；他是乐队、而且解散了，再接上离开时间在那之后、有个人发行的前成员，
+ * 只取解散之后的那些（之前的个人作品属于另一棵树）。`worksOf` 给每个人的作品（拿歌名）。
+ */
+export function buildTree(
+  personId: number,
+  dir: Directory,
+  releases: TimelineRelease[],
+  worksOf: Map<number, PersonWork[]>,
+): TreePart[] {
+  const entry = dir.byId.get(personId);
+  const withAt = (r: TimelineRelease) => ({ ...r, at: yearValue(r.date) ?? 0 });
+  const mine = releases
+    .filter((r) => r.personId === personId && yearValue(r.date) !== null)
+    .map(withAt)
+    .sort((a, b) => a.at - b.at);
+  const parts: TreePart[] = [
+    {
+      personId,
+      name: entry?.name ?? "",
+      after: null,
+      items: mine.map((release) => ({ release, songs: songsOf(release, worksOf.get(personId) ?? []), personId })),
+    },
+  ];
+  const ended = entry?.ended ? yearValue(entry.ended) : null;
+  if (ended !== null && entry) {
+    for (const m of dir.membersOf.get(personId) ?? []) {
+      if (!m.leftAt) continue;
+      const later = releases
+        .filter((r) => r.personId === m.memberId && (yearValue(r.date) ?? 0) >= ended - 0.01)
+        .map(withAt)
+        .sort((a, b) => a.at - b.at);
+      if (later.length === 0) continue;
+      parts.push({
+        personId: m.memberId,
+        name: m.memberName,
+        after: { bandName: entry.name, ended: entry.ended },
+        items: later.map((release) => ({ release, songs: songsOf(release, worksOf.get(m.memberId) ?? []), personId: m.memberId })),
+      });
+    }
+  }
+  return parts;
 }

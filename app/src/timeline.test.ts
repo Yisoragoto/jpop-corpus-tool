@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DirectoryEntry, Membership, TimelineRelease } from "./api";
 import { buildDirectory } from "./libraryIndex";
-import { buildTimeline, yearValue } from "./timeline";
+import { buildTimeline, buildTree, placeCovers, yearValue } from "./timeline";
 
 const e = (id: number, name: string, extra: Partial<DirectoryEntry> = {}): DirectoryEntry => ({
   id, name, imagePath: "", artistType: "", ended: "", performer: 1, composer: 0, lyricist: 0, arranger: 0, songs: 1, firstYear: "", lastYear: "", ...extra,
@@ -51,5 +51,56 @@ describe("buildTimeline", () => {
   it("keeps the band when filtering by a member's name", () => {
     const t = buildTimeline(dir, releases, "佐藤");
     expect(t.rows.map((r) => r.name)).toEqual(["きのこ帝国", "佐藤千亜妃"]);
+  });
+});
+
+describe("placeCovers", () => {
+  it("staggers close covers and folds the rest into +N", () => {
+    const spots = placeCovers([
+      { x: 0, size: 30 },
+      { x: 10, size: 30 },
+      { x: 20, size: 30 },
+      { x: 25, size: 30 },
+      { x: 200, size: 30 },
+    ]);
+    expect(spots.map((s) => [s.index, s.tier])).toEqual([
+      [0, 0],
+      [1, -1],
+      [2, 1],
+      [4, 0],
+    ]);
+    expect(spots[0]!.extra).toEqual([3]);
+  });
+});
+
+describe("buildTree", () => {
+  const dir = buildDirectory([kinoko, sato, early], ms);
+  const work = (id: string, performer: number, albumId: number | null) =>
+    ({ id, title: id, artist: "", album: "", albumId, year: "", genre: "", audioPath: "", coverPath: "", durationSec: null, lineCount: 0, roles: ["performer"], performerIds: [performer] });
+  const releases = [
+    { ...rel(1, "2014-10-08", "フェイク"), albumId: 7, tracks: 2 },
+    rel(2, "2018-06-27", "空から"),
+    { ...rel(2, "2020-11-25", "PLANET"), albumId: 9, tracks: 1 },
+  ];
+  const works = new Map([
+    [1, [work("東京", 1, 7), work("クロノスタシス", 1, 7)]],
+    [2, [work("空から", 2, null), work("カタワレ", 2, 9)]],
+  ]);
+
+  it("continues a split band with the member's later releases only", () => {
+    const parts = buildTree(1, dir, releases, works);
+    expect(parts.map((p) => [p.name, p.after?.bandName ?? null, p.items.map((i) => i.release.title)])).toEqual([
+      ["きのこ帝国", null, ["フェイク"]],
+      ["佐藤千亜妃", "きのこ帝国", ["PLANET"]],
+    ]);
+    expect(parts[0]!.items[0]!.songs.map((w) => w.id)).toEqual(["東京", "クロノスタシス"]);
+    expect(parts[1]!.items[0]!.songs.map((w) => w.id)).toEqual(["カタワレ"]);
+  });
+
+  it("gives a solo artist one part with all releases", () => {
+    const parts = buildTree(2, dir, releases, works);
+    expect(parts).toHaveLength(1);
+    expect(parts[0]!.items.map((i) => i.release.title)).toEqual(["空から", "PLANET"]);
+    expect(parts[0]!.items[0]!.songs.map((w) => w.id)).toEqual(["空から"]);
   });
 });

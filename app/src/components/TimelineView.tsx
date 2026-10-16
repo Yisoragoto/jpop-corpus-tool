@@ -1,20 +1,22 @@
 /**
- * 时间轴：每位演唱者一行，发行按日期落在横轴上（行的排法见 `timeline.ts`）。占中栏和右栏。
+ * 时间轴：总览是每位演唱者一条泳道，发行按日期落在上面，**画的是封面**（专辑方、单曲圆，越大歌越多）；
+ * 挨得太近的上下错开，再挤的合成「+N」（`placeCovers`）。乐队解散处一道竖杠，一条虚线接到单飞的成员那一行。
  *
- * 左边一列名字钉住不动，右边横着滚；上面一排年份也钉住。点越大歌越多，悬停看封面和名字，
- * 点一下去他的档案并定位到那张。乐队解散处一道竖杠，一条虚线接到单飞的成员那一行。
+ * 点名字（或者某张封面）放大成这位音乐人的时间树（`TimelineTree`，横竖可选）。
+ * 放大了谁、横还是竖都记在模块里：去档案、去放歌再回来，还是刚才那棵树。
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type TimelineRelease } from "../api";
 import { messageOf } from "../errors";
-import { buildTimeline } from "../timeline";
+import { buildTimeline, placeCovers } from "../timeline";
+import { releaseKey, TimelineTree, type TreeOrient } from "./TimelineTree";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import type { DirectoryData } from "./LibraryBrowser";
 
-const ROW = 46;
+const ROW = 64;
 const HEAD = 30;
 const PAD = 40;
 const ZOOM_KEY = "jp.library.timelineZoom";
@@ -28,15 +30,53 @@ function readZoom(): number {
   }
 }
 
+const ORIENT_KEY = "jp.library.treeOrient";
+
+function readOrient(): TreeOrient {
+  try {
+    return localStorage.getItem(ORIENT_KEY) === "horizontal" ? "horizontal" : "vertical";
+  } catch {
+    return "vertical";
+  }
+}
+
+/** 放大了谁、定位到哪张：跟着模块走，回到时间轴时还在 */
+const memory: { zoom: number | null; focus: string | null } = { zoom: null, focus: null };
+
+/** 封面边长：专辑按歌数，单曲小一号 */
+function coverSize(r: TimelineRelease): number {
+  return r.albumId === null ? 24 : Math.min(44, 26 + r.tracks * 1.6);
+}
+
 interface Props {
   data: DirectoryData | null;
   version: number;
+  playingSongId: string | null;
   onOpenPerson: (id: number) => void;
-  onOpenRelease: (release: TimelineRelease) => void;
+  onOpenAlbum: (personId: number, albumId: number) => void;
+  /** 从头播放这首，人留在时间轴里 */
+  onPlaySong: (songId: string) => void;
   onError: (message: string) => void;
 }
 
-export function TimelineView({ data, version, onOpenPerson, onOpenRelease, onError }: Props) {
+export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpenAlbum, onPlaySong, onError }: Props) {
+  const [zoom, setZoomState] = useState(memory.zoom);
+  const [focus, setFocus] = useState(memory.focus);
+  const [orient, setOrientState] = useState<TreeOrient>(readOrient);
+  const setZoom = (id: number | null, rel: string | null = null) => {
+    memory.zoom = id;
+    memory.focus = rel;
+    setZoomState(id);
+    setFocus(rel);
+  };
+  const setOrient = (o: TreeOrient) => {
+    setOrientState(o);
+    try {
+      localStorage.setItem(ORIENT_KEY, o);
+    } catch {
+      // 只在这次会话里生效
+    }
+  };
   const [releases, setReleases] = useState<TimelineRelease[] | null>(null);
   const [query, setQuery] = useState("");
   const [perYear, setPerYear] = useState(readZoom);
@@ -79,7 +119,27 @@ export function TimelineView({ data, version, onOpenPerson, onOpenRelease, onErr
     scroller.current.scrollLeft = scroller.current.scrollWidth;
   }, [layout]);
 
-  if (layout === null) return <p className="muted pad">加载中…</p>;
+  if (layout === null || data === null || releases === null) return <p className="muted pad">加载中…</p>;
+
+  if (zoom !== null) {
+    return (
+      <TimelineTree
+        key={zoom}
+        personId={zoom}
+        data={data}
+        releases={releases}
+        orient={orient}
+        onOrient={setOrient}
+        focus={focus}
+        playingSongId={playingSongId}
+        onBack={() => setZoom(null)}
+        onOpenPerson={onOpenPerson}
+        onOpenAlbum={onOpenAlbum}
+        onPlaySong={onPlaySong}
+        onError={onError}
+      />
+    );
+  }
 
   const { rows, connectors, min, max } = layout;
   const width = (max - min) * perYear + PAD * 2;
@@ -99,7 +159,8 @@ export function TimelineView({ data, version, onOpenPerson, onOpenRelease, onErr
           <input type="range" min={30} max={240} value={perYear} onChange={(e) => setPerYear(Number(e.target.value))} />
         </label>
         <div className="timeline-legend muted small" aria-hidden="true">
-          <span><i className="tl-dot" />发行（越大歌越多）</span>
+          <span><i className="tl-cover" />专辑</span>
+          <span><i className="tl-dot" />单曲（越大歌越多）</span>
           <span><i className="tl-end" />解散</span>
           <span><i className="tl-link" />之后单飞</span>
         </div>
@@ -117,11 +178,17 @@ export function TimelineView({ data, version, onOpenPerson, onOpenRelease, onErr
                   key={r.id}
                   className={`timeline-name ${r.under !== null ? "under" : ""}`}
                   style={{ height: ROW, ["--n" as string]: Math.min(i, 20) }}
-                  onClick={() => onOpenPerson(r.id)}
-                  title={`看 ${r.name} 的档案`}
+                  onClick={() => setZoom(r.id)}
+                  title={`放大看 ${r.name} 的时间树`}
                 >
-                  <Avatar path={r.imagePath} name={r.name} size={r.under !== null ? 24 : 28} />
-                  <span>{r.name}</span>
+                  <Avatar path={r.imagePath} name={r.name} size={r.under !== null ? 26 : 32} />
+                  <span className="timeline-name-text">
+                    <b>{r.name}</b>
+                    <small>
+                      {r.isBand ? "乐队" : "个人"} · {r.releases.length} 次发行
+                    </small>
+                  </span>
+                  <span className="timeline-zoom-in">放大 →</span>
                 </button>
               ))}
             </div>
@@ -162,29 +229,36 @@ export function TimelineView({ data, version, onOpenPerson, onOpenRelease, onErr
                     />
                   );
                 })}
-                {rows.map((r, i) =>
-                  r.releases.map((rel, j) => {
-                    const radius = Math.min(11, 4 + Math.sqrt(rel.tracks) * 2);
-                    return (
-                      <circle
-                        key={`${r.id}-${rel.albumId ?? rel.songId}`}
-                        cx={x(rel.at)}
-                        cy={y(i)}
-                        r={radius}
-                        className={`tl-release ${r.isBand ? "band" : ""}`}
-                        style={{ ["--d" as string]: `${Math.min(i, 20) * 30 + Math.min(j, 12) * 40}ms` }}
-                        onMouseEnter={(e) => {
-                          const box = (e.currentTarget.ownerSVGElement?.closest(".timeline-view") as HTMLElement).getBoundingClientRect();
-                          const dot = e.currentTarget.getBoundingClientRect();
-                          setTip({ r: rel, x: dot.left - box.left + dot.width / 2, y: dot.top - box.top });
-                        }}
-                        onMouseLeave={() => setTip(null)}
-                        onClick={() => onOpenRelease(rel)}
-                      />
-                    );
-                  }),
-                )}
               </svg>
+              {rows.map((r, i) =>
+                placeCovers(r.releases.map((rel) => ({ x: x(rel.at), size: coverSize(rel) }))).map((spot) => {
+                  const rel = r.releases[spot.index]!;
+                  const size = coverSize(rel);
+                  const more = spot.extra.map((k) => r.releases[k]!);
+                  return (
+                    <button
+                      key={`${r.id}-${releaseKey(rel)}`}
+                      className={`tl-cover-btn ${rel.albumId === null ? "single" : ""}`}
+                      style={{
+                        left: spot.cx,
+                        top: y(i) + spot.tier * 11,
+                        ["--d" as string]: `${Math.min(i, 20) * 40 + Math.min(spot.index, 14) * 45 + 300}ms`,
+                      }}
+                      onMouseEnter={(e) => {
+                        const box = (e.currentTarget.closest(".timeline-view") as HTMLElement).getBoundingClientRect();
+                        const dot = e.currentTarget.getBoundingClientRect();
+                        setTip({ r: rel, x: dot.left - box.left + dot.width / 2, y: dot.top - box.top });
+                      }}
+                      onMouseLeave={() => setTip(null)}
+                      onClick={() => setZoom(r.id, releaseKey(rel))}
+                      aria-label={`${rel.title}，${rel.date}`}
+                    >
+                      <Cover path={rel.coverPath} size={size} rounded={rel.albumId === null ? size : 5} />
+                      {more.length > 0 && <span className="tl-more" title={more.map((m) => m.title).join("、")}>+{more.length}</span>}
+                    </button>
+                  );
+                }),
+              )}
             </div>
           </div>
         </div>
