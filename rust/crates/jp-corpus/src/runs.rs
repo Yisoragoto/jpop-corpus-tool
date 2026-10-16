@@ -19,6 +19,14 @@
 //! 重跑（[`rerun`]）= 拿同样的条件和参数在**现在的库**上再算一次，另存一条记录，
 //! 再和原来那条逐项比（[`compare`]）：范围变了哪些歌、哪些歌换了歌词、分词器变没变、
 //! 每个指标差多少。
+//!
+//! ## 和 `analysis.rs` 的出处是什么关系
+//!
+//! [`crate::analysis`] 的每个结果都带一个 `Provenance`：库指纹 + 规则版本 + 参数。它回答
+//! 「这张表是不是在现在的库上算的」，界面据此提示「结果基于旧数据」。这里回答的是另一个问题：
+//! 「当时那张表是怎么来的、现在再算为什么不一样」——所以要把范围细到每首歌的歌词版本、
+//! 把分词器的指纹存下来。两者叠在一起用：存档里也记下当时的库指纹（`snapshot`），
+//! [`AnalysisSpec`] 也能存 `analysis.rs` 的三种分析（重复感知的词频、搭配、子语料对比）。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,6 +34,7 @@ use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use serde::{Deserialize, Serialize};
 
+use crate::analysis::{self, CollocationQuery, CorpusSnapshot, CountUnit, FrequencyQuery, KeynessQuery};
 use crate::lineage::{Fingerprint, NOW, TokenizerRunRow, tokenizer_runs};
 use crate::stats::{self, StatsFilter};
 
@@ -38,6 +47,13 @@ pub enum AnalysisSpec {
     /// 词频表：词元 × 词性
     #[serde(rename_all = "camelCase")]
     Frequency { pos: Option<String>, limit: usize },
+    /// 重复感知的词频（[`analysis::frequency`]）：范围和计数单位在 `query.scope` 里
+    CorpusFrequency { query: FrequencyQuery },
+    /// 搭配（[`analysis::collocations`]）
+    Collocations { query: CollocationQuery },
+    /// 子语料对比（[`analysis::keyness`]）。存档的范围记的是**目标**子语料；
+    /// 参照一边的变化由库指纹兜住
+    Keyness { query: KeynessQuery },
 }
 
 impl AnalysisSpec {
@@ -45,6 +61,23 @@ impl AnalysisSpec {
         match self {
             Self::CorpusReport => "corpusReport",
             Self::Frequency { .. } => "frequency",
+            Self::CorpusFrequency { .. } => "corpusFrequency",
+            Self::Collocations { .. } => "collocations",
+            Self::Keyness { .. } => "keyness",
+        }
+    }
+
+    /// 这次分析实际的范围和口径。统计页那两种用传进来的筛选条件；`analysis.rs` 那三种的范围
+    /// 写在查询自己里面，传进来的筛选条件不算数——否则存档里记的范围和实际算的对不上
+    pub fn effective_filter(&self, filter: &StatsFilter) -> StatsFilter {
+        let from = |scope: &analysis::Scope| StatsFilter::from_subcorpus(&scope.subcorpus, scope.jp_only, scope.unit == CountUnit::DistinctLines);
+        match self {
+            Self::CorpusReport | Self::Frequency { .. } => filter.clone(),
+            Self::CorpusFrequency { query } => from(&query.scope),
+            Self::Collocations { query } => from(&query.scope),
+            Self::Keyness { query } => {
+                StatsFilter::from_subcorpus(&query.target, query.jp_only, query.unit == CountUnit::DistinctLines)
+            }
         }
     }
 }
@@ -144,6 +177,25 @@ pub fn method(spec: &AnalysisSpec, filter: &StatsFilter) -> serde_json::Value {
             "order": "频次降序，同频次按词元、词性排",
             "songCount": "出现过这个词的歌的数目",
         }),
+        // 规则的说明写在 analysis.rs 的模块文档里，版本号进存档：规则一改，版本号就变
+        AnalysisSpec::CorpusFrequency { .. } => serde_json::json!({
+            "rules": analysis::RULES_VERSION,
+            "excludedPos": ["PUNCT", "SYM"],
+            "freq": "按所选计数单位的频次；rawFreq 唱几遍算几遍，distinctFreq 同一首歌里重复的行只算一次",
+            "repeatShare": "来自重复行的比例",
+            "per10k": "每万词频次",
+        }),
+        AnalysisSpec::Collocations { query } => serde_json::json!({
+            "rules": analysis::RULES_VERSION,
+            "window": format!("左 {} 右 {} 个词，不跨行，跳过标点", query.left, query.right),
+            "measure": query.measure,
+            "measures": "logDice / MI / 对数似然 / t 值都算，按所选的排",
+        }),
+        AnalysisSpec::Keyness { .. } => serde_json::json!({
+            "rules": analysis::RULES_VERSION,
+            "statistic": "对数似然（带符号：正 = 目标里偏多），效应大小是 log ratio（零频按 0.5 平滑）",
+            "reference": "没给参照时是语料库里其余的歌",
+        }),
     };
     let mut out = common;
     if let (Some(a), serde_json::Value::Object(b)) = (out.as_object_mut(), specific) {
@@ -159,6 +211,9 @@ pub fn execute(conn: &Connection, spec: &AnalysisSpec, filter: &StatsFilter) -> 
         AnalysisSpec::Frequency { pos, limit } => {
             serde_json::to_value(stats::frequency_table(conn, pos.as_deref(), filter, (*limit).clamp(1, 5000))?)?
         }
+        AnalysisSpec::CorpusFrequency { query } => serde_json::to_value(analysis::frequency(conn, query)?)?,
+        AnalysisSpec::Collocations { query } => serde_json::to_value(analysis::collocations(conn, query)?)?,
+        AnalysisSpec::Keyness { query } => serde_json::to_value(analysis::keyness(conn, query)?)?,
     })
 }
 
@@ -176,6 +231,8 @@ pub struct AnalysisRun {
     pub method: serde_json::Value,
     pub result: serde_json::Value,
     pub result_hash: String,
+    /// 当时的库指纹（[`analysis::snapshot`]）：歌词、分词、校正有任何增删改都会变
+    pub snapshot: Option<CorpusSnapshot>,
     pub schema_version: i64,
     pub app_version: String,
     pub rerun_of: Option<i64>,
@@ -207,11 +264,13 @@ pub fn run(
     app_version: &str,
     rerun_of: Option<i64>,
 ) -> Result<AnalysisRun> {
-    // 范围、分词器、结果要是同一个时刻的库：放在一个读事务里，中间有人写也看不见
+    let filter = &spec.effective_filter(filter);
+    // 范围、分词器、结果、库指纹要是同一个时刻的库：放在一个读事务里，中间有人写也看不见
     let tx = conn.unchecked_transaction()?;
     let scope = scope(&tx, filter)?;
     let tokenizers = tokenizers_in_scope(&tx, filter)?;
     let result = execute(&tx, spec, filter)?;
+    let snapshot = analysis::snapshot(&tx)?;
     let method = method(spec, filter);
     let schema_version = crate::migrations::version(&tx)?;
     let result_hash = Fingerprint::new().str(&result.to_string()).hex();
@@ -219,8 +278,8 @@ pub fn run(
     tx.execute(
         &format!(
             "INSERT INTO analysis_runs (kind, label, filter_json, params_json, scope_json, scope_hash, tokenizers_json, \
-             method_json, result_json, result_hash, schema_version, app_version, rerun_of, created_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,{NOW})"
+             method_json, result_json, result_hash, schema_version, app_version, rerun_of, snapshot_json, created_at) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,{NOW})"
         ),
         params![
             spec.kind(),
@@ -236,6 +295,7 @@ pub fn run(
             schema_version,
             app_version,
             rerun_of,
+            serde_json::to_string(&snapshot)?,
         ],
     )?;
     let id = tx.last_insert_rowid();
@@ -247,7 +307,8 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<AnalysisRun>> {
     let row = conn
         .query_row(
             "SELECT id, label, params_json, filter_json, scope_json, scope_hash, tokenizers_json, method_json, \
-             result_json, result_hash, schema_version, app_version, rerun_of, created_at FROM analysis_runs WHERE id=?1",
+             result_json, result_hash, schema_version, app_version, rerun_of, created_at, snapshot_json \
+             FROM analysis_runs WHERE id=?1",
             params![id],
             |r| {
                 Ok((
@@ -260,12 +321,12 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<AnalysisRun>> {
                     r.get::<_, i64>(10)?,
                     r.get::<_, String>(11)?,
                     r.get::<_, Option<i64>>(12)?,
-                    r.get::<_, String>(13)?,
+                    [r.get::<_, String>(13)?, r.get(14)?],
                 ))
             },
         )
         .optional()?;
-    let Some((id, label, [spec, filter, scope], scope_hash, [tokenizers, method, result], result_hash, schema_version, app_version, rerun_of, created_at)) = row
+    let Some((id, label, [spec, filter, scope], scope_hash, [tokenizers, method, result], result_hash, schema_version, app_version, rerun_of, [created_at, snapshot])) = row
     else {
         return Ok(None);
     };
@@ -280,6 +341,7 @@ pub fn get(conn: &Connection, id: i64) -> Result<Option<AnalysisRun>> {
         method: serde_json::from_str(&method).unwrap_or_default(),
         result: serde_json::from_str(&result).unwrap_or_default(),
         result_hash,
+        snapshot: serde_json::from_str(&snapshot).ok(),
         schema_version,
         app_version,
         rerun_of,
@@ -376,6 +438,8 @@ pub struct Comparison {
     pub same_scope: bool,
     pub same_tokenizers: bool,
     pub same_schema: bool,
+    /// 两次的库指纹一样吗（老存档没记指纹时是 None）
+    pub same_corpus: Option<bool>,
     pub result_identical: bool,
     pub scope: ScopeDiff,
     /// 报告的各项指标（只列变了的）
@@ -420,6 +484,10 @@ pub fn compare(before: &AnalysisRun, after: &AnalysisRun) -> Comparison {
     let fingerprints = |t: &TokenizerUse| (t.runs.iter().map(|r| r.fingerprint.clone()).collect::<BTreeSet<_>>(), t.unknown_lines > 0);
     let same_tokenizers = fingerprints(&before.tokenizers) == fingerprints(&after.tokenizers);
     let result_identical = before.result_hash == after.result_hash;
+    let same_corpus = match (&before.snapshot, &after.snapshot) {
+        (Some(a), Some(b)) => Some(a.fingerprint == b.fingerprint),
+        _ => None,
+    };
 
     if !same_filter {
         reasons.push("筛选条件不同".into());
@@ -467,8 +535,11 @@ pub fn compare(before: &AnalysisRun, after: &AnalysisRun) -> Comparison {
     let metrics = metric_diffs(&before.result, &after.result);
     let words = word_diffs(&before.result, &after.result);
     if !result_identical && reasons.is_empty() {
-        // 范围、分词器、口径都没变，结果却变了：最可能是有人校正了分词
-        reasons.push("范围和分词器都没变：多半是有歌词行的分词被校正过（见各歌的修订历史）".into());
+        // 范围、分词器、口径都没变，结果却变了。库指纹能分清是库变了还是算法变了
+        reasons.push(match same_corpus {
+            Some(true) => "库一点没变：是统计规则变了（程序更新过，见存档里的规则版本）".into(),
+            _ => "范围和分词器都没变：多半是有歌词行的分词被校正过（见各歌的修订历史）".into(),
+        });
     }
 
     Comparison {
@@ -480,6 +551,7 @@ pub fn compare(before: &AnalysisRun, after: &AnalysisRun) -> Comparison {
         same_scope,
         same_tokenizers,
         same_schema,
+        same_corpus,
         result_identical,
         scope,
         metrics,
@@ -496,6 +568,14 @@ fn metric_diffs(a: &serde_json::Value, b: &serde_json::Value) -> Vec<MetricDiff>
         for (k, v) in obj {
             if let Some(x) = v.as_f64() {
                 out.insert(k.clone(), x);
+            }
+        }
+        // analysis.rs 的结果：出处里的歌数、词次（对比是目标 / 参照两份）
+        for side in ["provenance", "target", "reference"] {
+            for k in ["songs", "tokens"] {
+                if let Some(x) = obj.get(side).and_then(|p| p.get(k)).and_then(|x| x.as_f64()) {
+                    out.insert(format!("{side}.{k}"), x);
+                }
             }
         }
         if let Some(cov) = obj.get("coverage").and_then(|c| c.as_array()) {
@@ -523,14 +603,24 @@ fn metric_diffs(a: &serde_json::Value, b: &serde_json::Value) -> Vec<MetricDiff>
         .collect()
 }
 
-/// 词频表的变化：频次或名次变了的、新进榜的、掉出榜的
+/// 词表的变化：频次或名次变了的、新进榜的、掉出榜的。
+/// 词频表是整个结果；`analysis.rs` 的词频取 `items`、搭配取 `collocates`、对比取 `over`（目标里偏多的词）
 fn word_diffs(a: &serde_json::Value, b: &serde_json::Value) -> Vec<WordDiff> {
+    let rows = |v: &serde_json::Value| -> Vec<serde_json::Value> {
+        if let Some(list) = v.as_array() {
+            return list.clone();
+        }
+        ["items", "collocates", "over"]
+            .iter()
+            .find_map(|k| v.get(*k).and_then(|x| x.as_array()).cloned())
+            .unwrap_or_default()
+    };
     let table = |v: &serde_json::Value| -> BTreeMap<(String, String), (usize, i64)> {
         let mut out = BTreeMap::new();
-        for (rank, row) in v.as_array().into_iter().flatten().enumerate() {
+        for (rank, row) in rows(v).iter().enumerate() {
             let lemma = row.get("lemma").and_then(|x| x.as_str()).unwrap_or_default().to_string();
             let pos = row.get("pos").and_then(|x| x.as_str()).unwrap_or_default().to_string();
-            let freq = row.get("freq").and_then(|x| x.as_i64()).unwrap_or_default();
+            let freq = row.get("freq").or_else(|| row.get("targetFreq")).and_then(|x| x.as_i64()).unwrap_or_default();
             out.insert((lemma, pos), (rank + 1, freq));
         }
         out
@@ -787,6 +877,49 @@ mod tests {
         assert!(cmp.same_scope);
         assert!(cmp.reasons[0].contains("校正"), "{:?}", cmp.reasons);
         assert!(cmp.words.iter().any(|w| w.lemma == "怪獣の夜" && w.before_rank.is_none()));
+    }
+
+    #[test]
+    fn the_analyses_from_analysis_rs_can_be_archived_and_rerun() {
+        let conn = db();
+        let early = crate::subcorpus::Subcorpus { year_to: Some(2020), ..Default::default() };
+        let spec = AnalysisSpec::CorpusFrequency {
+            query: analysis::FrequencyQuery {
+                scope: analysis::Scope { subcorpus: early.clone(), unit: CountUnit::DistinctLines, jp_only: false },
+                pos: None,
+                limit: Some(50),
+            },
+        };
+        // 传进来的筛选条件不算数：范围以查询自己的为准
+        let run = run(&conn, &spec, &StatsFilter::default(), "", "t", None).unwrap();
+        assert_eq!(run.scope.song_count, 1, "只有 2019 年那首");
+        assert!(run.filter.distinct_lines && run.filter.year_to == Some(2020));
+        assert!(run.snapshot.is_some(), "存了库指纹");
+        assert_eq!(run.method["rules"], analysis::RULES_VERSION);
+        assert!(run.result["items"].as_array().is_some_and(|i| !i.is_empty()));
+
+        let cmp = rerun(&conn, run.id, "t").unwrap();
+        assert!(cmp.result_identical && cmp.same_corpus == Some(true), "{:?}", cmp.reasons);
+
+        // 校正一行分词：库指纹变了，词表的变化列得出来
+        crate::corrections::save(&conn, 1, &[crate::TokenEdit { surface: "夜に駆ける".into(), lemma: "夜に駆ける".into(), pos: "NOUN".into() }])
+            .unwrap();
+        let cmp = rerun(&conn, run.id, "t").unwrap();
+        assert!(!cmp.result_identical);
+        assert_eq!(cmp.same_corpus, Some(false));
+        assert!(cmp.words.iter().any(|w| w.lemma == "夜に駆ける"));
+        assert!(cmp.reasons[0].contains("校正"), "{:?}", cmp.reasons);
+
+        let key = AnalysisSpec::Keyness {
+            query: analysis::KeynessQuery { target: early, min_freq: 1, ..Default::default() },
+        };
+        let k = run_spec_for_test(&conn, &key);
+        assert_eq!(k.scope.song_count, 1, "对比的存档范围记目标子语料");
+        assert!(k.result["over"].is_array());
+    }
+
+    fn run_spec_for_test(conn: &Connection, spec: &AnalysisSpec) -> AnalysisRun {
+        run(conn, spec, &StatsFilter::default(), "", "t", None).unwrap()
     }
 
     #[test]

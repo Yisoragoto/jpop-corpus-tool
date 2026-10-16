@@ -33,7 +33,7 @@ import { PerformerPicker } from "../components/PerformerPicker";
 import { QualityCard } from "../components/QualityCard";
 import { SubcorpusFilters } from "../components/SubcorpusFilters";
 import { Stat } from "../components/Stat";
-import { describeFilter } from "../corpusQuality";
+import { describeFilter, toSubcorpus } from "../corpusQuality";
 import { pyFixed, pyGrouped } from "../pyFormat";
 import type { LibraryActions } from "../useLibrary";
 
@@ -340,7 +340,7 @@ export function AnalyticsPage({
       </section>
 
       <RepeatEffectCard
-        performerIds={filter.performerIds}
+        subcorpus={toSubcorpus(filter)}
         jpOnly={filter.jpOnly}
         onSearchWord={onSearchWord}
         onError={onError}

@@ -243,7 +243,7 @@ fn per_10k(freq: i64, total: i64) -> f64 {
 
 // ────────────────────────────── 词频 ──────────────────────────────
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct FrequencyQuery {
     pub scope: Scope,
@@ -360,7 +360,7 @@ pub enum CollocationMeasure {
     Frequency,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CollocationQuery {
     pub scope: Scope,
@@ -573,7 +573,7 @@ fn g2(cells: &[f64; 4]) -> f64 {
 
 // ────────────────────────────── 子语料对比 ──────────────────────────────
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct KeynessQuery {
     /// 目标子语料

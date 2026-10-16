@@ -331,7 +331,9 @@ CREATE TABLE IF NOT EXISTS analysis_runs (
     app_version     TEXT    NOT NULL DEFAULT '',
     -- 重跑出来的那次记着原来是哪一次
     rerun_of        INTEGER,
-    created_at      TEXT    NOT NULL DEFAULT ''
+    created_at      TEXT    NOT NULL DEFAULT '',
+    -- 当时的库指纹（analysis::snapshot）
+    snapshot_json   TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_analysis_runs_time ON analysis_runs(created_at);
 

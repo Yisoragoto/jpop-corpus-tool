@@ -65,6 +65,22 @@ impl StatsFilter {
             && self.min_completeness.is_none()
     }
 
+    /// 从子语料 + 两个口径拼出来（`analysis.rs` 的查询存档时用）
+    pub fn from_subcorpus(sub: &crate::subcorpus::Subcorpus, jp_only: bool, distinct_lines: bool) -> Self {
+        Self {
+            performer_ids: sub.performer_ids.clone(),
+            jp_only,
+            year_from: sub.year_from,
+            year_to: sub.year_to,
+            genres: sub.genres.clone(),
+            languages: sub.languages.clone(),
+            album_ids: sub.album_ids.clone(),
+            song_ids: sub.song_ids.clone(),
+            min_completeness: sub.min_completeness,
+            distinct_lines,
+        }
+    }
+
     /// 范围部分就是一个子语料（[`crate::subcorpus::Subcorpus`]）：KWIC、搭配、对比、统计页
     /// 圈歌的规则只写在那一处
     pub fn subcorpus(&self) -> crate::subcorpus::Subcorpus {

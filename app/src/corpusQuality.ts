@@ -6,7 +6,15 @@
  * 有测试钉着；组件只管画。
  */
 
-import { call, type StatsFilter } from "./api";
+import {
+  call,
+  type CollocationQuery,
+  type CorpusSnapshot,
+  type FrequencyQuery,
+  type KeynessQuery,
+  type StatsFilter,
+  type Subcorpus,
+} from "./api";
 
 // ───────────────────────────── 校验 ─────────────────────────────
 
@@ -241,7 +249,22 @@ export interface QualityOverview {
 
 // ───────────────────────────── 分析 ─────────────────────────────
 
-export type AnalysisSpec = { kind: "corpusReport" } | { kind: "frequency"; pos: string | null; limit: number };
+/** 统计页那两种用传进来的筛选；analysis.rs 那三种的范围写在 query 自己里面 */
+export type AnalysisSpec =
+  | { kind: "corpusReport" }
+  | { kind: "frequency"; pos: string | null; limit: number }
+  | { kind: "corpusFrequency"; query: FrequencyQuery }
+  | { kind: "collocations"; query: CollocationQuery }
+  | { kind: "keyness"; query: KeynessQuery };
+
+/** 别处存了档，「分析记录」卡据此刷新列表 */
+export const ANALYSIS_ARCHIVED = "jpop:analysis-archived";
+
+/** 统计筛选的范围部分（去掉「仅日文」「副歌只算一遍」两个口径） */
+export function toSubcorpus(f: StatsFilter): Subcorpus {
+  const { jpOnly: _j, distinctLines: _d, ...scope } = f;
+  return scope;
+}
 
 export interface ScopeSong {
   songId: string;
@@ -271,6 +294,8 @@ export interface AnalysisRun {
   method: Record<string, unknown>;
   result: unknown;
   resultHash: string;
+  /** 当时的库指纹（analysis.rs 的 snapshot） */
+  snapshot: CorpusSnapshot | null;
   schemaVersion: number;
   appVersion: string;
   rerunOf: number | null;
@@ -314,6 +339,8 @@ export interface Comparison {
   sameScope: boolean;
   sameTokenizers: boolean;
   sameSchema: boolean;
+  /** 库指纹一样吗；老存档没记指纹时是 null */
+  sameCorpus: boolean | null;
   resultIdentical: boolean;
   scope: { added: string[]; removed: string[]; lyricsChanged: string[] };
   metrics: MetricDiff[];
@@ -343,6 +370,9 @@ export interface FilterFacets {
 export const KIND_LABELS: Record<AnalysisSpec["kind"], string> = {
   corpusReport: "语料报告",
   frequency: "词频表",
+  corpusFrequency: "重复感知词频",
+  collocations: "搭配",
+  keyness: "子语料对比",
 };
 
 /** 报告指标的中文名（对比表里用） */
@@ -360,7 +390,16 @@ export const METRIC_LABELS: Record<string, string> = {
   avgTokensPerLine: "平均每行 token",
 };
 
-export const metricLabel = (name: string) =>
+const SIDE_LABELS: Record<string, string> = { provenance: "", target: "目标", reference: "参照" };
+const SIDE_FIELDS: Record<string, string> = { songs: "曲数", tokens: "词次" };
+
+export const metricLabel = (name: string): string => {
+  const [side, field] = name.split(".");
+  if (field && side! in SIDE_LABELS && field in SIDE_FIELDS) return `${SIDE_LABELS[side!]}${SIDE_FIELDS[field]}`;
+  return baseMetricLabel(name);
+};
+
+const baseMetricLabel = (name: string) =>
   METRIC_LABELS[name] ?? (name.startsWith("coverage@") ? `Top ${name.slice(9)} 覆盖率` : name);
 
 /** 一个筛选条件是不是「整个库」（只看范围，不看 jpOnly / distinctLines 这类口径） */

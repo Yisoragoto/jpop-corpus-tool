@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 
 import type { StatsFilter } from "../api";
 import {
+  ANALYSIS_ARCHIVED,
   describeFilter,
   KIND_LABELS,
   metricLabel,
@@ -43,7 +44,11 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
 
   const load = () => qualityApi.analyses(50).then(setRuns).catch((e) => onError(message(e)));
   useEffect(() => {
-    qualityApi.analyses(50).then(setRuns).catch((e) => onError(message(e)));
+    const reload = () => qualityApi.analyses(50).then(setRuns).catch((e) => onError(message(e)));
+    void reload();
+    // 副歌效应、子语料对比卡上的「存档」存完通知这里
+    window.addEventListener(ANALYSIS_ARCHIVED, reload);
+    return () => window.removeEventListener(ANALYSIS_ARCHIVED, reload);
   }, [onError]);
 
   const busyWith = async (job: () => Promise<void>) => {
@@ -219,6 +224,15 @@ function RunDetail({ run, onClose }: { run: AnalysisRun; onClose: () => void }) 
             ))}
           </ul>
         </dd>
+        {run.snapshot && (
+          <>
+            <dt>库指纹</dt>
+            <dd>
+              <code>{run.snapshot.fingerprint}</code> · {run.snapshot.songs} 首 / {pyGrouped(run.snapshot.tokens)} 词 /{" "}
+              {run.snapshot.corrections} 处校正
+            </dd>
+          </>
+        )}
         <dt>结果指纹</dt>
         <dd>
           <code>{run.resultHash}</code>
@@ -236,6 +250,7 @@ function ComparisonView({ data, onClose }: { data: Comparison; onClose: () => vo
     ["范围", data.sameScope],
     ["分词器", data.sameTokenizers],
     ["库结构", data.sameSchema],
+    ...(data.sameCorpus === null ? [] : ([["库指纹", data.sameCorpus]] as [string, boolean][])),
   ];
   return (
     <div className="run-detail comparison small">

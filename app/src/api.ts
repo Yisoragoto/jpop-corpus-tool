@@ -272,6 +272,13 @@ export interface FrequencyResult {
   provenance: Provenance;
 }
 
+/** 重复感知的词频查询（analysis.rs 的 FrequencyQuery） */
+export interface FrequencyQuery {
+  scope?: AnalysisScope;
+  pos?: string | null;
+  limit?: number;
+}
+
 export type CollocationMeasure = "logDice" | "mi" | "logLikelihood" | "frequency";
 
 export interface CollocationQuery {
@@ -817,7 +824,7 @@ export const api = {
   listenWindow: (utteranceId: number, before = 0, after = 0) =>
     call<ListenWindow | null>("listen_window", { utteranceId, before, after }),
   corpusSnapshot: () => call<CorpusSnapshot>("corpus_snapshot"),
-  corpusFrequency: (query: { scope?: AnalysisScope; pos?: string | null; limit?: number }) =>
+  corpusFrequency: (query: FrequencyQuery) =>
     call<FrequencyResult>("corpus_frequency", { query }),
   collocations: (query: CollocationQuery) => call<CollocationResult>("collocations", { query }),
   keyness: (query: KeynessQuery) => call<KeynessResult>("keyness", { query }),

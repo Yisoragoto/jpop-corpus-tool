@@ -109,10 +109,13 @@ impl Session {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        let corpus = Corpus::open_writable(&path).with_context(|| format!("打不开 {}", path.display()))?;
+        let mut corpus = Corpus::open_writable(&path).with_context(|| format!("打不开 {}", path.display()))?;
         corpus.migrate().with_context(|| format!("{} 的结构升不上来", path.display()))?;
         corpus.check_schema()?;
         corpus.connection().busy_timeout(BUSY_TIMEOUT)?;
+        // 和 Tauri 客户端启动时一样：来源追踪之前导进来的歌补登记一版歌词（docs/provenance.md）。
+        // 补不上不影响打开，质量清单里那些歌只是没有版本记录
+        let _ = corpus.backfill_lineage();
         Ok(Self {
             corpus: Mutex::new(corpus),
             root: path.parent().map(PathBuf::from),
@@ -177,6 +180,14 @@ fn arg_or<T: for<'de> Deserialize<'de>>(args: &Value, key: &str, default: T) -> 
 }
 
 /// 所有方法。名字和 Tauri command 对齐（camelCase），参数名也一样
+/// 存档里记的程序版本：客户端传了 `appVersion` 就用它（macOS 应用的版本），否则记核心的版本
+fn app_version(args: &Value) -> String {
+    args.get("appVersion")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("core {}", env!("CARGO_PKG_VERSION")))
+}
+
 fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
     if let Some(value) = dispatch_unlocked(session, method, &args)? {
         return Ok(value);
@@ -212,11 +223,16 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         "quickSearch" => serde_json::to_value(
             corpus.quick_search(&arg::<String>(&args, "query")?, arg_or(&args, "perKind", None)?)?,
         )?,
-        "wordInCorpus" => serde_json::to_value(corpus.word_in_corpus(
-            &arg::<String>(&args, "lemma")?,
-            arg_or::<Option<String>>(&args, "currentSongId", None)?.as_deref(),
-            arg_or(&args, "limit", 24)?,
-        )?)?,
+        "wordInCorpus" => {
+            let lemma = arg::<String>(&args, "lemma")?;
+            let current = arg_or::<Option<String>>(&args, "currentSongId", None)?;
+            let limit = arg_or(&args, "limit", 24)?;
+            // scope：只在这块子语料里看（Tauri 那边同名参数）
+            match arg_or::<Option<jp_corpus::subcorpus::Subcorpus>>(&args, "scope", None)?.filter(|s| !s.is_all()) {
+                Some(scope) => serde_json::to_value(corpus.word_in_subcorpus(&lemma, current.as_deref(), limit, &scope)?)?,
+                None => serde_json::to_value(corpus.word_in_corpus(&lemma, current.as_deref(), limit)?)?,
+            }
+        }
 
         // 定位：检索结果 ↔ 音频
         "lineSpans" => serde_json::to_value(corpus.line_spans(&arg::<String>(&args, "songId")?)?)?,
@@ -233,6 +249,64 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         "songProfile" => serde_json::to_value(
             corpus.song_profile(&arg::<String>(&args, "songId")?, arg_or(&args, "limit", 12)?)?,
         )?,
+
+        // 语料质量与来源追踪（docs/provenance.md）。只读的这几个两个客户端共用；
+        // 换歌词、逐行编辑要落盘 .lrc，还在 jp-app 里，macOS 暂时没有
+        "qualityOverview" => serde_json::to_value(jp_corpus::lineage::quality_overview(
+            corpus.connection(),
+            arg_or(&args, "limit", 50usize)?.clamp(1, 500),
+        )?)?,
+        "songLineage" => serde_json::to_value(jp_corpus::lineage::song_lineage(
+            corpus.connection(),
+            &arg::<String>(&args, "songId")?,
+        )?)?,
+        "lyricVersionRaw" => serde_json::to_value(
+            jp_corpus::lineage::version_raw(corpus.connection(), arg(&args, "versionId")?)?.and_then(|(_, raw)| raw),
+        )?,
+        "artistProvenance" => serde_json::to_value(jp_corpus::lineage::provenance(
+            corpus.connection(),
+            "artist",
+            &arg::<String>(&args, "name")?,
+        )?)?,
+
+        // 子语料与分析存档（同名的 Tauri command：subcorpus_* / analysis_*）
+        "subcorpusFacets" => serde_json::to_value(jp_corpus::runs::facets(corpus.connection())?)?,
+        "subcorpusPreview" => {
+            let mut scope = jp_corpus::runs::scope(corpus.connection(), &arg(&args, "filter")?)?;
+            scope.songs.clear();
+            serde_json::to_value(scope)?
+        }
+        "subcorpusList" => serde_json::to_value(jp_corpus::runs::subcorpora(corpus.connection())?)?,
+        "subcorpusSave" => serde_json::to_value(jp_corpus::runs::save_subcorpus(
+            corpus.connection(),
+            &arg::<String>(&args, "name")?,
+            &arg(&args, "filter")?,
+            &arg_or::<String>(&args, "note", String::new())?,
+        )?)?,
+        "subcorpusDelete" => json!(jp_corpus::runs::delete_subcorpus(corpus.connection(), arg(&args, "id")?)?),
+        "analysisRun" => serde_json::to_value(jp_corpus::runs::run(
+            corpus.connection(),
+            &arg(&args, "spec")?,
+            &arg_or(&args, "filter", jp_corpus::stats::StatsFilter::default())?,
+            &arg_or::<String>(&args, "label", String::new())?,
+            &app_version(&args),
+            None,
+        )?)?,
+        "analysisList" => serde_json::to_value(jp_corpus::runs::list(corpus.connection(), arg_or(&args, "limit", 100)?)?)?,
+        "analysisGet" => serde_json::to_value(jp_corpus::runs::get(corpus.connection(), arg(&args, "id")?)?)?,
+        "analysisRerun" => serde_json::to_value(jp_corpus::runs::rerun(
+            corpus.connection(),
+            arg(&args, "id")?,
+            &app_version(&args),
+        )?)?,
+        "analysisCompare" => {
+            let get = |key: &str| -> Result<jp_corpus::runs::AnalysisRun> {
+                let id: i64 = arg(&args, key)?;
+                jp_corpus::runs::get(corpus.connection(), id)?.ok_or_else(|| anyhow!("找不到分析记录 {id}"))
+            };
+            serde_json::to_value(jp_corpus::runs::compare(&get("before")?, &get("after")?))?
+        }
+        "analysisDelete" => json!(jp_corpus::runs::delete(corpus.connection(), arg(&args, "id")?)?),
 
         // 播放历史（和 Tauri 客户端写同一张表，首页「最近播放」两边通用）
         "recordPlay" => {
@@ -635,6 +709,29 @@ mod tests {
         assert!(s.call("songProfile", json!({ "songId": "004" })).unwrap()["repeatedLines"].as_i64().unwrap() >= 1);
         assert!(s.call("noSuchThing", json!({})).is_err());
         assert!(s.call("lyrics", json!({})).is_err(), "缺参数要报错而不是 panic");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// 来源追踪和分析存档在 macOS 这边也答得上来：打开时补登记了版本，存档能存 analysis.rs 的分析
+    #[test]
+    fn provenance_and_archived_analyses_are_reachable_from_the_ffi() {
+        let (s, dir) = session();
+        let overview = s.call("qualityOverview", json!({})).unwrap();
+        assert_eq!(overview["songsWithVersion"], overview["songsWithLyrics"], "打开时就补登记了");
+        let lineage = s.call("songLineage", json!({ "songId": "001" })).unwrap();
+        assert_eq!(lineage["versions"][0]["sourceType"], "legacy");
+
+        let early = json!({ "yearTo": 2019 });
+        let w = s.call("wordInCorpus", json!({ "lemma": "風", "scope": early })).unwrap();
+        assert!(w["examples"].as_array().unwrap().iter().all(|e| ["001", "002"].contains(&e["songId"].as_str().unwrap())));
+
+        let spec = json!({ "kind": "corpusFrequency", "query": { "scope": { "subcorpus": early, "unit": "distinctLines" }, "limit": 20 } });
+        let run = s.call("analysisRun", json!({ "spec": spec, "appVersion": "mac 0.1" })).unwrap();
+        assert_eq!(run["appVersion"], "mac 0.1");
+        assert!(run["snapshot"]["fingerprint"].is_string());
+        let cmp = s.call("analysisRerun", json!({ "id": run["id"] })).unwrap();
+        assert_eq!(cmp["resultIdentical"], json!(true));
+        assert!(s.call("analysisList", json!({})).unwrap().as_array().unwrap().len() >= 2);
         std::fs::remove_dir_all(dir).ok();
     }
 
