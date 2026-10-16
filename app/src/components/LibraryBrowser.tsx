@@ -175,7 +175,7 @@ export function LibraryBrowser({
       {banner}
       <div className="browser-head">
         <input className="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
-        <button className={`browser-view-btn ${view.kind === "graph" ? "on" : ""}`} onClick={onOpenGraph} title="关系网：所有人和他们的合作" aria-label="关系网">
+        <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "graph" ? "on" : ""}`} onClick={onOpenGraph} title="关系网：所有人和他们的合作" aria-label="关系网">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
             <circle cx="6" cy="7" r="2.4" />
             <circle cx="18" cy="6" r="2" />
@@ -183,7 +183,7 @@ export function LibraryBrowser({
             <path d="m8 8.4 2.6 6.4M16.4 7.5 13.6 14.6M8.3 6.7 16 6.1" />
           </svg>
         </button>
-        <button className={`browser-view-btn ${view.kind === "cloud" ? "on" : ""}`} onClick={onOpenCloud} title="词云：歌词里最常出现的词" aria-label="词云">
+        <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "cloud" ? "on" : ""}`} onClick={onOpenCloud} title="词云：歌词里最常出现的词" aria-label="词云">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
             <text x="1" y="12" fontSize="10" fontWeight="700">あ</text>
             <text x="11" y="10" fontSize="7">夢</text>
@@ -191,14 +191,14 @@ export function LibraryBrowser({
             <text x="2" y="20" fontSize="5.5" opacity=".6">空</text>
           </svg>
         </button>
-        {onOpenTimeline && <button className={`browser-view-btn ${view.kind === "timeline" ? "on" : ""}`} onClick={onOpenTimeline} title="时间轴：谁在哪年发了什么" aria-label="时间轴">
+        {onOpenTimeline && <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "timeline" ? "on" : ""}`} onClick={onOpenTimeline} title="时间轴：谁在哪年发了什么" aria-label="时间轴">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
             <path d="M3 6h18M3 12h18M3 18h18" opacity=".35" />
             <path d="M5 6h7M9 12h10M4 18h5" strokeWidth="3" />
           </svg>
         </button>}
       </div>
-      <div className="seg-slide browse-modes" style={{ ["--seg-i" as string]: modeIndex, ["--seg-n" as string]: MODES.length }}>
+      <div className="segmented seg-slide browse-modes" style={{ ["--seg-i" as string]: modeIndex, ["--seg-n" as string]: MODES.length }}>
         <span className="seg-thumb" aria-hidden="true" />
         {MODES.map((m) => (
           <button key={m.key} className={mode === m.key ? "on" : ""} onClick={() => setMode(m.key)}>
@@ -209,7 +209,7 @@ export function LibraryBrowser({
       {mode === "behind" && (
         <div className="role-chips">
           {BEHIND_ROLES.map((r) => (
-            <button key={r.key} className={role === r.key ? "on" : ""} onClick={() => setRole(r.key)}>
+            <button key={r.key} className={`chip ${role === r.key ? "on" : ""}`} onClick={() => setRole(r.key)}>
               {r.key !== "all" && <i style={{ background: ROLE_COLORS[r.key] }} />}
               {r.label}
             </button>
@@ -288,7 +288,7 @@ function ArtistItems({
             </button>
             {row.members.length > 0 && (
               <button
-                className={`member-toggle ${expanded ? "open" : ""}`}
+                className={`chip member-toggle ${expanded ? "open" : ""}`}
                 onClick={() => onToggle(id)}
                 title={expanded ? "收起成员" : "展开成员"}
                 aria-expanded={expanded}

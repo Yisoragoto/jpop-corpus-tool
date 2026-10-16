@@ -202,14 +202,14 @@ export function PersonProfile({
         </div>
         {works !== null && works.length > 0 && (
           <div className="hero-actions">
-            <button className="play-all" onClick={() => onPlayAll(sections[0]?.works ?? works)}>
+            <button className="primary play-all" onClick={() => onPlayAll(sections[0]?.works ?? works)}>
               <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
                 <path d="M7 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 7 5.5Z" fill="currentColor" />
               </svg>
               播放
             </button>
             {entry !== undefined && entry.performer > 0 && (
-              <button className="hero-cloud" onClick={onOpenCloud} title="这个人唱的歌里最常出现的词">
+              <button className="btn" onClick={onOpenCloud} title="这个人唱的歌里最常出现的词">
                 词云
               </button>
             )}
@@ -244,7 +244,7 @@ export function PersonProfile({
                   {sec.title}
                   <span className="section-count">{sec.works.length} 首</span>
                   {sec.collapsed && (
-                    <button className="section-toggle" onClick={() => toggleSection(sec.key)} aria-expanded={open}>
+                    <button className="link-btn" onClick={() => toggleSection(sec.key)} aria-expanded={open}>
                       {open ? "收起" : "展开"}
                     </button>
                   )}
@@ -505,7 +505,7 @@ export function AlbumView({
           </div>
         </div>
         {tracks !== null && tracks.length > 0 && (
-          <button className="play-all" onClick={() => onPlayAll(tracks)}>
+          <button className="primary play-all" onClick={() => onPlayAll(tracks)}>
             ▶ 播放
           </button>
         )}

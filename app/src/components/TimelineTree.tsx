@@ -98,11 +98,11 @@ export function TimelineTree({
     <div className="tree-view">
       <div className="timeline-bar">
         <div className="tree-crumb">
-          <button onClick={onBack}>← 全部音乐人</button>
+          <button className="link-btn" onClick={onBack}>← 全部音乐人</button>
           <span>/</span>
           <b>{entry?.name ?? ""}</b>
         </div>
-        <div className="seg-slide tree-orient" style={{ ["--seg-i" as string]: orient === "vertical" ? 0 : 1, ["--seg-n" as string]: 2 }}>
+        <div className="segmented seg-slide tree-orient" style={{ ["--seg-i" as string]: orient === "vertical" ? 0 : 1, ["--seg-n" as string]: 2 }}>
           <span className="seg-thumb" aria-hidden="true" />
           <button className={orient === "vertical" ? "on" : ""} onClick={() => onOrient("vertical")}>
             竖向
@@ -129,7 +129,7 @@ export function TimelineTree({
               {parts !== null && parts.length > 1 && ` · 之后 ${parts.slice(1).map((p) => p.name).join("、")} 单飞`}
             </p>
           </div>
-          <button className="hero-cloud" onClick={() => onOpenPerson(personId)}>
+          <button className="btn" onClick={() => onOpenPerson(personId)}>
             打开档案
           </button>
         </header>
@@ -217,7 +217,7 @@ function VerticalTree({
                         ))}
                         {item.songs.length > SHOW_SONGS && (
                           <button
-                            className="twig-more"
+                            className="link-btn twig-more"
                             onClick={() =>
                               setExpanded((cur) => {
                                 const next = new Set(cur);
@@ -369,7 +369,7 @@ function HorizontalTree({
             {n.part.after && ` · ${n.part.name}`}
           </small>
           {n.item.release.albumId !== null && (
-            <button className="htree-open" onClick={() => onOpenAlbum(n.item.personId, n.item.release.albumId!)}>
+            <button className="link-btn htree-open" onClick={() => onOpenAlbum(n.item.personId, n.item.release.albumId!)}>
               档案 →
             </button>
           )}

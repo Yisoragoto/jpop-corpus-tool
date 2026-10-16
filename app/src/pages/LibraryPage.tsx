@@ -756,7 +756,7 @@ export function LibraryPage({
   );
 
   const backButton = canBack && (
-    <button className="nav-back" onClick={back} title="返回" aria-label="返回">
+    <button className="btn nav-back" onClick={back} title="返回" aria-label="返回">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="m14 7-5 5 5 5" />
       </svg>
@@ -949,7 +949,7 @@ export function LibraryPage({
                   <LyricsTools display={display} onError={onAudioError} onExpand={() => setStageOpen(true)} />
                   <div className="more-menu" ref={menuRef}>
                     <button
-                      className={`more-btn ${menuOpen ? "on" : ""}`}
+                      className={`btn more-btn ${menuOpen ? "on" : ""}`}
                       onClick={() => setMenuOpen((v) => !v)}
                       title="更多"
                       aria-label="更多"

@@ -73,7 +73,7 @@ export function GraphView({ data, initialFocus, onOpenPerson }: Props) {
         <input className="search" placeholder="找一个人" value={query} onChange={(e) => setQuery(e.target.value)} />
         <div className="role-chips">
           {ROLES.map((r) => (
-            <button key={r} className={roles.has(r) ? "on" : ""} onClick={() => toggleRole(r)}>
+            <button key={r} className={`chip ${roles.has(r) ? "on" : ""}`} onClick={() => toggleRole(r)}>
               <i style={{ background: ROLE_COLORS[r] }} />
               {ROLE_LABELS[r] ?? r}
             </button>
@@ -115,9 +115,9 @@ export function GraphView({ data, initialFocus, onOpenPerson }: Props) {
               打开档案
             </button>
             {around === person.id ? (
-              <button onClick={() => setAround(null)}>看全部</button>
+              <button className="btn" onClick={() => setAround(null)}>看全部</button>
             ) : (
-              <button onClick={() => setAround(person.id)}>只看附近</button>
+              <button className="btn" onClick={() => setAround(person.id)}>只看附近</button>
             )}
           </div>
         </div>

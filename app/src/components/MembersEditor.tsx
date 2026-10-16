@@ -62,7 +62,7 @@ export function MembersEditor({ bandId, members, data, onOpen, onChanged, onErro
   if (members.length === 0 && suggestions.length === 0 && !editing) {
     return (
       <section className="member-cards empty">
-        <button className="section-toggle" onClick={() => setEditing(true)}>
+        <button className="link-btn" onClick={() => setEditing(true)}>
           添加成员
         </button>
       </section>
@@ -73,7 +73,7 @@ export function MembersEditor({ bandId, members, data, onOpen, onChanged, onErro
     <section className="member-cards">
       <h2 className="section-label section-head">
         成员
-        <button className="section-toggle" onClick={() => setEditing((v) => !v)}>
+        <button className="link-btn" onClick={() => setEditing((v) => !v)}>
           {editing ? "完成" : "编辑"}
         </button>
         {note && <span className="section-count">{note}</span>}

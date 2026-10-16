@@ -115,7 +115,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, onSearchWord,
   const toolbar = (
     <div className="wc-filters">
       <PerformerPicker selected={performerIds} onChange={setPerformerIds} onError={onError} />
-      <div className="wc-pos" role="group" aria-label="词性">
+      <div className="segmented wc-pos" role="group" aria-label="词性">
         <button className={pos.length === 0 ? "on" : ""} onClick={() => togglePos("")}>
           全部
         </button>
@@ -125,7 +125,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, onSearchWord,
           </button>
         ))}
       </div>
-      <label className="wc-check" title="只要含假名或汉字的词（去掉英文、数字）">
+      <label className="check wc-check" title="只要含假名或汉字的词（去掉英文、数字）">
         <input type="checkbox" checked={jpOnly} onChange={(e) => setJpOnly(e.target.checked)} />
         仅日文
       </label>
@@ -153,7 +153,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, onSearchWord,
           </option>
         ))}
       </select>
-      <button className="wc-btn" onClick={() => void importFont()} title="导入 ttf / otf / ttc，只记住位置，不复制文件">
+      <button className="btn wc-btn" onClick={() => void importFont()} title="导入 ttf / otf / ttc，只记住位置，不复制文件">
         导入字体…
       </button>
     </div>

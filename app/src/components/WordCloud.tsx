@@ -481,11 +481,11 @@ export function WordCloud({
         </div>
         <div className="wc-tools">
           {!present && (
-            <button className="wc-btn" disabled={placed.length === 0 || saving} onClick={() => void savePng()}>
+            <button className="btn wc-btn" disabled={placed.length === 0 || saving} onClick={() => void savePng()}>
               {saving ? "保存中…" : "保存 PNG"}
             </button>
           )}
-          <button className="wc-btn primary" onClick={() => onPresent(!present)} title={present ? "退出全屏（Esc）" : "全屏显示词云"}>
+          <button className="primary wc-btn" onClick={() => onPresent(!present)} title={present ? "退出全屏（Esc）" : "全屏显示词云"}>
             {present ? "退出全屏" : "全屏"}
           </button>
         </div>
@@ -739,7 +739,7 @@ function SongPanel({
                 </span>
               </button>
               <button
-                className="wc-song-open"
+                className="link-btn wc-song-open"
                 onClick={() => onPlayLine(s.songId, s.first.utteranceId, s.first.timeSec, false)}
                 title="只放，不进全屏歌词"
               >
