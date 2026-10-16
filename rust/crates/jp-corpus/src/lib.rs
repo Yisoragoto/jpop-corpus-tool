@@ -19,6 +19,7 @@
 //! # Ok::<(), anyhow::Error>(())
 //! ```
 
+pub mod completeness;
 mod corpus;
 pub mod home;
 mod library;
@@ -315,6 +316,11 @@ impl Corpus {
     /// 给没有导入时间的歌补上（音频文件的创建时间）。需要可写连接。返回补了几首。
     pub fn backfill_added_at(&mut self) -> Result<usize> {
         home::backfill_added_at(&mut self.conn)
+    }
+
+    /// 库的完整度（识别、封面、歌词、时长各齐了多少）。刮削页用
+    pub fn completeness(&self) -> Result<completeness::Completeness> {
+        completeness::completeness(&self.conn)
     }
 
     /// 按 id 取人。命令面板定位到具体人物时用。

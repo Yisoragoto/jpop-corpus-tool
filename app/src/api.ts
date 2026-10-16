@@ -786,6 +786,8 @@ export const api = {
   // 歌手照片 / 专辑封面
   /** 库里的歌手，连同已经刮到的资料。合作曲的斜杠已拆开。 */
   artistRoster: () => call<ArtistRow[]>("artist_roster"),
+  /** 库的完整度：识别、封面、歌词、时长各齐了多少（刮削页那几行） */
+  libraryCompleteness: () => call<Completeness>("library_completeness"),
   /** 刮一个歌手：MusicBrainz 拿资料和别名，Deezer 拿照片。 */
   scrapeArtist: (name: string) => call<ArtistOutcome>("scrape_artist", { name }),
   /** 批量刮歌手，后台跑。和曲目刮削共用一个作业标志。 */
@@ -1351,6 +1353,23 @@ export interface CoverBackfill {
   noCandidate: number;
   failed: number;
   samples: string[];
+}
+
+/** 齐了几个、一共几个 */
+export interface CompletenessCount {
+  done: number;
+  total: number;
+}
+
+/** 和 `jp_corpus::completeness::Completeness` 对应。封面按文件真的在盘上算 */
+export interface Completeness {
+  identified: CompletenessCount;
+  /** 复核时跳过的，不算缺 */
+  skipped: number;
+  trackCovers: CompletenessCount;
+  albumCovers: CompletenessCount;
+  lyrics: CompletenessCount;
+  durations: CompletenessCount;
 }
 
 export interface ArtistRow {

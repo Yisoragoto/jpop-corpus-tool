@@ -1158,17 +1158,6 @@ button.chip:hover { color: var(--fg); }
 .candidate-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .candidate-actions b { font-variant-numeric: tabular-nums; font-size: 12px; }
 .attempts { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
-.artist-grid { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 4px; }
-/* 歌手那一格：有照片的安静摆着，没照片的整格可点（点了就去刮这一位） */
-.artist-chip {
-  display: flex; align-items: center; gap: 8px; padding: 5px 10px;
-  border-radius: 6px; background: var(--panel-2); font-size: 12px;
-  border: 1px solid transparent; text-align: left;
-}
-.artist-chip .chip-name { color: var(--fg); }
-.artist-chip.missing { border-color: var(--line-strong); background: transparent; }
-.artist-chip.missing:not(:disabled):hover { background: var(--control-hover); border-color: var(--accent); }
-.artist-chip.missing:disabled { opacity: .45; cursor: default; }
 
 /* ── Anki 页 ── */
 .word-picker { max-height: 340px; overflow-y: auto; margin: 10px 0 4px;
@@ -2136,3 +2125,81 @@ button.primary:not(:disabled):active { transform: scale(.96); transition-duratio
     transition-duration: .01ms !important;
   }
 }
+
+/* ── 刮削页：库的完整度 ──
+   一种 metadata 一行，整行铺满宽度（原来的小数字和胶囊都按内容收缩，结果挤在左边一窄条）。
+   齐了的行打勾变灰，缺的行右边一个写明数量的按钮。 */
+.scrape-head { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; }
+.scrape-head h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.2px; }
+.scrape-head-hint { font-size: 12px; color: var(--muted); }
+.scrape-head-actions { position: relative; margin-left: auto; display: flex; gap: 6px; }
+.scrape-more {
+  width: 34px; border-radius: var(--radius); font-size: 16px; line-height: 1;
+  background: var(--control); border: 1px solid var(--line);
+}
+.scrape-more:hover { background: var(--control-hover); }
+.scrape-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 300px; padding: 4px;
+  background: var(--surface-pop); backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: var(--shadow);
+}
+.scrape-menu button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
+  padding: 7px 10px; border-radius: 5px; text-align: left; font-size: 13px;
+}
+.scrape-menu button span { font-size: 11px; color: var(--muted); }
+.scrape-menu button:not(:disabled):hover { background: var(--control-hover); }
+.scrape-menu button:disabled { opacity: .45; cursor: default; }
+
+.scrape-rows { margin: 0 0 22px; }
+.scrape-row {
+  display: grid; grid-template-columns: 18px 84px minmax(120px, 1fr) 96px 110px;
+  align-items: center; gap: 4px 14px; padding: 11px 4px; border-bottom: 1px solid var(--line);
+}
+.scrape-row-mark { font-size: 11px; color: var(--accent); text-align: center; }
+.scrape-row.done .scrape-row-mark { color: var(--muted); }
+.scrape-row-label { font-size: 13px; }
+.scrape-row.done .scrape-row-label, .scrape-row.done .scrape-row-count { color: var(--muted); }
+.scrape-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.scrape-bar > div { height: 100%; border-radius: 3px; background: var(--accent); transition: width 300ms; }
+.scrape-row.done .scrape-bar > div { background: rgba(255, 255, 255, .28); }
+.scrape-row-count { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.scrape-row-action { display: flex; justify-content: flex-end; }
+.scrape-row-action button {
+  padding: 4px 12px; border-radius: var(--radius); font-size: 12px; white-space: nowrap;
+  background: var(--control); border: 1px solid var(--line); transition: background 120ms, border-color 120ms;
+}
+.scrape-row-action button:not(:disabled):hover { background: var(--control-hover); border-color: var(--accent); }
+.scrape-row-action button:disabled { opacity: .45; cursor: default; }
+.scrape-row-note, .scrape-row-extra { grid-column: 3 / -1; }
+.scrape-row-note { font-size: 12px; color: var(--muted); }
+.scrape-missing { display: flex; flex-wrap: wrap; gap: 6px 10px; padding-top: 4px; }
+.scrape-missing-artist {
+  display: inline-flex; align-items: center; gap: 8px; padding: 3px 12px 3px 3px;
+  border-radius: 20px; border: 1px dashed var(--line-strong); font-size: 12px;
+  transition: background 120ms, border-color 120ms;
+}
+.scrape-missing-artist:not(:disabled):hover { background: var(--control-hover); border-color: var(--accent); }
+.scrape-missing-artist:disabled { opacity: .45; cursor: default; }
+
+.scrape-job {
+  display: grid; grid-template-columns: auto minmax(120px, 1fr) auto minmax(0, 1.2fr) auto;
+  align-items: center; gap: 14px; margin: -10px 0 26px; padding: 10px 14px;
+  border-radius: 10px; background: var(--accent-soft);
+}
+.scrape-job-label { font-size: 13px; }
+.scrape-job-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+.scrape-job-detail { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scrape-note { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.scrape-others { display: flex; gap: 16px; margin: 14px 0 8px; }
+.scrape-others .link-btn:disabled { opacity: .45; cursor: default; text-decoration: none; }
+.scrape-others .link-btn.on { color: var(--fg); }
+@media (max-width: 760px) {
+  .scrape-row { grid-template-columns: 18px 72px minmax(80px, 1fr) auto; }
+  .scrape-row-action { grid-column: 2 / -1; justify-content: flex-start; }
+}
+.scrape-review .candidate-actions button {
+  padding: 4px 12px; border-radius: var(--radius); font-size: 12px;
+  background: var(--control); border: 1px solid var(--line);
+}
+.scrape-review .candidate-actions button:hover { background: var(--control-hover); border-color: var(--accent); }

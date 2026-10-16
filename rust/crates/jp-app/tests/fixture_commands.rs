@@ -1316,3 +1316,19 @@ fn the_csp_lets_the_front_end_fetch_assets_not_just_display_them() {
         );
     }
 }
+
+// ────────────────────────── 刮削页：完整度 ──────────────────────────
+
+#[test]
+fn completeness_reports_every_row_against_the_whole_library() {
+    let f = Fixture::new("completeness");
+    let got = ok(f.w(), "library_completeness", json!({}));
+    has_keys(&got, "Completeness", &["identified", "skipped", "trackCovers", "albumCovers", "lyrics", "durations"]);
+    for row in ["identified", "trackCovers", "lyrics", "durations"] {
+        assert_eq!(got[row]["total"], json!(fixture::TRACKS), "{row} 的分母是全部曲目");
+        assert!(got[row]["done"].as_i64().unwrap() <= fixture::TRACKS);
+    }
+    assert_eq!(got["albumCovers"]["total"], json!(fixture::ALBUMS));
+    // 合成库里 003 是没分词的那首，但歌词是有的；四首都有歌词行
+    assert_eq!(got["lyrics"]["done"], json!(fixture::TRACKS));
+}

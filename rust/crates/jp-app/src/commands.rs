@@ -2075,6 +2075,13 @@ pub struct ArtistRow {
 }
 
 /// 库里的歌手，连同已经刮到的资料。
+/// 库的完整度：识别、曲目封面、专辑封面、歌词、时长各齐了多少。刮削页一行一行列出来。
+/// 歌手照片不在这里——那一行要的是名单，走 [`artist_roster`]。
+#[tauri::command(async)]
+pub fn library_completeness(state: State<'_, AppState>) -> CmdResult<jp_corpus::completeness::Completeness> {
+    Ok(state.corpus().completeness()?)
+}
+
 #[tauri::command(async)]
 pub fn artist_roster(state: State<'_, AppState>) -> CmdResult<Vec<ArtistRow>> {
     use rusqlite::OptionalExtension;
