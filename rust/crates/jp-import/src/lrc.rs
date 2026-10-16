@@ -467,8 +467,15 @@ fn parse_credit(body: &str) -> Option<CreditLine> {
 
 /// 读文件并解析。编码按 UTF-8 → CP932 → GBK 依次尝试。
 pub fn parse_file(path: &std::path::Path) -> anyhow::Result<ParsedLrc> {
+    Ok(parse(&read_file(path)?))
+}
+
+/// 读文件、解码成文本（去掉 BOM），不解析。编码规则同 [`parse_file`]。
+///
+/// 挂歌词时要的是**原文**：它原样存进 `lyric_versions.raw_text`，解析规则以后改了也能从它重来。
+pub fn read_file(path: &std::path::Path) -> anyhow::Result<String> {
     let bytes = std::fs::read(path)?;
-    Ok(parse(decode(&bytes).trim_start_matches('\u{feff}')))
+    Ok(decode(&bytes).trim_start_matches('\u{feff}').to_string())
 }
 
 /// 字节 → 文本。UTF-8 → CP932 → GBK，第一个**不出错**的解释胜出。

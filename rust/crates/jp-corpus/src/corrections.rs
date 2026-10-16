@@ -235,8 +235,30 @@ pub fn save(conn: &Connection, utterance_id: i64, tokens: &[TokenEdit]) -> Resul
         )?;
     }
     write_tokens(&tx, utterance_id, &tokens)?;
+    crate::lineage::mark_tokens(&tx, utterance_id, crate::lineage::token_status::CORRECTED, None)?;
+    crate::lineage::log(
+        &tx,
+        &crate::lineage::Revision {
+            song_id: view.song_id.clone(),
+            song_artist: view.artist.clone(),
+            song_title: view.title.clone(),
+            kind: "tokens_corrected".into(),
+            utterance_id: Some(utterance_id),
+            line_idx: line_idx(&tx, utterance_id)?,
+            before: Some(serde_json::to_value(&view.tokens)?),
+            after: Some(serde_json::to_value(&tokens)?),
+            actor: "user".into(),
+            ..Default::default()
+        },
+    )?;
     tx.commit()?;
     Ok(())
+}
+
+fn line_idx(conn: &Connection, utterance_id: i64) -> Result<Option<i64>> {
+    Ok(conn
+        .query_row("SELECT line_idx FROM utterances WHERE id=?1", params![utterance_id], |r| r.get(0))
+        .optional()?)
 }
 
 /// 撤销校正：写回第一次校正前的分词，删掉校正行。
@@ -256,6 +278,22 @@ pub fn revert(conn: &Connection, utterance_id: i64) -> Result<bool> {
     tx.execute(
         "DELETE FROM token_corrections WHERE utterance_id=?1",
         params![utterance_id],
+    )?;
+    crate::lineage::mark_tokens(&tx, utterance_id, crate::lineage::token_status::AUTO, None)?;
+    crate::lineage::log(
+        &tx,
+        &crate::lineage::Revision {
+            song_id: view.song_id.clone(),
+            song_artist: view.artist.clone(),
+            song_title: view.title.clone(),
+            kind: "tokens_reverted".into(),
+            utterance_id: Some(utterance_id),
+            line_idx: line_idx(&tx, utterance_id)?,
+            before: Some(serde_json::to_value(&view.tokens)?),
+            after: Some(serde_json::to_value(&view.original)?),
+            actor: "user".into(),
+            ..Default::default()
+        },
     )?;
     tx.commit()?;
     Ok(true)
@@ -342,11 +380,24 @@ pub fn restore_for_song(conn: &Connection, song_id: &str, artist: &str, title: &
             continue;
         }
         write_tokens(conn, new_id, &tokens)?;
+        crate::lineage::mark_tokens(conn, new_id, crate::lineage::token_status::CORRECTED, None)?;
         conn.execute(
             "UPDATE token_corrections SET utterance_id=?1, text=?2 WHERE utterance_id=?3",
             params![new_id, text, old_id],
         )?;
         restored += 1;
+    }
+    if restored > 0 {
+        crate::lineage::log(
+            conn,
+            &crate::lineage::Revision {
+                song_id: song_id.into(),
+                kind: "corrections_restored".into(),
+                after: Some(serde_json::json!({ "lines": restored })),
+                actor: "system".into(),
+                ..Default::default()
+            },
+        )?;
     }
     Ok(restored)
 }

@@ -289,10 +289,25 @@ export interface WordFrequency {
   surfaces: string[];
 }
 
-/** 统计页、报告共用的筛选。演唱者用 people.id，空数组是全部 */
+/**
+ * 统计页、报告共用的筛选，也就是「子语料」。演唱者用 people.id，空数组是全部。
+ * 其余条件不给就是不限（对应 `jp_corpus::stats::StatsFilter`，见 `corpusQuality.ts`）。
+ */
 export interface StatsFilter {
   performerIds: number[];
   jpOnly: boolean;
+  /** 发行年份范围（含两端）。设了年份条件时，年份不明的歌不算进来 */
+  yearFrom?: number | null;
+  yearTo?: number | null;
+  genres?: string[];
+  /** 歌词语言：ja / en / ko / zh / mixed */
+  languages?: string[];
+  albumIds?: number[];
+  songIds?: string[];
+  /** 当前歌词版本的完整度下限，0~1 */
+  minCompleteness?: number | null;
+  /** 同一首歌里文本相同的行只算一次（副歌只算一遍） */
+  distinctLines?: boolean;
 }
 
 /** 统计表一行：词元 × 词性，带 JLPT（本地 jlpt_cache，没有是空串） */

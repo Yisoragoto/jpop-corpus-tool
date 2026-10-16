@@ -153,7 +153,7 @@ pub fn finish(
             // 只有自动采纳的才写 songs 行和封面。需要人工确认的
             // 停在这里等复核——写错的元数据比空的更难发现。
             if result.status == ScrapeStatus::Success {
-                apply_candidate(conn, song_id, c)?;
+                apply_candidate(conn, song_id, c, Some(result.confidence))?;
                 accepted = Some(c.clone());
             }
             format!("{} / {} / {}", c.title, c.artist, c.album)
@@ -173,10 +173,13 @@ pub fn finish(
 ///
 /// **只补空字段，不覆盖已有值**——需求「永远不要覆盖用户本地文件里的
 /// 原始 metadata」。原值另有一份存在 `track_original_metadata` 里。
+///
+/// 补上的字段记下来源（provider）和置信度（自动采纳时的匹配分；你手动确认的是 `None`）。
 fn apply_candidate(
     conn: &rusqlite::Connection,
     song_id: &str,
     candidate: &jp_scraper::ScrapeCandidate,
+    confidence: Option<f64>,
 ) -> Result<usize> {
     // 先看哪几个字段是空的。
     //
@@ -196,6 +199,18 @@ fn apply_candidate(
     .iter()
     .filter(|(empty, value)| *empty && !value.is_empty())
     .count();
+    let provenance = |field: &str| {
+        jp_corpus::lineage::set_provenance(conn, "song", song_id, field, &candidate.provider, &candidate.provider_id, confidence)
+    };
+    for (field, empty, value) in [
+        ("album", album.is_empty(), &candidate.album),
+        ("year", year.is_empty(), &candidate.year),
+        ("genre", genre.is_empty(), &candidate.genre),
+    ] {
+        if empty && !value.is_empty() {
+            provenance(field)?;
+        }
+    }
 
     conn.execute(
         "UPDATE songs SET
@@ -211,13 +226,17 @@ fn apply_candidate(
     // 而且**年份对得上才补**：本地文件写的是 2019、候选说 2020-03-04，那这个日期不是这首歌的
     let date = &candidate.release_date;
     if !date.is_empty() {
-        conn.execute(
-            "UPDATE songs SET release_date = ?1
-             WHERE id = ?2 AND COALESCE(release_date,'') = ''
-               AND (COALESCE(year,'') = '' OR substr(year,1,4) = substr(?1,1,4))",
-            rusqlite::params![date, song_id],
-        )
-        .context("写发行日期失败")?;
+        let written = conn
+            .execute(
+                "UPDATE songs SET release_date = ?1
+                 WHERE id = ?2 AND COALESCE(release_date,'') = ''
+                   AND (COALESCE(year,'') = '' OR substr(year,1,4) = substr(?1,1,4))",
+                rusqlite::params![date, song_id],
+            )
+            .context("写发行日期失败")?;
+        if written > 0 {
+            provenance("release_date")?;
+        }
     }
     Ok(filled)
 }
@@ -1176,7 +1195,8 @@ pub fn apply_manual(
     local_artist: &str,
     candidate: &jp_scraper::ScrapeCandidate,
 ) -> Result<ManualApply> {
-    let fields_filled = apply_candidate(conn, song_id, candidate)?;
+    // 你在复核里点的「就是这条」：置信度不适用（NULL），来源仍记 provider
+    let fields_filled = apply_candidate(conn, song_id, candidate, None)?;
 
     // 已有的信用标成 manual：自动流程从此不许动它们
     let credits_protected = conn.execute(

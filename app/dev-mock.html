@@ -217,8 +217,58 @@ window.__TAURI_INTERNALS__ = {
           coverage: [{ n: 100, pct: 58.25 }, { n: 500, pct: 77.1 }, { n: 1000, pct: 84.9 }, { n: 2000, pct: 91.3 }],
           topWords: [["の", 2931], ["だ", 2012], ["た", 1788]] } });
     }
+    // 语料质量与来源追踪
+    const TOK = { id: 1, fingerprint: "9f2c41d07a3be611", engine: "sudachi.rs", engineVersion: "0.6.11",
+      dictDescription: "SudachiDict-core 20240409", dictCreatedAt: "2024-04-09T00:00:00Z", dictSize: 216000000,
+      splitMode: "C", configHash: "4be1a0c2d9e8f713", posScheme: "upos-1", firstUsedAt: "2026-10-16T05:00:00Z", lineCount: 1210 };
+    const VALID = { lineCount: 42, timedLineCount: 42, completeness: 0.85, repeatedLineRatio: 0.38,
+      language: { code: "ja", confidence: 0.93, kanaShare: 0.6, hanShare: 0.33, latinShare: 0.07, hangulShare: 0 },
+      issues: [{ code: "stacked_duplicate", severity: "warning", lineIdx: 17, message: "「君の声が」" },
+               { code: "long_gap", severity: "info", lineIdx: 30, message: "隔了 34 秒" }] };
+    if (cmd === "quality_overview") return Promise.resolve({ songs: 209, songsWithLyrics: 206, songsWithVersion: 206,
+      legacyVersions: 190, avgCompleteness: 0.947, bySource: [["legacy", 190], ["lrc_file", 9], ["online", 7]],
+      byLanguage: [["ja", 199], ["en", 4], ["mixed", 3], ["", 3]], issues: [["long_gap", 31], ["stacked_duplicate", 6], ["ends_early", 3], ["not_japanese", 2]],
+      tokenStatus: [["auto", 8100], ["corrected", 43], ["pending", 300]], linesLowTimeConfidence: 27, tokenizers: [TOK],
+      worst: [{ songId: "001", title: "打ち込む歌", artist: "テスト", completeness: 0.45, sourceType: "online", warnings: 2, errors: 0, codes: ["ends_early", "stacked_duplicate"] },
+              { songId: "002", title: "Starlight", artist: "Someone", completeness: 0.8, sourceType: "lrc_file", warnings: 1, errors: 0, codes: ["not_japanese"] }] });
+    if (cmd === "song_lineage") return Promise.resolve({ songId: args.songId, language: "ja",
+      versions: [
+        { id: 12, versionNo: 2, sourceType: "online", sourceName: "netease", sourceRef: "打ち込む歌 — テスト", importedAt: "2026-10-16T05:12:00Z",
+          hasRawText: true, contentHash: "aa", lineCount: 42, timedLineCount: 42, completeness: 0.85, validation: VALID, validatedAt: "", isCurrent: true, note: "" },
+        { id: 3, versionNo: 1, sourceType: "legacy", sourceName: "", sourceRef: "", importedAt: "2026-09-07T13:04:35Z",
+          hasRawText: false, contentHash: "bb", lineCount: 40, timedLineCount: 40, completeness: 1, validation: null, validatedAt: "", isCurrent: false, note: "老库补登记" }],
+      lines: [{ utteranceId: 1, lineIdx: 0, timeSec: 3.1, timeConfidence: 1, tokenStatus: "auto", tokenizerRunId: 1 },
+              { utteranceId: 2, lineIdx: 1, timeSec: 3.1, timeConfidence: 0.5, tokenStatus: "corrected", tokenizerRunId: 1 }],
+      tokenStatus: { auto: 41, corrected: 1 }, tokenizers: [{ ...TOK, lineCount: 42 }],
+      provenance: [{ field: "genre", source: "itunes", sourceRef: "1530", confidence: 0.91, updatedAt: "2026-10-16T05:00:00Z" },
+                   { field: "language", source: "heuristic", sourceRef: "lyrics-script", confidence: 0.93, updatedAt: "2026-10-16T05:12:00Z" },
+                   { field: "title", source: "tag", sourceRef: "", confidence: null, updatedAt: "2026-09-07T13:04:35Z" }],
+      revisions: [{ id: 9, songId: args.songId, songArtist: "テスト", songTitle: "打ち込む歌", kind: "tokens_corrected", versionId: null, utteranceId: 2, lineIdx: 1, before: [], after: [], actor: "user", note: "", createdAt: "2026-10-16T05:20:00Z" },
+                  { id: 8, songId: args.songId, songArtist: "テスト", songTitle: "打ち込む歌", kind: "lyrics_replaced", versionId: 12, utteranceId: null, lineIdx: null, before: { versionId: 3 }, after: { sourceType: "online", lines: 42 }, actor: "user", note: "", createdAt: "2026-10-16T05:12:00Z" }] });
+    if (cmd === "lyric_version_raw") return Promise.resolve("[00:03.10]春も　思い出した日々\n[00:12.30]打ち込んでいませんでした\n");
+    if (cmd === "subcorpus_facets") return Promise.resolve({ yearMin: 1998, yearMax: 2026, songsWithoutYear: 12,
+      genres: [["J-Pop", 120], ["Rock", 40], ["Anime", 21]], languages: [["ja", 199], ["en", 4], ["mixed", 3]] });
+    if (cmd === "subcorpus_preview") return Promise.resolve({ songs: [], songCount: args.filter.yearFrom ? 64 : 206, lineCount: args.filter.yearFrom ? 2601 : 8443 });
+    if (cmd === "subcorpus_list") return Promise.resolve(window.__subcorpora ||= [
+      { id: 1, name: "2010 年代", filter: { performerIds: [], jpOnly: false, yearFrom: 2010, yearTo: 2019 }, note: "", createdAt: "", updatedAt: "", songCount: 64, lineCount: 2601 }]);
+    if (cmd === "subcorpus_save") {
+      const s = { id: 2, name: args.name, filter: args.filter, note: "", createdAt: "", updatedAt: "", songCount: 10, lineCount: 400 };
+      window.__subcorpora = [...(window.__subcorpora || []), s];
+      return Promise.resolve(s);
+    }
+    if (cmd === "analysis_list") return Promise.resolve([
+      { id: 2, kind: "corpusReport", label: "重跑 #1", filter: { performerIds: [], jpOnly: false }, songCount: 206, scopeHash: "a", resultHash: "b", appVersion: "0.2.10", rerunOf: 1, createdAt: "2026-10-16T06:00:00Z" },
+      { id: 1, kind: "corpusReport", label: "", filter: { performerIds: [], jpOnly: false }, songCount: 205, scopeHash: "c", resultHash: "d", appVersion: "0.2.10", rerunOf: null, createdAt: "2026-10-01T06:00:00Z" }]);
+    if (cmd === "analysis_rerun" || cmd === "analysis_compare") return Promise.resolve({
+      before: { id: 1 }, after: { id: 3 }, sameFilter: true, sameSpec: true, sameMethod: true, sameScope: false,
+      sameTokenizers: true, sameSchema: true, resultIdentical: false,
+      scope: { added: ["207"], removed: [], lyricsChanged: ["001"] },
+      metrics: [{ name: "songCount", before: 205, after: 206 }, { name: "ttr", before: 0.0912, after: 0.09156 }, { name: "coverage@100", before: 58.1, after: 58.25 }],
+      words: [{ lemma: "夜", pos: "NOUN", beforeRank: 2, afterRank: 2, beforeFreq: 405, afterFreq: 412 }],
+      reasons: ["新纳入 1 首歌（导入了新歌，或者歌的信息改到了条件里）", "1 首歌换了歌词版本"] });
     if (cmd === "export_text") return Promise.resolve(null);
-    if (cmd === "home_summary") return Promise.resolve({ overview: OVERVIEW,
+    if (cmd === "home_summary") return Promise.resolve({ overview: OVERVIEW, continueTrack: null, recentlyAdded: [],
+      today: { listenedSec: 0, songs: 0, linesHeard: 0, streakDays: 0 }, reach: { heardSongs: 0, heardLemmas: 0, totalLemmas: 0 },
       recentlyPlayed: [], mostPlayed: [], favorites: [], albums: [], genres: [],
       decades: [], topWords: [] });
     return Promise.resolve(cmd in T ? T[cmd] : null);

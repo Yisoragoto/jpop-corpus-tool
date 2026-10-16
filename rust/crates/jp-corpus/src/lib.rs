@@ -30,6 +30,9 @@ mod quick;
 pub mod corrections;
 pub mod fixture;
 pub mod migrations;
+pub mod quality;
+pub mod lineage;
+pub mod analysis;
 pub mod stats;
 
 use std::path::Path;
@@ -316,6 +319,14 @@ impl Corpus {
     /// 给没有导入时间的歌补上（音频文件的创建时间）。需要可写连接。返回补了几首。
     pub fn backfill_added_at(&mut self) -> Result<usize> {
         home::backfill_added_at(&mut self.conn)
+    }
+
+    /// 老库补登记歌词版本和逐行状态（见 [`lineage::backfill_legacy`]）。需要可写连接。返回补了几首。
+    pub fn backfill_lineage(&mut self) -> Result<usize> {
+        let tx = self.conn.transaction()?;
+        let n = lineage::backfill_legacy(&tx)?;
+        tx.commit()?;
+        Ok(n)
     }
 
     /// 库的完整度（识别、封面、歌词、时长各齐了多少）。刮削页用

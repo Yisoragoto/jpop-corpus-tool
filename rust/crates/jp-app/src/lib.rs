@@ -132,6 +132,25 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::lyrics_fill_running,
             commands::lyrics_fill_one,
             commands::lyrics_import_file,
+            // 语料质量与来源追踪
+            commands::quality_overview,
+            commands::song_lineage,
+            commands::lyric_version_raw,
+            commands::lyrics_restore_version,
+            commands::lyrics_revalidate,
+            commands::song_set_language,
+            // 子语料与可复现分析
+            commands::subcorpus_facets,
+            commands::subcorpus_preview,
+            commands::subcorpus_list,
+            commands::subcorpus_save,
+            commands::subcorpus_delete,
+            commands::analysis_run,
+            commands::analysis_list,
+            commands::analysis_get,
+            commands::analysis_rerun,
+            commands::analysis_compare,
+            commands::analysis_delete,
             // 分词
             commands::tokenize,
             // 导入：扫描 → 复核 → 确认

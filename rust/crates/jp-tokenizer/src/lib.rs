@@ -39,6 +39,126 @@ pub struct Token {
 /// 分词器。持有词典，`analyze` 可反复调用。
 pub struct Analyzer {
     dict: JapaneseDictionary,
+    info: TokenizerInfo,
+}
+
+/// sudachi.rs 的版本。**和 `Cargo.toml` 里的 `tag` 保持一致**——
+/// 拿不到依赖的版本号，只能手写；`the_engine_version_matches_the_cargo_tag` 守着它。
+pub const SUDACHI_RS_VERSION: &str = "0.6.11";
+
+/// 分词的切分单位。整个程序只用 C（最长单位），和 0.1.x 的 SudachiPy 一致。
+pub const SPLIT_MODE: &str = "C";
+
+/// UniDic 词性 → UPOS 那张表的版本。**改了 `pos_map` 的映射就把它加一**：
+/// 词性统计在新旧映射下不可比，分析记录要能看出这一点。
+pub const POS_MAP_VERSION: &str = "upos-1";
+
+/// 这次分词用的是哪一套：引擎、词典、切分模式、配置。
+///
+/// 写进库里的每一行分词都挂着它（`tokenizer_runs`），
+/// 同一个查询换了词典或配置再跑，结果对不上时能说清楚是哪一样变了。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenizerInfo {
+    pub engine: String,
+    pub engine_version: String,
+    /// `system.dic` 头里的描述（SudachiDict 写的是发行名和日期）
+    pub dict_description: String,
+    /// `system.dic` 头里的生成时间，UTC，`YYYY-MM-DDTHH:MM:SSZ`；读不出是空串
+    pub dict_created_at: String,
+    /// `system.dic` 的字节数。同一份描述下 small / core / full 的大小不同
+    pub dict_size: u64,
+    pub split_mode: String,
+    /// `sudachi.json`、`char.def`、`unk.def`、`rewrite.def` 内容的指纹。
+    /// `inputTextPlugin` 会改变分词结果，配置变了就是另一套分词
+    pub config_hash: String,
+    pub pos_scheme: String,
+}
+
+impl TokenizerInfo {
+    /// 读词典头和配置文件。读不到词典头不算错（字段留空），配置文件缺了也只是不进指纹。
+    pub fn read(resource_dir: &Path, system_dict: &Path) -> Self {
+        let mut header = vec![0u8; sudachi::dic::header::Header::STORAGE_SIZE];
+        let parsed = std::fs::File::open(system_dict)
+            .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut header))
+            .ok()
+            .and_then(|()| sudachi::dic::header::Header::parse(&header).ok());
+        let (dict_description, dict_created_at) = match parsed {
+            Some(h) => (h.description.trim_end_matches('\0').trim().to_string(), iso_utc(h.create_time)),
+            None => (String::new(), String::new()),
+        };
+        let dict_size = std::fs::metadata(system_dict).map(|m| m.len()).unwrap_or(0);
+
+        let mut hash = Fnv::new();
+        for name in RESOURCE_FILES {
+            hash.write(name.as_bytes());
+            if let Ok(bytes) = std::fs::read(resource_dir.join(name)) {
+                hash.write(&bytes);
+            }
+        }
+        Self {
+            engine: "sudachi.rs".into(),
+            engine_version: SUDACHI_RS_VERSION.into(),
+            dict_description,
+            dict_created_at,
+            dict_size,
+            split_mode: SPLIT_MODE.into(),
+            config_hash: hash.hex(),
+            pos_scheme: POS_MAP_VERSION.into(),
+        }
+    }
+
+    /// 一句人话：「sudachi.rs 0.6.11 · <词典描述> · Mode C」
+    pub fn label(&self) -> String {
+        let dict = if self.dict_description.is_empty() { "未知词典" } else { &self.dict_description };
+        format!("{} {} · {} · Mode {}", self.engine, self.engine_version, dict, self.split_mode)
+    }
+}
+
+/// FNV-1a 64。只拿来做「内容变没变」的指纹，不是安全用途。
+struct Fnv(u64);
+
+impl Fnv {
+    fn new() -> Self {
+        Self(0xcbf2_9ce4_8422_2325)
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.0 ^= u64::from(*b);
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        // 分隔符：「ab」+「c」和「a」+「bc」不能是同一个指纹
+        self.0 ^= 0xff;
+        self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    fn hex(&self) -> String {
+        format!("{:016x}", self.0)
+    }
+}
+
+/// Unix 秒 → `YYYY-MM-DDTHH:MM:SSZ`。0 当成「没写」。
+fn iso_utc(secs: u64) -> String {
+    if secs == 0 {
+        return String::new();
+    }
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // Howard Hinnant 的 civil_from_days
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
 }
 
 impl Analyzer {
@@ -57,7 +177,13 @@ impl Analyzer {
             .build();
         let dict = JapaneseDictionary::from_cfg(&config)
             .map_err(|e| anyhow::anyhow!("加载词典失败: {e}"))?;
-        Ok(Self { dict })
+        let info = TokenizerInfo::read(resource_dir, system_dict);
+        Ok(Self { dict, info })
+    }
+
+    /// 这个分词器是哪一套（引擎、词典、切分模式、配置）。
+    pub fn info(&self) -> &TokenizerInfo {
+        &self.info
     }
 
     /// 按 SplitMode C 分词。C 是最长单位，和 Python 侧用的一致。
@@ -196,6 +322,44 @@ pub fn find_sudachipy_source(picked: &Path) -> Option<(PathBuf, PathBuf)> {
         }
     }
     Some((resources?, dict?))
+}
+
+#[cfg(test)]
+mod info_tests {
+    use super::*;
+
+    #[test]
+    fn the_engine_version_matches_the_cargo_tag() {
+        let manifest = include_str!("../Cargo.toml");
+        assert!(
+            manifest.contains(&format!("tag = \"v{SUDACHI_RS_VERSION}\"")),
+            "SUDACHI_RS_VERSION 和 Cargo.toml 里 sudachi 的 tag 对不上"
+        );
+    }
+
+    #[test]
+    fn unix_seconds_become_an_iso_date() {
+        assert_eq!(iso_utc(0), "");
+        assert_eq!(iso_utc(1), "1970-01-01T00:00:01Z");
+        assert_eq!(iso_utc(1_712_620_800), "2024-04-09T00:00:00Z");
+        assert_eq!(iso_utc(951_782_400), "2000-02-29T00:00:00Z");
+    }
+
+    #[test]
+    fn the_config_hash_follows_the_config_files() {
+        let dir = std::env::temp_dir().join(format!("jp-tokinfo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_embedded_resources(&dir).unwrap();
+        let a = TokenizerInfo::read(&dir, &dir.join("system.dic"));
+        assert_eq!(a.dict_description, "", "没有词典就是空的，不是报错");
+        assert_eq!(a.split_mode, "C");
+        let again = TokenizerInfo::read(&dir, &dir.join("system.dic"));
+        assert_eq!(a.config_hash, again.config_hash, "同一份配置指纹要稳定");
+
+        std::fs::write(dir.join("sudachi.json"), "{}").unwrap();
+        let b = TokenizerInfo::read(&dir, &dir.join("system.dic"));
+        assert_ne!(a.config_hash, b.config_hash, "配置变了指纹要变");
+    }
 }
 
 #[cfg(test)]

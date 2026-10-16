@@ -20,28 +20,111 @@ pub fn is_japanese(lemma: &str) -> bool {
     })
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// 统计的范围：整个库，或者按歌手、年代、流派、语言、专辑、歌词完整度切出来的子语料。
+///
+/// 每个条件都是「空 = 不限」，多个条件之间是「且」。旧版界面只传 `performerIds` / `jpOnly`，
+/// 其余字段缺省，结果和以前完全一样。
+///
+/// 存进分析记录的就是这个结构（`analysis_runs.filter_json`），所以**加字段只许加带默认值的**，
+/// 老记录才反序列化得回来、重跑得出同样的范围。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct StatsFilter {
     /// 只看这些人演唱的歌；空是全部
     pub performer_ids: Vec<i64>,
+    /// 只算日文词元（词元里有假名或汉字）
     pub jp_only: bool,
+    /// 发行年份下限（含）。年份取 `release_date`，没有再取 `year`；**年份不明的歌在设了年份条件时不算进来**
+    pub year_from: Option<i32>,
+    /// 发行年份上限（含）
+    pub year_to: Option<i32>,
+    /// 流派（和 `songs.genre` 完全相等，不分大小写）
+    pub genres: Vec<String>,
+    /// 歌词语言（`songs.language`：ja / en / ko / zh / mixed）
+    pub languages: Vec<String>,
+    pub album_ids: Vec<i64>,
+    /// 直接点名的歌
+    pub song_ids: Vec<String>,
+    /// 当前歌词版本的完整度下限（0~1）。没有版本记录的歌在设了这个条件时不算进来
+    pub min_completeness: Option<f64>,
+    /// 同一首歌里文本相同的行只算第一次。副歌唱三遍算一遍——看「这首歌用了哪些词」时用，
+    /// 看「听到了多少次」时别开
+    pub distinct_lines: bool,
 }
 
 impl StatsFilter {
-    /// `AND EXISTS (...)` 子句和它的参数（接在已经 JOIN 了 utterances u 的查询后面）
-    fn clause(&self) -> (String, Vec<i64>) {
-        if self.performer_ids.is_empty() {
-            return (String::new(), Vec::new());
-        }
-        let marks = vec!["?"; self.performer_ids.len()].join(",");
-        (
-            format!(
+    /// 有没有切子语料（`jp_only` / `distinct_lines` 是口径，不算范围）
+    pub fn is_whole_corpus(&self) -> bool {
+        self.performer_ids.is_empty()
+            && self.year_from.is_none()
+            && self.year_to.is_none()
+            && self.genres.is_empty()
+            && self.languages.is_empty()
+            && self.album_ids.is_empty()
+            && self.song_ids.is_empty()
+            && self.min_completeness.is_none()
+    }
+
+    /// `AND ...` 子句和它的参数（接在已经 JOIN 了 utterances u 的查询后面）
+    pub(crate) fn clause(&self) -> (String, Vec<rusqlite::types::Value>) {
+        use rusqlite::types::Value;
+        let marks = |n: usize| vec!["?"; n].join(",");
+        let mut sql = String::new();
+        let mut values: Vec<Value> = Vec::new();
+        if !self.performer_ids.is_empty() {
+            sql.push_str(&format!(
                 " AND EXISTS (SELECT 1 FROM track_credits c WHERE c.song_id = u.song_id \
-                  AND c.role = 'performer' AND c.person_id IN ({marks}))"
-            ),
-            self.performer_ids.clone(),
-        )
+                  AND c.role = 'performer' AND c.person_id IN ({}))",
+                marks(self.performer_ids.len())
+            ));
+            values.extend(self.performer_ids.iter().map(|&id| Value::from(id)));
+        }
+
+        // 歌这一层的条件收进一个子查询：调用方不一定 JOIN 了 songs
+        let mut song = Vec::new();
+        if self.year_from.is_some() || self.year_to.is_some() {
+            let year = "CAST(substr(COALESCE(NULLIF(s2.release_date,''), NULLIF(s2.year,''), ''), 1, 4) AS INTEGER)";
+            song.push(format!("{year} > 0"));
+            if let Some(from) = self.year_from {
+                song.push(format!("{year} >= ?"));
+                values.push(Value::from(i64::from(from)));
+            }
+            if let Some(to) = self.year_to {
+                song.push(format!("{year} <= ?"));
+                values.push(Value::from(i64::from(to)));
+            }
+        }
+        if !self.genres.is_empty() {
+            song.push(format!("LOWER(COALESCE(s2.genre,'')) IN ({})", marks(self.genres.len())));
+            values.extend(self.genres.iter().map(|g| Value::from(g.trim().to_lowercase())));
+        }
+        if !self.languages.is_empty() {
+            song.push(format!("COALESCE(s2.language,'') IN ({})", marks(self.languages.len())));
+            values.extend(self.languages.iter().map(|l| Value::from(l.clone())));
+        }
+        if !self.album_ids.is_empty() {
+            song.push(format!("s2.album_id IN ({})", marks(self.album_ids.len())));
+            values.extend(self.album_ids.iter().map(|&id| Value::from(id)));
+        }
+        if !self.song_ids.is_empty() {
+            song.push(format!("s2.id IN ({})", marks(self.song_ids.len())));
+            values.extend(self.song_ids.iter().map(|id| Value::from(id.clone())));
+        }
+        if let Some(min) = self.min_completeness {
+            song.push(
+                "EXISTS (SELECT 1 FROM lyric_versions v WHERE v.song_id = s2.id AND v.is_current = 1 \
+                 AND v.completeness >= ?)"
+                    .into(),
+            );
+            values.push(Value::from(min));
+        }
+        if !song.is_empty() {
+            sql.push_str(&format!(" AND u.song_id IN (SELECT s2.id FROM songs s2 WHERE {})", song.join(" AND ")));
+        }
+        if self.distinct_lines {
+            sql.push_str(" AND u.id IN (SELECT MIN(u2.id) FROM utterances u2 GROUP BY u2.song_id, u2.text)");
+        }
+        (sql, values)
     }
 }
 
@@ -89,13 +172,13 @@ pub fn word_frequency_table(conn: &Connection, pos: Option<&str>, filter: &Stats
         "SELECT t.lemma, t.pos, COUNT(*) AS freq, COUNT(DISTINCT u.song_id), GROUP_CONCAT(DISTINCT t.surface) \
          FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
          WHERE t.pos NOT IN ('PUNCT','SYM'){pos_clause}{clause} \
-         GROUP BY t.lemma, t.pos ORDER BY freq DESC"
+         GROUP BY t.lemma, t.pos ORDER BY freq DESC, t.lemma, t.pos"
     );
     let mut values: Vec<rusqlite::types::Value> = Vec::new();
     if let Some(p) = pos {
         values.push(p.to_owned().into());
     }
-    values.extend(ids.into_iter().map(rusqlite::types::Value::from));
+    values.extend(ids);
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(values), |row| {
         let surfaces: Option<String> = row.get(4)?;
@@ -181,7 +264,7 @@ fn python_fsum(values: impl IntoIterator<Item = f64>) -> f64 {
 
 pub fn corpus_report(conn: &Connection, filter: &StatsFilter) -> anyhow::Result<CorpusReport> {
     let (clause, ids) = filter.clause();
-    let values = || params_from_iter(ids.iter());
+    let values = || params_from_iter(ids.iter().cloned());
 
     let song_count: i64 = conn.query_row(
         &format!("SELECT COUNT(DISTINCT u.song_id) FROM utterances u JOIN songs s ON s.id = u.song_id WHERE 1=1{clause}"),
@@ -442,7 +525,7 @@ mod tests {
         assert!(jp.iter().all(|w| w.lemma != "yeah"));
 
         // 作曲不算：002 里 1 号是作曲者，不是演唱者
-        let a = word_frequency_table(&conn, None, &StatsFilter { performer_ids: vec![1], jp_only: false }, 10).unwrap();
+        let a = word_frequency_table(&conn, None, &StatsFilter { performer_ids: vec![1], ..Default::default() }, 10).unwrap();
         assert!(a.iter().all(|w| w.lemma != "朝"));
         assert_eq!(word_frequency_table(&conn, Some("NOUN"), &StatsFilter::default(), 1).unwrap().len(), 1);
     }
@@ -461,7 +544,7 @@ mod tests {
         assert_eq!(report.pos_dist.iter().map(|p| (p.pos.as_str(), p.token_count)).collect::<Vec<_>>(), [("ADP", 2), ("NOUN", 2), ("VERB", 2)]);
         assert!((report.avg_types_per_song - 3.0).abs() < 1e-9);
 
-        let one = corpus_report(&conn, &StatsFilter { performer_ids: vec![2], jp_only: true }).unwrap();
+        let one = corpus_report(&conn, &StatsFilter { performer_ids: vec![2], jp_only: true, ..Default::default() }).unwrap();
         assert_eq!((one.song_count, one.token_count, one.type_count), (1, 3, 3));
     }
 

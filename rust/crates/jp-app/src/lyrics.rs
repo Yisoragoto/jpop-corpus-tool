@@ -59,6 +59,8 @@ pub enum LyricsSource {
     Netease,
     /// 用户自己选的文件
     Manual,
+    /// 从这首歌以前的某一版恢复的
+    Restored,
 }
 
 impl LyricsSource {
@@ -68,7 +70,20 @@ impl LyricsSource {
             Self::Sibling => "sibling",
             Self::Netease => "netease",
             Self::Manual => "manual",
+            Self::Restored => "restored",
         }
+    }
+
+    /// 记进 `lyric_versions` 的来源。`matched` 是界面上显示的那个名字（文件名、在线条目）
+    fn lineage(self, matched: &str) -> jp_import::LyricSource {
+        let (kind, name, reference) = match self {
+            Self::Embedded => ("embedded", matched, ""),
+            Self::Sibling => ("sibling", matched, ""),
+            Self::Netease => ("online", "netease", matched),
+            Self::Manual => ("manual_file", matched, ""),
+            Self::Restored => ("restored", matched, ""),
+        };
+        jp_import::LyricSource::new(kind, name, reference, "user")
     }
 }
 
@@ -177,7 +192,7 @@ pub fn apply_lrc_text(
 
     let tx = conn.transaction()?;
     jp_import::maintain::clear_lyrics(&tx, song_id)?;
-    let stats = jp_import::attach_lyrics(&tx, song_id, &dest, analyzer, artist, title)?;
+    let stats = jp_import::attach_lyrics(&tx, song_id, &dest, &source.lineage(matched), analyzer, artist, title)?;
     if stats.lyric_lines == 0 {
         // 解析出 0 行：这份文件不是歌词（空文件、纯标签、纯时间轴）。
         // 回滚，让这首歌继续算「缺歌词」——否则它会从补齐名单里消失，
@@ -213,6 +228,42 @@ fn write_atomic(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
         std::fs::remove_file(dest)?;
     }
     std::fs::rename(&tmp, dest)
+}
+
+/// 把这首歌以前的某一版歌词恢复成当前版。
+///
+/// 恢复也是「挂一版新的」（来源记 restored）：历史只追加，回到旧版不会抹掉中间那几版。
+/// 老库补登记的版本没留原文，恢复不了。
+pub fn restore_version(
+    conn: &mut Connection,
+    lyrics_dir: &Path,
+    song_id: &str,
+    version_id: i64,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+) -> Result<Attached> {
+    let (owner, raw) = jp_corpus::lineage::version_raw(conn, version_id)?
+        .with_context(|| format!("找不到歌词版本 {version_id}"))?;
+    if owner != song_id {
+        bail!("歌词版本 {version_id} 不是这首歌的");
+    }
+    let Some(raw) = raw else {
+        bail!("这一版是老库补登记的，当时没有保存原文，恢复不了");
+    };
+    let version_no: i64 = conn.query_row(
+        "SELECT version_no FROM lyric_versions WHERE id=?1",
+        params![version_id],
+        |r| r.get(0),
+    )?;
+    let (artist, title) = song_names(conn, song_id)?;
+    apply_lrc_text(
+        conn,
+        lyrics_dir,
+        SongRef { id: song_id, artist: &artist, title: &title },
+        &raw,
+        LyricsSource::Restored,
+        &format!("第 {version_no} 版"),
+        analyzer,
+    )
 }
 
 /// 用户自己选的一份 .lrc / .txt。

@@ -90,6 +90,9 @@ Each dictionary's licence and redistribution terms are its author's; check them 
 
 - KWIC concordance with the keyword centred; filter by artist, part of speech, cross-line matches or Japanese-only, export CSV.
 - Frequency table (lemma × POS with JLPT level), a timeline by year, and a corpus report as TXT.
+- **Sub-corpora**: slice by era, artist, genre, language or lyric completeness instead of treating the whole library as one; save the conditions under a name, optionally counting a repeated chorus once.
+- **Reproducible analyses**: archiving a report or frequency table stores the filter, every song in scope with its lyric version, the tokenizer (engine, dictionary, split mode, config fingerprint), the counting rules and the time; re-run it later on the current library and get an item-by-item explanation of what changed.
+- **Lyric quality and provenance**: every set of lyrics keeps its source, import time and original text (replacing lyrics adds a version; old ones can be viewed and restored) and is checked for missing lines, duplicates, timestamp drift and mojibake; each line carries a timestamp confidence and tokenization status, and token corrections and metadata edits leave a revision history. See [docs/provenance.md](docs/provenance.md) (Chinese).
 
 ![Analytics page](docs/screenshots/analytics.webp)
 

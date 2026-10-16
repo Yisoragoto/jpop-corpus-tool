@@ -31,6 +31,7 @@ import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
 import { LyricsStage } from "../components/LyricsStage";
 import { SongEditor } from "../components/SongEditor";
+import { SongLineagePanel } from "../components/SongLineagePanel";
 import { LyricsTools } from "../components/LyricsTools";
 import { LyricsFill } from "../components/LyricsFill";
 import { lyricFontStack, useLyricFontFiles } from "../fonts";
@@ -223,7 +224,7 @@ export function LibraryPage({
   const coverOf = useCallback((songId: string) => tracks.find((t) => t.id === songId)?.coverPath ?? "", [tracks]);
 
   // 曲库维护：编辑、删除（两步确认，不弹窗）、找回丢了的音频
-  const [panel, setPanel] = useState<null | "edit" | "repair">(null);
+  const [panel, setPanel] = useState<null | "edit" | "repair" | "lineage">(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // 维护操作的结果说明，记着是哪首歌的：删掉之后（没有选中的歌）也要看得到删了什么
   const [maintainNote, setMaintainNote] = useState<{ forSong: string | null; text: string } | null>(null);
@@ -1001,6 +1002,9 @@ export function LibraryPage({
                         <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "edit" ? null : "edit"); }}>
                           编辑信息
                         </button>
+                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lineage" ? null : "lineage"); }}>
+                          来源与校验
+                        </button>
                         {lyrics.length > 0 && (
                           <LyricsFill songId={selected.id} hasLyrics onAttached={() => void actions.reloadLyrics()} onError={onAudioError} />
                         )}
@@ -1038,6 +1042,15 @@ export function LibraryPage({
                   if (problem) onAudioError(problem);
                 }}
                 onCancel={() => setPanel(null)}
+                onError={onAudioError}
+              />
+            )}
+            {panel === "lineage" && (
+              <SongLineagePanel
+                key={selected.id}
+                songId={selected.id}
+                onLyricsChanged={() => void actions.reloadLyrics()}
+                onClose={() => setPanel(null)}
                 onError={onAudioError}
               />
             )}

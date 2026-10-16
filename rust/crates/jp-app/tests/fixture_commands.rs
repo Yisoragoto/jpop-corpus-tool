@@ -1332,3 +1332,75 @@ fn completeness_reports_every_row_against_the_whole_library() {
     // 合成库里 003 是没分词的那首，但歌词是有的；四首都有歌词行
     assert_eq!(got["lyrics"]["done"], json!(fixture::TRACKS));
 }
+
+// ──────────────────────── 语料质量与来源追踪 ────────────────────────
+
+/// 启动时老歌补登记了歌词版本（fixture 的歌是直接写进库的，没走导入），
+/// 质量总览和单首的来源都答得上来。
+#[test]
+fn every_song_with_lyrics_has_a_registered_version_after_startup() {
+    let f = Fixture::new("quality");
+    let w = f.w();
+
+    let overview = ok(w, "quality_overview", json!({ "limit": 10 }));
+    has_keys(&overview, "quality_overview", &["songs", "songsWithLyrics", "songsWithVersion", "bySource", "issues", "tokenizers", "worst"]);
+    assert_eq!(overview["songsWithVersion"], overview["songsWithLyrics"], "有歌词的歌都该补登记了版本");
+
+    let lineage = ok(w, "song_lineage", json!({ "songId": "001" }));
+    assert_eq!(len(&lineage["versions"]), 1);
+    let version = &lineage["versions"][0];
+    assert_eq!(version["sourceType"], "legacy");
+    assert_eq!(version["isCurrent"], json!(true));
+    assert_eq!(version["hasRawText"], json!(false), "老库补登记没有原文");
+    assert_eq!(len(&lineage["lines"]), 4);
+    assert!(lineage["lines"][0]["tokenStatus"].is_string());
+
+    // 没有原文的版本：原文是 null，恢复要被拒绝并说清楚
+    let version_id = version["id"].as_i64().unwrap();
+    assert!(ok(w, "lyric_version_raw", json!({ "versionId": version_id })).is_null());
+    let err = refused(w, "lyrics_restore_version", json!({ "songId": "001", "versionId": version_id }));
+    assert!(err.contains("没有保存原文"), "{err}");
+
+    assert!(ok(w, "lyrics_revalidate", json!({ "songId": "001" })).as_u64().unwrap() == 1);
+}
+
+/// 子语料和可复现分析：存一次、重跑一次，没改过库就该完全一致。
+#[test]
+fn an_analysis_can_be_saved_rerun_and_compared() {
+    let f = Fixture::new("analysis");
+    let w = f.w();
+
+    let facets = ok(w, "subcorpus_facets", json!({}));
+    has_keys(&facets, "subcorpus_facets", &["yearMin", "yearMax", "genres", "languages"]);
+
+    let filter = json!({ "performerIds": [], "jpOnly": false, "distinctLines": true });
+    let scope = ok(w, "subcorpus_preview", json!({ "filter": filter }));
+    assert!(scope["songCount"].as_u64().unwrap() > 0);
+    assert_eq!(len(&scope["songs"]), 0, "预览只给数目");
+
+    let saved = ok(w, "subcorpus_save", json!({ "name": "去重", "filter": filter }));
+    assert_eq!(saved["filter"]["distinctLines"], json!(true));
+    assert_eq!(len(&ok(w, "subcorpus_list", json!({}))), 1);
+
+    let run = ok(
+        w,
+        "analysis_run",
+        json!({ "spec": { "kind": "frequency", "pos": null, "limit": 50 }, "filter": filter, "label": "测试" }),
+    );
+    has_keys(&run, "analysis_run", &["scope", "scopeHash", "tokenizers", "method", "result", "resultHash", "appVersion"]);
+    assert_eq!(run["label"], "测试");
+    let id = run["id"].as_i64().unwrap();
+
+    let cmp = ok(w, "analysis_rerun", json!({ "id": id }));
+    assert_eq!(cmp["resultIdentical"], json!(true), "{cmp}");
+    assert_eq!(cmp["after"]["rerunOf"], json!(id));
+    let again = ok(w, "analysis_compare", json!({ "before": id, "after": cmp["after"]["id"] }));
+    assert_eq!(again["sameScope"], json!(true));
+
+    let report = ok(w, "analysis_run", json!({ "spec": { "kind": "corpusReport" } }));
+    assert!(report["result"]["songCount"].as_u64().unwrap() > 0);
+    assert!(len(&ok(w, "analysis_list", json!({}))) >= 3);
+    assert!(ok(w, "analysis_get", json!({ "id": id }))["filter"]["distinctLines"] == json!(true));
+    assert_eq!(ok(w, "analysis_delete", json!({ "id": id })), json!(true));
+    assert_eq!(ok(w, "subcorpus_delete", json!({ "id": saved["id"] })), json!(true));
+}
