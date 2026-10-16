@@ -120,7 +120,7 @@ export function PerformerPicker({ selected, onChange, onError }: Props) {
         onClick={() => setOpen((v) => !v)}
         title={names.length > 1 ? names.join("、") : undefined}
       >
-        {label} ▾
+        <span>{label}</span>
       </button>
       {open && (
         <div className="picker-pop">

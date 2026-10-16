@@ -279,7 +279,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
             title="只刮还没刮过、或者刮失败过的。认不准的不会写进库，停在下面「需要你确认」"
           />
           <button
-            className="scrape-more"
+            className="btn scrape-more"
             aria-label="更多刮削操作"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
