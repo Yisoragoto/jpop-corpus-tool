@@ -20,6 +20,7 @@ function person(id: number, name: string, roles: Partial<DirectoryEntry> = {}): 
     imagePath: "",
     artistType: "",
     ended: "",
+    imageManual: false,
     performer: 0,
     composer: 0,
     lyricist: 0,

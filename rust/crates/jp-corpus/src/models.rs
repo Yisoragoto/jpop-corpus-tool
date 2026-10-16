@@ -118,6 +118,9 @@ pub struct DirectoryEntry {
     /// 乐队结束的日期（刮削拿到的），没结束或不知道是空串
     #[serde(default)]
     pub ended: String,
+    /// 照片是你手动换的（刮削不覆盖，可以恢复）
+    #[serde(default)]
+    pub image_manual: bool,
     /// 以演唱署名的歌
     pub performer: i64,
     pub composer: i64,

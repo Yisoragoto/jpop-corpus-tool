@@ -5,7 +5,7 @@ import { buildDirectory } from "./libraryIndex";
 import { buildTimeline, buildTree, placeCovers, yearValue } from "./timeline";
 
 const e = (id: number, name: string, extra: Partial<DirectoryEntry> = {}): DirectoryEntry => ({
-  id, name, imagePath: "", artistType: "", ended: "", performer: 1, composer: 0, lyricist: 0, arranger: 0, songs: 1, firstYear: "", lastYear: "", ...extra,
+  id, name, imagePath: "", artistType: "", ended: "", imageManual: false, performer: 1, composer: 0, lyricist: 0, arranger: 0, songs: 1, firstYear: "", lastYear: "", ...extra,
 });
 const rel = (personId: number, date: string, title = date): TimelineRelease => ({ personId, albumId: null, title, date, tracks: 1, coverPath: "", songId: title });
 

@@ -4,7 +4,7 @@ import type { DirectoryEntry, Membership } from "./api";
 import { buildGraph, nodeAt, Simulation } from "./graph";
 
 function entry(id: number, name: string, extra: Partial<DirectoryEntry> = {}): DirectoryEntry {
-  return { id, name, imagePath: "", artistType: "", ended: "", performer: 0, composer: 0, lyricist: 0, arranger: 0, songs: 1, firstYear: "", lastYear: "", ...extra };
+  return { id, name, imagePath: "", artistType: "", ended: "", imageManual: false, performer: 0, composer: 0, lyricist: 0, arranger: 0, songs: 1, firstYear: "", lastYear: "", ...extra };
 }
 
 const people = [

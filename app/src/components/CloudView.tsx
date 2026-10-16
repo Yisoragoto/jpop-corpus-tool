@@ -48,12 +48,14 @@ interface Props {
   onPlayLine: (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => void;
   /** 上面盖着全屏歌词 */
   covered: boolean;
+  /** 一首歌的封面路径（列表里显示） */
+  coverOf: (songId: string) => string;
   onSearchWord: (lemma: string) => void;
   onShowExamples: (lemma: string) => void;
   onError: (message: string) => void;
 }
 
-export function CloudView({ playing, nowLine, onPlayLine, covered, onSearchWord, onShowExamples, onError }: Props) {
+export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSearchWord, onShowExamples, onError }: Props) {
   const settings = useAppSettings();
   const [performerIds, setPerformerIds] = useState(memory.performerIds);
   const [pos, setPos] = useState(memory.pos);
@@ -172,6 +174,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, onSearchWord,
         nowLine={nowLine}
         onPlayLine={onPlayLine}
         covered={covered}
+        coverOf={coverOf}
         onSearchWord={onSearchWord}
         onShowExamples={onShowExamples}
         present={present}

@@ -37,7 +37,7 @@ pub mod store;
 
 pub use artwork::{
     ImageKind, SaveOutcome, artist_image_path_for, artwork_urls, cover_path_for, image_dimensions,
-    looks_square, safe_name, save_cover_any, save_image, save_image_any,
+    looks_square, safe_name, save_cover_any, save_image, save_image_any, sniff_image,
 };
 pub use error::ProviderError;
 pub use http::{HttpClient, HttpConfig, HttpResponse, RateLimiter, Transport};

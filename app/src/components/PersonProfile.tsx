@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { api, ROLE_LABELS, type Album, type Collaborator, type DirectoryEntry, type Membership, type PersonWork, type Track } from "../api";
 import { messageOf } from "../errors";
@@ -19,6 +20,7 @@ import { MembersEditor } from "./MembersEditor";
 import { RelationGraph } from "./RelationGraph";
 import { buildGraph } from "../graph";
 import { ROLE_COLORS, type DirectoryData } from "./LibraryBrowser";
+import { invalidatePerformers } from "./PerformerPicker";
 
 /** 没有成员关系时的空列表。用同一个引用：每次新建 [] 会让依赖它的 effect 每帧重跑 */
 const NONE: Membership[] = [];
@@ -123,6 +125,35 @@ export function PersonProfile({
     };
   }, [entry, data, personId, bands]);
 
+  // 换照片：刮削有时把专辑封面当成了歌手照片。换的这张刮削不再覆盖
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const changePhoto = async () => {
+    try {
+      const picked = await openDialog({ title: `给 ${name} 换照片`, filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp"] }] });
+      if (typeof picked !== "string") return;
+      setPhotoBusy(true);
+      await api.artistImageSet(name, picked);
+      invalidatePerformers();
+      onMembersChanged();
+    } catch (err) {
+      onError(`照片没换成：${messageOf(err)}`);
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+  const resetPhoto = async () => {
+    setPhotoBusy(true);
+    try {
+      await api.artistImageReset(name);
+      invalidatePerformers();
+      onMembersChanged();
+    } catch (err) {
+      onError(`没恢复成：${messageOf(err)}`);
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
   const sections = useMemo(() => sectionWorks(personId, works ?? [], bands), [personId, works, bands]);
   const albumCount = useMemo(() => groupByAlbum(sections.find((x) => !x.collapsed)?.works ?? []).length, [sections]);
   // 哪些区是展开的（收起的那些点了才展开）。换人时重置
@@ -176,6 +207,9 @@ export function PersonProfile({
         <div className="profile-hero-bg" style={image ? { backgroundImage: `url("${cssUrl(image)}")` } : undefined} aria-hidden="true" />
         <span className="profile-photo">
           <Avatar path={image} name={name} size={104} />
+          <button className="photo-change" onClick={() => void changePhoto()} disabled={photoBusy} title="换一张照片（jpg / png / webp）">
+            {photoBusy ? "…" : "换照片"}
+          </button>
         </span>
         <div className="profile-hero-text">
           <h1>{name}</h1>
@@ -187,6 +221,11 @@ export function PersonProfile({
               </span>
             ))}
           </div>
+          {entry?.imageManual && (
+            <button className="link-btn photo-reset" onClick={() => void resetPhoto()} disabled={photoBusy}>
+              恢复刮削的照片
+            </button>
+          )}
           {bands.map((b) => (
             <button key={b.bandId} className="belong" onClick={() => onOpenPerson(b.bandId)}>
               <Avatar path={b.bandImage} name={b.bandName} size={20} />

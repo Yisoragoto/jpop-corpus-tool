@@ -83,6 +83,8 @@ export interface DirectoryEntry {
   artistType: string;
   /** 乐队结束的日期；没结束或不知道是空串 */
   ended: string;
+  /** 照片是手动换的（刮削不覆盖，可以恢复） */
+  imageManual: boolean;
   performer: number;
   composer: number;
   lyricist: number;
@@ -978,6 +980,10 @@ export const api = {
   /** 库的完整度：识别、封面、歌词、时长各齐了多少（刮削页那几行） */
   libraryCompleteness: () => call<Completeness>("library_completeness"),
   /** 刮一个歌手：MusicBrainz 拿资料和别名，Deezer 拿照片。 */
+  /** 用自己选的图片当歌手照片；返回存下来的路径 */
+  artistImageSet: (name: string, path: string) => call<string>("artist_image_set", { name, path }),
+  /** 用回刮削下的照片 */
+  artistImageReset: (name: string) => call<string>("artist_image_reset", { name }),
   scrapeArtist: (name: string) => call<ArtistOutcome>("scrape_artist", { name }),
   /** 批量刮歌手，后台跑。和曲目刮削共用一个作业标志。 */
   scrapeArtistsStart: (onlyMissing?: boolean) =>
