@@ -19,6 +19,7 @@ const MAIN_THREAD_OK: &[(&str, &str)] = &[
     ("audio_set_rate", "播放器的一个参数"),
     ("audio_set_volume", "播放器的一个参数"),
     ("audio_set_loop", "播放器的一个参数"),
+    ("audio_set_stop_at", "播放器的一个参数（试听一句时的停止位置）"),
     ("audio_state", "读播放器状态，不碰库"),
     ("audio_spectrum", "内存里做一次 FFT，几百微秒"),
     ("lyrics_fill_cancel", "置一个取消标志"),

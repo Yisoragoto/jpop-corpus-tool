@@ -460,6 +460,7 @@ export default function App() {
         {route === "kwic" && (
           <KwicPage
             actions={actions}
+            playback={playback}
             onNavigate={goLibrary}
             onError={onError}
             request={kwicRequest}

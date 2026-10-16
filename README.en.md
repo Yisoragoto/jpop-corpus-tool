@@ -88,7 +88,13 @@ Each dictionary's licence and redistribution terms are its author's; check them 
 
 ### Search and analysis
 
-- KWIC concordance with the keyword centred; filter by artist, part of speech, cross-line matches or Japanese-only, export CSV.
+- KWIC concordance with the keyword centred; filter by artist, year, part of speech, cross-line matches or Japanese-only, export CSV.
+  Multi-word expressions are written with `+` (`て+しまう`).
+- **Search results are wired to the player**: ▶ plays just that line (stops at the line end), ⟲ adds one line of context on each side,
+  clicking a hit opens the song at that line and keeps playing with the lyrics highlighted. Line-level precision (LRC timestamps).
+- Collocations (logDice / MI / log-likelihood) next to the KWIC; pick one to narrow the concordance to lines where it occurs nearby.
+- Chorus-aware counting: repeated lines within a song can be counted once; sub-corpus comparison (keyness) by artist and year.
+  Every analysis result carries its provenance (scope, counting unit, corpus fingerprint).
 - Frequency table (lemma × POS with JLPT level), a timeline by year, and a corpus report as TXT.
 
 ![Analytics page](docs/screenshots/analytics.webp)
@@ -233,6 +239,8 @@ rust/          Rust workspace
   jp-scraper/    Track identification, covers, artist photos, online lyrics
   jp-import/     Scan, plan, write
   jp-normalize/  Title / artist normalisation
+  jp-ffi/        C ABI (JSON in/out) for the native macOS client, see docs/clients.md
+macos/         Native macOS client (SwiftUI + AVFoundation) on the same Rust core
 docs/          Design notes and reconciliation records per subsystem
 legacy/        The 0.1.x PyQt app, kept for reference: gui.py, dialogs/, scripts/, packaging/
 scripts/       Release self-check (release-check.ps1)

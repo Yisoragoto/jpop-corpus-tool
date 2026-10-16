@@ -308,7 +308,7 @@ export function LibraryPage({
   // **歌词属于 selected，位置属于正在放的那一首**，换歌的一瞬间两者不是同一首。
   const lyricsArePlaying = selected !== null && playback.songId === selected.id;
   const currentLine = useCurrentLine(lyrics, playback.positionSec, lyricsArePlaying);
-  const loopLine = useLineLoop(lyrics, playback.durationSec);
+  const loopLine = useLineLoop(lyrics);
 
   // 换歌先回到开头。歌词栏是个常驻的滚动容器，内容换了 scrollTop 不会跟着变，
   // 上一首滚到了 3:38 的位置，新歌一进来就停在半腰。

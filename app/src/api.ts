@@ -172,6 +172,176 @@ export interface KwicQuery {
   /** 只留关键词里有假名或汉字的命中（Python「日本語のみ」），先筛再截断 */
   jpOnly?: boolean;
   limit?: number | null;
+  /** 子语料：年份、专辑、流派、指定歌曲、演唱者 */
+  subcorpus?: Subcorpus;
+  /** 只留关键词附近（同一行左右 window 个词内）出现了 word 的命中 */
+  near?: NearFilter | null;
+}
+
+export interface NearFilter {
+  word: string;
+  field: MatchField;
+  window: number;
+}
+
+/** 子语料。条件之间 AND，同一条件内的多个值 OR。全空 = 整个语料库。规则在 jp-corpus 的 subcorpus.rs */
+export interface Subcorpus {
+  performerIds?: number[];
+  yearFrom?: number | null;
+  yearTo?: number | null;
+  albumIds?: number[];
+  genres?: string[];
+  songIds?: string[];
+}
+
+/** 行的结束时间是怎么来的：下一行开始 / 间奏太长按字数估 / 曲目结束 */
+export type SpanEnd = "nextLine" | "estimated" | "trackEnd";
+
+export interface LineSpan {
+  utteranceId: number;
+  lineIdx: number;
+  startSec: number;
+  endSec: number;
+  endKind: SpanEnd;
+}
+
+/** 试听区间：起播（含提前量）、到哪儿停、命中的是哪一行 */
+export interface ListenWindow {
+  songId: string;
+  startSec: number;
+  endSec: number;
+  focusUtteranceId: number;
+  focusStartSec: number;
+  focusEndSec: number;
+  utteranceIds: number[];
+}
+
+// ── 分析（jp-corpus 的 analysis.rs）──
+
+/** tokens：唱几遍算几遍；distinctLines：同一首歌里重复的行只算第一次 */
+export type CountUnit = "tokens" | "distinctLines";
+
+export interface AnalysisScope {
+  subcorpus?: Subcorpus;
+  unit?: CountUnit;
+  jpOnly?: boolean;
+}
+
+export interface CorpusSnapshot {
+  schemaVersion: number;
+  songs: number;
+  lines: number;
+  tokens: number;
+  corrections: number;
+  fingerprint: string;
+}
+
+/** 结果是怎么算出来的：库指纹 + 规则版本 + 范围 + 参数。指纹和参数相同，结果就相同 */
+export interface Provenance {
+  snapshot: CorpusSnapshot;
+  rules: string;
+  scope: string;
+  unit: CountUnit;
+  songs: number;
+  tokens: number;
+  params: unknown;
+}
+
+export interface FrequencyItem {
+  lemma: string;
+  pos: string;
+  freq: number;
+  per10k: number;
+  rawFreq: number;
+  distinctFreq: number;
+  /** 来自重复行的比例。越高越是副歌堆出来的 */
+  repeatShare: number;
+  songs: number;
+  range: number;
+  surfaces: string[];
+}
+
+export interface FrequencyResult {
+  items: FrequencyItem[];
+  provenance: Provenance;
+}
+
+export type CollocationMeasure = "logDice" | "mi" | "logLikelihood" | "frequency";
+
+export interface CollocationQuery {
+  scope?: AnalysisScope;
+  node: string;
+  field?: MatchField;
+  left?: number;
+  right?: number;
+  minFreq?: number;
+  collocatePos?: string | null;
+  contentOnly?: boolean;
+  measure?: CollocationMeasure;
+  limit?: number;
+}
+
+export interface Collocate {
+  lemma: string;
+  pos: string;
+  freq: number;
+  freqLeft: number;
+  freqRight: number;
+  collocateFreq: number;
+  songs: number;
+  logDice: number;
+  mi: number;
+  logLikelihood: number;
+  tScore: number;
+  exampleUtteranceId: number;
+  exampleSongId: string;
+}
+
+export interface CollocationResult {
+  nodeFreq: number;
+  collocates: Collocate[];
+  provenance: Provenance;
+}
+
+export interface KeynessQuery {
+  target: Subcorpus;
+  /** 省略 = 语料库里其余的歌 */
+  reference?: Subcorpus | null;
+  unit?: CountUnit;
+  jpOnly?: boolean;
+  pos?: string | null;
+  minFreq?: number;
+  limit?: number;
+}
+
+export interface KeyItem {
+  lemma: string;
+  pos: string;
+  targetFreq: number;
+  referenceFreq: number;
+  targetPer10k: number;
+  referencePer10k: number;
+  /** 带符号：正 = 目标里偏多 */
+  logLikelihood: number;
+  logRatio: number;
+  targetSongs: number;
+}
+
+export interface KeynessResult {
+  over: KeyItem[];
+  under: KeyItem[];
+  target: Provenance;
+  reference: Provenance;
+}
+
+export interface SongProfile {
+  songId: string;
+  lines: number;
+  repeatedLines: number;
+  tokens: number;
+  distinctTokens: number;
+  keywords: KeyItem[];
+  provenance: Provenance;
 }
 
 export interface KwicHit {
@@ -189,6 +359,11 @@ export interface KwicHit {
   repeatCount: number;
   /** 这一行做过分词校正。KWIC 里标 ✏。 */
   corrected: boolean;
+  /** 这一行在音频里的结束时间（行级）。没有时间戳时为 null */
+  endSec: number | null;
+  endKind: SpanEnd | null;
+  /** 关键词占几个 token，多词表达（て+しまう）大于 1 */
+  matchLen: number;
 }
 
 /** 分词校正里的一个词。键名和 Python 存进 token_corrections 的 JSON 一致。 */
@@ -437,6 +612,8 @@ export interface PlaybackState {
   rate: number;
   volume: number;
   loopRegion: LoopRegion | null;
+  /** 播到这里自动暂停（检索结果试听一句时设），放完清掉 */
+  stopAtSec?: number | null;
   /** 变调半音数，−6…+6，0 是原调。全局生效，之后打开的歌也按这个调 */
   pitchSemitones: number;
   /** 正在渲染这个调的音频（没缓存过的调要先渲染几秒） */
@@ -614,6 +791,16 @@ export const api = {
 
   // 检索
   kwic: (query: KwicQuery) => call<KwicHit[]>("kwic", { query }),
+  lineSpans: (songId: string) => call<LineSpan[]>("line_spans", { songId }),
+  /** 以某一行为中心前后各扩 before / after 行；没有时间戳时是 null */
+  listenWindow: (utteranceId: number, before = 0, after = 0) =>
+    call<ListenWindow | null>("listen_window", { utteranceId, before, after }),
+  corpusSnapshot: () => call<CorpusSnapshot>("corpus_snapshot"),
+  corpusFrequency: (query: { scope?: AnalysisScope; pos?: string | null; limit?: number }) =>
+    call<FrequencyResult>("corpus_frequency", { query }),
+  collocations: (query: CollocationQuery) => call<CollocationResult>("collocations", { query }),
+  keyness: (query: KeynessQuery) => call<KeynessResult>("keyness", { query }),
+  songProfile: (songId: string, limit?: number) => call<SongProfile>("song_profile", { songId, limit }),
   searchLyrics: (text: string, limit?: number) =>
     call<LyricHit[]>("search_lyrics", { text, limit }),
   /** Cmd+K 全局搜索。跨曲目/专辑/人物/词汇/歌词。 */
@@ -658,6 +845,8 @@ export const api = {
   /** 返回 false 表示区间太短被拒绝。两个参数都省略 = 取消循环。 */
   audioSetLoop: (startSec?: number, endSec?: number) =>
     kicked(call<boolean>("audio_set_loop", { startSec, endSec })),
+  /** 播到 positionSec 自动暂停一次；省略 = 取消 */
+  audioSetStopAt: (positionSec?: number) => kicked(call<void>("audio_set_stop_at", { positionSec })),
   /** 无副作用的状态读取。 */
   audioState: () => call<PlaybackState>("audio_state"),
   /**
