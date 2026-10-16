@@ -222,6 +222,26 @@ pub struct KwicQuery {
     /// 只留关键词里有假名或汉字的命中（Python `_JP_RE.search(match)`），先筛再截断到 `limit`
     pub jp_only: bool,
     pub limit: Option<i64>,
+    /// 子语料（年份、专辑、流派、指定歌曲、演唱者）。和 `person_ids` 同时给时两者都要满足
+    pub subcorpus: crate::subcorpus::Subcorpus,
+    /// 只留附近（同一行、左右若干词之内）出现了某个词的命中。搭配表点一个搭配词就是这个
+    pub near: Option<NearFilter>,
+}
+
+/// KWIC 的「附近有某词」过滤
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NearFilter {
+    pub word: String,
+    pub field: MatchField,
+    /// 左右各多少个词（不含标点），不跨行
+    pub window: usize,
+}
+
+impl Default for NearFilter {
+    fn default() -> Self {
+        Self { word: String::new(), field: MatchField::Lemma, window: 3 }
+    }
 }
 
 impl Default for KwicQuery {
@@ -235,6 +255,8 @@ impl Default for KwicQuery {
             dedup: true,
             jp_only: false,
             limit: None,
+            subcorpus: Default::default(),
+            near: None,
         }
     }
 }
@@ -260,6 +282,18 @@ pub struct KwicHit {
     /// 这一行做过分词校正（`token_corrections` 里有它）。KWIC 里标 ✏。
     #[serde(default)]
     pub corrected: bool,
+    /// 这一行在音频里的结束时间（规则见 `segments`）。没有时间戳时为 None
+    #[serde(default)]
+    pub end_sec: Option<f64>,
+    #[serde(default)]
+    pub end_kind: Option<crate::segments::SpanEnd>,
+    /// 关键词占几个 token。多词表达（`て+しまう`）大于 1
+    #[serde(default = "one")]
+    pub match_len: i64,
+}
+
+fn one() -> i64 {
+    1
 }
 
 /// 全文检索命中（走 FTS5）。

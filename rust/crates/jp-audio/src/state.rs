@@ -84,6 +84,9 @@ pub struct PlaybackState {
     pub rate: f32,
     pub volume: f32,
     pub loop_region: Option<LoopRegion>,
+    /// 播到这里自动暂停（秒）。KWIC 试听一句用，放完就清掉
+    #[serde(default)]
+    pub stop_at_sec: Option<f64>,
     /// 变调半音数。引擎本身不变调（播的是渲染好的文件），这三个字段由应用层填，见 jp-app 的 `pitch.rs`
     pub pitch_semitones: i32,
     /// 正在渲染变调音频
@@ -109,6 +112,7 @@ impl Default for PlaybackState {
             rate: 1.0,
             volume: 1.0,
             loop_region: None,
+            stop_at_sec: None,
             pitch_semitones: 0,
             pitch_rendering: false,
             pitch_error: None,

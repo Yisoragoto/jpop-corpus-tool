@@ -280,6 +280,70 @@ pub async fn kwic<R: tauri::Runtime>(
     blocking(app, move |state| state.corpus().kwic(&query)).await
 }
 
+// ────────────────────────────── 分析与定位 ──────────────────────────────
+//
+// 规则全在 jp-corpus 的 analysis / segments / subcorpus 里；macOS 客户端经 jp-ffi 调的是同一组函数。
+
+/// 一首歌每行在音频里的区间（行级）
+#[tauri::command(async)]
+pub fn line_spans(state: State<'_, AppState>, song_id: String) -> CmdResult<Vec<jp_corpus::segments::LineSpan>> {
+    Ok(state.corpus().line_spans(&song_id)?)
+}
+
+/// 以某一行为中心、前后各扩几行的试听区间。没有时间戳时是 null
+#[tauri::command(async)]
+pub fn listen_window(
+    state: State<'_, AppState>,
+    utterance_id: i64,
+    before: Option<usize>,
+    after: Option<usize>,
+) -> CmdResult<Option<jp_corpus::segments::ListenWindow>> {
+    Ok(state
+        .corpus()
+        .listen_window(utterance_id, before.unwrap_or(0), after.unwrap_or(0))?)
+}
+
+#[tauri::command(async)]
+pub fn corpus_snapshot(state: State<'_, AppState>) -> CmdResult<jp_corpus::analysis::CorpusSnapshot> {
+    Ok(state.corpus().snapshot()?)
+}
+
+/// 重复感知的词频（两种计数单位都给）
+#[tauri::command]
+pub async fn corpus_frequency<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::analysis::FrequencyQuery,
+) -> CmdResult<jp_corpus::analysis::FrequencyResult> {
+    blocking(app, move |state| state.corpus().frequency(&query)).await
+}
+
+#[tauri::command]
+pub async fn collocations<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::analysis::CollocationQuery,
+) -> CmdResult<jp_corpus::analysis::CollocationResult> {
+    blocking(app, move |state| state.corpus().collocations(&query)).await
+}
+
+/// 子语料对比（特征词）
+#[tauri::command]
+pub async fn keyness<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::analysis::KeynessQuery,
+) -> CmdResult<jp_corpus::analysis::KeynessResult> {
+    blocking(app, move |state| state.corpus().keyness(&query)).await
+}
+
+/// 从一首歌进入语料分析：重复行、特征词
+#[tauri::command]
+pub async fn song_profile<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+    limit: Option<usize>,
+) -> CmdResult<jp_corpus::analysis::SongProfile> {
+    blocking(app, move |state| state.corpus().song_profile(&song_id, limit.unwrap_or(12))).await
+}
+
 #[tauri::command(async)]
 pub fn search_lyrics(
     state: State<'_, AppState>,
@@ -578,6 +642,13 @@ pub fn audio_set_loop(
         _ => None,
     };
     Ok(audio(&state)?.set_loop(region))
+}
+
+/// 播到 `position_sec` 自动暂停一次。检索结果「只听这一句」：加载到行首、到行尾停。传 null 取消
+#[tauri::command]
+pub fn audio_set_stop_at(state: State<'_, AppState>, position_sec: Option<f64>) -> CmdResult<()> {
+    audio(&state)?.set_stop_at(position_sec);
+    Ok(())
 }
 
 /// 播放状态快照。前端轮询它来驱动进度条和歌词跟随。

@@ -218,28 +218,19 @@ export function useCurrentLine(
 /**
  * 单句循环：把循环区间设成某一行的起止。
  *
- * 行的结束时间 = 下一行的开始时间。最后一行没有下一行，
- * 用曲目时长兜底；再没有就退 5 秒——总比不能循环好。
+ * 起止怎么算由 Rust 的 `segments.rs` 决定（和 KWIC 试听、macOS 客户端同一个规则）：
+ * 结束 = 下一行开始；离下一行太远（间奏）就按字数估，不把十几秒伴奏也循环进去。
+ * 以前这里自己算「下一行开始」，间奏前的那一句会连着整段间奏一起循环。
  */
-export function useLineLoop(lines: LyricLine[], durationSec: number | null) {
+export function useLineLoop(lines: LyricLine[]) {
   return useCallback(
     async (lineIdx: number): Promise<boolean> => {
       const line = lines[lineIdx];
       if (!line || line.timeSec === null) return false;
-      const start = line.timeSec;
-
-      let end: number | null = null;
-      for (let i = lineIdx + 1; i < lines.length; i += 1) {
-        const next = lines[i];
-        if (next?.timeSec != null && next.timeSec > start) {
-          end = next.timeSec;
-          break;
-        }
-      }
-      if (end === null) end = durationSec ?? start + 5;
-
-      return api.audioSetLoop(start, end);
+      const window = await api.listenWindow(line.utteranceId, 0, 0);
+      if (!window) return false;
+      return api.audioSetLoop(window.focusStartSec, window.focusEndSec);
     },
-    [lines, durationSec],
+    [lines],
   );
 }

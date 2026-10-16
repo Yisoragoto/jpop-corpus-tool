@@ -901,6 +901,44 @@ input[type="range"] { accent-color: var(--accent); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .kwic-time { margin-left: 8px; font-variant-numeric: tabular-nums; }
+
+/* 检索结果直接连着播放器：▶ 试听这一句、⟲ 连前后文；正在放的那一条亮起来 */
+.kwic-row.with-actions { grid-template-columns: 44px 1fr auto 1fr 210px; cursor: pointer; }
+.kwic-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.kwic-row.playing { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.kwic-row.playing .kwic-key { text-decoration: underline; text-underline-offset: 3px; }
+.kwic-actions { display: flex; gap: 2px; opacity: .55; transition: opacity .12s; }
+.kwic-row:hover .kwic-actions, .kwic-row.playing .kwic-actions, .kwic-row:focus-visible .kwic-actions { opacity: 1; }
+.kwic-play {
+  width: 20px; height: 20px; border-radius: 4px; font-size: 10px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--muted);
+}
+.kwic-play:hover:not(:disabled) { background: var(--panel-2); color: var(--accent); }
+.kwic-play:disabled { opacity: .3; cursor: default; }
+
+.kwic-body { flex: 1; min-height: 0; display: flex; }
+.kwic-body > .results { flex: 1; min-width: 0; }
+.colloc-panel {
+  width: 320px; flex-shrink: 0; overflow-y: auto; padding: 8px 16px 24px;
+  border-left: 1px solid var(--line);
+}
+.colloc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.colloc-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.colloc-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.colloc-table th { text-align: left; font-weight: 500; color: var(--muted); font-size: 11px; padding: 4px 4px; }
+.colloc-table td { padding: 3px 4px; white-space: nowrap; }
+.colloc-table td.num, .colloc-table th:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; }
+.colloc-table tbody tr { cursor: pointer; }
+.colloc-table tbody tr:hover { background: var(--panel-2); }
+.colloc-table tbody tr.on { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.provenance { margin-top: 10px; line-height: 1.6; }
+.near-chip {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12px;
+  padding: 1px 4px 1px 9px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent);
+}
+.year-range { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.year-input { width: 56px; text-align: center; }
+@media (max-width: 1100px) { .colloc-panel { width: 260px; } }
 .repeat { color: var(--warn); font-style: normal; }
 
 .text-row {
@@ -2478,3 +2516,24 @@ button.primary:not(:disabled):active { transform: scale(.96); transition-duratio
   .scrape-row { grid-template-columns: 18px 72px minmax(80px, 1fr) auto; }
   .scrape-row-action { grid-column: 2 / -1; justify-content: flex-start; }
 }
+
+/* ── 分析页：副歌效应、子语料对比 ── */
+.share-bar {
+  display: inline-block; min-width: 46px; padding: 0 4px; border-radius: 3px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--warn) 30%, transparent) var(--share), transparent var(--share));
+}
+.compare-form { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; margin: 10px 0 14px; }
+.compare-side { display: flex; align-items: center; gap: 8px; }
+.compare-label { min-width: 2.5em; }
+.key-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 28px; }
+.key-col h3 { margin: 4px 0 6px; font-size: 13px; font-weight: 600; }
+
+/* 例句旁边的试听键、曲库右栏的语料画像 */
+.example-row { display: flex; align-items: center; gap: 2px; }
+.example-row > .example { flex: 1; min-width: 0; }
+.example-row > .kwic-play { flex-shrink: 0; opacity: .5; }
+.example-row:hover > .kwic-play { opacity: 1; }
+.song-profile { margin-top: 18px; }
+.song-profile p { margin: 0 0 6px; line-height: 1.6; }
+.chip.link { cursor: pointer; }
+.chip.link:hover { color: var(--accent); border-color: var(--accent); }

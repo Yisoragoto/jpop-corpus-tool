@@ -60,6 +60,13 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::lyrics,
             // 检索
             commands::kwic,
+            commands::line_spans,
+            commands::listen_window,
+            commands::corpus_snapshot,
+            commands::corpus_frequency,
+            commands::collocations,
+            commands::keyness,
+            commands::song_profile,
             commands::search_lyrics,
             commands::quick_search,
             // 语料
@@ -81,6 +88,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::audio_set_rate,
             commands::audio_set_volume,
             commands::audio_set_loop,
+            commands::audio_set_stop_at,
             commands::audio_set_pitch,
             commands::pitch_cache_status,
             commands::pitch_cache_set_limit,
