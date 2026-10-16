@@ -19,6 +19,7 @@ import { api, type FrequencyRow, type PersonSummary } from "../api";
 import { imageColor, toHighlight } from "../coverColor";
 import { ensureFontFile, fetchFontCatalog, loadImportedFonts, lyricFontStack } from "../fonts";
 import { pyGrouped } from "../pyFormat";
+import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import { useAppSettings } from "../settings";
 import { groupHitsBySong, layoutCloud, mergeByLemma, type CloudWord, type Placed, type SongHits } from "../wordCloud";
 import { Avatar } from "./Avatar";
@@ -52,16 +53,16 @@ interface Props {
   playing: { songId: string; utteranceId: number } | null;
   /** 正在放的那一句：在云下面当字幕显示，选中的词标亮 */
   nowLine: NowLine | null;
-  /** 从这一句开始放，**不离开词云** */
-  onPlayLine: (songId: string, utteranceId: number, timeSec: number | null) => void;
-  /** 去看这首歌的歌词（也会从这一句放） */
-  onOpenSong: (songId: string, utteranceId: number, timeSec: number | null) => void;
+  /** 从这一句开始放。`fullscreen` = 同时进全屏歌词（退出来还是词云）；否则只在词云里放 */
+  onPlayLine: (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => void;
   /** 去检索页按词元查 */
   onSearchWord: (lemma: string) => void;
   /** 去看这个词的例句 */
   onShowExamples: (lemma: string) => void;
-  /** 演示：铺满整个窗口，录视频用 */
+  /** 演示：窗口全屏，录视频用 */
   present: boolean;
+  /** 上面盖着全屏歌词：词云这边不响应 Esc，也退到播放条底下 */
+  covered: boolean;
   onPresent: (on: boolean) => void;
   onError: (message: string) => void;
 }
@@ -200,10 +201,10 @@ export function WordCloud({
   playing,
   nowLine,
   onPlayLine,
-  onOpenSong,
   onSearchWord,
   onShowExamples,
   present,
+  covered,
   onPresent,
   onError,
 }: Props) {
@@ -233,15 +234,22 @@ export function WordCloud({
     };
   }, [onError]);
 
-  // 演示时按 Esc 退出
+  // 演示 = 窗口真正全屏（盖住任务栏）。离开词云时一并退出
   useEffect(() => {
     if (!present) return;
+    holdFullscreen("present");
+    return () => releaseFullscreen("present");
+  }, [present]);
+
+  // 演示时按 Esc 退出（上面盖着全屏歌词时，Esc 归歌词）
+  useEffect(() => {
+    if (!present || covered) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && pickedLemma === null) onPresent(false);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [present, pickedLemma, onPresent]);
+  }, [present, covered, pickedLemma, onPresent]);
 
   // 卡片上署谁、底图拼谁的照片：选了歌手就是选中的人，没选就是曲数最多、有照片的几位
   const chosen = useMemo(() => {
@@ -435,7 +443,7 @@ export function WordCloud({
 
   return (
     <section
-      className={`wc-stage${present ? " present" : ""}${pickedWord ? " with-panel" : ""}`}
+      className={`wc-stage${present ? " present" : ""}${pickedWord ? " with-panel" : ""}${covered ? " covered" : ""}`}
       ref={stageRef}
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
@@ -477,7 +485,7 @@ export function WordCloud({
               {saving ? "保存中…" : "保存 PNG"}
             </button>
           )}
-          <button className="wc-btn primary" onClick={() => onPresent(!present)} title={present ? "退出演示（Esc）" : "铺满整个窗口，录视频用"}>
+          <button className="wc-btn primary" onClick={() => onPresent(!present)} title={present ? "退出演示（Esc）" : "全屏显示词云，录视频用"}>
             {present ? "退出演示" : "演示"}
           </button>
         </div>
@@ -538,9 +546,9 @@ export function WordCloud({
             people={people}
             playing={playing}
             compact={present}
+            covered={covered}
             onClose={() => onPick(null)}
             onPlayLine={onPlayLine}
-            onOpenSong={onOpenSong}
             onSearchWord={onSearchWord}
             onShowExamples={onShowExamples}
             onError={onError}
@@ -607,9 +615,9 @@ function SongPanel({
   people,
   playing,
   compact,
+  covered,
   onClose,
   onPlayLine,
-  onOpenSong,
   onSearchWord,
   onShowExamples,
   onError,
@@ -621,9 +629,9 @@ function SongPanel({
   people: PersonSummary[];
   playing: { songId: string; utteranceId: number } | null;
   compact: boolean;
+  covered: boolean;
   onClose: () => void;
-  onPlayLine: (songId: string, utteranceId: number, timeSec: number | null) => void;
-  onOpenSong: (songId: string, utteranceId: number, timeSec: number | null) => void;
+  onPlayLine: (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => void;
   onSearchWord: (lemma: string) => void;
   onShowExamples: (lemma: string) => void;
   onError: (message: string) => void;
@@ -650,8 +658,9 @@ function SongPanel({
     };
   }, [word, performerIds, onError]);
 
-  // Esc 关掉这一栏（演示时第二下 Esc 才退出演示）
+  // Esc 关掉这一栏（演示时第二下 Esc 才退出演示）。盖着全屏歌词时不管
   useEffect(() => {
+    if (covered) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopImmediatePropagation();
@@ -660,7 +669,7 @@ function SongPanel({
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, [onClose, covered]);
 
   const photos = useMemo(() => new Map(people.map((p) => [p.name, p.imagePath])), [people]);
   // 合作署名「A/B」退到第一位演唱者的照片
@@ -706,7 +715,11 @@ function SongPanel({
           const now = playing?.songId === s.songId;
           return (
             <div key={s.songId} className={`wc-song${now ? " now" : ""}`} style={{ animationDelay: `${60 + Math.min(i, 12) * 35}ms` }}>
-              <button className="wc-song-play" onClick={() => onPlayLine(s.songId, s.first.utteranceId, s.first.timeSec)} title="从这一句开始放">
+              <button
+                className="wc-song-play"
+                onClick={() => onPlayLine(s.songId, s.first.utteranceId, s.first.timeSec, true)}
+                title="从这一句开始放，进全屏歌词（退出来还是词云）"
+              >
                 <span className="wc-song-face">
                   <Avatar path={photoOf(s.artist)} name={s.artist} size={40} />
                   <span className="wc-song-icon" aria-hidden="true">
@@ -725,11 +738,13 @@ function SongPanel({
                   </em>
                 </span>
               </button>
-              {!compact && (
-                <button className="wc-song-open" onClick={() => onOpenSong(s.songId, s.first.utteranceId, s.first.timeSec)} title="看这首歌的歌词">
-                  歌词 →
-                </button>
-              )}
+              <button
+                className="wc-song-open"
+                onClick={() => onPlayLine(s.songId, s.first.utteranceId, s.first.timeSec, false)}
+                title="只放，不进全屏歌词"
+              >
+                只播放
+              </button>
             </div>
           );
         })}

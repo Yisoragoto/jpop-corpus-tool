@@ -1492,6 +1492,8 @@ button.chip:hover { color: var(--fg); }
 /* 演示：铺满整个窗口（盖住导航和播放条），录视频用。Esc 或右上角退出 */
 .wc-stage.present { grid-template-rows: auto minmax(0, 1fr); position: fixed; inset: 0; z-index: 90; padding: 28px 36px 32px; animation: wc-present-in .5s var(--ease-out) backwards; }
 .wc-stage.present .wc-head { padding-left: 0; }
+/* 从演示里点歌进了全屏歌词：词云退到歌词（50）和播放条（60）底下，退出歌词时它还在 */
+.wc-stage.present.covered { z-index: 45; }
 .wc-stage.present .wc-who h2 { font-size: 26px; }
 .wc-stage.present .wc-tools .wc-btn { opacity: .35; transition: opacity .2s; }
 .wc-stage.present:hover .wc-tools .wc-btn { opacity: 1; }

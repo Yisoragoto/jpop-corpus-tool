@@ -55,8 +55,9 @@ in the repository under `legacy/` for reference, and `corpus.db` works with both
 - A relationship graph in the style of Obsidian: everyone and their collaborations as one network you can drag and zoom, hover to highlight neighbours; band–member links are dashed.
 - A release timeline: one lane per musician; where a band split, a dashed line leads to the members' solo lanes.
 - A word cloud on frosted glass over blurred artist photos, with selectable parts of speech (nouns by default) and
-  its own font. Click a word to list the songs it appears in; click a song and it **plays from that line**, with the
-  line shown as a caption under the cloud. A full-window presentation mode, and PNG export.
+  its own font. Click a word to list the songs it appears in; click a song and it **plays from that line in full-screen
+  lyrics**, returning to the cloud when you close them. The playing line shows as a caption under the cloud; there is a
+  full-screen presentation mode, and PNG export.
 - Songs have a breadcrumb (artist › album › title) and clickable credits; edit, replace lyrics and delete live in the "⋯" menu.
 - Lyrics follow playback line by line; click a line to jump there, or loop a single line.
 - Speed changes go through WSOLA time-stretching (**pitch stays put**); key changes are rendered once per song by the built-in Rubber Band library and cached.

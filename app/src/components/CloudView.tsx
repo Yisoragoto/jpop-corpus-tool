@@ -29,9 +29,11 @@ interface Memory {
   pos: string[];
   jpOnly: boolean;
   picked: string | null;
+  /** 演示开着：从歌词页回来时还开着 */
+  present: boolean;
 }
 
-const memory: Memory = { performerIds: [], pos: ["NOUN"], jpOnly: true, picked: null };
+const memory: Memory = { performerIds: [], pos: ["NOUN"], jpOnly: true, picked: null, present: false };
 
 /** 从某个人的档案打开：换成这个人，选中的词清掉（换了人，那个词多半不在了） */
 export function focusCloudOn(personId: number) {
@@ -43,14 +45,15 @@ export function focusCloudOn(personId: number) {
 interface Props {
   playing: { songId: string; utteranceId: number } | null;
   nowLine: NowLine | null;
-  onPlayLine: (songId: string, utteranceId: number, timeSec: number | null) => void;
-  onOpenSong: (songId: string, utteranceId: number, timeSec: number | null) => void;
+  onPlayLine: (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => void;
+  /** 上面盖着全屏歌词 */
+  covered: boolean;
   onSearchWord: (lemma: string) => void;
   onShowExamples: (lemma: string) => void;
   onError: (message: string) => void;
 }
 
-export function CloudView({ playing, nowLine, onPlayLine, onOpenSong, onSearchWord, onShowExamples, onError }: Props) {
+export function CloudView({ playing, nowLine, onPlayLine, covered, onSearchWord, onShowExamples, onError }: Props) {
   const settings = useAppSettings();
   const [performerIds, setPerformerIds] = useState(memory.performerIds);
   const [pos, setPos] = useState(memory.pos);
@@ -58,13 +61,13 @@ export function CloudView({ playing, nowLine, onPlayLine, onOpenSong, onSearchWo
   const [picked, setPicked] = useState(memory.picked);
   const [rows, setRows] = useState<FrequencyRow[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [present, setPresent] = useState(false);
+  const [present, setPresent] = useState(memory.present);
   const request = useRef(0);
 
   // 改了就记下来
   useEffect(() => {
-    Object.assign(memory, { performerIds, pos, jpOnly, picked });
-  }, [performerIds, pos, jpOnly, picked]);
+    Object.assign(memory, { performerIds, pos, jpOnly, picked, present });
+  }, [performerIds, pos, jpOnly, picked, present]);
 
   useEffect(() => {
     const id = ++request.current;
@@ -168,7 +171,7 @@ export function CloudView({ playing, nowLine, onPlayLine, onOpenSong, onSearchWo
         playing={playing}
         nowLine={nowLine}
         onPlayLine={onPlayLine}
-        onOpenSong={onOpenSong}
+        covered={covered}
         onSearchWord={onSearchWord}
         onShowExamples={onShowExamples}
         present={present}

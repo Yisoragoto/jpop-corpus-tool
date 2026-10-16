@@ -39,6 +39,7 @@ import { csvProblem, describeDelete, describeEdit, libraryApi, type MissingAudio
 import { segmentLine, type Piece } from "../lyricSegments";
 import { albumOwner, sameView, type LibraryView } from "../libraryIndex";
 import { morph } from "../motion";
+import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import type { LibraryActions, LibraryState } from "../useLibrary";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
 import { dictApi, type FindTermsResult } from "../dict/api";
@@ -563,14 +564,31 @@ export function LibraryPage({
     );
   };
 
-  /** 词云里点一首歌：从那一句开始放，人留在词云里（不切到歌词） */
+  /**
+   * 词云里点一首歌：从那一句开始放，人留在词云里（不切到歌词）。
+   * `fullscreen` 时同时进全屏歌词（窗口也全屏）；退出全屏歌词，回到的还是词云。
+   * 全屏歌词要等这首歌真的选上了再开，否则会先闪一下上一首。
+   */
+  const [stageFor, setStageFor] = useState<string | null>(null);
   const playLine = useCallback(
-    (songId: string, utteranceId: number, timeSec: number | null) => {
+    (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => {
       lastSongId.current = songId;
+      if (fullscreen) setStageFor(songId);
       void actions.openTrackById(songId, { scrollTo: utteranceId, seekTo: timeSec, autoPlay: true });
     },
     [actions],
   );
+  useEffect(() => {
+    if (stageFor === null || selected?.id !== stageFor) return;
+    setStageFor(null);
+    holdFullscreen("stage");
+    setStageOpen(true);
+  }, [stageFor, selected?.id]);
+  // 全屏歌词关了：放开窗口全屏（演示还开着的话窗口照旧全屏）
+  useEffect(() => {
+    if (!stageOpen) releaseFullscreen("stage");
+  }, [stageOpen]);
+  useEffect(() => () => releaseFullscreen("stage"), []);
 
   // 分析页点「打开词云」
   useEffect(() => {
@@ -797,11 +815,7 @@ export function LibraryPage({
                 : null
             }
             onPlayLine={playLine}
-            onOpenSong={(songId, utteranceId, timeSec) => {
-              go({ kind: "song" });
-              lastSongId.current = songId;
-              void actions.openTrackById(songId, { scrollTo: utteranceId, seekTo: timeSec, autoPlay: true });
-            }}
+            covered={stageOpen}
             onSearchWord={onSearchWord}
             onShowExamples={(lemma) => {
               go({ kind: "song" });
