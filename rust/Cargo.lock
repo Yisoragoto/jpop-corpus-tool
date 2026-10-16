@@ -1976,6 +1976,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jp-ffi"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-corpus",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "jp-import"
 version = "0.1.0"
 dependencies = [

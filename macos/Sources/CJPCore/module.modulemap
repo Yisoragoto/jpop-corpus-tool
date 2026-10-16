@@ -1,0 +1,6 @@
+// 头文件只有一份，在 Rust crate 里；这里用相对路径引用，不复制。
+// 链接哪个库由 Package.swift 的 linkerSettings 决定（libjp_ffi.a）。
+module CJPCore [system] {
+    header "../../../rust/crates/jp-ffi/include/jp_ffi.h"
+    export *
+}

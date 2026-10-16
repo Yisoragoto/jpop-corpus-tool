@@ -1,0 +1,56 @@
+name: macOS client
+
+# 原生 macOS 客户端（macos/）的门禁：构建 Rust 核心静态库 → swift build → swift test。
+# Swift 测试经真的 libjp_ffi.a 调 Rust，对着合成语料库检查跨语言的数据形状和「检索 → KWIC → 定位」那条链路。
+# 作者在 Windows 上开发，这里是 Swift 代码唯一会被编译、运行的地方。
+on:
+  push:
+    branches: ["main"]
+    paths: ["macos/**", "rust/**", ".github/workflows/macos.yml"]
+  pull_request:
+    paths: ["macos/**", "rust/**", ".github/workflows/macos.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+
+      - name: Rust core (jp-ffi) tests
+        working-directory: rust
+        run: cargo test -p jp-ffi -p jp-corpus --lib
+
+      - name: Build libjp_ffi.a
+        run: ./macos/scripts/build-rust.sh
+
+      - name: Swift build
+        working-directory: macos
+        run: swift build
+
+      - name: Swift tests
+        working-directory: macos
+        run: swift test
+
+      - name: App bundle
+        working-directory: macos
+        run: ./scripts/bundle.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JPOP-Corpus-macOS-unsigned
+          path: macos/build/JPOP Corpus.app
+          retention-days: 7
