@@ -1,0 +1,19 @@
+[package]
+name = "jp-setup"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tauri-free setup plumbing for JPOP Corpus Tool clients: resumable downloads and the Sudachi dictionary"
+
+# 两个客户端（Tauri 的 jp-app、macOS 的 jp-ffi）都要「下一份分词词典、找到它、说清楚它在哪」。
+# 这部分本来写在 jp-app 里，和 Tauri 没有关系，挪到这里两边共用，不复制。
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+# 下载：断点续传。纯 Rust，不要 C 工具链之外的东西
+ureq = "3"
+sha2 = "0.10"
+# 分词词典下回来是 .xz（217MB → 43MB）。纯 Rust 实现
+lzma-rs = "0.3"
+jp-tokenizer = { path = "../jp-tokenizer" }

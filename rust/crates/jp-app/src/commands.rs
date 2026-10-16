@@ -1267,38 +1267,8 @@ pub fn person_by_id(
 
 /// 复核用的一条。不把整个 `ScannedTrack` 端上去——那里面一半字段
 /// 是推断过程的中间产物，UI 用不上，白白撑大 payload。
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanItemView {
-    pub path: String,
-    pub file_name: String,
-    pub title: String,
-    pub artist: String,
-    pub album: String,
-    pub duration_sec: Option<f64>,
-    pub has_lyrics: bool,
-    /// 读 tag 时出的问题。为空表示一切正常。
-    pub warning: Option<String>,
-    /// 歌手是从 tag、文件名还是文件夹名定出来的。从文件夹名来的只是猜，界面不让它不经复核就导
-    pub artist_source: jp_import::ArtistSource,
-    pub action: jp_import::Action,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ScanResult {
-    pub summary: jp_import::PlanSummary,
-    pub items: Vec<PlanItemView>,
-    /// 分词器可不可用。不可用时导入仍能进行，只是不写 tokens——
-    /// UI 要在按下「导入」之前就把这件事说清楚。
-    pub tokenizer_ready: bool,
-    /// 选中但不是音频、因此没进计划的文件名。
-    ///
-    /// 单曲导入时用户可能顺手选中了 .lrc 或封面图。默不作声地丢掉
-    /// 会让人以为「选了 5 个却只导了 3 个」是 bug，所以原样报出来。
-    #[serde(default)]
-    pub ignored: Vec<String>,
-}
+/// 计划的形状在 `jp-import`，macOS 客户端用的是同一份
+pub use jp_import::{PlanItemView, ScanResult};
 
 /// 扫描一个目录（或单个音频文件），和现有曲库比对，返回一份计划供复核。
 ///
@@ -1342,39 +1312,13 @@ pub fn scan_files(
 
 /// 扫 + 比对 + 记下待确认的结果。`scan_folder` 和 `scan_files` 的共同实现。
 ///
-/// 同一个文件被选中两次（选了文件又选了它所在的目录）只算一次：
-/// 按路径去重在这里做，不然计划里会出现两条一模一样的、还互相判成「本批重复」。
+/// 扫哪些、怎么去重、怎么报「选中的不是音频」都在 [`jp_import::scan_targets`]。
 fn plan_targets(
     state: &AppState,
     paths: &[String],
     max_depth: Option<usize>,
 ) -> anyhow::Result<ScanResult> {
-    let depth = max_depth.unwrap_or(8);
-    let mut tracks: Vec<jp_import::ScannedTrack> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut ignored: Vec<String> = Vec::new();
-
-    for path in paths {
-        let target = std::path::Path::new(path);
-        let found = jp_import::scan_dir(target, depth);
-        if found.is_empty() && target.is_file() {
-            // 不是音频（.lrc、封面图、歌单文件……）。扫目录时这种文件本来就不计数，
-            // 但用户明确选中它的时候要说一声。
-            ignored.push(
-                target
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| path.clone()),
-            );
-            continue;
-        }
-        for track in found {
-            if seen.insert(track.path.clone()) {
-                tracks.push(track);
-            }
-        }
-    }
-    tracks.sort_by(|a, b| a.path.cmp(&b.path));
+    let (tracks, ignored) = jp_import::scan_targets(paths, max_depth.unwrap_or(8));
 
     let index = jp_import::LibraryIndex::from_corpus(&state.corpus())?;
     let result = review(state, &tracks, &index, ignored);
@@ -1386,36 +1330,14 @@ fn plan_targets(
     Ok(result)
 }
 
-/// 扫描结果 → 给界面复核的那份计划。**只算，不记**：记成待导入的一批是调用方的事。
+/// 扫描结果 → 给界面复核的那份计划（[`jp_import::review`]）。**只算，不记**。
 fn review(
     state: &AppState,
     tracks: &[jp_import::ScannedTrack],
     index: &jp_import::LibraryIndex,
     ignored: Vec<String>,
 ) -> ScanResult {
-    let plan = jp_import::plan(tracks, index);
-    let items = plan
-        .items
-        .iter()
-        .map(|item| PlanItemView {
-            path: item.track.path.clone(),
-            file_name: item.track.file_name.clone(),
-            title: item.track.title().to_string(),
-            artist: item.track.artist().to_string(),
-            album: item.track.album().to_string(),
-            duration_sec: item.track.duration_sec,
-            has_lyrics: item.track.lyrics_pick().is_some(),
-            warning: item.track.warning.clone(),
-            artist_source: item.track.artist_source(),
-            action: item.action.clone(),
-        })
-        .collect();
-    ScanResult {
-        summary: plan.summary(),
-        items,
-        tokenizer_ready: state.analyzer().is_some(),
-        ignored,
-    }
+    jp_import::review(tracks, index, state.analyzer().is_some(), ignored)
 }
 
 /// 去看的一个文件夹，和在里面找到了多少。

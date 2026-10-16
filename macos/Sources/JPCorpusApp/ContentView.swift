@@ -24,6 +24,7 @@ struct ContentView: View {
                         case .search: SearchView()
                         case .library: LibraryView()
                         case .analysis: AnalysisView()
+                        case .importer: ImportView()
                         }
                     }
                     .inspector(isPresented: $app.showLyrics) {
@@ -83,12 +84,15 @@ struct WelcomeView: View {
                 .foregroundStyle(.tint)
             Text("JPOP Corpus")
                 .font(.largeTitle.weight(.semibold))
-            Text("选择语料库文件夹（里面有 corpus.db）。Windows 版的库目录整个拷过来就能用；\n音频不在同一处的话，之后在设置里添加音频文件夹。")
+            Text("新建一个语料库，从音乐文件夹（音频 + 同名 .lrc）导入；\n或者选择已有的语料库文件夹（里面有 corpus.db），Windows 版的库目录整个拷过来就能用。")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             HStack(spacing: 12) {
-                Button("选择语料库文件夹…") { picking = true }
+                Button("新建语料库") { Task { await app.createLibrary() } }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .help("在默认位置建库（已经有就打开它），然后去导入页")
+                Button("选择语料库文件夹…") { picking = true }
                     .controlSize(.large)
                 Button("先看看示例") { Task { await app.openDemo() } }
                     .controlSize(.large)

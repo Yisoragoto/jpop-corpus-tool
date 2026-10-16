@@ -18,12 +18,14 @@ pub mod log;
 pub mod lyrics;
 pub mod maintenance;
 pub mod migrate;
-pub mod net;
+/// 断点续传下载。和 Tauri 无关，在 `jp-setup` 里，macOS 客户端也用它
+pub use jp_setup::net;
 pub mod mine;
 pub mod pitch;
 pub mod scrape;
 pub mod state;
-pub mod tokenizer;
+/// 分词词典放在哪、怎么补上。和 Tauri 无关，在 `jp-setup` 里，macOS 客户端也用它
+pub use jp_setup::sudachi as tokenizer;
 pub mod tracker;
 pub mod update;
 
