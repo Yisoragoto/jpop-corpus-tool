@@ -3,11 +3,13 @@
 # JPOP Corpus Tool
 
 [![license](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)](https://github.com/Yisoragoto/jpop-corpus-tool/releases)
-[![built with](https://img.shields.io/badge/built%20with-Tauri%202%20%C2%B7%20React%2019%20%C2%B7%20Rust-orange)](#development)
+[![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20%C2%B7%20macOS%2014%2B-lightgrey)](https://github.com/Yisoragoto/jpop-corpus-tool/releases)
+[![built with](https://img.shields.io/badge/built%20with-Tauri%202%20%C2%B7%20React%2019%20%C2%B7%20Rust%20%C2%B7%20SwiftUI-orange)](#development)
 
 A local J-pop corpus for Japanese learners. Import songs and LRC lyrics you own, read them line by line
-along with the audio, look words up Yomitan-style, and turn the lines you just heard into Anki cards.
+along with the audio, look words up Yomitan-style, search a word across your whole library and hear the line
+it is sung in, run corpus analyses — frequency, collocations, sub-corpus comparison — and turn the lines you
+just heard into Anki cards.
 
 [简体中文](README.md) · **English**
 
@@ -33,7 +35,7 @@ along with the audio, look words up Yomitan-style, and turn the lines you just h
 
 ## Download
 
-Grab the latest `JPOP.Corpus.Tool_x.y.z_x64-setup.exe` (or the `.msi`) from
+**Windows**: grab the latest `JPOP.Corpus.Tool_x.y.z_x64-setup.exe` (or the `.msi`) from
 [Releases](https://github.com/Yisoragoto/jpop-corpus-tool/releases). Windows 10/11 needs the
 **WebView2 runtime**, which the system usually already has and the installer offers to add if not.
 
@@ -41,30 +43,66 @@ Grab the latest `JPOP.Corpus.Tool_x.y.z_x64-setup.exe` (or the `.msi`) from
 an update for you — the installer is pulled from this repository's Releases and its SHA-256 is verified
 before anything is run. Automatic installing is off by default.
 
-Since 0.2.0 the desktop app is Tauri 2 + React + Rust (0.1.x was PyQt6). The old Python code is still
-in the repository under `legacy/` for reference, and `corpus.db` works with both.
+**macOS**: a native SwiftUI client lives in `macos/`; for now it is built from source — see
+[Native macOS client](#native-macos-client). Both clients share one Rust core and one library format, so a
+library folder copied over from Windows opens as is.
+
+The old PyQt6 Python code is kept under `legacy/` for reference; `corpus.db` works with it too.
 
 ## Features
 
 ### Library and playback
 
-- One library page (the old Library and People pages merged), browsed four ways: **musicians, behind the scenes, albums, songs**.
-  - Band members are nested under their band, former members with their years; a member who went solo gets their own profile, with solo work kept apart from the band years (the band's songs stay the band's).
-  - Memberships come from scraping (MusicBrainz), from suggestions based on credits that you confirm, or from manual edits; whatever you change or reject is never overwritten by a scrape.
-- A profile for every person: a header over their blurred photo, the roles they had, the bands they were in, a release axis, their works by album, and collaborators.
-- A relationship graph in the style of Obsidian: everyone and their collaborations as one network you can drag and zoom, hover to highlight neighbours; band–member links are dashed.
-- A release timeline: one lane per musician; where a band split, a dashed line leads to the members' solo lanes.
-- A word cloud on frosted glass over blurred artist photos, with selectable parts of speech (nouns by default) and
-  its own font. Click a word to list the songs it appears in; click a song and it **plays from that line in full-screen
-  lyrics**, returning to the cloud when you close them. The playing line shows as a caption under the cloud; there is a
-  full-screen mode, and PNG export. F11 puts the whole app in full screen.
-- Songs have a breadcrumb (artist › album › title) and clickable credits; edit, replace lyrics and delete live in the "⋯" menu.
-- Lyrics follow playback line by line; click a line to jump there, or loop a single line.
-- Speed changes go through WSOLA time-stretching (**pitch stays put**); key changes are rendered once per song by the built-in Rubber Band library and cached.
-- A player bar modelled on Apple Music: frosted glass, ±5 s skips, speed and key in one panel, remaining / total time on a click.
-- Full-screen lyrics with the cover art blurred to fill the background, a side card listing vocals, lyrics, music and arrangement, and the player floating on top as frosted glass.
-- Laid out for narrow windows and for 27-inch and larger screens.
+- One library page for songs and people, browsed four ways: **musicians, behind the scenes, albums, songs**.
+  - Band members are nested under their band, former members with their years; a member who went solo gets their
+    own profile, with solo work kept apart from the band years (the band's songs stay the band's).
+  - Memberships come from scraping (MusicBrainz), from suggestions based on credits that you confirm, or from
+    manual edits; whatever you change or reject is never overwritten by a scrape.
+  - The sidebar collapses to give the content the full width.
+- A profile for every person: a header over their blurred photo, the roles they had, the bands they were in, a
+  release axis, their works by album, collaborators, and where the details came from. Artist photos can be
+  replaced by hand (scraping won't overwrite them, and the scraped one can be restored).
+- Songs have a breadcrumb (artist › album › title) and clickable credits; edit, replace lyrics, line-by-line
+  lyric editing, source & validation, and delete live in the "⋯" menu.
+
+The **relationship graph** follows Obsidian's graph view: everyone and their collaborations as one network. Node
+colour is the role (vocals, music, lyrics, arrangement), people with a photo show it, and node size follows how
+many songs they are on; solid lines are shared credits, dashed lines are band membership. Drag, zoom, hover to
+highlight neighbours, filter by role and by "at least N songs together", show only one person's neighbourhood,
+and double-click to open a profile.
+
+![Relationship graph](docs/screenshots/graph.webp)
+
+The **timeline** gives each musician a lane with releases laid out by date, each node being the album or single
+cover; crowded spots are staggered or folded into "+N", and where a band split, a dashed line leads to the
+members' solo lanes. Click a name for that person's zoomed time tree, horizontal or vertical.
+
+The **word cloud** sits on frosted glass over blurred artist photos. Its scope can be the whole library, one
+artist or a sub-corpus; part of speech (nouns by default), Japanese-only, word count and font are all adjustable.
+Click a word to list the songs it appears in; click a song and it **plays from that line in full-screen lyrics**,
+returning to the cloud when you close them. The playing line shows as a caption under the cloud; there is a
+full-screen mode and PNG export.
+
+<table>
+<tr>
+<td><img src="docs/screenshots/timeline.webp" alt="Timeline"></td>
+<td><img src="docs/screenshots/wordcloud.webp" alt="Word cloud"></td>
+</tr>
+</table>
+
+Playback:
+
+- Lyrics follow playback line by line; click a line to jump there, or loop a single line. Where a line starts and
+  ends in the audio follows one rule everywhere (until the next line starts; instrumental breaks are estimated from
+  the line's length), so looping the line before a break doesn't loop the break with it.
+- A player bar modelled on Apple Music: frosted glass, ±5 s skips, speed and key in one panel, remaining / total
+  time on a click.
+- Speed changes go through WSOLA time-stretching (**pitch stays put**); key changes are rendered once per song by
+  the built-in Rubber Band library and cached.
+- Full-screen lyrics with the cover art blurred to fill the background, a side card listing vocals, lyrics, music
+  and arrangement, and the player floating on top as frosted glass.
 - Furigana over kanji only or over whole words; font, size, line height and letter spacing are all adjustable.
+- F11 puts the whole app in full screen; layouts are tuned for narrow windows and for 27-inch and larger screens.
 
 ### Word lookup (Yomitan dictionaries)
 
@@ -78,7 +116,7 @@ directly:
   so clicking the first word of 打ち込んでいませんでした gets you back to 打ち込む.
 - Glossaries keep their original structure (nesting, examples, images); pitch and frequency are shown per reading.
 - Clicking a word in the library puts **Dictionary** and **Examples** side by side: the glossary, and every line
-  in your own corpus where that word appears.
+  in your own corpus where that word appears, each with ▶ to hear it.
 
 **Dictionaries are not included.** [MarvNC/yomitan-dictionaries](https://github.com/MarvNC/yomitan-dictionaries)
 collects download links for the usual ones (JMdict, 三省堂, 明鏡, JPDB frequency, pitch-accent dictionaries…).
@@ -86,21 +124,75 @@ Each dictionary's licence and redistribution terms are its author's; check them 
 
 ![Lookup inside full-screen lyrics](docs/screenshots/lyrics-lookup.webp)
 
-### Search and analysis
+### Search: from a word to the line it is sung in
 
-- KWIC concordance with the keyword centred; filter by artist, year, part of speech, cross-line matches or Japanese-only, export CSV.
-  Multi-word expressions are written with `+` (`て+しまう`).
-- **Search results are wired to the player**: ▶ plays just that line (stops at the line end), ⟲ adds one line of context on each side,
-  clicking a hit opens the song at that line and keeps playing with the lyrics highlighted. Line-level precision (LRC timestamps).
-- Collocations (logDice / MI / log-likelihood) next to the KWIC; pick one to narrow the concordance to lines where it occurs nearby.
-- Chorus-aware counting: repeated lines within a song can be counted once; sub-corpus comparison (keyness) by artist and year.
-  Every analysis result carries its provenance (scope, counting unit, corpus fingerprint).
-- Frequency table (lemma × POS with JLPT level), a timeline by year, and a corpus report as TXT.
-- **Sub-corpora**: slice by era, artist, genre, language or lyric completeness instead of treating the whole library as one; save the conditions under a name, optionally counting a repeated chorus once.
-- **Reproducible analyses**: archiving a report or frequency table stores the filter, every song in scope with its lyric version, the tokenizer (engine, dictionary, split mode, config fingerprint), the counting rules and the time; re-run it later on the current library and get an item-by-item explanation of what changed.
-- **Lyric quality and provenance**: every set of lyrics keeps its source, import time and original text (replacing lyrics adds a version; old ones can be viewed and restored) and is checked for missing lines, duplicates, timestamp drift and mojibake; each line carries a timestamp confidence and tokenization status, and token corrections and metadata edits leave a revision history. See [docs/provenance.md](docs/provenance.md) (Chinese).
+- KWIC concordance with the keyword centred. Match by written form or by dictionary form (駆ける / 駆けた / 駆けろ
+  together); filter by artist, year, part of speech, cross-line matches or Japanese-only, or restrict it to a
+  sub-corpus; export CSV.
+- Multi-word expressions are written with `+` (`て+しまう`); a "near" filter keeps only lines where another word
+  occurs within a few words.
+- Identical lines within one song (choruses) are folded into one hit by default, with the repeat count shown.
+- **Search results are wired to the player**: ▶ plays just that line (stops at the line end), ⟲ adds one line of
+  context on each side, and clicking a hit opens the song at that line and keeps playing with the lyrics
+  highlighted; the hit that's playing is highlighted too. Precision is per line (LRC timestamps; no word timing).
+- A collocation panel lists words within 3 words of the keyword; pick one to narrow the concordance to lines
+  where it occurs nearby.
+
+### Analysis: choruses don't inflate the numbers, and results say where they came from
+
+J-pop repeats its choruses: in a real library, repeated lines make up about 23 % of lines and 20 % of tokens.
+Counted naively, a good part of a frequency list is chorus. So every statistic on the Analytics page can count
+**every token**, or count **each repeated line within a song once**.
+
+- **Frequency**: lemma × part of speech with JLPT level; both counts side by side, plus the share coming from
+  repeated lines.
+- **Collocations**: logDice, MI, t-score and log-likelihood (2×2 contingency, expectations from the actual window
+  positions).
+- **Chorus effect**: the same songs counted both ways, showing which words were pushed up the list by choruses.
+- **Sub-corpus comparison**: pick two sets of songs (one artist against the rest, the 2010s against the 2020s…)
+  and find the words one side uses markedly more or less, by signed log-likelihood and log ratio.
+- **Song profile**: how much of a song is repeated, and its characteristic words compared with the other songs
+  (content words only); in the Library's right pane, click a word to search it.
+- Frequency table, a timeline by year, and a corpus report as TXT.
+
+**Sub-corpora**: slice by artist, year, album, genre, lyric language, chosen songs and minimum lyric completeness —
+conditions are ANDed, multiple values within one are ORed. Save them under a name and use them directly in KWIC,
+the word cloud, examples, frequency, collocations and comparisons.
+
+**Every result carries its provenance**: scope, counting unit, rule version, and a fingerprint of the library at
+the time (line and token counts, corrections, a hash of the metadata). Same fingerprint and parameters, same
+result; importing songs or correcting tokenisation changes the fingerprint, so it's obvious when two numbers came
+from different libraries.
+
+**Reproducible analyses**: archiving an analysis stores the filter, every song in scope with its lyric version,
+the tokenizer (engine, dictionary, split mode, config fingerprint), the counting rules, the app and schema
+versions, and the time. Re-run it later on the current library: it is saved as a new run and compared item by
+item, with an explanation of why the result changed — the library changed (lyrics replaced, tokens corrected,
+songs added) or the counting rules did.
 
 ![Analytics page](docs/screenshots/analytics.webp)
+
+### Corpus quality and provenance
+
+A corpus is pieced together from many places: lyrics from an `.lrc` next to the audio, from an online search, or
+pasted in by hand. To know what each number stands on:
+
+- **Every set of lyrics is kept as a version**: its source (file / embedded / online / manual), import time, the
+  original text verbatim and a content fingerprint. Replacing lyrics adds a version; old ones can be viewed and
+  restored.
+- **Automatic validation**: missing or truncated lines, pasted duplicates, timestamps going backwards or past the
+  end of the song, long gaps, mojibake, leftover timestamps and credits, lyrics not in Japanese; plus an estimated
+  completeness. Each line has a timestamp confidence and a tokenisation status (auto / corrected / pending / empty).
+- **Line-by-line lyric editing**: fix text, add or remove lines, move timestamps; saved as a new version,
+  re-tokenised, with your token corrections re-applied by text.
+- **Revision history**: replaced lyrics, token corrections and reverts, re-tokenisation, metadata edits and
+  deletions are all recorded.
+- **Field provenance**: whether each field came from tags, the file name, the folder, scraping (which source, what
+  match score) or your own edit; manual edits are never overwritten by automatic steps. Artist details record
+  their source and confidence as well.
+- A corpus-quality card on the Analytics page sums up which songs' lyrics look suspicious and what's missing.
+
+Design notes: [docs/provenance.md](docs/provenance.md) (Chinese).
 
 ### Anki mining
 
@@ -121,26 +213,53 @@ to add cards through. That is how cards get made here — **local only, nothing 
 ### Importing and metadata
 
 - Import a folder **or individual songs**; scanning is read-only, nothing is written until you have reviewed the plan;
-  **the original metadata in your files is never overwritten**.
+  **the original metadata in your files is never overwritten**. The plan marks each file as new, already in the
+  library, a possible duplicate (not imported — left for you to look at) or unimportable, and shows whether the
+  artist came from tags, the file name or the folder name.
 - Drop new audio into a folder your library already uses and the app notices on the next start: a banner lists the
   new songs and imports them in one click (or sends you to the plan when a file's tags can't be read). The check is
   read-only, never imports on its own, and the **Import** page shows which folders it looks at.
-- Lyrics: an `.lrc` sitting next to the audio is picked up on import. When there is none —
+- Lyrics: an `.lrc` sitting next to the audio, or lyrics embedded in the audio file, are picked up on import. When
+  there are none —
   - **Settings → Library maintenance → Fill in missing lyrics** does the whole library: it looks next to the audio
     first, then searches online (NetEase).
-  - Per song, the library (the "⋯" next to the title) offers **Fetch online** and **Import a lyrics file…** (`.lrc` / `.txt`; UTF-8, Shift-JIS and GBK are all read).
+  - Per song, the library (the "⋯" next to the title) offers **Fetch online** and **Import a lyrics file…**
+    (`.lrc` / `.txt`; UTF-8, Shift-JIS and GBK are all read).
   - **No guessing**: a candidate is accepted only if title, artist and duration all line up — too many songs share a
     title, and the wrong lyrics are worse than none. Whatever can't be matched is left for you to supply.
   - Fetched lyrics land in `raw/lyrics_lrc/{song_id}.lrc` beside the imported ones, and tokenisation you corrected
     by hand is re-applied by text, so it survives replacing the lyrics.
-- Scraping: iTunes → MusicBrainz for tracks, Cover Art Archive for covers, Deezer for artist photos. Anything below
-  the confidence threshold stops in a review queue for a human. Scraping an artist also picks up band members, the
-  date a band split and full release dates (when MusicBrainz has more than one artist by that name, it declines to
-  guess rather than attach someone else's members).
-- Already have a library somewhere else (a 0.1.x checkout, say)? **Settings → Library maintenance → Migrate from
-  another library directory** previews what would move, then **merges** songs, lyrics, tokenisation, credits, play
-  history and dictionaries into the current library. Songs you already have are skipped, and audio files are not
-  copied — they keep playing from where they are.
+- The Scrape page is a library-completeness checklist: identification, track covers, album covers, artist photos,
+  lyrics and durations each get a row with a progress bar (how many are complete out of how many), and the row that
+  has gaps carries a button saying exactly what it will do ("fill 1 cover", "scrape 3 artists").
+  - Tracks are identified through iTunes → MusicBrainz, covers come from Cover Art Archive, artist photos from
+    Deezer. Anything below the confidence threshold stops in a review queue for a human.
+  - Scraping an artist also picks up band members, the date a band split and full release dates (when MusicBrainz
+    has more than one artist by that name, it declines to guess rather than attach someone else's members).
+- Already have a library somewhere else? **Settings → Library maintenance → Migrate from another library
+  directory** previews what would move, then **merges** songs, lyrics (with their versions and provenance),
+  tokenisation, credits, play history, sub-corpora and dictionaries into the current library. Songs you already
+  have are skipped, and audio files are not copied — they keep playing from where they are.
+
+### Native macOS client
+
+`macos/` is a native SwiftUI client (playback through AVFoundation) with **no business logic of its own**: search,
+analysis, line spans, import, tokenisation, lookup, the schema and its migrations all come from the same Rust core
+(through `jp-ffi`: one entry point, JSON in and out, method names matching the Windows app's commands).
+
+- Open a library copied from Windows: when it stores paths like `E:\...`, audio is found by file name in folders
+  you point it at.
+- Or build one from scratch in `~/Library/Application Support/JPOP Corpus Tool`: pick a music folder → review the
+  plan → import with progress (and stop midway if you like); the tokenizer dictionary downloads from the Import
+  page (the same file and checksum as on Windows).
+- Search → KWIC → Space to hear the line / Return to open the song, with the lyrics inspector highlighting along;
+  single-line loop and speed control (pitch preserved).
+- Analysis: chorus-aware frequency, the collocation panel, sub-corpus comparison, song profiles.
+- Right-click a word in the lyrics panel to search it or look it up (reads `dictionaries.db` in the library folder).
+
+Not there yet: scraping, importing Yomitan dictionaries on the Mac (copy the `dictionaries.db` built on Windows for
+now), Anki mining, replacing and editing lyrics. Architecture and build notes: [docs/clients.md](docs/clients.md)
+(Chinese).
 
 ## First run
 
@@ -149,7 +268,7 @@ to add cards through. That is how cards get made here — **local only, nothing 
 2. Review the scan plan, then import.
 3. If songs came in without lyrics, use **Settings → Library maintenance → Fill in missing lyrics**, or handle a
    single song from the library.
-4. For covers and metadata, run the **Scrape** page.
+4. For covers, artist photos and band members, fill the gaps on the **Scrape** page.
 5. For lookup, import Yomitan zips on the **Dictionaries** page (dictionaries registered by 0.1.x can be migrated in one click).
 6. For mining, start Anki with AnkiConnect installed (see below).
 
@@ -167,12 +286,17 @@ So a fresh install opens straight away with an empty library. If you already hav
 point **Settings → About → Library → Change directory…** at it and restart. The data directory lives outside the
 install directory, so uninstalling never takes your songs and corpus with it.
 
+The schema is versioned: an older library is brought up to date on open (tables and columns are only added,
+existing data is untouched), and a library newer than the app is refused rather than damaged.
+On macOS the default directory is `~/Library/Application Support/JPOP Corpus Tool`.
+
 > **Furigana, clicking words in lyrics and tokenisation on import need the Sudachi dictionary.** It is not in the
-> installer (207 MB unpacked). Since 0.2.5 the app downloads it for you: a banner offers it when it's missing, and
-> **Settings → Lyrics → Tokeniser dictionary (Sudachi)** has a Download button — a 43 MB `.xz` from this
-> repository's `sudachi-dict-core` release, checked against a fixed SHA-256 and unpacked into `sudachi/` in the
+> installer (207 MB unpacked). A banner offers it when it's missing, and **Settings → Lyrics → Tokeniser
+> dictionary (Sudachi)** has a Download button — a 43 MB `.xz` from this repository's `sudachi-dict-core`
+> release (interrupted downloads resume), checked against a fixed SHA-256 and unpacked into `sudachi/` in the
 > library directory. It is fetched once per library directory. The same card can instead copy it from a folder
-> you already have (a 0.1.x project or its venv).
+> you already have (another library directory, a 0.1.x project or its venv). Once it's installed, songs imported
+> without tokenisation are tokenised on the spot.
 >
 > The dictionary is looked up in this order:
 >
@@ -180,7 +304,8 @@ install directory, so uninstalling never takes your songs and corpus with it.
 > 2. `sudachi/` in the library directory — downloaded, copied in from Settings, or carried over by migration;
 > 3. `resources/sudachi/` next to the executable — the installer doesn't ship one; only used if you put it there.
 >
-> Without it, playback, the Dictionaries page, search and mining still work.
+> Without it, playback, the Dictionaries page, search and mining still work; newly imported songs just aren't
+> tokenised, so search and analysis can't see them.
 
 ### Anki
 
@@ -198,6 +323,7 @@ Mining **only appends**: a word you already made a card for is skipped, never ov
 - [Node.js](https://nodejs.org/) 20+
 - [Rust](https://rustup.rs/) stable, with the MSVC C++ build tools (SQLite, LAME and Rubber Band are compiled from source)
 - Windows 10/11 with the WebView2 runtime
+- For the macOS client: macOS 14+ and Xcode 15.3+ (Swift 5.10)
 
 ### Run
 
@@ -214,6 +340,14 @@ npm run app:dev
 npm run app:build    # installers land in rust/target/release/bundle/
 ```
 
+### macOS client
+
+```bash
+./macos/scripts/build-rust.sh      # build the Rust core as libjp_ffi.a (pass "universal" for a fat binary)
+cd macos && swift run JPCorpus      # run it; ./scripts/bundle.sh makes a .app
+swift test                          # calls Rust through the real static library: data shapes, import and search end to end
+```
+
 ### Checks
 
 ```powershell
@@ -228,18 +362,23 @@ cargo clippy --workspace --all-targets
 The first launch creates an empty library in the data directory. `examples/` shows the data formats without any
 copyrighted content.
 
+CI runs two workflows: `check.yml` (frontend typecheck and tests, Rust tests and clippy) and `macos.yml` on a macOS
+runner (Rust static library, `swift build`, `swift test` — including "empty folder → import → tokenise → search"
+with a cached Sudachi dictionary — and the .app bundle).
+
 ### Project layout
 
 ```text
 app/           Frontend (React 19 + TypeScript strict + Vite)
 rust/          Rust workspace
   jp-app/        Tauri shell: commands, state, path permissions
-  jp-corpus/     Data layer; all SQL lives here
+  jp-corpus/     Data layer, all SQL lives here; search, analysis, sub-corpora, line spans, provenance, migrations
   jp-tokenizer/  Tokenisation and UPOS mapping (Sudachi)
-  jp-audio/      Playback: WSOLA stretching, spectrum, single-line loop
+  jp-setup/      Locating, downloading, verifying and resuming the tokenizer dictionary (shared by both clients)
+  jp-audio/      Playback: WSOLA stretching, key change, spectrum, single-line loop
   jp-dict/       Yomitan-style lookup and dictionary import
   jp-anki/       Card mining and the mining report
-  jp-scraper/    Track identification, covers, artist photos, online lyrics
+  jp-scraper/    Track identification, covers, artist photos, band members, online lyrics
   jp-import/     Scan, plan, write
   jp-normalize/  Title / artist normalisation
   jp-ffi/        C ABI (JSON in/out) for the native macOS client, see docs/clients.md
@@ -252,8 +391,19 @@ examples/      Data-format samples with no copyrighted content
 raw/           Local audio and lyrics; contents are git-ignored
 ```
 
-`docs/` records how each subsystem works, why it was done that way, and which numbers were reconciled against
-the old version during the port.
+`docs/` (in Chinese) records how each subsystem works, why it was done that way, and which numbers were
+reconciled against the old version during the port:
+
+| Doc | About |
+|---|---|
+| [clients.md](docs/clients.md) | One Rust core, two clients; how data maps to audio; counting rules for analysis |
+| [provenance.md](docs/provenance.md) | Lyric versions, validation, revision history, field provenance, reproducible analysis runs |
+| [import.md](docs/import.md) | Scan, plan, write; lyric matching |
+| [tokenizer.md](docs/tokenizer.md) · [token-corrections.md](docs/token-corrections.md) | Tokenisation, POS mapping, token corrections |
+| [dictionary.md](docs/dictionary.md) | The Yomitan lookup port and its reconciliation |
+| [anki.md](docs/anki.md) | Mining, the Lyrics note type, the mining report |
+| [scraper.md](docs/scraper.md) · [scraper-rust.md](docs/scraper-rust.md) | Scraping sources, matching and confidence |
+| [rust-core.md](docs/rust-core.md) · [tauri-shell.md](docs/tauri-shell.md) | What each Rust crate does; the Tauri shell |
 
 ## Libraries
 
@@ -265,6 +415,7 @@ the old version during the port.
 | [Symphonia](https://github.com/pdeljanov/Symphonia) (decoding) | MPL-2.0 |
 | [sudachi.rs](https://github.com/WorksApplications/sudachi.rs) | Apache-2.0 |
 | [rusqlite](https://github.com/rusqlite/rusqlite) · SQLite | MIT · Public Domain |
+| [lofty](https://github.com/Serial-ATA/lofty-rs) (audio tags) | MIT / Apache-2.0 |
 | [ureq](https://github.com/algesten/ureq) | MIT / Apache-2.0 |
 | [serde](https://serde.rs/) | MIT / Apache-2.0 |
 
