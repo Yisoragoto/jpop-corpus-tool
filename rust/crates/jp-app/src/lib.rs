@@ -152,6 +152,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::scrape_skip,
             commands::scrape_retry_failed,
             commands::artist_roster,
+            commands::library_completeness,
             commands::scrape_artist,
             commands::scrape_artists_start,
             commands::fill_album_artwork,

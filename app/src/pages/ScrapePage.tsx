@@ -1,20 +1,22 @@
 /**
- * 刮削页。要求书第十一条那个「Scraping Review UI」。
+ * 刮削页 = 库的完整度。
  *
- * 三件事，按重要性排：
+ * 用户关心的不是刮削器的状态机，而是「我的库还缺什么、点哪里补」。所以一种 metadata 一行：
+ * 进度条 + 齐了几个 / 一共几个；齐了的打勾变灰，缺的那行右边只有一个写明数量的按钮（「补 1 张」）。
+ * 点之前就知道会做什么。
  *
- * 1. **复核队列。** 置信度不够的停在这里等人看，而不是自信地猜错写进库。
- *    每条都并排给出「本地写的是什么」和「候选是什么」，外加打分解释——
- *    用户要能一眼看出为什么它不确定。
- * 2. **失败要说清原因，并说该怎么办。** 「限流」和「搜索无结果」都算失败，
- *    但前者等一会儿重试就好，后者重试一万次也一样。
- * 3. **批量刮削可中断。** 209 首要十几分钟，不能只给一个转圈的图标。
+ * 其余的按重要性往下排：
+ *
+ * 1. **正在跑的作业**只在跑的时候出现一条，可以中断。批量刮削要十几分钟，不能只给一个转圈。
+ * 2. **复核队列。** 置信度不够的停在这里等人看，而不是自信地猜错写进库。空的时候就一行字。
+ * 3. 失败、跳过的数字可以点开看是哪几首。
+ *
+ * 操作的结果写在那一行右边，不弹横幅——横幅只留给真的出错。
+ * 技术说明（MusicBrainz → Deezer 的顺序、用曲目封面填专辑封面）放进按钮的 tooltip。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-
-import { CommandButton } from "../components/CommandButton";
 
 import {
   api,
@@ -22,6 +24,9 @@ import {
   formatDuration,
   SCRAPE_STATUS_LABELS,
   type ArtistRow,
+  type Completeness,
+  type CompletenessCount,
+  type LyricsProgress,
   type ReviewItem,
   type ScrapeAttempt,
   type ScrapeCandidate,
@@ -29,7 +34,8 @@ import {
   type ScrapeStatusName,
   type ScrapeSummaryCounts,
 } from "../api";
-import { Stat } from "../components/Stat";
+import { Avatar } from "../components/Avatar";
+import { CommandButton } from "../components/CommandButton";
 
 interface Props {
   onError: (message: string) => void;
@@ -37,137 +43,172 @@ interface Props {
   onChanged: () => void;
 }
 
-const QUEUES: { key: ScrapeStatusName; label: string }[] = [
-  { key: "low_confidence", label: "需确认" },
-  { key: "failed", label: "失败" },
-  { key: "success", label: "已匹配" },
-  { key: "skipped", label: "已跳过" },
-];
+type RowKey = "identified" | "trackCovers" | "albumCovers" | "photos" | "lyrics" | "durations";
+
+const errorText = (e: unknown) => String((e as { message?: string })?.message ?? e);
 
 export function ScrapePage({ onError, onChanged }: Props) {
   const [summary, setSummary] = useState<ScrapeSummaryCounts | null>(null);
-  const [queue, setQueue] = useState<ScrapeStatusName>("low_confidence");
-  const [items, setItems] = useState<ReviewItem[]>([]);
+  const [complete, setComplete] = useState<Completeness | null>(null);
+  const [artists, setArtists] = useState<ArtistRow[]>([]);
+  const [review, setReview] = useState<ReviewItem[]>([]);
+  /** 点开的「失败」或「已跳过」列表；null 是收着 */
+  const [extra, setExtra] = useState<ScrapeStatusName | null>(null);
+  const [extraItems, setExtraItems] = useState<ReviewItem[]>([]);
   const [progress, setProgress] = useState<ScrapeProgress | null>(null);
+  const [lyricsJob, setLyricsJob] = useState<LyricsProgress | null>(null);
   const [running, setRunning] = useState(false);
-  const [busy, setBusy] = useState(false);
+  /** 正在跑的一次性操作（不是后台作业的那种），那一行的按钮显示「…中」 */
+  const [busyRow, setBusyRow] = useState<RowKey | null>(null);
+  /** 每一行最近一次操作的结果，写在那一行右边 */
+  const [notes, setNotes] = useState<Partial<Record<RowKey | "review", string>>>({});
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [history, setHistory] = useState<ScrapeAttempt[]>([]);
-  const [artists, setArtists] = useState<ArtistRow[]>([]);
-  const [albumNote, setAlbumNote] = useState("");
-  const [backfilling, setBackfilling] = useState(false);
-  const [coverNote, setCoverNote] = useState("");
-  const [acceptNote, setAcceptNote] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
   const errorRef = useRef(onError);
   errorRef.current = onError;
 
-  const refresh = useCallback(
-    async (status: ScrapeStatusName) => {
+  const note = (row: RowKey | "review", text: string) => setNotes((n) => ({ ...n, [row]: text }));
+
+  const refresh = useCallback(async () => {
+    try {
+      const [counts, completeness, roster, queue] = await Promise.all([
+        api.scrapeSummary(),
+        api.libraryCompleteness(),
+        api.artistRoster(),
+        api.scrapeReviewQueue(["low_confidence"], 200),
+      ]);
+      setSummary(counts);
+      setComplete(completeness);
+      setArtists(roster);
+      setReview(queue);
+    } catch (e) {
+      errorRef.current(errorText(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    void api.scrapeIsRunning().then(setRunning).catch(() => undefined);
+    void api.lyricsFillRunning().then((r) => r && setLyricsJob((j) => j ?? EMPTY_LYRICS)).catch(() => undefined);
+  }, [refresh]);
+
+  // 点开的失败 / 跳过列表跟着刷新
+  useEffect(() => {
+    if (extra === null) return;
+    void api
+      .scrapeReviewQueue([extra], 200)
+      .then(setExtraItems)
+      .catch((e) => errorRef.current(errorText(e)));
+  }, [extra, summary]);
+
+  // 后台刮削（曲目或歌手）的进度
+  useEffect(() => {
+    const off = listen<ScrapeProgress>("scrape://progress", (event) => {
+      setProgress(event.payload);
+      if (event.payload.finished) {
+        setRunning(false);
+        const p = event.payload;
+        // 整批断了要说出来：这是真错误，走横幅
+        if (p.error) errorRef.current(`刮削中断：${p.error}`);
+        note(p.kind === "artist" ? "photos" : "identified", `${p.cancelled ? "已中断" : "跑完了"}：处理 ${p.done}/${p.total}`);
+        void refresh();
+        onChanged();
+      }
+    });
+    return () => {
+      void off.then((f) => f());
+    };
+  }, [refresh, onChanged]);
+
+  // 补歌词的进度
+  useEffect(() => {
+    const off = listen<LyricsProgress>("lyrics://progress", (event) => {
+      setLyricsJob(event.payload);
+      const p = event.payload;
+      if (p.finished) {
+        if (p.error !== "") errorRef.current(`补齐歌词中断：${p.error}`);
+        note(
+          "lyrics",
+          `${p.cancelled ? "已停下" : "补完了"}：补上 ${p.filled}，挑不出来 ${p.notFound}` +
+            (p.failed > 0 ? `，失败 ${p.failed}` : ""),
+        );
+        void refresh();
+        onChanged();
+      }
+    });
+    return () => {
+      void off.then((f) => f());
+    };
+  }, [refresh, onChanged]);
+
+  const startJob = useCallback(
+    async (kind: "track" | "artist", row: RowKey, begin: () => Promise<number>, nothing: string) => {
+      setMenuOpen(false);
       try {
-        const [counts, rows, roster] = await Promise.all([
-          api.scrapeSummary(),
-          api.scrapeReviewQueue([status], 200),
-          api.artistRoster(),
-        ]);
-        setSummary(counts);
-        setItems(rows);
-        setArtists(roster);
+        const total = await begin();
+        if (total === 0) {
+          note(row, nothing);
+          return;
+        }
+        setRunning(true);
+        setProgress({ ...EMPTY_PROGRESS, kind, total });
       } catch (e) {
-        errorRef.current(String((e as { message?: string })?.message ?? e));
+        errorRef.current(errorText(e));
       }
     },
     [],
   );
 
-  useEffect(() => {
-    void refresh(queue);
-    void api.scrapeIsRunning().then(setRunning).catch(() => undefined);
-  }, [queue, refresh]);
-
-  // 后台批量作业的进度
-  useEffect(() => {
-    const unlisten = listen<ScrapeProgress>("scrape://progress", (event) => {
-      setProgress(event.payload);
-      if (event.payload.finished) {
-        setRunning(false);
-        // 整批断了要说出来。以前这里只会安静地变成「完成」
-        if (event.payload.error) errorRef.current(`刮削中断：${event.payload.error}`);
-        void refresh(queue);
-        onChanged();
-      }
-    });
-    return () => {
-      void unlisten.then((f) => f());
-    };
-  }, [queue, refresh, onChanged]);
-
-  const start = useCallback(
-    async (onlyMissing: boolean) => {
-      setBusy(true);
+  /** 一次性的操作：跑完写一句结果到那一行，然后刷新计数 */
+  const runOnce = useCallback(
+    async (row: RowKey, work: () => Promise<string>) => {
+      setBusyRow(row);
       try {
-        const total = await api.scrapeStart(onlyMissing, 1000);
-        if (total === 0) {
-          errorRef.current("没有需要刮削的曲目");
-        } else {
-          setRunning(true);
-          setProgress({
-            kind: "track",
-            done: 0,
-            total,
-            songId: "",
-            title: "",
-            status: "",
-            confidence: 0,
-            matched: "",
-            coverSaved: false,
-            finished: false,
-            cancelled: false,
-            error: "",
-          });
-        }
+        note(row, await work());
+        await refresh();
+        onChanged();
       } catch (e) {
-        errorRef.current(String((e as { message?: string })?.message ?? e));
+        errorRef.current(errorText(e));
       } finally {
-        setBusy(false);
+        setBusyRow(null);
       }
     },
-    [],
+    [refresh, onChanged],
   );
 
   const accept = useCallback(
     async (item: ReviewItem, index: number) => {
       try {
         const applied = await api.scrapeAccept(item.filePath, index);
-        // 说清楚实际写了什么——「采用」之前什么都不做过，
-        // 现在要让用户看得见它确实做了事
+        // 说清楚实际写了什么——要让用户看得见它确实做了事
         const parts = [
           applied.fieldsFilled > 0 ? `补了 ${applied.fieldsFilled} 个字段` : "",
           applied.creditsProtected > 0 ? `${applied.creditsProtected} 条信用标为人工` : "",
           applied.creditsAdded > 0 ? `新增 ${applied.creditsAdded} 条信用` : "",
           applied.coverPath !== null ? "封面已下载" : "",
         ].filter((p) => p !== "");
-        setAcceptNote(
-          `${item.localTitle || item.filePath}：${parts.length > 0 ? parts.join("，") : "已确认，没有需要补写的"}`,
-        );
-        await refresh(queue);
+        note("review", `${item.localTitle || item.filePath}：${parts.length > 0 ? parts.join("，") : "已确认，没有需要补写的"}`);
+        await refresh();
         onChanged();
       } catch (e) {
-        errorRef.current(String((e as { message?: string })?.message ?? e));
+        errorRef.current(errorText(e));
       }
     },
-    [queue, refresh, onChanged],
+    [refresh, onChanged],
   );
 
   const skip = useCallback(
     async (item: ReviewItem) => {
       try {
         await api.scrapeSkip(item.filePath, "复核时跳过");
-        await refresh(queue);
+        note("review", `${item.localTitle || item.filePath}：已跳过`);
+        await refresh();
       } catch (e) {
-        errorRef.current(String((e as { message?: string })?.message ?? e));
+        errorRef.current(errorText(e));
       }
     },
-    [queue, refresh],
+    [refresh],
   );
 
   const showHistory = useCallback(
@@ -177,245 +218,263 @@ export function ScrapePage({ onError, onChanged }: Props) {
         return;
       }
       setOpenPath(item.filePath);
-      try {
-        setHistory(await api.scrapeAttempts(item.filePath, 20));
-      } catch {
-        setHistory([]);
-      }
+      setHistory(await api.scrapeAttempts(item.filePath, 20).catch(() => []));
     },
     [openPath],
   );
 
-  /** 识别成功但没有封面的歌：用存下来的候选重取，不重新搜索 */
-  const backfillCovers = useCallback(async () => {
-    setBackfilling(true);
-    setCoverNote("");
-    try {
-      const r = await api.scrapeBackfillCovers();
-      setCoverNote(
-        r.checked === 0
-          ? "每首歌都有封面了"
-          : `检查 ${r.checked} 首：补上 ${r.filled}` +
-              (r.failed > 0 ? `，还是下不到 ${r.failed}` : "") +
-              (r.noCandidate > 0 ? `，${r.noCandidate} 首没有候选（要重刮）` : ""),
-      );
-    } catch (e) {
-      errorRef.current(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBackfilling(false);
-    }
-  }, []);
+  // 菜单：点到外面就收起
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
 
-  const startArtists = useCallback(async () => {
-    setBusy(true);
-    try {
-      const total = await api.scrapeArtistsStart(true);
-      if (total === 0) {
-        errorRef.current("每个歌手都已经有照片了");
-      } else {
-        setRunning(true);
-        setProgress({
-          kind: "artist",
-          done: 0,
-          total,
-          songId: "",
-          title: "",
-          status: "",
-          confidence: 0,
-          matched: "",
-          coverSaved: false,
-          finished: false,
-          cancelled: false,
-          error: "",
-        });
-      }
-    } catch (e) {
-      errorRef.current(String((e as { message?: string })?.message ?? e));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  if (summary === null || complete === null) return <div className="page muted pad">加载中…</div>;
 
-  const fillAlbums = useCallback(async () => {
-    try {
-      const n = await api.fillAlbumArtwork();
-      setAlbumNote(
-        n === 0
-          ? "没有可填的：要么专辑都已经有封面，要么它们的曲目还没刮到封面。"
-          : `填了 ${n} 张专辑封面（用的是曲目封面，没有额外发请求）。`,
-      );
-      onChanged();
-    } catch (e) {
-      errorRef.current(String((e as { message?: string })?.message ?? e));
-    }
-  }, [onChanged]);
+  const missingArtists = artists.filter((a) => !a.hasImage);
+  const photos: CompletenessCount = { done: artists.length - missingArtists.length, total: artists.length };
+  const lyricsRunning = lyricsJob !== null && !lyricsJob.finished;
+  const blocked = running || busyRow !== null;
+  const gap = (c: CompletenessCount) => c.total - c.done;
 
-  const missingPhotos = useMemo(
-    () => artists.filter((a) => !a.hasImage).length,
-    [artists],
-  );
-
-  const pct = useMemo(
-    () => (progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0),
-    [progress],
-  );
+  const jobLine =
+    running && progress !== null
+      ? {
+          label: progress.kind === "artist" ? "歌手照片" : "识别曲目",
+          done: progress.done,
+          total: progress.total,
+          detail: `${progress.title}${progress.matched ? ` → ${progress.matched}` : ""}`,
+          stop: () => void api.scrapeCancel(),
+        }
+      : lyricsRunning && lyricsJob !== null
+        ? {
+            label: "补歌词",
+            done: lyricsJob.done,
+            total: lyricsJob.total,
+            detail: lyricsJob.title,
+            stop: () => void api.lyricsFillCancel(),
+          }
+        : null;
 
   return (
-    <div className="page tools">
-      <p className="page-lead">
-        识别曲目、补齐 metadata、下载封面。置信度不够的不会自动写进库，停在「需确认」等你看一眼。
-      </p>
-
-      <div className="card">
-        <div className="card-head">
-          <h2>状态</h2>
-          {summary !== null && (
-            <span className="muted small">共 {summary.total} 条记录</span>
-          )}
-        </div>
-        {summary !== null && (
-          <div className="stats">
-            <Stat label="已匹配" value={summary.success} />
-            <Stat label="需确认" value={summary.lowConfidence} />
-            <Stat label="失败" value={summary.failed} />
-            <Stat label="待刮" value={summary.pending} />
-            <Stat label="已跳过" value={summary.skipped} />
-          </div>
-        )}
-
-        {running && progress !== null && (
-          <>
-            <div className="seekbar" style={{ margin: "14px 0 6px" }}>
-              <div style={{ width: `${pct}%` }} />
-            </div>
-            <p className="muted small">
-              {progress.kind === "artist" ? "歌手 " : ""}
-              {progress.done}/{progress.total}
-              {progress.title ? ` · ${progress.title}` : ""}
-              {progress.matched ? ` → ${progress.matched}` : ""}
-            </p>
-          </>
-        )}
-        {progress?.finished && (
-          <p className="muted small">
-            {progress.cancelled ? "已中断。" : "跑完了。"}
-            已处理 {progress.done}/{progress.total}。
-          </p>
-        )}
-
-        <div className="toolbar">
+    <div className="page scrape">
+      <header className="scrape-head">
+        <h2>库的完整度</h2>
+        <span className="scrape-head-hint">
+          {summary.total} 首里认出 {summary.success} 首
+          {complete.skipped > 0 ? ` · 跳过 ${complete.skipped} 首` : ""}
+        </span>
+        <div className="scrape-head-actions" ref={menuRef}>
           <CommandButton
             icon="scrape"
-            label={running ? "刮削中…" : "刮未匹配的"}
-            onClick={() => void start(true)}
-            disabled={busy || running}
+            label={running ? "刮削中…" : "刮新加的歌"}
             primary
+            disabled={blocked}
+            onClick={() => void startJob("track", "identified", () => api.scrapeStart(true, 1000), "没有要刮的：每首都刮过了")}
+            title="只刮还没刮过、或者刮失败过的。认不准的不会写进库，停在下面「需要你确认」"
           />
-          <CommandButton icon="refresh" label="全部重刮" onClick={() => void start(false)} disabled={busy || running} />
-          <CommandButton icon="cancel" label="中断" onClick={() => void api.scrapeCancel()} disabled={!running} />
-          <CommandButton
-            icon="retry"
-            label="重试失败的"
-            onClick={() => {
-              void (async () => {
-                const n = await api.scrapeRetryFailed().catch(() => 0);
-                await refresh(queue);
-                errorRef.current(`${n} 条已打回待刮`);
-              })();
-            }}
-            disabled={busy || running}
-            title="失败的打回待刮；需要确认的不动——那缺的是决策不是重试"
-          />
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-head">
-          <h2>歌手照片</h2>
-          <span className="muted small">
-            {artists.length - missingPhotos}/{artists.length} 已有照片
-          </span>
-        </div>
-        <p className="muted small">
-          MusicBrainz 拿资料和别名，Deezer 拿照片。
-          顺序不能反——大量日本歌手在 Deezer 上按罗马字收录
-          （ずっと真夜中でいいのに。→ ZUTOMAYO），不带别名去查找不到。
-        </p>
-        <div className="artist-grid">
-          {artists.map((a) => (
-            <ArtistChip
-              key={a.name}
-              artist={a}
-              disabled={busy || running}
-              onScrape={async () => {
-                try {
-                  const got = await api.scrapeArtist(a.name);
-                  await refresh(queue);
-                  if (got.notFound) errorRef.current(`${a.name}：一条都没查到`);
-                } catch (e) {
-                  errorRef.current(String((e as { message?: string })?.message ?? e));
-                }
-              }}
-            />
-          ))}
-        </div>
-        <div className="toolbar">
-          <CommandButton
-            icon="photo"
-            label={missingPhotos === 0 ? "照片都齐了" : `刮缺照片的 ${missingPhotos} 位`}
-            onClick={() => void startArtists()}
-            disabled={busy || running || missingPhotos === 0}
-          />
-          <CommandButton
-            icon="album"
-            label={backfilling ? "补封面中…" : "补齐缺失封面"}
-            onClick={() => void backfillCovers()}
-            disabled={busy || running || backfilling}
-            title="识别成功但没有封面的歌：用刮削时存下的候选重取（MusicBrainz 的封面在 Cover Art Archive，老版本没去取），不重新搜索"
-          />
-          {coverNote !== "" && <span className="muted small">{coverNote}</span>}
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-head">
-          <h2>专辑封面</h2>
-        </div>
-        <p className="muted small">
-          用曲目封面填 <code>albums.artwork_path</code>。
-          同一张专辑的曲目封面就是这张专辑的封面，不额外发请求。
-        </p>
-        <div className="toolbar">
-          <button onClick={() => void fillAlbums()} disabled={busy || running}>
-            填专辑封面
+          <button
+            className="btn scrape-more"
+            aria-label="更多刮削操作"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            ⋯
           </button>
+          {menuOpen && (
+            <div className="scrape-menu" role="menu">
+              <button
+                role="menuitem"
+                disabled={blocked}
+                onClick={() => void startJob("track", "identified", () => api.scrapeStart(false, 1000), "库里没有歌")}
+              >
+                全部重刮
+                <span>每一首重新搜一遍，要十几分钟</span>
+              </button>
+              <button
+                role="menuitem"
+                disabled={blocked || summary.failed === 0}
+                onClick={() => {
+                  setMenuOpen(false);
+                  void runOnce("identified", async () => `${await api.scrapeRetryFailed()} 首失败的打回待刮，点「刮新加的歌」重试`);
+                }}
+              >
+                重试失败的
+                <span>{summary.failed === 0 ? "没有失败的" : `${summary.failed} 首；需要确认的不动——那缺的是决定不是重试`}</span>
+              </button>
+            </div>
+          )}
         </div>
-        {albumNote !== "" && <p className="muted small">{albumNote}</p>}
+      </header>
+
+      <div className="scrape-rows">
+        <CompletenessRow
+          label="曲目识别"
+          count={complete.identified}
+          note={notes.identified}
+          action={
+            gap(complete.identified) > 0
+              ? {
+                  label: `刮 ${gap(complete.identified)} 首`,
+                  disabled: blocked,
+                  run: () => void startJob("track", "identified", () => api.scrapeStart(true, 1000), "没有要刮的"),
+                  title: "失败过的、需要确认的、跳过的也算在没认出里；需要确认的在下面挑",
+                }
+              : undefined
+          }
+        />
+        <CompletenessRow
+          label="曲目封面"
+          count={complete.trackCovers}
+          note={notes.trackCovers}
+          action={
+            gap(complete.trackCovers) > 0
+              ? {
+                  label: busyRow === "trackCovers" ? "补封面中…" : `补 ${gap(complete.trackCovers)} 张`,
+                  disabled: blocked,
+                  run: () =>
+                    void runOnce("trackCovers", async () => {
+                      const r = await api.scrapeBackfillCovers();
+                      return r.checked === 0
+                        ? "每首歌都有封面了"
+                        : `补上 ${r.filled}` +
+                            (r.failed > 0 ? `，还是下不到 ${r.failed}` : "") +
+                            (r.noCandidate > 0 ? `，${r.noCandidate} 首没有候选，要重刮` : "");
+                    }),
+                  title: "用刮削时存下的候选重新取封面（MusicBrainz 的封面在 Cover Art Archive），不重新搜索",
+                }
+              : undefined
+          }
+        />
+        <CompletenessRow
+          label="专辑封面"
+          count={complete.albumCovers}
+          note={notes.albumCovers}
+          action={
+            gap(complete.albumCovers) > 0
+              ? {
+                  label: busyRow === "albumCovers" ? "填封面中…" : `补 ${gap(complete.albumCovers)} 张`,
+                  disabled: blocked,
+                  run: () =>
+                    void runOnce("albumCovers", async () => {
+                      const n = await api.fillAlbumArtwork();
+                      return n === 0 ? "填不上：这些专辑的曲目也还没有封面，先补曲目封面" : `填了 ${n} 张`;
+                    }),
+                  title: "同一张专辑的曲目封面就是专辑封面，直接拿来用，不额外发请求",
+                }
+              : undefined
+          }
+        />
+        <CompletenessRow
+          label="歌手照片"
+          count={photos}
+          note={notes.photos}
+          action={
+            missingArtists.length > 0
+              ? {
+                  label: `刮 ${missingArtists.length} 位`,
+                  disabled: blocked,
+                  run: () => void startJob("artist", "photos", () => api.scrapeArtistsStart(true), "每个歌手都已经有照片了"),
+                  title:
+                    "MusicBrainz 拿资料和别名，Deezer 拿照片。顺序不能反——很多日本歌手在 Deezer 上按罗马字收录（ずっと真夜中でいいのに。→ ZUTOMAYO），不带别名查不到",
+                }
+              : undefined
+          }
+        >
+          {missingArtists.length > 0 && (
+            <div className="scrape-missing">
+              {missingArtists.map((a) => (
+                <button
+                  key={a.name}
+                  className="scrape-missing-artist"
+                  disabled={blocked}
+                  title={`${a.name}：${a.trackCount} 首，还没有照片。点一下单独刮这一位`}
+                  onClick={() =>
+                    void runOnce("photos", async () => {
+                      const got = await api.scrapeArtist(a.name);
+                      return got.notFound ? `${a.name}：一条都没查到` : got.imagePath ? `${a.name}：照片有了` : `${a.name}：认出来了，但没有照片`;
+                    })
+                  }
+                >
+                  <Avatar path={a.imagePath} name={a.name} size={32} />
+                  <span>{a.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </CompletenessRow>
+        <CompletenessRow
+          label="歌词"
+          count={complete.lyrics}
+          note={notes.lyrics}
+          action={
+            gap(complete.lyrics) > 0 && !lyricsRunning
+              ? {
+                  label: `补 ${gap(complete.lyrics)} 首`,
+                  disabled: blocked,
+                  run: () => {
+                    setLyricsJob(EMPTY_LYRICS);
+                    api.lyricsFillStart().catch((e) => {
+                      setLyricsJob(null);
+                      errorRef.current(errorText(e));
+                    });
+                  },
+                  title: "先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空",
+                }
+              : undefined
+          }
+        />
+        <CompletenessRow
+          label="时长"
+          count={complete.durations}
+          note={notes.durations}
+          action={
+            gap(complete.durations) > 0
+              ? {
+                  label: busyRow === "durations" ? "读时长中…" : `补 ${gap(complete.durations)} 首`,
+                  disabled: blocked,
+                  run: () =>
+                    void runOnce("durations", async () => {
+                      const r = await api.backfillDurations();
+                      return `补上 ${r.written}` + (r.missing > 0 ? `，${r.missing} 个文件不在了` : "") + (r.failed + r.unknown > 0 ? `，${r.failed + r.unknown} 个读不出来` : "");
+                    }),
+                  title: "扫一遍音频文件，把读得出的时长写进库",
+                }
+              : undefined
+          }
+        />
       </div>
 
-      <div className="card">
-        <div className="chips">
-          {QUEUES.map((q) => (
-            <button
-              key={q.key}
-              className={`chip${queue === q.key ? " on" : ""}`}
-              onClick={() => setQueue(q.key)}
-            >
-              {q.label}
-            </button>
-          ))}
+      {jobLine !== null && (
+        <div className="scrape-job" role="status">
+          <span className="scrape-job-label">正在{jobLine.label}</span>
+          <div className="scrape-bar">
+            <div style={{ width: `${jobLine.total > 0 ? (jobLine.done / jobLine.total) * 100 : 0}%` }} />
+          </div>
+          <span className="scrape-job-count">
+            {jobLine.done}/{jobLine.total}
+          </span>
+          <span className="scrape-job-detail">{jobLine.detail}</span>
+          <CommandButton icon="cancel" label="中断" onClick={jobLine.stop} />
         </div>
+      )}
 
-        {acceptNote !== "" && <p className="muted small">{acceptNote}</p>}
-        {items.length === 0 ? (
-          <p className="muted small">
-            {queue === "low_confidence"
-              ? "没有需要确认的。要么还没刮，要么全都很确定。"
-              : "这一类是空的。"}
-          </p>
+      <section className="section scrape-review">
+        <header className="section-head">
+          <h2>需要你确认 · {review.length}</h2>
+          <span className="section-hint">置信度不够的不会自动写进库，停在这里等你挑</span>
+        </header>
+        {notes.review !== undefined && <p className="scrape-note">{notes.review}</p>}
+        {review.length === 0 ? (
+          <p className="section-empty">刮削结果都很确定，没有要你看的。</p>
         ) : (
           <div className="list">
-            {items.map((item) => (
+            {review.map((item) => (
               <ReviewRow
                 key={item.filePath}
                 item={item}
@@ -428,46 +487,121 @@ export function ScrapePage({ onError, onChanged }: Props) {
             ))}
           </div>
         )}
-      </div>
+
+        <p className="scrape-others">
+          {(["failed", "skipped"] as const).map((key) => {
+            const n = key === "failed" ? summary.failed : summary.skipped;
+            return (
+              <button
+                key={key}
+                className={`link-btn${extra === key ? " on" : ""}`}
+                disabled={n === 0}
+                onClick={() => setExtra((v) => (v === key ? null : key))}
+              >
+                {SCRAPE_STATUS_LABELS[key]} · {n}
+              </button>
+            );
+          })}
+        </p>
+        {extra !== null && (
+          <div className="list">
+            {extraItems.length === 0 ? (
+              <p className="section-empty">这一类是空的。</p>
+            ) : (
+              extraItems.map((item) => (
+                <ReviewRow
+                  key={item.filePath}
+                  item={item}
+                  open={openPath === item.filePath}
+                  history={openPath === item.filePath ? history : []}
+                  onAccept={(index) => void accept(item, index)}
+                  onSkip={() => void skip(item)}
+                  onToggleHistory={() => void showHistory(item)}
+                />
+              ))
+            )}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
+const EMPTY_PROGRESS: ScrapeProgress = {
+  kind: "track",
+  done: 0,
+  total: 0,
+  songId: "",
+  title: "",
+  status: "",
+  confidence: 0,
+  matched: "",
+  coverSaved: false,
+  finished: false,
+  cancelled: false,
+  error: "",
+};
+
+const EMPTY_LYRICS: LyricsProgress = {
+  done: 0,
+  total: 0,
+  songId: "",
+  title: "",
+  status: "",
+  source: "",
+  matched: "",
+  lyricLines: 0,
+  message: "",
+  error: "",
+  filled: 0,
+  notFound: 0,
+  failed: 0,
+  finished: false,
+  cancelled: false,
+};
+
 /**
- * 歌手那一格。**没有照片的整格就是按钮**——原来在格子里再塞一个「刮」的小方块，
- * 一排下来全是嵌套的方块，也看不出哪些能点。
+ * 完整度的一行：名字、进度条、齐了几个 / 一共几个、右边一个按钮。
+ * 齐了就打勾变灰、不给按钮——没有事要做的行不该抢眼。
  */
-function ArtistChip({
-  artist,
-  disabled,
-  onScrape,
+function CompletenessRow({
+  label,
+  count,
+  note,
+  action,
+  children,
 }: {
-  artist: ArtistRow;
-  disabled: boolean;
-  onScrape: () => void;
+  label: string;
+  count: CompletenessCount;
+  note?: string | undefined;
+  action?: { label: string; run: () => void; disabled?: boolean; title?: string } | undefined;
+  children?: React.ReactNode;
 }) {
-  const meta = `${artist.trackCount} 首${artist.country ? ` · ${artist.country}` : ""}${artist.formed ? ` · ${artist.formed}` : ""}`;
-  if (artist.hasImage) {
-    return (
-      <div className="artist-chip">
-        <span className="chip-name">{artist.name}</span>
-        <span className="muted small">{meta}</span>
-      </div>
-    );
-  }
+  const full = count.total > 0 && count.done >= count.total;
+  const empty = count.total === 0;
+  const pct = count.total > 0 ? (count.done / count.total) * 100 : 0;
   return (
-    <button
-      className="artist-chip missing"
-      disabled={disabled}
-      onClick={onScrape}
-      title={`${artist.name}：还没有照片，点一下去刮`}
-    >
-      <span className="chip-name">{artist.name}</span>
-      <span className="muted small">{meta} · 没有照片，点一下刮</span>
-    </button>
+    <div className={`scrape-row${full || empty ? " done" : ""}`}>
+      <span className="scrape-row-mark" aria-hidden="true">
+        {full || empty ? "✓" : "●"}
+      </span>
+      <span className="scrape-row-label">{label}</span>
+      <div className="scrape-bar">
+        <div style={{ width: `${pct}%` }} />
+      </div>
+      <span className="scrape-row-count">{empty ? "—" : `${count.done.toLocaleString()} / ${count.total.toLocaleString()}`}</span>
+      <span className="scrape-row-action">
+        {action !== undefined && (
+          <button onClick={action.run} disabled={action.disabled} title={action.title}>
+            {action.label}
+          </button>
+        )}
+      </span>
+      {note !== undefined && note !== "" && <span className="scrape-row-note">{note}</span>}
+      {children !== undefined && <div className="scrape-row-extra">{children}</div>}
+    </div>
   );
 }
-
 
 function ReviewRow({
   item,

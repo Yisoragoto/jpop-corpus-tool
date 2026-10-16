@@ -29,6 +29,22 @@
      浮层用它的话，底下的歌词、封面会整个透上来 */
   --surface-pop: rgba(30, 30, 36, .97);
   --radius: 7px;
+
+  /* 控件（按钮、输入框、下拉）统一的尺寸和质感，数值照 WinUI 3 深色主题：
+     一样高、一样的圆角，填充是一层很淡的白，描边上沿比下沿亮一点，像有厚度。 */
+  --ctl-h: 32px;
+  --ctl-h-sm: 28px;
+  --ctl-radius: 5px;
+  --btn-fill: rgba(255, 255, 255, .061);
+  --btn-fill-hover: rgba(255, 255, 255, .084);
+  --btn-fill-press: rgba(255, 255, 255, .033);
+  --btn-fill-disabled: rgba(255, 255, 255, .042);
+  --btn-stroke: rgba(255, 255, 255, .07);
+  --btn-stroke-top: rgba(255, 255, 255, .093);
+  --text-press: rgba(255, 255, 255, .786);
+  --text-disabled: rgba(255, 255, 255, .363);
+  /* 深底上的链接色（WinUI 的 AccentTextFillColorPrimary） */
+  --accent-text: #99ebff;
   --shadow: 0 8px 24px rgba(0, 0, 0, .45);
   /* 带一点回弹的缓动：按钮、卡片、弹出层共用，动起来是一个手感 */
   --spring: cubic-bezier(.2, .9, .25, 1.15);
@@ -184,11 +200,14 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .library { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
 .corpus { border-left: 1px solid var(--line); background: var(--panel); padding: 16px; }
 
+/* 筛选框。外观和通用输入框一致（底边亮线、聚焦变强调色），这里只管外边距 */
 .search {
-  margin: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px;
-  background: var(--panel-2); color: var(--fg); outline: none;
+  margin: 10px; height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-radius);
+  font: inherit; font-size: 13px; color: var(--fg); background: var(--btn-fill); outline: none;
+  border: 1px solid var(--btn-stroke); border-bottom-color: rgba(255, 255, 255, .45);
 }
-.search:focus { border-color: var(--accent); }
+.search:hover { background: var(--btn-fill-hover); }
+.search:focus { background: rgba(30, 30, 30, .7); border-bottom-color: var(--accent); box-shadow: inset 0 -1px 0 var(--accent); }
 
 .list { flex: 1; overflow-y: auto; padding-bottom: 12px; }
 
@@ -267,15 +286,8 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 .display-label { flex: 0 0 64px; color: var(--muted); }
 .display-row input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
 .display-value { flex: 0 0 34px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
-.segmented { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.segmented button { padding: 3px 10px; font-size: 12px; color: var(--muted); }
-.segmented button + button { border-left: 1px solid var(--line); }
-.segmented button.on { background: rgba(76,194,255,.15); color: var(--accent); }
 .display-foot { display: flex; justify-content: flex-end; }
-.font-select {
-  flex: 1; min-width: 0; background: var(--control); color: var(--fg);
-  border: 1px solid var(--line); border-radius: 5px; padding: 3px 5px; font-size: 12px;
-}
+.font-select { flex: 1; min-width: 0; height: var(--ctl-h-sm); font-size: 12px; }
 .font-preview {
   margin: 0; padding: 8px 10px; border-radius: 6px;
   background: rgba(255, 255, 255, .06); border: 1px solid var(--line);
@@ -284,8 +296,6 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 }
 .link-btn.warn { color: var(--warn); }
 .link-btn.danger { color: var(--danger); }
-button.ghost { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); font-size: 13px; }
-button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 
 /* ── 曲库维护 ── */
 .track-side { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 0 0 auto; }
@@ -454,8 +464,17 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .stage-facts dt { font-size: 11px; color: rgba(255, 255, 255, .5); }
 .stage-facts dd { margin: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-.link-btn { font-size: 12px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
-.link-btn:hover { color: var(--fg); }
+/* 次要操作。照 WinUI 的 HyperlinkButton：强调色的字、没有下划线，悬停浮出一层淡底。
+   原来是灰色带下划线的小字，看着像网页上的脚注 */
+.link-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 3px 7px; margin: -3px -7px; border-radius: var(--ctl-radius);
+  font-size: 12px; line-height: 1.2; color: var(--accent-text); white-space: nowrap;
+  transition: background 120ms, color 120ms;
+}
+.link-btn:not(:disabled):hover { background: var(--btn-fill); }
+.link-btn:not(:disabled):active { background: var(--btn-fill-press); color: var(--text-press); }
+.link-btn:disabled { color: var(--text-disabled); cursor: default; }
 
 .token { padding: 0 1px; border-bottom: 1px dashed transparent; border-radius: 2px; }
 .token:hover { border-bottom-color: var(--accent); color: var(--accent); }
@@ -467,7 +486,11 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .numbers { display: flex; gap: 20px; margin-bottom: 6px; }
 .numbers .stat { align-items: flex-start; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
-.chip { padding: 2px 8px; border-radius: 10px; font-size: 11px; background: var(--panel-2); color: var(--muted); }
+.chip {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 3px 10px; border-radius: 999px; font-size: 11px; line-height: 1.3;
+  background: var(--btn-fill); color: var(--muted);
+}
 .corpus h3, .stage-side h3 { margin: 20px 0 8px; font-size: 12px; color: var(--muted); font-weight: 500; }
 
 .examples { display: flex; flex-direction: column; gap: 2px; }
@@ -726,53 +749,138 @@ button.ghost:hover { color: var(--fg); border-color: var(--muted); }
 .page-lead { margin: 0 0 24px; font-size: 13px; color: var(--muted); max-width: 64ch; line-height: 1.75; }
 .pad-x { padding: 0 20px; }
 
-/* ── 通用控件（照 Windows 11：半透明填充、细描边、悬停变亮） ── */
-.segmented { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; flex: 0 0 auto; background: var(--control); }
-.segmented button { padding: 5px 11px; font-size: 12px; color: var(--muted); }
-.segmented button:hover { background: var(--control-hover); color: var(--fg); }
-.segmented button.on { background: var(--accent); color: var(--accent-ink); }
+/* ── 通用控件 ──
+   照 WinUI 3：所有按钮、输入框、下拉一样高（32px，小号 28px），一样的圆角；
+   文字和图标在按钮里**上下左右都居中**（inline-flex），不靠行高和基线碰运气——
+   原来带图标的按钮里，图标按基线排，比字高出一截。
+   按下去字变淡、底变暗；禁用是「底更淡、字变灰」，不是整个按钮半透明（那样连边框都糊了）。 */
 
+/* 标准按钮。列在这里的选择器都长一个样：
+   CommandButton、各工具页里没标类的按钮、对话框和行内的小按钮 */
+button.btn, .cmd-btn, button.ghost, .tc-btn, .picker-button,
+.wc-pop-foot button, .scrape-row-action button, .scrape-review .candidate-actions button,
+.toolbar button:not(.primary):not(.link-btn):not(.mine-btn):not(.chip):not(.segmented > button),
+.maintenance button:not(.primary):not(.link-btn):not(.chip):not(.segmented > button),
+.tools button:not(.primary):not(.link-btn):not(.tc-btn):not(.dict-delete):not(.dict-grip):not(.chip):not(.segmented > button),
+.card-tools button:not(.primary):not(.link-btn):not(.chip):not(.segmented > button) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--ctl-h); padding: 0 12px; border-radius: var(--ctl-radius);
+  font-size: 13px; line-height: 1; white-space: nowrap; vertical-align: middle; flex: 0 0 auto;
+  color: var(--fg); background-color: var(--btn-fill);
+  border: 1px solid var(--btn-stroke); border-top-color: var(--btn-stroke-top);
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+button.btn:not(:disabled):hover, .cmd-btn:not(.primary):not(:disabled):hover, button.ghost:not(:disabled):hover,
+.tc-btn:not(.primary):not(:disabled):hover, .picker-button:not(:disabled):hover,
+.wc-pop-foot button:not(:disabled):hover, .scrape-row-action button:not(:disabled):hover,
+.scrape-review .candidate-actions button:not(:disabled):hover,
+.toolbar button:not(.primary):not(.link-btn):not(.mine-btn):not(.chip):not(.segmented > button):not(:disabled):hover,
+.maintenance button:not(.primary):not(.link-btn):not(.chip):not(.segmented > button):not(:disabled):hover,
+.tools button:not(.primary):not(.link-btn):not(.tc-btn):not(.dict-delete):not(.dict-grip):not(.chip):not(.segmented > button):not(:disabled):hover,
+.card-tools button:not(.primary):not(.link-btn):not(.chip):not(.segmented > button):not(:disabled):hover { background-color: var(--btn-fill-hover); }
+button.btn:not(:disabled):active, .cmd-btn:not(.primary):not(:disabled):active, button.ghost:not(:disabled):active,
+.tc-btn:not(.primary):not(:disabled):active, .picker-button:not(:disabled):active,
+.wc-pop-foot button:not(:disabled):active, .scrape-row-action button:not(:disabled):active,
+.scrape-review .candidate-actions button:not(:disabled):active,
+.toolbar button:not(.primary):not(.link-btn):not(.mine-btn):not(.chip):not(.segmented > button):not(:disabled):active,
+.maintenance button:not(.primary):not(.link-btn):not(.chip):not(.segmented > button):not(:disabled):active,
+.tools button:not(.primary):not(.link-btn):not(.tc-btn):not(.dict-delete):not(.dict-grip):not(.chip):not(.segmented > button):not(:disabled):active,
+.card-tools button:not(.primary):not(.link-btn):not(.chip):not(.segmented > button):not(:disabled):active {
+  background-color: var(--btn-fill-press); color: var(--text-press); border-top-color: var(--btn-stroke);
+}
+button.btn:disabled, .cmd-btn:not(.primary):disabled, button.ghost:disabled, .tc-btn:not(.primary):disabled,
+.picker-button:disabled, .wc-pop-foot button:disabled, .scrape-row-action button:disabled,
+.toolbar button:not(.primary):not(.link-btn):not(.mine-btn):not(.chip):not(.segmented > button):disabled,
+.maintenance button:not(.primary):not(.link-btn):not(.chip):not(.segmented > button):disabled,
+.tools button:not(.primary):not(.link-btn):not(.tc-btn):not(.dict-delete):not(.dict-grip):not(.chip):not(.segmented > button):disabled,
+.card-tools button:not(.primary):not(.link-btn):not(.chip):not(.segmented > button):disabled {
+  background-color: var(--btn-fill-disabled); color: var(--text-disabled); border-color: var(--btn-stroke); cursor: default;
+}
+/* 小号：行内、对话框底部、列表行右边 */
+.tc-btn, .wc-pop-foot button, .scrape-row-action button, .scrape-review .candidate-actions button {
+  height: var(--ctl-h-sm); padding: 0 10px; font-size: 12px;
+}
+.cmd-btn svg, button.btn svg, button.primary svg { display: block; flex: 0 0 auto; }
+
+/* 强调按钮（一排里最主要的那个）：实心强调色、深色字 */
 button.primary {
-  padding: 6px 16px; border-radius: var(--radius); font-size: 13px;
-  background: linear-gradient(180deg, var(--accent), #35b4f5); color: var(--accent-ink);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, .22) inset;
-  transition: filter 120ms;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--ctl-h); padding: 0 14px; border-radius: var(--ctl-radius);
+  font-size: 13px; line-height: 1; white-space: nowrap; vertical-align: middle; flex: 0 0 auto;
+  background: var(--accent); color: rgba(0, 0, 0, .9); border: 1px solid transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .14);
+  transition: background 120ms, color 120ms;
 }
-button.primary:not(:disabled):hover { filter: brightness(1.08); }
-button.primary:not(:disabled):active { filter: brightness(.9); }
-button.primary:disabled { background: var(--control); color: var(--muted); box-shadow: none; cursor: default; }
+button.primary:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 90%, transparent); }
+button.primary:not(:disabled):active { background: color-mix(in srgb, var(--accent) 80%, transparent); color: rgba(0, 0, 0, .55); }
+button.primary:disabled { background: rgba(255, 255, 255, .159); color: rgba(255, 255, 255, .53); box-shadow: none; cursor: default; }
+.tc-btn.primary { height: var(--ctl-h-sm); padding: 0 10px; font-size: 12px; }
 
-/* 没标类的按钮也别是纯文字 */
-.toolbar button:not(.primary):not(.link-btn):not(.mine-btn),
-.maintenance button:not(.primary):not(.link-btn),
-.tools button:not(.primary):not(.link-btn):not(.tc-btn):not(.dict-delete):not(.dict-grip),
-.card-tools button:not(.primary):not(.link-btn) {
-  padding: 6px 13px; border-radius: var(--radius); font-size: 13px;
-  background: var(--control); border: 1px solid var(--line); color: var(--fg);
-  transition: background 120ms, border-color 120ms;
+/* 分段：一条底，选中的那一格是实心强调色；每一格的字都居中 */
+.segmented {
+  display: inline-flex; align-items: stretch; flex: 0 0 auto; height: var(--ctl-h);
+  padding: 2px; gap: 2px; border-radius: var(--ctl-radius);
+  background: var(--btn-fill); border: 1px solid var(--btn-stroke); border-top-color: var(--btn-stroke-top);
 }
-.toolbar button:not(.primary):not(.link-btn):not(.mine-btn):hover,
-.maintenance button:not(.primary):not(.link-btn):hover,
-.tools button:not(.primary):not(.link-btn):not(.tc-btn):not(.dict-delete):not(.dict-grip):hover,
-.card-tools button:not(.primary):not(.link-btn):hover { background: var(--control-hover); border-color: var(--line-strong); }
-.toolbar button:disabled, .maintenance button:disabled, .tools button:disabled, .card-tools button:disabled { opacity: .45; cursor: default; }
+.segmented button {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 12px; border-radius: 3px; font-size: 12px; line-height: 1; color: var(--muted);
+  transition: background 120ms, color 120ms;
+}
+.segmented button:not(.on):hover { background: var(--btn-fill-hover); color: var(--fg); }
+.segmented button.on { background: var(--accent); color: rgba(0, 0, 0, .9); }
 
-select, input[type="text"], input[type="search"], input[type="number"] {
-  background: var(--control); color: var(--fg); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 5px 8px; font: inherit; font-size: 12px;
+/* 输入框：底边一条亮线，聚焦时变成两像素的强调色（WinUI 的 TextBox） */
+input[type="text"], input[type="search"], input[type="number"] {
+  height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-radius);
+  font: inherit; font-size: 13px; color: var(--fg); background: var(--btn-fill);
+  border: 1px solid var(--btn-stroke); border-bottom-color: rgba(255, 255, 255, .45);
+  transition: background 120ms, box-shadow 120ms;
 }
-select:hover, input[type="text"]:hover, input[type="search"]:hover { background: var(--control-hover); }
+input[type="text"]:hover, input[type="search"]:hover, input[type="number"]:hover { background: var(--btn-fill-hover); }
+input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus {
+  outline: none; background: rgba(30, 30, 30, .7); border-bottom-color: var(--accent);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+input:disabled { color: var(--text-disabled); background: var(--btn-fill-disabled); }
+
+/* 下拉：和按钮一个样，右边一个自己画的箭头（系统那个箭头大小、位置都对不齐） */
+select {
+  height: var(--ctl-h); padding: 0 30px 0 10px; border-radius: var(--ctl-radius);
+  font: inherit; font-size: 13px; color: var(--fg); cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  background: var(--btn-fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23ffffffb0' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center / 12px 12px;
+  border: 1px solid var(--btn-stroke); border-top-color: var(--btn-stroke-top);
+  transition: background-color 120ms;
+}
+select:hover { background-color: var(--btn-fill-hover); }
+select:disabled { color: var(--text-disabled); cursor: default; }
 select option { background: #202024; color: var(--fg); }
-input[type="checkbox"] { accent-color: var(--accent-deep); width: 15px; height: 15px; }
+
+/* 复选框：照 WinUI 自己画——圆角方块，勾上是实心强调色加深色的勾 */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: 0 0 auto;
+  width: 18px; height: 18px; margin: 0; border-radius: 4px; cursor: pointer;
+  background: rgba(0, 0, 0, .1); border: 1px solid rgba(255, 255, 255, .6);
+  vertical-align: middle; transition: background-color 120ms, border-color 120ms;
+}
+input[type="checkbox"]:hover { background-color: rgba(255, 255, 255, .06); }
+input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.3 6.6 11.2 12.5 4.8' fill='none' stroke='%23000000e6' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / 14px 14px;
+}
+input[type="checkbox"]:disabled { opacity: .4; cursor: default; }
 input[type="range"] { accent-color: var(--accent); }
 
-.check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; line-height: 1; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .search.grow { flex: 1; margin: 0; }
 
 .toolbar {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 12px 20px; border-bottom: 1px solid var(--line);
 }
+/* 页面里（而不是页顶）的那一排按钮：和上面的文字左对齐，不另缩进 */
+.page:not(.kwic-page) .toolbar { padding-inline: 0; }
 
 /* ── KWIC ── */
 .kwic-page { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
@@ -898,12 +1006,15 @@ table.data .bar-col .freq-bar { display: block; }
 
 /* 演唱者多选 */
 .picker { position: relative; }
+/* 外观在「标准按钮」里；这里只管宽度。名字长了截断：文字包在 span 里才截得了 */
 .picker-button {
-  background: var(--panel-2); color: var(--fg); border: 1px solid var(--line);
-  border-radius: 5px; padding: 3px 8px; font-size: 12px; max-width: 220px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 240px; padding-right: 30px; font-size: 13px;
+  /* 和下拉框同一个箭头 */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%23ffffffb0' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; background-size: 12px 12px;
 }
-.picker-button.on { border-color: var(--accent); color: var(--accent); }
+.picker-button > span { overflow: hidden; text-overflow: ellipsis; }
+.picker-button.on { border-color: color-mix(in srgb, var(--accent) 60%, transparent); color: var(--accent-text); }
 .picker-pop {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; width: 260px;
   background: var(--surface-pop); backdrop-filter: blur(30px) saturate(150%);
@@ -1133,8 +1244,8 @@ button.link:hover { text-decoration: underline; }
 
 /* ── 导入页 ── */
 /* .chip 原本用在 span 上，这里当筛选按钮用，要把按钮的默认样式抹掉 */
-button.chip { border: 1px solid transparent; cursor: pointer; font: inherit; font-size: 11px; }
-button.chip:hover { color: var(--fg); }
+button.chip { border: 1px solid var(--btn-stroke); cursor: pointer; font: inherit; font-size: 11px; transition: background 120ms, color 120ms; }
+button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-hover); }
 .chip.on { background: rgba(76,194,255,.16); color: var(--accent); border-color: rgba(76,194,255,.3); }
 /* 处置类型各给一个颜色：新增是好事，重复和跳过要显眼但不刺眼 */
 .tag.action-new { color: var(--accent); background: rgba(76,194,255,.14); }
@@ -1158,17 +1269,6 @@ button.chip:hover { color: var(--fg); }
 .candidate-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .candidate-actions b { font-variant-numeric: tabular-nums; font-size: 12px; }
 .attempts { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
-.artist-grid { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 4px; }
-/* 歌手那一格：有照片的安静摆着，没照片的整格可点（点了就去刮这一位） */
-.artist-chip {
-  display: flex; align-items: center; gap: 8px; padding: 5px 10px;
-  border-radius: 6px; background: var(--panel-2); font-size: 12px;
-  border: 1px solid transparent; text-align: left;
-}
-.artist-chip .chip-name { color: var(--fg); }
-.artist-chip.missing { border-color: var(--line-strong); background: transparent; }
-.artist-chip.missing:not(:disabled):hover { background: var(--control-hover); border-color: var(--accent); }
-.artist-chip.missing:disabled { opacity: .45; cursor: default; }
 
 /* ── Anki 页 ── */
 .word-picker { max-height: 340px; overflow-y: auto; margin: 10px 0 4px;
@@ -1187,8 +1287,6 @@ button.chip:hover { color: var(--fg); }
                           font-size: 11px; color: #fff; background: var(--accent); }
 .card-preview .ym-sense { margin: 3px 0; }
 .card-preview .ym-index { opacity: .6; margin-right: 4px; }
-.maintenance select, .tools select { background: var(--panel-2); color: var(--fg);
-                      border: 1px solid var(--line); border-radius: 3px; padding: 2px 6px; }
 
 /* ── 封面 ── */
 .cover { object-fit: cover; flex: 0 0 auto; background: var(--panel-2); display: block; }
@@ -1239,13 +1337,7 @@ button.chip:hover { color: var(--fg); }
 .tc-split { width: 58px; }
 .tc-hint { margin-left: auto; }
 .tc-footer .spacer { flex: 1; }
-.tc-btn {
-  padding: 4px 12px; border-radius: 6px; font-size: 12px;
-  border: 1px solid var(--line); background: var(--panel-2);
-}
-.tc-btn:disabled { opacity: .4; cursor: default; }
-.tc-btn.primary { background: var(--accent); border-color: var(--accent); color: #0b0b10; }
-.tc-btn.danger { color: var(--danger); border-color: var(--danger); }
+.tc-btn.danger { color: var(--danger); }
 .tc-note { margin: 0; padding: 0 16px 8px; }
 .tc-mark { color: var(--accent); margin-right: 4px; }
 
@@ -1306,11 +1398,8 @@ button.chip:hover { color: var(--fg); }
 /* 设置页里的「一键制卡」那张卡片：和设置行对齐，不再另画一圈边 */
 .setting-rows > .card { border-radius: var(--radius); }
 
-.setting-select {
-  min-width: 180px; max-width: 240px; padding: 5px 8px; border-radius: 5px;
-  border: 1px solid var(--line); background: var(--control); color: var(--fg); font: inherit; font-size: 12px;
-}
-.setting-select:hover { background: var(--control-hover); }
+/* 外观用通用的 select；这里只管宽度 */
+.setting-select { min-width: 180px; max-width: 240px; }
 
 .setting-slider { display: flex; align-items: center; gap: 10px; }
 .setting-slider input[type="range"] { width: 150px; accent-color: var(--accent); }
@@ -1342,7 +1431,7 @@ button.chip:hover { color: var(--fg); }
   display: flex; flex-direction: column; align-items: center; gap: 10px;
   max-width: 460px; text-align: center; color: var(--muted); padding: 40px 20px 80px;
 }
-.empty-state svg { color: rgba(255, 255, 255, .22); }
+.empty-state > svg { color: rgba(255, 255, 255, .22); }
 .empty-state h2 { margin: 4px 0 0; font-size: 17px; font-weight: 600; color: var(--fg); }
 .empty-state p { margin: 0; font-size: 13px; line-height: 1.7; }
 .empty-actions { display: flex; gap: 8px; margin-top: 6px; }
@@ -1633,8 +1722,7 @@ button.chip:hover { color: var(--fg); }
 .wc-song:hover .wc-song-open, .wc-song-open:focus-visible { opacity: 1; transform: none; }
 .wc-song-open:hover { background: var(--control-hover); color: var(--fg); }
 .wc-pop-foot { display: flex; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--line); }
-.wc-pop-foot button { flex: 1; padding: 6px 10px; border-radius: var(--radius); font-size: 12px; background: var(--control); border: 1px solid var(--line); }
-.wc-pop-foot button:hover { background: var(--control-hover); }
+.wc-pop-foot button { flex: 1; }
 
 /* 正在放的那一句：字幕，摆在玻璃下沿 */
 .wc-caption {
@@ -2359,4 +2447,66 @@ button.primary:not(:disabled):active { transform: scale(.96); transition-duratio
     animation-duration: .01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
   }
+}
+
+/* ── 刮削页：库的完整度 ──
+   一种 metadata 一行，整行铺满宽度（原来的小数字和胶囊都按内容收缩，结果挤在左边一窄条）。
+   齐了的行打勾变灰，缺的行右边一个写明数量的按钮。 */
+.scrape-head { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; }
+.scrape-head h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.2px; }
+.scrape-head-hint { font-size: 12px; color: var(--muted); }
+.scrape-head-actions { position: relative; margin-left: auto; display: flex; gap: 6px; }
+.scrape-more { width: var(--ctl-h); padding: 0 !important; font-size: 16px; letter-spacing: 1px; }
+.scrape-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 300px; padding: 4px;
+  background: var(--surface-pop); backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: var(--shadow);
+}
+.scrape-menu button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
+  padding: 7px 10px; border-radius: 5px; text-align: left; font-size: 13px;
+}
+.scrape-menu button span { font-size: 11px; color: var(--muted); }
+.scrape-menu button:not(:disabled):hover { background: var(--control-hover); }
+.scrape-menu button:disabled { opacity: .45; cursor: default; }
+
+.scrape-rows { margin: 0 0 22px; }
+.scrape-row {
+  display: grid; grid-template-columns: 18px 84px minmax(120px, 1fr) 96px 110px;
+  align-items: center; gap: 4px 14px; padding: 11px 4px; border-bottom: 1px solid var(--line);
+}
+.scrape-row-mark { font-size: 11px; color: var(--accent); text-align: center; }
+.scrape-row.done .scrape-row-mark { color: var(--muted); }
+.scrape-row-label { font-size: 13px; }
+.scrape-row.done .scrape-row-label, .scrape-row.done .scrape-row-count { color: var(--muted); }
+.scrape-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.scrape-bar > div { height: 100%; border-radius: 3px; background: var(--accent); transition: width 300ms; }
+.scrape-row.done .scrape-bar > div { background: rgba(255, 255, 255, .28); }
+.scrape-row-count { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.scrape-row-action { display: flex; justify-content: flex-end; }
+.scrape-row-note, .scrape-row-extra { grid-column: 3 / -1; }
+.scrape-row-note { font-size: 12px; color: var(--muted); }
+.scrape-missing { display: flex; flex-wrap: wrap; gap: 6px 10px; padding-top: 4px; }
+.scrape-missing-artist {
+  display: inline-flex; align-items: center; gap: 8px; padding: 3px 12px 3px 3px;
+  border-radius: 20px; border: 1px dashed var(--line-strong); font-size: 12px;
+  transition: background 120ms, border-color 120ms;
+}
+.scrape-missing-artist:not(:disabled):hover { background: var(--control-hover); border-color: var(--accent); }
+.scrape-missing-artist:disabled { opacity: .45; cursor: default; }
+
+.scrape-job {
+  display: grid; grid-template-columns: auto minmax(120px, 1fr) auto minmax(0, 1.2fr) auto;
+  align-items: center; gap: 14px; margin: -10px 0 26px; padding: 10px 14px;
+  border-radius: 10px; background: var(--accent-soft);
+}
+.scrape-job-label { font-size: 13px; }
+.scrape-job-count { font-size: 12px; font-variant-numeric: tabular-nums; }
+.scrape-job-detail { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scrape-note { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.scrape-others { display: flex; gap: 16px; margin: 14px 0 8px; }
+.scrape-others .link-btn.on { background: var(--btn-fill-hover); color: var(--fg); }
+@media (max-width: 760px) {
+  .scrape-row { grid-template-columns: 18px 72px minmax(80px, 1fr) auto; }
+  .scrape-row-action { grid-column: 2 / -1; justify-content: flex-start; }
 }
