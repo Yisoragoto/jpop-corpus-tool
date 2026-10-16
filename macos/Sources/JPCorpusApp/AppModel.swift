@@ -3,7 +3,7 @@ import JPCore
 import Observation
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case search, library, analysis
+    case search, library, analysis, importer
     var id: String { rawValue }
 
     var title: String {
@@ -11,6 +11,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .search: return "检索"
         case .library: return "曲库"
         case .analysis: return "分析"
+        case .importer: return "导入"
         }
     }
 
@@ -19,6 +20,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .search: return "text.magnifyingglass"
         case .library: return "music.note.list"
         case .analysis: return "chart.bar.xaxis"
+        case .importer: return "square.and.arrow.down"
         }
     }
 }
@@ -112,6 +114,25 @@ final class AppModel {
             await open(folder: db.deletingLastPathComponent())
             isDemo = true
             UserDefaults.standard.removeObject(forKey: Keys.library)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 在默认位置新建（或打开已有的）语料库，然后去导入页。
+    /// 打开一个不存在的 corpus.db 就是建库：Rust 那边建目录、建表、打版本戳，和 Windows 版第一次启动一样
+    func createLibrary() async {
+        await open(folder: Self.defaultLibraryFolder)
+        if client != nil { section = .importer }
+    }
+
+    /// 导入之后重新读曲目表
+    func reloadTracks() async {
+        guard let client else { return }
+        do {
+            let tracks = try await client.tracks()
+            self.tracks = tracks
+            self.tracksById = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         } catch {
             errorMessage = error.localizedDescription
         }

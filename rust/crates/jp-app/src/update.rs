@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 /// 版本发在哪
 pub const REPO: &str = "Yisoragoto/jpop-corpus-tool";
@@ -284,14 +283,7 @@ fn verified(path: &Path, expected: &str) -> bool {
 }
 
 /// 整个文件的 SHA-256。流式读，6MB 的安装包和 207MB 的词典都用它。
-pub(crate) fn sha256_of(path: &Path) -> Result<String> {
-    let mut file = std::fs::File::open(path)
-        .with_context(|| format!("打不开 {}", path.display()))?;
-    let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher)
-        .with_context(|| format!("读不完 {}", path.display()))?;
-    Ok(format!("{:x}", hasher.finalize()))
-}
+pub(crate) use jp_setup::sha256_of;
 
 /// 把安装包下到 `dir`，校验 SHA-256，返回落盘路径。
 ///
@@ -438,6 +430,7 @@ pub fn launch_installer(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
 
     fn fixture() -> Vec<u8> {
         std::fs::read(

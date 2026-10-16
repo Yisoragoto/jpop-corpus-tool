@@ -63,6 +63,27 @@ songs(id, audio_path, duration_sec, year, album_id …)
   导入新歌、校正分词后指纹会变。
 - 统计量：搭配有 logDice、MI、t、对数似然（2×2 表，期望值按实际窗口位置数算）；对比用带符号的对数似然和 log ratio（零频 0.5 平滑）。
 
+## macOS 上建库：导入、分词词典、查词
+
+macOS 客户端可以自己建库，不必从 Windows 拷：欢迎页「新建语料库」在 `~/Library/Application Support/JPOP Corpus Tool`
+打开（不存在就新建）`corpus.db`，然后到「导入」页选音乐文件夹（音频 + 同名 `.lrc`，或内嵌歌词）→ 看计划 → 导入。
+
+- **同一份代码**：扫描、计划、写库是 `jp-import`（`scan_targets` + `review` 原来写在 `jp-app` 里，挪进了 `jp-import`），
+  分词是 `jp-tokenizer`，分词词典的定位 / 下载 / 校验 / 复制是新的 `jp-setup`（原 `jp-app/src/tokenizer.rs` 和 `net.rs`，
+  `jp-app` 里仍叫 `crate::tokenizer`、`crate::net`），查词的默认值是 `jp_dict::lookup`（原 `jp-app/src/dict.rs`）。
+  `jp-ffi` 的方法名和 Tauri command 一致：`scanFolder`、`scanFiles`、`runImport`、`cancelImport`、`tokenizerStatus`、
+  `tokenizerDownload`、`tokenizerInstall`、`tokenize`、`tokenizeMissingList`、`tokenizeMissingRun`、`dictList`、`dictLookup`；
+  另有 `importProgress`、`tokenizerProgress`（见下）和给不渲染 HTML 的界面用的 `dictLookupText`（释义转成纯文本）。
+- **长作业不占会话的锁**：`runImport`、`tokenizerDownload` 启动一条线程立刻返回，线程**自己开一条 SQLite 连接**
+  （库是 WAL，两条连接都设了 30 秒 busy_timeout），界面每 250ms 问一次进度（`jp_ffi::jobs::JobView`：
+  `running / finished / cancelled / done / total / stage / result / error`）。选轮询不选 C 回调：
+  不用管回调时 Swift 对象还在不在、在哪条线程上；代价是进度最多晚几百毫秒。
+  导入、分词词典、查词、扫描这些方法在 Rust 里不拿会话的锁，Swift 侧也走另一条并发队列，导入跑着时检索照常。
+- **分词词典**放在语料库目录的 `sudachi/`，和 Windows 版同一个下载地址、同一个哈希；装好后顺手给没分词的歌补上。
+  没有词典也能导，计划上会说清楚「这批不会分词」，之后在导入页点「补上分词」。
+- **查词**读语料库目录的 `dictionaries.db`（Yomitan 词典库）。macOS 上还不能导入 Yomitan 词典，
+  现在是在 Windows 版导好后把这个文件一起拷过来；歌词面板右键一个词「查词」。
+
 ## 构建 macOS 客户端
 
 ```bash
@@ -75,7 +96,8 @@ CI：`.github/workflows/macos.yml` 在 macOS runner 上跑 Rust 核心测试、`
 
 ## 还没做的
 
-- macOS 上的导入、分词、刮削、查词、Anki 制卡（核心在 `jp-import` / `jp-tokenizer` / `jp-dict` / `jp-anki`，
-  都不依赖 Tauri，下一步按需要加进 `jp-ffi`）。现在 macOS 客户端打开已有的库。
+- macOS 上的刮削、Yomitan 词典导入、Anki 制卡（核心在 `jp-scraper` / `jp-dict` / `jp-anki`，都不依赖 Tauri）。
+- macOS 导入后还不做的两件事：取出内嵌封面（`jp-app/src/scrape.rs`）、追加 `metadata/songs.csv`
+  （`jp-app/src/library_admin.rs`）。两处还在 `jp-app` 里，要先挪进 Tauri 无关的 crate。
 - 词级时间戳。
 - 搭配目前只在行内开窗；跨行、按句法依存的搭配没做。

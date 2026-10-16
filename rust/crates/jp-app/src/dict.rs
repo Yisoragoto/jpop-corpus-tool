@@ -6,22 +6,19 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use jp_dict::import::{
     ImportOptions, ImportProgress, ImportSummary, import_dictionary, open_archive,
 };
-use jp_dict::store::{DictionaryInfo, DictionaryStore};
-use jp_dict::translator::{EnabledDictionary, FindTermsMode, FindTermsOptions, FindTermsResult};
+use jp_dict::store::DictionaryStore;
+use jp_dict::translator::FindTermsResult;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::state::AppState;
 
-/// 一次查词最多往后看多少个字（Yomitan 的默认扫描长度）。
-pub const SCAN_LENGTH: usize = 16;
-
-/// 一次最多返回多少条词条。
-pub const MAX_RESULTS: usize = 32;
+/// 查词的扫描长度、条数、选项、模式在 `jp-dict`，macOS 客户端用的是同一份
+pub use jp_dict::lookup::{MAX_RESULTS, SCAN_LENGTH, lookup_options, parse_mode};
 
 /// 词典导入作业的运行/取消状态。四个后台作业共用 `crate::job::Job`——
 /// 「第二次启动不能抹掉第一个的取消」最早就是在这儿发现并修掉的，
@@ -197,48 +194,10 @@ pub fn legacy_sources(corpus_db: &Path, imported_titles: &[String]) -> Result<Ve
     Ok(out)
 }
 
-/// 界面上启用的词典，按界面顺序编号。其余取 Yomitan 的默认值。
-pub fn lookup_options(dictionaries: &[DictionaryInfo]) -> FindTermsOptions {
-    FindTermsOptions {
-        dictionaries: dictionaries
-            .iter()
-            .filter(|d| d.enabled)
-            .enumerate()
-            .map(|(index, d)| EnabledDictionary {
-                title: d.title.clone(),
-                index,
-                alias: d.title.clone(),
-                parts_of_speech_filter: true,
-                use_deinflections: true,
-            })
-            .collect(),
-        deinflect: true,
-        remove_non_japanese_characters: true,
-        primary_reading: String::new(),
-        sort_frequency_dictionary: None,
-        sort_frequency_ascending: true,
-        use_all_frequency_dictionaries: false,
-        max_results: Some(MAX_RESULTS),
-    }
-}
-
-pub fn parse_mode(mode: Option<&str>) -> Result<FindTermsMode> {
-    Ok(match mode.unwrap_or("group") {
-        "group" => FindTermsMode::Group,
-        "split" => FindTermsMode::Split,
-        "term" => FindTermsMode::Term,
-        "simple" => FindTermsMode::Simple,
-        other => bail!("不认识的查词模式「{other}」"),
-    })
-}
-
 /// 从 `text` 开头查词。还没导入过词典时返回空结果，不新建库文件。
 pub fn lookup(state: &AppState, text: &str, mode: Option<&str>) -> Result<FindTermsResult> {
-    let mode = parse_mode(mode)?;
-    let text: String = text.chars().take(SCAN_LENGTH).collect();
     let result = state.with_dictionaries(false, |store| {
-        let options = lookup_options(&store.dictionaries()?);
-        state.translator().find_terms(store, mode, &text, &options)
+        jp_dict::lookup::lookup(store, state.translator(), text, mode)
     })?;
     Ok(result.unwrap_or_default())
 }
@@ -247,50 +206,6 @@ pub fn lookup(state: &AppState, text: &str, mode: Option<&str>) -> Result<FindTe
 mod tests {
     use super::*;
 
-    fn info(id: i64, title: &str, enabled: bool) -> DictionaryInfo {
-        DictionaryInfo {
-            id,
-            title: title.into(),
-            revision: "r".into(),
-            version: 3,
-            sequenced: false,
-            frequency_mode: None,
-            author: None,
-            url: None,
-            description: None,
-            attribution: None,
-            source_language: None,
-            target_language: None,
-            counts: serde_json::Value::Null,
-            warnings: Vec::new(),
-            has_styles: false,
-            source_path: String::new(),
-            enabled,
-            priority: id,
-            imported_at: 0,
-        }
-    }
-
-    #[test]
-    fn disabled_dictionaries_are_left_out_and_the_rest_are_numbered_in_order() {
-        let options = lookup_options(&[
-            info(1, "明鏡", true),
-            info(2, "JMnedict", false),
-            info(3, "大辞泉", true),
-        ]);
-        let got: Vec<(&str, usize)> = options
-            .dictionaries
-            .iter()
-            .map(|d| (d.title.as_str(), d.index))
-            .collect();
-        assert_eq!(got, [("明鏡", 0), ("大辞泉", 1)]);
-        assert!(
-            options
-                .dictionaries
-                .iter()
-                .all(|d| d.parts_of_speech_filter && d.use_deinflections)
-        );
-    }
 
     #[test]
     fn legacy_sources_skip_cached_tables_and_mark_what_is_already_imported() {

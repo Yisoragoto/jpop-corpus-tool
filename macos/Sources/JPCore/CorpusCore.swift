@@ -100,9 +100,13 @@ public struct AnyEncodable: Encodable, @unchecked Sendable {
 }
 
 /// 界面用的异步外壳：所有调用排在一条后台串行队列上，不卡主线程。
+///
+/// 导入、分词词典、查词这几组方法 Rust 那边不拿语料库的锁，走另一条并发队列（``performDetached(_:)``）：
+/// 207MB 的词典正在复制、或者几秒的目录扫描在跑的时候，检索和进度轮询不用排在它后面。
 public final class CorpusClient: @unchecked Sendable {
     public let core: CorpusCore
     private let queue = DispatchQueue(label: "jpcorpus.core", qos: .userInitiated)
+    private let jobs = DispatchQueue(label: "jpcorpus.jobs", qos: .userInitiated, attributes: .concurrent)
 
     public init(core: CorpusCore) {
         self.core = core
@@ -111,6 +115,15 @@ public final class CorpusClient: @unchecked Sendable {
     public func perform<R>(_ work: @escaping @Sendable (CorpusCore) throws -> R) async throws -> R {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { [core] in
+                continuation.resume(with: Result { try work(core) })
+            }
+        }
+    }
+
+    /// 不排在串行队列上。只给 Rust 那边不拿语料库锁的方法用（见类型说明）
+    public func performDetached<R>(_ work: @escaping @Sendable (CorpusCore) throws -> R) async throws -> R {
+        try await withCheckedThrowingContinuation { continuation in
+            jobs.async { [core] in
                 continuation.resume(with: Result { try work(core) })
             }
         }
@@ -193,5 +206,74 @@ public final class CorpusClient: @unchecked Sendable {
 
     public func recordPlay(_ event: PlayEvent) async throws {
         try await perform { try $0.run("recordPlay", ["event": AnyEncodable(event)]) }
+    }
+
+    // ── 导入：扫描（只读）→ 计划 → 后台写库，轮询进度 ──
+
+    /// 扫一个文件夹，和现有曲库比对，返回计划。不写库；记下这一批等 ``runImport(tokenize:)``
+    public func scanFolder(_ path: String) async throws -> ScanResult {
+        try await performDetached { try $0.call("scanFolder", ["path": AnyEncodable(path)]) }
+    }
+
+    /// 同上，但是一批具体的文件（也可以夹着文件夹）
+    public func scanFiles(_ paths: [String]) async throws -> ScanResult {
+        try await performDetached { try $0.call("scanFiles", ["paths": AnyEncodable(paths)]) }
+    }
+
+    /// 开始导入扫描过的那一批，立刻返回；进度用 ``importProgress()`` 问
+    @discardableResult
+    public func runImport(tokenize: Bool = true) async throws -> ImportStarted {
+        try await performDetached { try $0.call("runImport", ["tokenize": AnyEncodable(tokenize)]) }
+    }
+
+    public func importProgress() async throws -> JobProgress<ImportResult> {
+        try await performDetached { try $0.call("importProgress") }
+    }
+
+    /// 停下导入。停在哪首，那首之前的都是真导进去了
+    public func cancelImport() async throws {
+        try await performDetached { try $0.run("cancelImport") }
+    }
+
+    // ── 分词词典（Sudachi）──
+
+    public func tokenizerStatus() async throws -> TokenizerStatus {
+        try await performDetached { try $0.call("tokenizerStatus") }
+    }
+
+    /// 开始下载词典（43MB，解开 207MB），立刻返回；进度用 ``tokenizerProgress()`` 问
+    public func tokenizerDownload() async throws {
+        try await performDetached { try $0.run("tokenizerDownload") }
+    }
+
+    public func tokenizerProgress() async throws -> JobProgress<DictionaryReady> {
+        try await performDetached { try $0.call("tokenizerProgress") }
+    }
+
+    /// 把别处的一份词典（另一个语料库目录、0.1.x 的项目目录……）复制进来。同步做完才返回
+    public func tokenizerInstall(from path: String) async throws -> DictionaryReady {
+        try await performDetached { try $0.call("tokenizerInstall", ["path": AnyEncodable(path)]) }
+    }
+
+    /// 有歌词、没分词的歌（没词典时导进来的）
+    public func untokenizedCount() async throws -> Int {
+        struct Song: Decodable { var songId: String }
+        let songs: [Song] = try await perform { try $0.call("tokenizeMissingList") }
+        return songs.count
+    }
+
+    public func tokenizeMissing() async throws -> Tokenized {
+        try await performDetached { try $0.call("tokenizeMissingRun") }
+    }
+
+    // ── 查词（语料库目录里的 Yomitan 词典库 dictionaries.db）──
+
+    public func dictionaries() async throws -> [DictionaryInfo] {
+        try await performDetached { try $0.call("dictList") }
+    }
+
+    /// 从 `text` 开头查词，释义是纯文本
+    public func lookup(_ text: String) async throws -> LookupText {
+        try await performDetached { try $0.call("dictLookupText", ["text": AnyEncodable(text)]) }
     }
 }

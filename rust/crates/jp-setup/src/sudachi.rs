@@ -1,5 +1,8 @@
 //! 分词词典（Sudachi）放在哪、怎么补上。
 //!
+//! 原来在 `jp-app/src/tokenizer.rs`；和 Tauri 无关，挪到这里给 macOS 客户端（`jp-ffi`）共用。
+//! `jp-app` 里还叫 `crate::tokenizer`（`pub use jp_setup::sudachi as tokenizer`）。
+//!
 //! 振假名、导入时的分词、实时分词都要 `system.dic`（207MB）。0.1.x 的那一份躺在
 //! 项目目录的 `venv/Lib/site-packages` 里，所以在开发树上一直都有；新装的程序把库
 //! 建在 `%LOCALAPPDATA%\JPOP Corpus Tool`，那里没有 venv——**迁移完数据还是没有
@@ -115,7 +118,7 @@ pub struct DownloadProgress {
 /// 同一个进程里只下一份：设置里点一次、歌词那条横幅上再点一次，不能下两遍。
 static DOWNLOADING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-use crate::update::sha256_of;
+use crate::sha256_of;
 
 /// 把词典下到当前语料库目录的 `sudachi/`。
 ///
