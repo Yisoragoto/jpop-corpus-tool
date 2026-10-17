@@ -13,11 +13,27 @@ import JPCore
 /// `JPCORPUS_SMOKE_AUDIO=<目录>` 指一个音频文件夹，示例库的歌按文件名（001.flac…）去那里找，播放那条路也走一遍。
 @MainActor
 enum SmokeRun {
-    static var outputDirectory: URL? {
+    nonisolated static var outputDirectory: URL? {
         ProcessInfo.processInfo.environment["JPCORPUS_SMOKE"].map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
-    static var isEnabled: Bool { outputDirectory != nil }
+    nonisolated static var isEnabled: Bool { outputDirectory != nil }
+
+    /// 换行符。不写成转义字面量：这份文件是在 Windows 上用脚本改的，转义序列在路上被吃过一次
+    nonisolated static let newline = String(UnicodeScalar(10))
+
+    /// 直接写 stderr（不缓冲）：stdout 接到管道时 print 是整块缓冲的，进程一退出就看不到了
+    nonisolated static func trace(_ line: String) {
+        FileHandle.standardError.write(Data(("[smoke] " + line + newline).utf8))
+    }
+
+    /// 应用一启动就调：留个标记文件，CI 上能分清「根本没起来」和「起来了但没开窗口」
+    static func markLaunched() {
+        guard let out = outputDirectory else { return }
+        try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        try? ("launched \(Date())" + newline).write(to: out.appendingPathComponent("launched.txt"), atomically: true, encoding: .utf8)
+        trace("init，输出到 \(out.path)")
+    }
 
     static func run(_ app: AppModel) async {
         guard let out = outputDirectory else { return }
@@ -25,8 +41,9 @@ enum SmokeRun {
         var log: [String] = []
         func note(_ line: String) {
             log.append(line)
-            print("[smoke] \(line)")
+            trace(line)
         }
+        note("窗口任务开始，窗口数 \(NSApplication.shared.windows.count)")
 
         if let audio = ProcessInfo.processInfo.environment["JPCORPUS_SMOKE_AUDIO"] {
             app.audioRoots = [audio]

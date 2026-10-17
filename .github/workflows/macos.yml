@@ -91,8 +91,22 @@ jobs:
               w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 * i / rate))) for i in range(rate * 300)))
           PY
           for id in 001 002 003 004; do afconvert -f flac -d flac "$audio/tone.wav" "$audio/$id.flac"; done
-          JPCORPUS_SMOKE="$out" JPCORPUS_SMOKE_AUDIO="$audio" perl -e 'alarm shift; exec @ARGV' 120 "build/JPOP Corpus.app/Contents/MacOS/JPCorpus" || echo "exit=$?"
-          cat "$out/smoke.txt" || true
+          app="$PWD/build/JPOP Corpus.app"
+          set +e
+          # 先直接跑可执行文件（stderr 里有 [smoke] 生命周期日志）
+          JPCORPUS_SMOKE="$out" JPCORPUS_SMOKE_AUDIO="$audio" perl -e 'alarm shift; exec @ARGV' 120 "$app/Contents/MacOS/JPCorpus"
+          echo "direct exit=$?"
+          # 没出截图就经 LaunchServices 再开一次：GUI 应用通常要这样才拿得到窗口服务器的会话
+          if [ ! -f "$out/02-kwic.png" ]; then
+            open -W -n --env JPCORPUS_SMOKE="$out" --env JPCORPUS_SMOKE_AUDIO="$audio" \
+              --stdout "$out/stdout.txt" --stderr "$out/stderr.txt" "$app" &
+            pid=$!; ( sleep 120; kill $pid 2>/dev/null; pkill -f "JPOP Corpus.app" ) & wait $pid
+            echo "open exit=$?"
+            cat "$out/stderr.txt" 2>/dev/null
+          fi
+          log show --last 3m --style compact --predicate 'process == "JPCorpus"' 2>/dev/null | tail -60
+          set -e
+          cat "$out/smoke.txt" 2>/dev/null || true
           ls -la "$out"
           test -f "$out/02-kwic.png"
 

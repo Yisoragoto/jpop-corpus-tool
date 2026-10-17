@@ -5,11 +5,13 @@ import SwiftUI
 @main
 @MainActor
 struct JPCorpusApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var app = AppModel()
 
     init() {
         // `swift run` 起来的是裸可执行文件，不是 .app：不设这一句窗口不会到前台、菜单栏也不出来
         NSApplication.shared.setActivationPolicy(.regular)
+        if SmokeRun.isEnabled { SmokeRun.markLaunched() }
     }
 
     var body: some Scene {
@@ -55,5 +57,26 @@ struct JPCorpusApp: App {
             SettingsView()
                 .environment(app)
         }
+    }
+}
+
+/// 只为冒烟模式记生命周期：CI 上应用一闪而过时，要知道是没开出窗口、还是被谁要求退出
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard SmokeRun.isEnabled else { return }
+        SmokeRun.trace("didFinishLaunching，窗口数 \(NSApplication.shared.windows.count)")
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if SmokeRun.isEnabled {
+            let visible = sender.windows.filter { $0.isVisible }.count
+            SmokeRun.trace("shouldTerminate，窗口数 \(sender.windows.count)，可见 \(visible)")
+        }
+        return .terminateNow
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if SmokeRun.isEnabled { SmokeRun.trace("willTerminate") }
     }
 }
