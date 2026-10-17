@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 @MainActor
 struct ContentView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
         @Bindable var app = app
@@ -45,8 +47,6 @@ struct ContentView: View {
                             .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
                     }
                     .toolbarBackground(.hidden, for: .windowToolbar)
-                    // 全屏歌词盖住整个窗口：工具栏（标题、搜索框、按钮）也收起来，不然顶上留一条
-                    .toolbar(app.showStage ? .hidden : .visible, for: .windowToolbar)
                     .sheet(isPresented: $app.showQuickSearch) {
                         QuickSearchView()
                     }
@@ -65,14 +65,11 @@ struct ContentView: View {
             }
         }
         .background(GlassWindowConfigurator())
-        // 全屏歌词盖在整个窗口上（侧栏、正文、检查器都在它下面）
-        .overlay {
-            if app.showStage {
-                LyricsStage()
-                    .transition(.opacity)
-            }
+        // 全屏歌词是单独一个窗口（JPCorpusApp 里的 Window("stage")）：盖在主窗口上做的话，
+        // 主窗口的标题栏和工具栏总会露一条出来
+        .onChange(of: app.showStage) { _, on in
+            if on { openWindow(id: "stage") } else { dismissWindow(id: "stage") }
         }
-        .animation(.easeInOut(duration: 0.3), value: app.showStage)
         .task(id: "\(app.player.track?.id ?? "")|\(app.showFurigana)|\(app.furiganaMode.rawValue)") {
             await app.loadFurigana()
         }

@@ -63,6 +63,15 @@ struct JPCorpusApp: App {
             }
         }
 
+        // 全屏歌词：没有标题栏的独立窗口，打开后切进原生全屏
+        Window("全屏歌词", id: "stage") {
+            LyricsStage()
+                .environment(app)
+                .frame(minWidth: 720, minHeight: 480)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1280, height: 800)
+
         Settings {
             SettingsView()
                 .environment(app)
