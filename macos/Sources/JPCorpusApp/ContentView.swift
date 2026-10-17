@@ -28,6 +28,14 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // 播放条是浮在正文下方的一张玻璃卡片。只挂在正文这一栏：
+                    // 挂在整个分栏视图上时，各栏不会给它让位，卡片会盖住侧栏底部和正文最后几行
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        PlayerBar()
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 10)
+                            .padding(.top, 4)
+                    }
                     .glass(.underWindowBackground)
                     .inspector(isPresented: $app.showLyrics) {
                         LyricsPanel()
@@ -44,13 +52,6 @@ struct ContentView: View {
                             .help("显示 / 隐藏歌词面板（⌘Y）")
                         }
                     }
-                }
-                // 播放条是浮在玻璃上的一张卡片，不是贴底的一整条
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    PlayerBar()
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 10)
-                        .padding(.top, 4)
                 }
                 .glass(.sidebar)
             }
