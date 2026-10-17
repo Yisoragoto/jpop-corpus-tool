@@ -12,6 +12,7 @@ struct SongDetailView: View {
     @State private var profile: SongProfile?
     @State private var lineage: SongLineage?
     @State private var favorite = false
+    @State private var scraping = false
 
     var body: some View {
         ScrollView {
@@ -58,6 +59,19 @@ struct SongDetailView: View {
         }
     }
 
+    private func scrapeThis(_ t: Track) async {
+        guard let client = app.client else { return }
+        scraping = true
+        defer { scraping = false }
+        do {
+            _ = try await client.scrapeTrack(t.id)
+            await app.reloadTracks()
+            await load()
+        } catch {
+            app.errorMessage = error.localizedDescription
+        }
+    }
+
     private func header(_ t: Track) -> some View {
         HStack(alignment: .bottom, spacing: 20) {
             CoverImage(path: t.coverPath, size: 180, cornerRadius: 12)
@@ -87,6 +101,17 @@ struct SongDetailView: View {
                     } label: {
                         Label(favorite ? "已收藏" : "收藏", systemImage: favorite ? "heart.fill" : "heart")
                     }
+                    Button {
+                        Task { await scrapeThis(t) }
+                    } label: {
+                        if scraping {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("刮削", systemImage: "wand.and.stars")
+                        }
+                    }
+                    .disabled(scraping)
+                    .help("从 MusicBrainz / iTunes 补这首歌空着的专辑、年份、流派和封面（不覆盖已有的）")
                     if let albumId = t.albumId {
                         Button("去专辑") {
                             Task {
@@ -261,39 +286,55 @@ struct WrapChips: View {
     }
 }
 
-/// 简单的流式布局：一行放不下就换行
+/// 简单的流式布局：一行放不下就换行。`alignment` 决定每一行在可用宽度里靠左还是居中
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
+    var lineSpacing: CGFloat?
+    var alignment: HorizontalAlignment = .leading
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [(items: [(Int, CGSize)], width: CGFloat, height: CGFloat)] {
+        var rows: [(items: [(Int, CGSize)], width: CGFloat, height: CGFloat)] = []
+        var current: [(Int, CGSize)] = []
+        var x: CGFloat = 0
+        var height: CGFloat = 0
+        for (index, view) in subviews.enumerated() {
+            let size = view.sizeThatFits(.unspecified)
+            if !current.isEmpty && x + size.width > width {
+                rows.append((current, x - spacing, height))
+                current = []
+                x = 0
+                height = 0
+            }
+            current.append((index, size))
+            x += size.width + spacing
+            height = max(height, size.height)
+        }
+        if !current.isEmpty { rows.append((current, x - spacing, height)) }
+        return rows
+    }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x > 0 && x + size.width > width {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            x += size.width + spacing
-            maxX = max(maxX, x - spacing)
-            rowHeight = max(rowHeight, size.height)
-        }
-        return CGSize(width: min(maxX, width), height: y + rowHeight)
+        let rows = arrange(subviews, width: width)
+        let gap = lineSpacing ?? spacing
+        let height = rows.map { $0.height }.reduce(0, +) + gap * CGFloat(max(rows.count - 1, 0))
+        let widest = rows.map { $0.width }.max() ?? 0
+        return CGSize(width: width.isFinite && alignment != .leading ? width : min(widest, width), height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
-            if x > bounds.minX && x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
+        let gap = lineSpacing ?? spacing
+        var y = bounds.minY
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            if alignment == .center { x += (bounds.width - row.width) / 2 }
+            if alignment == .trailing { x += bounds.width - row.width }
+            for (index, size) in row.items {
+                // 同一行底边对齐：振假名那一块比普通字高也不会把字顶上去
+                subviews[index].place(at: CGPoint(x: x, y: y + row.height - size.height), proposal: ProposedViewSize(size))
+                x += size.width + spacing
             }
-            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+            y += row.height + gap
         }
     }
 }

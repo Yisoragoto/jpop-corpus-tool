@@ -3,7 +3,7 @@ import JPCore
 import Observation
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case home, search, library, analysis, dictionaries, importer
+    case home, search, library, analysis, dictionaries, scrape, importer
     var id: String { rawValue }
 
     var title: String {
@@ -13,6 +13,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .library: return "曲库"
         case .analysis: return "分析"
         case .dictionaries: return "词典"
+        case .scrape: return "刮削"
         case .importer: return "导入"
         }
     }
@@ -24,6 +25,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .library: return "music.note.list"
         case .analysis: return "chart.bar.xaxis"
         case .dictionaries: return "character.book.closed"
+        case .scrape: return "wand.and.stars"
         case .importer: return "square.and.arrow.down"
         }
     }
@@ -65,6 +67,21 @@ final class AppModel {
     var analysisScope: ScopeRequest?
     /// ⌘K 全库搜索
     var showQuickSearch = false
+    /// 全屏歌词
+    var showStage = false
+
+    /// 振假名开关和注法。存在偏好里，歌词面板和全屏歌词共用
+    var showFurigana = UserDefaults.standard.bool(forKey: Keys.furigana) {
+        didSet { UserDefaults.standard.set(showFurigana, forKey: Keys.furigana) }
+    }
+    var furiganaMode = FuriganaMode(rawValue: UserDefaults.standard.string(forKey: Keys.furiganaMode) ?? "") ?? .kanji {
+        didSet { UserDefaults.standard.set(furiganaMode.rawValue, forKey: Keys.furiganaMode) }
+    }
+    /// 当前这首每行的注音（utteranceId → 注音段）。开关关着、或者没有分词词典时是空的
+    private(set) var furigana: [Int64: [Ruby]] = [:]
+    /// 振假名取不到的原因（多半是没有分词词典）
+    private(set) var furiganaError: String?
+
     /// 词典页的「试查」预先填进去的字（冒烟截图用）
     var lookupSeed = ""
     /// 词典库被别处改过（冒烟导入），词典页据此重读
@@ -91,6 +108,8 @@ final class AppModel {
     private enum Keys {
         static let library = "libraryFolder"
         static let audioRoots = "audioRoots"
+        static let furigana = "furigana"
+        static let furiganaMode = "furiganaMode"
     }
 
     init() {
@@ -173,6 +192,19 @@ final class AppModel {
     func track(_ id: String) async throws -> Track? {
         if let known = tracksById[id] { return known }
         return try await client?.track(id)
+    }
+
+    /// 读当前这首的振假名。换歌、开关、换注法时调（ContentView 里按这三样做 task 的 id）
+    func loadFurigana() async {
+        furigana = [:]
+        furiganaError = nil
+        guard showFurigana, let songId = player.track?.id, let client else { return }
+        do {
+            let lines = try await client.lyricsFurigana(songId, mode: furiganaMode)
+            furigana = Dictionary(lines.map { ($0.utteranceId, $0.rubies) }, uniquingKeysWith: { a, _ in a })
+        } catch {
+            furiganaError = error.localizedDescription
+        }
     }
 
     /// 去曲库页的某个详情页（从别处来时先清掉原来的栈）

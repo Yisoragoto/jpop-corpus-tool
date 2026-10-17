@@ -26,6 +26,7 @@ struct ContentView: View {
                         case .library: LibraryView()
                         case .analysis: AnalysisView()
                         case .dictionaries: DictionaryView()
+                        case .scrape: ScrapeView()
                         case .importer: ImportView()
                         }
                     }
@@ -62,6 +63,17 @@ struct ContentView: View {
             }
         }
         .background(GlassWindowConfigurator())
+        // 全屏歌词盖在整个窗口上（侧栏、正文、检查器都在它下面）
+        .overlay {
+            if app.showStage {
+                LyricsStage()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: app.showStage)
+        .task(id: "\(app.player.track?.id ?? "")|\(app.showFurigana)|\(app.furiganaMode.rawValue)") {
+            await app.loadFurigana()
+        }
         .alert("出错了", isPresented: Binding(get: { app.errorMessage != nil }, set: { if !$0 { app.errorMessage = nil } })) {
             Button("好") { app.errorMessage = nil }
         } message: {

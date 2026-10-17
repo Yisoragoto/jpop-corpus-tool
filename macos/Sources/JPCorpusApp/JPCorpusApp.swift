@@ -44,6 +44,11 @@ struct JPCorpusApp: App {
                 Divider()
                 Button(app.showLyrics ? "隐藏歌词面板" : "显示歌词面板") { app.showLyrics.toggle() }
                     .keyboardShortcut("y", modifiers: [.command])
+                Button(app.showStage ? "退出全屏歌词" : "全屏歌词") { app.showStage.toggle() }
+                    .keyboardShortcut("f", modifiers: [.command, .shift])
+                    .disabled(app.player.track == nil)
+                Toggle("振假名", isOn: Binding(get: { app.showFurigana }, set: { app.showFurigana = $0 }))
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
             }
             CommandGroup(after: .textEditing) {
                 Button("全库搜索…") { app.showQuickSearch = true }

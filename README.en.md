@@ -268,7 +268,12 @@ analysis, line spans, import, tokenisation, lookup, the schema and its migration
 - Anki mining: one click on a lookup result (Lyrics / Lapis note types, per-artist subdecks, the example's audio cut
   from that line), using the same mining code as the Windows app.
 
-Not there yet: scraping, Anki batch export and the mining report, replacing and editing lyrics. Architecture and build notes: [docs/clients.md](docs/clients.md)
+- Scraping: fill in album, year, genre, covers and artist photos from MusicBrainz / iTunes / Deezer (empty fields
+  only); uncertain matches wait in a review queue for you to pick; single songs can be scraped too.
+- Furigana (kanji only / whole word) and full-screen lyrics (blurred cover behind, the current line large and
+  centred, click a line to jump to it).
+
+Not there yet: Anki batch export and the mining report, replacing and editing lyrics. Architecture and build notes: [docs/clients.md](docs/clients.md)
 (Chinese).
 
 ## First run

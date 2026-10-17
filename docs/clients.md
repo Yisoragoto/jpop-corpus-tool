@@ -75,6 +75,12 @@ songs(id, audio_path, duration_sec, year, album_id …)
   `jp-app/src/mine.rs` 挪进了 `jp_anki::lyric_mine`，分 `prepare`（拿语料库的锁，很快）和 `send`（切音频、传 Anki，不拿锁）
   两步，两个客户端共用；macOS 打开 Windows 拷来的库时，例句音频按 `media::resolve` 找到本机的文件再切。
   链进 `jp-anki` 后静态库里多了 rodio（CoreAudio）、Rubber Band（C++）和 HTTP，Swift 包要链 libc++ 和几个系统框架（见 `macos/Package.swift`）。
+- **刮削与振假名**：刮削落库的那一层（单首、批量、封面、歌手照片、补封面、复核采纳）从 `jp-app/src/scrape.rs` 挪成了新 crate `jp-scrape`，
+  批量函数 `run_batch` / `run_artist_batch` 收「取消了没有」和「报进度」两个回调：Tauri 把进度发成事件，jp-ffi 存进作业等界面轮询。
+  不放进 `jp-scraper`：那个 crate 不认识语料库、关掉 `network` 特性后不碰网络，保持这样。
+  `jp-ffi` 的方法：`scrapeSummary`、`completeness`、`scrapeStart` / `scrapeArtistsStart` / `scrapeProgress` / `scrapeCancel`、
+  `scrapeTrack`、`scrapeReviewQueue`、`scrapeAccept`、`scrapeSkip`、`scrapeRetryFailed`、`scrapeArtist`、`scrapeBackfillCovers`；
+  联网的都单开一条连接，不占会话那条。振假名 `lyricsFurigana`（同 Tauri 的 `lyrics_furigana`，现场用 Sudachi 取读音、不入库）。
 - 统计量：搭配有 logDice、MI、t、对数似然（2×2 表，期望值按实际窗口位置数算）；对比用带符号的对数似然和 log ratio（零频 0.5 平滑）。
 
 ## macOS 上建库：导入、分词词典、查词

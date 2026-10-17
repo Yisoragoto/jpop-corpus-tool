@@ -67,6 +67,13 @@ struct LyricsPanel: View {
                     .glassCard(cornerRadius: 12)
                     .padding(10)
             }
+            if app.showFurigana, let error = app.furiganaError {
+                Text("振假名：\(error)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
+            }
             if let error = player.lastError {
                 Text(error)
                     .font(.caption)
@@ -126,6 +133,14 @@ struct LyricsPanel: View {
                     .lineLimit(1)
             }
             Spacer()
+            FuriganaMenu()
+            Button {
+                app.showStage = true
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+            }
+            .buttonStyle(.borderless)
+            .help("全屏歌词（⇧⌘F）")
             Button {
                 showProfile.toggle()
             } label: {
@@ -148,8 +163,7 @@ struct LyricsPanel: View {
         let focused = player.focusUtterance == line.utteranceId
         let hint = line.timeSec.map { formatTime($0) + " · 点一下从这里放，右键检索 / 查词 / 循环" } ?? "这一行没有时间戳"
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(line.text)
-                .font(.system(size: 19, weight: .bold))
+            FuriganaText(text: line.text, rubies: app.furigana[line.utteranceId] ?? [])
                 .foregroundStyle(current ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 .opacity(current ? 1 : (line.timeSec == nil ? 0.35 : 0.5))
                 .scaleEffect(current ? 1.0 : 0.97, anchor: .leading)
@@ -339,5 +353,31 @@ private struct BarCover: View {
             guard let track, !track.coverPath.isEmpty, let client = app.client else { return }
             image = loadImage(atPath: (try? await client.resolveMedia(track.coverPath)) ?? nil)
         }
+    }
+}
+
+/// 振假名：开关 + 注法（只注汉字 / 整词注音）。歌词面板和全屏歌词各放一个，状态是同一份
+@MainActor
+struct FuriganaMenu: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Menu {
+            Toggle("显示振假名", isOn: Binding(get: { app.showFurigana }, set: { app.showFurigana = $0 }))
+            Divider()
+            Picker("注法", selection: Binding(get: { app.furiganaMode }, set: { app.furiganaMode = $0; app.showFurigana = true })) {
+                Text("只注汉字").tag(FuriganaMode.kanji)
+                Text("整词注音").tag(FuriganaMode.word)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Text("あ")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(app.showFurigana ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("振假名（⇧⌘R）。读音来自分词词典，和 Windows 版同一套规则")
     }
 }

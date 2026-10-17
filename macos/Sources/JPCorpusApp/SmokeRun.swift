@@ -75,6 +75,28 @@ enum SmokeRun {
             note("KWIC 没有结果")
         }
 
+        // 振假名要分词词典：CI 把缓存的那份目录传进来，装进示例库（和导入页「选已有的词典」同一条路）
+        if let sudachi = ProcessInfo.processInfo.environment["JPCORPUS_SMOKE_SUDACHI"], !sudachi.isEmpty, let client = app.client {
+            do {
+                _ = try await client.tokenizerInstall(from: sudachi)
+                note("分词词典：装好了")
+            } catch {
+                note("分词词典装不上：\(error.localizedDescription)")
+            }
+        }
+        app.showFurigana = true
+        await settle(2)
+        let rubyCount = app.furigana.values.map { $0.count }.reduce(0, +)
+        note("振假名：\(rubyCount) 段，错误：\(app.furiganaError ?? "无")")
+        shot("03b-furigana", into: out, note: note)
+
+        // 全屏歌词
+        app.showStage = true
+        await settle(2)
+        shot("03c-stage", into: out, note: note)
+        app.showStage = false
+        await settle(1)
+
         // 首页：刚才那次试听到行尾自动暂停，播放记录里有了，「继续听」应该是这首
         app.section = .home
         await settle(2)
@@ -165,9 +187,14 @@ enum SmokeRun {
         await settle(2.5)
         shot("14-dictionaries", into: out, note: note)
 
+        // 刮削页：只打开看看，不点（CI 上别去打 MusicBrainz）
+        app.section = .scrape
+        await settle(2)
+        shot("15-scrape", into: out, note: note)
+
         app.section = .importer
         await settle(2)
-        shot("15-import", into: out, note: note)
+        shot("16-import", into: out, note: note)
 
         try? log.joined(separator: "\n").write(to: out.appendingPathComponent("smoke.txt"), atomically: true, encoding: .utf8)
         NSApplication.shared.terminate(nil)

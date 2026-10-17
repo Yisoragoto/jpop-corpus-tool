@@ -62,6 +62,8 @@ pub struct Session {
     tokenizer_job: Arc<Job>,
     /// 导入 Yomitan 词典（zip）
     dict_job: Arc<Job>,
+    /// 批量刮削（曲目、歌手共用：两边都排 MusicBrainz 的队，同时跑只会互相拖慢）
+    scrape_job: Arc<Job>,
     /// Yomitan 词典库 `dictionaries.db`，和 corpus.db 同一目录、分开存。没导入过就一直是 None
     dictionaries: Mutex<Option<jp_dict::store::DictionaryStore>>,
     translator: jp_dict::translator::Translator,
@@ -128,6 +130,7 @@ impl Session {
             import_job: Arc::default(),
             tokenizer_job: Arc::default(),
             dict_job: Arc::default(),
+            scrape_job: Arc::default(),
             dictionaries: Mutex::new(None),
             translator: jp_dict::translator::Translator::new(),
         })
@@ -139,6 +142,20 @@ impl Session {
             Some(root) if !root.as_os_str().is_empty() => root.clone(),
             _ => PathBuf::from("."),
         }
+    }
+
+    /// 刮下来的封面、歌手照片放哪（和 Windows 版一样：`raw/covers`、`raw/artists`）
+    fn covers_dir(&self) -> PathBuf {
+        self.library_root().join("raw").join("covers")
+    }
+
+    fn artists_dir(&self) -> PathBuf {
+        self.library_root().join("raw").join("artists")
+    }
+
+    /// 要联网的单次操作用的连接：自己开一条，不占会话那条（识别要排 MusicBrainz 的队，封面一张十几秒）
+    fn network_connection(&self) -> Result<Corpus> {
+        open_worker(&self.db_path)
     }
 
     /// Yomitan 词典库的位置：语料库目录里的 `dictionaries.db`（和 Windows 版一样）
@@ -360,6 +377,40 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
             Value::Null
         }
 
+        // 振假名（同 Tauri 的 lyrics_furigana）：现场用 Sudachi 取读音，一行约 0.02 ms，不入库
+        "lyricsFurigana" => {
+            let song_id: String = arg(&args, "songId")?;
+            let mode: jp_tokenizer::furigana::FuriganaMode = arg_or(&args, "mode", Default::default())?;
+            let analyzer = session
+                .analyzer()
+                .ok_or_else(|| anyhow!(jp_setup::sudachi::no_dictionary("振假名")))?;
+            let mut out = Vec::new();
+            for line in corpus.lyrics(&song_id)? {
+                let tokens = analyzer.analyze(&line.text)?;
+                let segments = jp_tokenizer::furigana::furigana_segments(&line.text, &tokens, mode);
+                // 对不上原文就这一行不注音，不猜位置
+                let rubies = jp_tokenizer::furigana::ruby_spans(&line.text, &segments).unwrap_or_default();
+                out.push(json!({ "utteranceId": line.utterance_id, "rubies": rubies }));
+            }
+            Value::Array(out)
+        }
+
+        // 刮削：只读的和改一下状态的（要联网的在 dispatch_unlocked）
+        "scrapeSummary" => serde_json::to_value(jp_scrape::summary(corpus.connection())?)?,
+        "completeness" => serde_json::to_value(corpus.completeness()?)?,
+        "scrapeReviewQueue" => serde_json::to_value(jp_scrape::review_queue(
+            corpus.connection(),
+            arg_or(&args, "statuses", None)?,
+            arg_or(&args, "limit", None)?,
+        )?)?,
+        "scrapeSkip" => {
+            let file_path: String = arg(&args, "filePath")?;
+            let reason: Option<String> = arg_or(&args, "reason", None)?;
+            jp_scrape::skip(corpus.connection(), &file_path, reason.as_deref())?;
+            Value::Null
+        }
+        "scrapeRetryFailed" => json!(jp_scrape::retry_failed(corpus.connection())?),
+
         // 媒体路径
         "setAudioRoots" => {
             let roots: Vec<String> = arg_or(&args, "roots", Vec::new())?;
@@ -449,6 +500,55 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
             lookup_text(&result)
         }
 
+        // ── 刮削（jp-scrape，和 Tauri 同一份）。联网的都用自己的连接 ──
+        "scrapeStart" => {
+            let ids = {
+                let corpus = session.corpus.lock().map_err(|_| anyhow!("语料库连接已损坏"))?;
+                jp_scrape::songs_to_scrape(corpus.connection(), arg_or(args, "onlyMissing", true)?, arg_or(args, "limit", 1000)?)?
+            };
+            let total = ids.len();
+            let (db, covers) = (session.db_path.clone(), session.covers_dir());
+            start_scrape(session, move |cancelled, progress| jp_scrape::run_batch(&db, &covers, &ids, cancelled, progress))?;
+            json!(total)
+        }
+        "scrapeArtistsStart" => {
+            let names = {
+                let corpus = session.corpus.lock().map_err(|_| anyhow!("语料库连接已损坏"))?;
+                jp_scrape::library_artists(corpus.connection(), arg_or(args, "onlyMissing", true)?)?
+            };
+            let total = names.len();
+            let (db, dir) = (session.db_path.clone(), session.artists_dir());
+            start_scrape(session, move |cancelled, progress| {
+                jp_scrape::run_artist_batch(&db, &dir, &names, cancelled, progress)
+            })?;
+            json!(total)
+        }
+        "scrapeProgress" => serde_json::to_value(session.scrape_job.view())?,
+        "scrapeCancel" => {
+            session.scrape_job.request_cancel();
+            Value::Null
+        }
+        "scrapeTrack" => {
+            let song_id: String = arg(args, "songId")?;
+            let conn = session.network_connection()?;
+            serde_json::to_value(jp_scrape::scrape_track(conn.connection(), &session.covers_dir(), &song_id)?)?
+        }
+        "scrapeAccept" => {
+            let file_path: String = arg(args, "filePath")?;
+            let index: usize = arg(args, "candidateIndex")?;
+            let conn = session.network_connection()?;
+            serde_json::to_value(jp_scrape::accept_candidate(conn.connection(), &session.covers_dir(), &file_path, index)?)?
+        }
+        "scrapeArtist" => {
+            let name: String = arg(args, "name")?;
+            let conn = session.network_connection()?;
+            serde_json::to_value(jp_scrape::scrape_artist_one(conn.connection(), &session.artists_dir(), &name)?)?
+        }
+        "scrapeBackfillCovers" => {
+            let conn = session.network_connection()?;
+            serde_json::to_value(jp_scrape::backfill_and_fill_albums(conn.connection(), &session.covers_dir())?)?
+        }
+
         // ── 词典管理（同 Tauri 的 dict_import_* / dict_set_* / dict_delete）──
         "dictImport" => {
             let paths: Vec<String> = arg(args, "paths")?;
@@ -527,6 +627,22 @@ fn mine(
         jp_corpus::media::resolve(stored, session.root.as_deref(), &audio_roots).map(|p| p.display().to_string())
     });
     jp_anki::lyric_mine::send(anki, &store, &prepared, request)
+}
+
+/// 批量刮削的外壳：进度存进作业状态等界面来问。`stage` 是刚刮完的那首（或那位歌手），
+/// 跑完的结果是逐条的记录（状态、采纳的候选、封面下没下下来）
+fn start_scrape(
+    session: &Session,
+    work: impl FnOnce(&dyn Fn() -> bool, &mut dyn FnMut(jp_scrape::ScrapeProgress)) -> Result<bool> + Send + 'static,
+) -> Result<()> {
+    session.scrape_job.spawn("刮削", move |job| {
+        let mut items = Vec::new();
+        let cancelled = work(&|| job.cancelled(), &mut |p: jp_scrape::ScrapeProgress| {
+            job.report(p.done as u64, p.total as u64, p.title.clone());
+            items.push(p);
+        })?;
+        Ok((json!({ "items": items }), cancelled))
+    })
 }
 
 /// 逐本导入 Yomitan 词典包（zip）。一本失败不影响后面的；取消时正在导的那本整本回滚。
@@ -927,6 +1043,48 @@ mod tests {
         assert_eq!(listed(&s), !was);
         assert_eq!(s.call("toggleFavorite", fav).unwrap(), json!(was));
         assert_eq!(listed(&s), was);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// 刮削的本地部分（不联网）：统计、复核队列、重试、完整度；批量作业空跑一遍能收尾。
+    /// 振假名：有分词词典时位置落在原文里，没有时说清楚缺什么
+    #[test]
+    fn scraping_bookkeeping_and_furigana_answer_without_the_network() {
+        let (s, dir) = session();
+        let summary = s.call("scrapeSummary", json!({})).unwrap();
+        assert!(summary.is_object(), "{summary}");
+        assert!(s.call("scrapeReviewQueue", json!({})).unwrap().as_array().unwrap().is_empty());
+        assert_eq!(s.call("scrapeRetryFailed", json!({})).unwrap(), json!(0));
+        assert!(s.call("completeness", json!({})).unwrap().is_object());
+
+        assert_eq!(s.call("scrapeStart", json!({ "limit": 0 })).unwrap(), json!(0));
+        let mut view = Value::Null;
+        for _ in 0..500 {
+            view = s.call("scrapeProgress", json!({})).unwrap();
+            if view["finished"] == json!(true) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(view["finished"], json!(true), "{view}");
+        assert!(view["error"].is_null(), "{view}");
+        assert_eq!(view["result"]["items"], json!([]));
+
+        match s.call("lyricsFurigana", json!({ "songId": "004", "mode": "kanji" })) {
+            Ok(lines) => {
+                let lyrics = s.call("lyrics", json!({ "songId": "004" })).unwrap();
+                for (line, f) in lyrics.as_array().unwrap().iter().zip(lines.as_array().unwrap()) {
+                    assert_eq!(line["utteranceId"], f["utteranceId"]);
+                    let len = line["text"].as_str().unwrap().chars().count() as u64;
+                    for r in f["rubies"].as_array().unwrap() {
+                        assert!(r["end"].as_u64().unwrap() <= len && !r["reading"].as_str().unwrap().is_empty(), "{f}");
+                    }
+                }
+                let first = &lines[0]["rubies"];
+                assert!(first.as_array().unwrap().iter().any(|r| r["reading"] == "よる"), "「雨が降る夜に」的夜要注よる：{first}");
+            }
+            Err(err) => assert!(err.to_string().contains("词典"), "{err}"),
+        }
         std::fs::remove_dir_all(dir).ok();
     }
 
