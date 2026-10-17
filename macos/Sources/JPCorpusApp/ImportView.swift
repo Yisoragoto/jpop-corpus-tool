@@ -175,8 +175,11 @@ struct ImportView: View {
                     systemImage: "square.and.arrow.down.on.square",
                     description: Text("音频（FLAC、MP3、M4A、WAV…）旁边放同名的 .lrc，歌词会一起导进来；\n音频里内嵌的歌词也认。先看计划，确认了才写库。")
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        // 顶部对齐：不加的话整列在窗口里垂直居中，词典提示和按钮掉到中间，上面空一大块
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("导入")
         .navigationSubtitle(app.libraryURL?.path ?? "")
         .task { if let client = app.client { await model.refresh(client) } }
