@@ -24,14 +24,17 @@ struct LyricsStage: View {
         GeometryReader { geo in
             ZStack {
                 backdrop
+                    .ignoresSafeArea()
                 VStack(spacing: 0) {
                     topBar
                     HStack(alignment: .center, spacing: 48) {
                         if geo.size.width > 900, let track = player.track {
-                            nowPlaying(track, width: min(geo.size.width * 0.28, 420))
+                            nowPlaying(track, width: min(geo.size.width * 0.28, geo.size.height * 0.45, 420))
                         }
                         lyrics
                     }
+                    // 夹在顶栏和播放条之间，剩多高占多高：不给上限的话歌词那一栏按内容的理想高度撑开，把播放条挤出窗口
+                    .frame(maxHeight: .infinity)
                     .padding(.horizontal, geo.size.width > 900 ? 64 : 28)
                     PlayerBar()
                         .environment(\.colorScheme, .dark)
@@ -42,7 +45,6 @@ struct LyricsStage: View {
             }
         }
         .environment(\.colorScheme, .dark)
-        .ignoresSafeArea()
         .onExitCommand { close() }
         .task(id: player.track?.id) {
             cover = nil
@@ -106,6 +108,7 @@ struct LyricsStage: View {
                 }
             }
             .frame(width: width, height: width)
+            .layoutPriority(1)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .shadow(color: .black.opacity(0.45), radius: 30, y: 14)
             Text(track.title)

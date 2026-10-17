@@ -45,6 +45,8 @@ struct ContentView: View {
                             .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
                     }
                     .toolbarBackground(.hidden, for: .windowToolbar)
+                    // 全屏歌词盖住整个窗口：工具栏（标题、搜索框、按钮）也收起来，不然顶上留一条
+                    .toolbar(app.showStage ? .hidden : .visible, for: .windowToolbar)
                     .sheet(isPresented: $app.showQuickSearch) {
                         QuickSearchView()
                     }
