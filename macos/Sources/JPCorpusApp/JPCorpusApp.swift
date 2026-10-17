@@ -17,9 +17,16 @@ struct JPCorpusApp: App {
             ContentView()
                 .environment(app)
                 .frame(minWidth: 960, minHeight: 600)
-                .task { await app.restore() }
+                .task {
+                    if SmokeRun.isEnabled {
+                        await SmokeRun.run(app)
+                    } else {
+                        await app.restore()
+                    }
+                }
                 .onAppear { NSApplication.shared.activate(ignoringOtherApps: true) }
         }
+        .defaultSize(width: 1280, height: 800)
         .commands {
             CommandMenu("播放") {
                 Button(app.player.isPlaying ? "暂停" : "播放") { app.player.toggle() }
