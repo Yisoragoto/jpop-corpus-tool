@@ -283,7 +283,7 @@ private struct LookupPane: View {
 
 /// 一首歌的语料画像：重复行、特征词。特征词点了去检索
 @MainActor
-private struct ProfileView: View {
+struct ProfileView: View {
     @Environment(AppModel.self) private var app
     let songId: String
     @State private var profile: SongProfile?

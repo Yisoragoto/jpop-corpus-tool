@@ -21,6 +21,7 @@ struct ContentView: View {
                 } detail: {
                     Group {
                         switch app.section {
+                        case .home: HomeView()
                         case .search: SearchView()
                         case .library: LibraryView()
                         case .analysis: AnalysisView()
@@ -42,6 +43,9 @@ struct ContentView: View {
                             .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
                     }
                     .toolbarBackground(.hidden, for: .windowToolbar)
+                    .sheet(isPresented: $app.showQuickSearch) {
+                        QuickSearchView()
+                    }
                     .toolbar {
                         ToolbarItem(placement: .primaryAction) {
                             Button {

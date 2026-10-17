@@ -45,6 +45,11 @@ struct JPCorpusApp: App {
                 Button(app.showLyrics ? "隐藏歌词面板" : "显示歌词面板") { app.showLyrics.toggle() }
                     .keyboardShortcut("y", modifiers: [.command])
             }
+            CommandGroup(after: .textEditing) {
+                Button("全库搜索…") { app.showQuickSearch = true }
+                    .keyboardShortcut("k", modifiers: [.command])
+                    .disabled(app.client == nil)
+            }
             CommandGroup(after: .sidebar) {
                 ForEach(Array(SidebarItem.allCases.enumerated()), id: \.element) { index, item in
                     Button(item.title) { app.section = item }

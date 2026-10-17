@@ -252,9 +252,15 @@ analysis, line spans, import, tokenisation, lookup, the schema and its migration
 - Or build one from scratch in `~/Library/Application Support/JPOP Corpus Tool`: pick a music folder → review the
   plan → import with progress (and stop midway if you like); the tokenizer dictionary downloads from the Import
   page (the same file and checksum as on Windows).
+- Home: continue listening (down to the line you stopped at), today's listening, how much of the vocabulary the songs
+  you have heard cover, recently played, favourites, recently added; ⌘K searches songs, albums, people, words and lyrics.
+- Library: a song table, an album wall and an artist wall, with album / artist / song pages (credits, collaborators,
+  corpus profile, lyric sources and versions); favourites are shared with the Windows app.
 - Search → KWIC → Space to hear the line / Return to open the song, with the lyrics inspector highlighting along;
   single-line loop and speed control (pitch preserved).
-- Analysis: chorus-aware frequency, the collocation panel, sub-corpus comparison, song profiles.
+- Analysis: chorus-aware frequency, the collocation panel, sub-corpus comparison, song profiles; scope them to an
+  artist and a range of years; archive a run and re-run it later to see what changed (the same archive table as on
+  Windows); a corpus-quality overview.
 - Right-click a word in the lyrics panel to search it or look it up (reads `dictionaries.db` in the library folder).
 
 Not there yet: scraping, importing Yomitan dictionaries on the Mac (copy the `dictionaries.db` built on Windows for

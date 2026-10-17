@@ -138,6 +138,8 @@ final class PlayerModel {
     func pause() {
         player.pause()
         isPlaying = false
+        // 暂停也记一笔：首页「继续听」要停在这里
+        flushHistory()
     }
 
     func toggle() {
@@ -210,6 +212,9 @@ final class PlayerModel {
         guard let track, listened >= 2, let client = app?.client else { return }
         let event = PlayEvent(songId: track.id, listenedSec: listened, positionSec: position, completed: completed, source: source)
         listened = 0
-        Task { try? await client.recordPlay(event) }
+        Task {
+            try? await client.recordPlay(event)
+            app?.homeVersion += 1
+        }
     }
 }

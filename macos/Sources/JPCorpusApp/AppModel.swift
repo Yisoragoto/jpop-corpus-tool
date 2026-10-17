@@ -3,11 +3,12 @@ import JPCore
 import Observation
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case search, library, analysis, importer
+    case home, search, library, analysis, importer
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .home: return "首页"
         case .search: return "检索"
         case .library: return "曲库"
         case .analysis: return "分析"
@@ -17,12 +18,27 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
 
     var symbol: String {
         switch self {
+        case .home: return "house"
         case .search: return "text.magnifyingglass"
         case .library: return "music.note.list"
         case .analysis: return "chart.bar.xaxis"
         case .importer: return "square.and.arrow.down"
         }
     }
+}
+
+/// 曲库页里能推进去的详情页。首页、全库搜索、歌词面板也往这里推
+enum LibraryRoute: Hashable {
+    case song(String)
+    case album(Album)
+    case person(Int64)
+}
+
+/// 别处要求分析页只看一部分歌（歌手页的「分析这个人的歌」）
+struct ScopeRequest: Equatable {
+    var name: String
+    var performerIds: [Int64]
+    var nonce = UUID()
 }
 
 /// 别处要求检索页查一个词（分析页、歌词面板）。nonce 让同一个词点两次也会再查
@@ -40,7 +56,17 @@ final class AppModel {
     private(set) var libraryURL: URL?
     private(set) var tracks: [Track] = []
     private var tracksById: [String: Track] = [:]
-    var section: SidebarItem = .search
+    var section: SidebarItem = .home
+    /// 曲库页的导航栈
+    var libraryPath: [LibraryRoute] = []
+    /// 分析页的范围（nil = 整个语料库）
+    var analysisScope: ScopeRequest?
+    /// ⌘K 全库搜索
+    var showQuickSearch = false
+    /// 打开 ⌘K 时预先填进去的字（冒烟截图用）
+    var quickSearchSeed = ""
+    /// 收藏、播放记录变了就加一，首页据此重读
+    var homeVersion = 0
     var showLyrics = true
     var searchRequest: SearchRequest?
     var errorMessage: String?
@@ -141,6 +167,26 @@ final class AppModel {
     func track(_ id: String) async throws -> Track? {
         if let known = tracksById[id] { return known }
         return try await client?.track(id)
+    }
+
+    /// 去曲库页的某个详情页（从别处来时先清掉原来的栈）
+    func show(_ route: LibraryRoute) {
+        if section != .library {
+            libraryPath = []
+            section = .library
+        }
+        if libraryPath.last != route { libraryPath.append(route) }
+    }
+
+    /// 按 id 放一首歌（首页、搜索结果只有 id）
+    func play(songId: String, at: Double? = nil, source: String = "library") async {
+        do {
+            guard let track = try await track(songId) else { return }
+            showLyrics = true
+            await player.open(track, at: at, autoplay: true, source: source)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     /// 跳到检索页查一个词

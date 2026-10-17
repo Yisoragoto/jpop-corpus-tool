@@ -214,6 +214,28 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         "tokenizeMissingList" => serde_json::to_value(jp_import::maintain::untokenized_songs(corpus.connection())?)?,
         "trackCredits" => serde_json::to_value(corpus.credits_for_track(&arg::<String>(&args, "songId")?)?)?,
         "performers" => serde_json::to_value(corpus.people_by_role("performer", arg_or(&args, "limit", 500)?)?)?,
+        "albums" => serde_json::to_value(corpus.albums(
+            arg_or::<Option<String>>(&args, "artistKey", None)?.as_deref(),
+            arg_or(&args, "limit", 2000)?,
+        )?)?,
+        "albumTracks" => serde_json::to_value(corpus.album_tracks(arg(&args, "albumId")?)?)?,
+        "peopleDirectory" => serde_json::to_value(corpus.people_directory()?)?,
+        "personById" => serde_json::to_value(corpus.person_by_id(arg(&args, "personId")?)?)?,
+        "personWorks" => serde_json::to_value(corpus.person_works(arg(&args, "personId")?)?)?,
+        "collaborators" => serde_json::to_value(corpus.collaborators(arg(&args, "personId")?, arg_or(&args, "limit", 24)?)?)?,
+
+        // 首页（同 Tauri 的 home_summary）。utcOffsetMinutes：本地相对 UTC 的分钟数，「今天」按它算
+        "homeSummary" => json!({
+            "overview": corpus.overview()?,
+            "continueTrack": corpus.continue_track()?,
+            "recentlyPlayed": corpus.recently_played(12)?,
+            "favorites": corpus.favorite_tracks(12)?,
+            "today": corpus.today_listening(arg_or(&args, "utcOffsetMinutes", 0)?)?,
+            "reach": corpus.reach()?,
+            "recentlyAdded": corpus.recently_added(arg_or(&args, "addedLimit", 8)?)?,
+        }),
+        "isFavorite" => json!(corpus.is_favorite(&arg::<String>(&args, "entityType")?, &arg::<String>(&args, "entityId")?)?),
+        "toggleFavorite" => json!(corpus.toggle_favorite(&arg::<String>(&args, "entityType")?, &arg::<String>(&args, "entityId")?)?),
 
         // 检索
         "kwic" => serde_json::to_value(corpus.kwic(&arg(&args, "query")?)?)?,
@@ -732,6 +754,42 @@ mod tests {
         let cmp = s.call("analysisRerun", json!({ "id": run["id"] })).unwrap();
         assert_eq!(cmp["resultIdentical"], json!(true));
         assert!(s.call("analysisList", json!({})).unwrap().as_array().unwrap().len() >= 2);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// 首页、专辑、歌手、收藏：macOS 首页和曲库页用的那几组
+    #[test]
+    fn home_albums_people_and_favorites_answer() {
+        let (s, dir) = session();
+        s.call("recordPlay", json!({ "event": { "songId": "004", "listenedSec": 40.0, "positionSec": 40.0, "completed": false, "source": "test" } }))
+            .unwrap();
+        let home = s.call("homeSummary", json!({ "utcOffsetMinutes": 480 })).unwrap();
+        assert_eq!(home["continueTrack"]["songId"], "004");
+        assert_eq!(home["recentlyPlayed"][0]["songId"], "004");
+        assert!(home["overview"]["tracks"].as_i64().unwrap() >= 4);
+        assert!(home["today"]["listenedSec"].as_f64().unwrap() >= 40.0);
+
+        let albums = s.call("albums", json!({})).unwrap();
+        if let Some(album) = albums.as_array().unwrap().first() {
+            let tracks = s.call("albumTracks", json!({ "albumId": album["id"] })).unwrap();
+            assert_eq!(tracks.as_array().unwrap().len() as i64, album["trackCount"].as_i64().unwrap());
+        }
+        let people = s.call("peopleDirectory", json!({})).unwrap();
+        let person = &people.as_array().unwrap()[0];
+        let works = s.call("personWorks", json!({ "personId": person["id"] })).unwrap();
+        assert!(!works.as_array().unwrap().is_empty());
+        assert!(works[0]["title"].is_string(), "作品是平铺的 Track 加 roles");
+        assert_eq!(s.call("personById", json!({ "personId": person["id"] })).unwrap()["name"], person["name"]);
+        assert!(s.call("collaborators", json!({ "personId": person["id"] })).unwrap().is_array());
+
+        let fav = json!({ "entityType": "song", "entityId": "001" });
+        let was = s.call("isFavorite", fav.clone()).unwrap().as_bool().unwrap();
+        assert_eq!(s.call("toggleFavorite", fav.clone()).unwrap(), json!(!was));
+        assert_eq!(s.call("isFavorite", fav.clone()).unwrap(), json!(!was));
+        let listed = |s: &Session| s.call("homeSummary", json!({})).unwrap()["favorites"].as_array().unwrap().iter().any(|t| t["id"] == "001");
+        assert_eq!(listed(&s), !was);
+        assert_eq!(s.call("toggleFavorite", fav).unwrap(), json!(was));
+        assert_eq!(listed(&s), was);
         std::fs::remove_dir_all(dir).ok();
     }
 

@@ -67,6 +67,9 @@ songs(id, audio_path, duration_sec, year, album_id …)
   `jp-ffi` 有同名方法：`qualityOverview`、`songLineage`、`lyricVersionRaw`、`artistProvenance`、
   `subcorpusFacets` / `Preview` / `List` / `Save` / `Delete`、`analysisRun` / `List` / `Get` / `Rerun` / `Compare` / `Delete`；
   `wordInCorpus` 多一个 `scope`。会话打开时和 Tauri 一样给老歌补登记歌词版本。
+- **首页与曲库**：`homeSummary`（同 Tauri 的 `home_summary`，多一个 `addedLimit`）、`albums`、`albumTracks`、
+  `peopleDirectory`、`personById`、`personWorks`、`collaborators`、`isFavorite` / `toggleFavorite`（收藏的歌 `entityType` 是 `"song"`）、
+  `quickSearch`。macOS 的首页、曲库三栏和详情页、⌘K 都只用这些，没有自己的查询。
 - 统计量：搭配有 logDice、MI、t、对数似然（2×2 表，期望值按实际窗口位置数算）；对比用带符号的对数似然和 log ratio（零频 0.5 平滑）。
 
 ## macOS 上建库：导入、分词词典、查词

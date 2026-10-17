@@ -5,7 +5,7 @@ import JPCore
 /// 冒烟模式：没有 Mac 的人也能看到真实界面。
 ///
 /// 设了环境变量 `JPCORPUS_SMOKE=<目录>` 启动时，应用不读上次的库，而是：
-/// 打开示例语料库 → 检索 → KWIC → 试听第一条 → 曲库 → 分析 → 导入，
+/// 打开示例语料库 → 检索 → KWIC → 试听第一条 → 首页 → 曲库（歌曲 / 专辑 / 歌手 / 详情）→ ⌘K → 分析（含存档、质量）→ 导入，
 /// 每一步把**自己的窗口**画成 PNG 存进那个目录，最后写一份 `smoke.txt` 记录状态，然后退出。
 ///
 /// 截图用 `cacheDisplay` 让窗口自己渲染，不需要「屏幕录制」权限，所以在 CI 的 macOS 机器上也能跑
@@ -75,11 +75,64 @@ enum SmokeRun {
             note("KWIC 没有结果")
         }
 
-        for (name, section) in [("04-library", SidebarItem.library), ("05-analysis", .analysis), ("06-import", .importer)] {
-            app.section = section
-            await settle(2)
+        // 首页：刚才那次试听到行尾自动暂停，播放记录里有了，「继续听」应该是这首
+        app.section = .home
+        await settle(2)
+        shot("04-home", into: out, note: note)
+
+        // 曲库三种看法
+        app.section = .library
+        for (name, mode) in [("05-library-songs", "歌曲"), ("06-library-albums", "专辑"), ("07-library-artists", "歌手")] {
+            UserDefaults.standard.set(mode, forKey: "libraryMode")
+            await settle(1.5)
             shot(name, into: out, note: note)
         }
+        UserDefaults.standard.set("歌曲", forKey: "libraryMode")
+
+        // 歌手详情、歌曲详情
+        if let person = try? await app.client?.peopleDirectory().first(where: { $0.performer > 0 }) {
+            app.show(.person(person.id))
+            await settle(2)
+            shot("08-person", into: out, note: note)
+        }
+        app.libraryPath = []
+        app.show(.song("004"))
+        await settle(2)
+        shot("09-song", into: out, note: note)
+
+        // ⌘K 全库搜索
+        app.quickSearchSeed = "夜"
+        app.showQuickSearch = true
+        await settle(2)
+        shot("10-quick-search", into: out, note: note)
+        app.showQuickSearch = false
+        await settle(0.8)
+
+        // 分析：词频 → 存一条档并重跑 → 存档页 → 语料质量
+        app.section = .analysis
+        UserDefaults.standard.set(0, forKey: "analysisTab")
+        await settle(2)
+        shot("11-analysis", into: out, note: note)
+        do {
+            let q = FrequencyQuery(scope: AnalysisScope(unit: .distinctLines, jpOnly: true), pos: "NOUN", limit: 50)
+            if let run = try await app.client?.archiveFrequency(q, label: "冒烟 · 名词") {
+                let cmp = try await app.client?.analysisRerun(run.id)
+                note("存档 #\(run.id)，重跑结果相同：\(cmp?.resultIdentical == true)")
+            }
+        } catch {
+            note("存档失败：\(error.localizedDescription)")
+        }
+        UserDefaults.standard.set(2, forKey: "analysisTab")
+        await settle(1.5)
+        shot("12-archive", into: out, note: note)
+        UserDefaults.standard.set(3, forKey: "analysisTab")
+        await settle(1.5)
+        shot("13-quality", into: out, note: note)
+        UserDefaults.standard.set(0, forKey: "analysisTab")
+
+        app.section = .importer
+        await settle(2)
+        shot("14-import", into: out, note: note)
 
         try? log.joined(separator: "\n").write(to: out.appendingPathComponent("smoke.txt"), atomically: true, encoding: .utf8)
         NSApplication.shared.terminate(nil)
