@@ -178,6 +178,11 @@ struct SearchView: View {
                 Text(row.hit.keyword)
                     .fontWeight(.semibold)
                     .foregroundStyle(selection.contains(row.id) ? AnyShapeStyle(.primary) : AnyShapeStyle(.tint))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(
+                        Capsule().fill(selection.contains(row.id) ? Color.clear : Color.accentColor.opacity(0.16))
+                    )
             }
             .width(min: 40, ideal: 64)
             TableColumn("右语境") { row in
@@ -204,6 +209,8 @@ struct SearchView: View {
             }
             .width(min: 40, ideal: 44)
         }
+        .clearScrollBackground()
+        .alternatingRowBackgrounds(.disabled)
         .focused($tableFocused)
         .contextMenu(forSelectionType: HitRow.ID.self) { ids in
             if let row = rows.first(where: { ids.contains($0.id) }) {

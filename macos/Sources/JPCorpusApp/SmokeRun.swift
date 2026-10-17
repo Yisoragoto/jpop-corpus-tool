@@ -97,11 +97,22 @@ enum SmokeRun {
             guard let view = window.contentView?.superview ?? window.contentView,
                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
             else { continue }
+            let base = windows.count == 1 ? name : "\(name)-\(i)"
+            // 首选系统截图：窗口服务器合成后的真实画面，毛玻璃（透出桌面的模糊）只有这样才截得到。
+            // 需要「屏幕录制」权限；没有的话退回让窗口自己渲染（cacheDisplay 画不出 behindWindow 的模糊）
+            let composited = dir.appendingPathComponent("\(base).png")
+            let capture = Process()
+            capture.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            capture.arguments = ["-x", "-o", "-l", String(window.windowNumber), composited.path]
+            try? capture.run()
+            capture.waitUntilExit()
+            let gotComposite = capture.terminationStatus == 0 && FileManager.default.fileExists(atPath: composited.path)
+
             view.cacheDisplay(in: view.bounds, to: rep)
-            guard let png = rep.representation(using: .png, properties: [:]) else { continue }
-            let file = dir.appendingPathComponent(windows.count == 1 ? "\(name).png" : "\(name)-\(i).png")
-            try? png.write(to: file)
-            note("\(name)：\(Int(view.bounds.width))×\(Int(view.bounds.height))")
+            if let png = rep.representation(using: .png, properties: [:]) {
+                try? png.write(to: dir.appendingPathComponent(gotComposite ? "\(base)-self.png" : "\(base).png"))
+            }
+            note("\(name)：\(Int(view.bounds.width))×\(Int(view.bounds.height))，系统截图 \(gotComposite ? "有" : "没有（退回自绘）")")
         }
     }
 }

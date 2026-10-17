@@ -91,6 +91,18 @@ jobs:
               w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 * i / rate))) for i in range(rate * 300)))
           PY
           for id in 001 002 003 004; do afconvert -f flac -d flac "$audio/tone.wav" "$audio/$id.flac"; done
+          # 示例库 004 的封面记的是 E:/music/covers/004.jpg：生成一张彩色渐变图放到 covers/ 下，
+          # 歌词面板的虚化封面底和播放条的小封面都能走到（按路径尾巴 covers/004.jpg 找）
+          mkdir -p "$audio/covers"
+          python3 - "$audio/covers/004.png" <<'PY'
+          import struct, sys, zlib
+          w = h = 256
+          rows = b"".join(b"\x00" + bytes(v for x in range(w) for v in (255 - y // 2, 80 + x // 3, 120 + y // 3)) for y in range(h))
+          chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+          png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+          open(sys.argv[1], "wb").write(png)
+          PY
+          sips -s format jpeg "$audio/covers/004.png" --out "$audio/covers/004.jpg" >/dev/null
           app="$PWD/build/JPOP Corpus.app"
           set +e
           # 先直接跑可执行文件（stderr 里有 [smoke] 生命周期日志）

@@ -357,6 +357,8 @@ private struct PlanTable: View {
                     }
                 }
             }
+            .clearScrollBackground()
+            .alternatingRowBackgrounds(.disabled)
         }
     }
 
