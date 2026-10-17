@@ -97,6 +97,7 @@ struct StatBlock: View {
 
 /// 「12 分钟」「1 小时 5 分」
 func formatListening(_ seconds: Double) -> String {
+    if seconds > 0 && seconds < 60 { return "不到 1 分钟" }
     let minutes = Int((seconds / 60).rounded())
     if minutes < 60 { return "\(minutes) 分钟" }
     return minutes % 60 == 0 ? "\(minutes / 60) 小时" : "\(minutes / 60) 小时 \(minutes % 60) 分"
@@ -109,9 +110,11 @@ func grouped(_ n: Int64) -> String {
 
 /// 库里存的时间是 UTC 的 ISO 字符串（`2026-10-16T08:01:02Z` 或 `2026-10-16 08:01:02`）
 func relativeTime(_ stored: String) -> String {
+    if stored.isEmpty { return "" }
     let iso = ISO8601DateFormatter()
     let normalized = stored.contains("T") ? stored : stored.replacingOccurrences(of: " ", with: "T") + (stored.hasSuffix("Z") ? "" : "Z")
     guard let date = iso.date(from: normalized) else { return stored }
+    if abs(date.timeIntervalSinceNow) < 60 { return "刚刚" }
     let f = RelativeDateTimeFormatter()
     f.locale = Locale(identifier: "zh_CN")
     f.unitsStyle = .short

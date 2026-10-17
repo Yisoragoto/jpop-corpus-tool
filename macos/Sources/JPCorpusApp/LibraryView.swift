@@ -2,22 +2,37 @@ import JPCore
 import SwiftUI
 
 /// 曲库：歌曲 / 专辑 / 歌手三种看法，点进去是专辑、歌手、歌曲的详情页。
-/// 导航栈放在 AppModel 里，首页、⌘K 搜索、歌词面板都能直接推一页进来
+/// 页面栈放在 AppModel 里，首页、⌘K 搜索、歌词面板都能直接推一页进来。
+///
+/// 不用 NavigationStack：它放在 NavigationSplitView 的正文栏里时，推出来的页会接管整个正文栏，
+/// 挂在正文栏外面的歌词检查器、播放条、⌘K 面板都跟着消失（CI 截图里看到的）。自己按栈顶切换就没有这个问题
 @MainActor
 struct LibraryView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        @Bindable var app = app
-        NavigationStack(path: $app.libraryPath) {
-            LibraryRoot()
-                .navigationDestination(for: LibraryRoute.self) { route in
-                    switch route {
-                    case .song(let id): SongDetailView(songId: id)
-                    case .album(let album): AlbumDetailView(album: album)
-                    case .person(let id): PersonDetailView(personId: id)
-                    }
+        if let route = app.libraryPath.last {
+            Group {
+                switch route {
+                case .song(let id): SongDetailView(songId: id)
+                case .album(let album): AlbumDetailView(album: album)
+                case .person(let id): PersonDetailView(personId: id)
                 }
+            }
+            .id(route)
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        app.libraryPath.removeLast()
+                    } label: {
+                        Label("返回", systemImage: "chevron.left")
+                    }
+                    .keyboardShortcut("[", modifiers: [.command])
+                    .help("返回（⌘[）")
+                }
+            }
+        } else {
+            LibraryRoot()
         }
     }
 }

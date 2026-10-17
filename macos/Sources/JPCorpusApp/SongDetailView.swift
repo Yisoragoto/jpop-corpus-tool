@@ -158,6 +158,9 @@ struct SongDetailView: View {
     private func lineageCard(_ l: SongLineage, track: Track) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("歌词来源").font(.headline)
+            if let lang = l.language {
+                Text("语言：\(codeLabel(languageLabels, lang))").font(.caption).foregroundStyle(.secondary)
+            }
             if l.versions.isEmpty {
                 Text("没有版本记录").foregroundStyle(.secondary)
             }
@@ -179,7 +182,7 @@ struct SongDetailView: View {
                     Text([sourceLabel(v.sourceType), v.sourceName].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("\(v.lineCount) 行，\(v.timedLineCount) 行有时间轴 · \(relativeTime(v.importedAt))")
+                    Text(["\(v.lineCount) 行，\(v.timedLineCount) 行有时间轴", relativeTime(v.importedAt)].filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                     if !v.note.isEmpty {
@@ -194,9 +197,9 @@ struct SongDetailView: View {
                 Text("元数据从哪来").font(.subheadline.weight(.medium))
                 ForEach(l.provenance, id: \.field) { f in
                     HStack {
-                        Text(f.field).foregroundStyle(.secondary)
+                        Text(codeLabel(fieldLabels, f.field)).foregroundStyle(.secondary)
                         Spacer()
-                        Text(f.source)
+                        Text(codeLabel(fieldSourceLabels, f.source))
                         if let c = f.confidence {
                             Text("\(Int(c * 100))%").foregroundStyle(.tertiary).monospacedDigit()
                         }
@@ -215,7 +218,7 @@ struct SongDetailView: View {
     }
 
     private func sourceLabel(_ type: String) -> String {
-        ["legacy": "老库补登记", "lrc_file": "本地 .lrc", "embedded": "音频内嵌", "online": "在线歌词", "manual": "手动编辑"][type] ?? type
+        codeLabel(lyricSourceLabels, type)
     }
 }
 

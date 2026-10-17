@@ -486,13 +486,13 @@ private struct QualityPane: View {
                         StatBlock(value: "\(q.songsWithLyrics) / \(q.songs)", label: "首有歌词")
                         StatBlock(value: q.avgCompleteness.map { "\(Int($0 * 100))%" } ?? "—", label: "平均完整度")
                         StatBlock(value: grouped(q.linesLowTimeConfidence), label: "行时间轴存疑")
-                        StatBlock(value: grouped(q.legacyVersions), label: "首没有来源记录（老库）")
+                        StatBlock(value: grouped(q.legacyVersions), label: "首的歌词没存原文（老库）")
                     }
                     HStack(alignment: .top, spacing: 16) {
-                        counts("歌词来源", q.bySource)
-                        counts("语言", q.byLanguage)
-                        counts("问题", q.issues)
-                        counts("分词状态", q.tokenStatus)
+                        counts("歌词来源", q.bySource, lyricSourceLabels)
+                        counts("语言", q.byLanguage, languageLabels)
+                        counts("问题", q.issues, issueLabels)
+                        counts("分词状态", q.tokenStatus, tokenStatusLabels)
                     }
                     if !q.worst.isEmpty {
                         SectionHeader(title: "最需要看一眼的歌", detail: "点一首去详情")
@@ -507,7 +507,7 @@ private struct QualityPane: View {
                                             Text(s.artist).font(.caption).foregroundStyle(.secondary)
                                         }
                                         Spacer()
-                                        Text(s.codes.joined(separator: " ")).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+                                        Text(s.codes.map { codeLabel(issueLabels, $0) }.joined(separator: "、")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                         if s.errors > 0 { Text("\(s.errors) 错").foregroundStyle(.red).font(.caption) }
                                         if s.warnings > 0 { Text("\(s.warnings) 警告").foregroundStyle(.orange).font(.caption) }
                                         Text(s.completeness.map { "\(Int($0 * 100))%" } ?? "—").monospacedDigit().frame(width: 44, alignment: .trailing)
@@ -538,7 +538,7 @@ private struct QualityPane: View {
         }
     }
 
-    private func counts(_ title: String, _ rows: [LabelCount]) -> some View {
+    private func counts(_ title: String, _ rows: [LabelCount], _ names: [String: String]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.headline)
             if rows.isEmpty {
@@ -546,7 +546,7 @@ private struct QualityPane: View {
             }
             ForEach(rows, id: \.label) { r in
                 HStack {
-                    Text(r.label.isEmpty ? "（空）" : r.label).lineLimit(1)
+                    Text(codeLabel(names, r.label)).lineLimit(1)
                     Spacer()
                     Text(grouped(r.count)).monospacedDigit().foregroundStyle(.secondary)
                 }
