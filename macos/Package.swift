@@ -37,9 +37,10 @@ let package = Package(
             linkerSettings: [
                 .unsafeFlags(["-L", rustLibDir]),
                 .linkedLibrary("jp_ffi"),
-                // 制卡（jp-anki）带进来的：切例句音频用播放那套解码器（rodio → CoreAudio），
+                // 制卡（jp-anki）带进来的：切例句音频用播放那套解码器（rodio → CoreAudio），变调库 Rubber Band 是 C++ 且用 Accelerate；
                 // Rubber Band 是 C++；AnkiConnect / 下载走的 HTTP 库要 Security
                 .linkedLibrary("c++"),
+                .linkedFramework("Accelerate"),  // Rubber Band 在 Apple 平台上用 vDSP 做 FFT
                 .linkedFramework("CoreAudio"),
                 .linkedFramework("AudioToolbox"),
                 .linkedFramework("AudioUnit"),
