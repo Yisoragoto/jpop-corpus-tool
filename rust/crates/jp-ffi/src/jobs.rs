@@ -49,7 +49,8 @@ pub struct JobView {
 #[derive(Default)]
 pub struct Job {
     view: Mutex<JobView>,
-    cancel: AtomicBool,
+    /// Arc：词典导入（`jp_dict::import`）要拿着这个标志自己去看
+    cancel: Arc<AtomicBool>,
 }
 
 impl Job {
@@ -63,6 +64,11 @@ impl Job {
 
     pub fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
+    }
+
+    /// 取消标志本身，交给自己会看标志的库函数
+    pub fn cancel_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.cancel)
     }
 
     /// 改进度。作业线程里调

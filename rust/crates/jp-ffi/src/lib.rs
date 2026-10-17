@@ -60,6 +60,8 @@ pub struct Session {
     pending_scan: Arc<Mutex<Vec<jp_import::ScannedTrack>>>,
     import_job: Arc<Job>,
     tokenizer_job: Arc<Job>,
+    /// 导入 Yomitan 词典（zip）
+    dict_job: Arc<Job>,
     /// Yomitan 词典库 `dictionaries.db`，和 corpus.db 同一目录、分开存。没导入过就一直是 None
     dictionaries: Mutex<Option<jp_dict::store::DictionaryStore>>,
     translator: jp_dict::translator::Translator,
@@ -125,6 +127,7 @@ impl Session {
             pending_scan: Arc::default(),
             import_job: Arc::default(),
             tokenizer_job: Arc::default(),
+            dict_job: Arc::default(),
             dictionaries: Mutex::new(None),
             translator: jp_dict::translator::Translator::new(),
         })
@@ -138,6 +141,27 @@ impl Session {
         }
     }
 
+    /// Yomitan 词典库的位置：语料库目录里的 `dictionaries.db`（和 Windows 版一样）
+    fn dictionaries_path(&self) -> PathBuf {
+        self.library_root().join("dictionaries.db")
+    }
+
+    /// 词典库被别的连接改过（导入、删除、排序）之后，丢掉缓存的那条连接，下次查词重新打开
+    fn forget_dictionaries(&self) {
+        *self.dictionaries.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// 改词典库（启用、排序、删除）：单开一条可写连接，改完让查词那条重新打开
+    fn edit_dictionaries(&self, f: impl FnOnce(&mut jp_dict::store::DictionaryStore) -> Result<()>) -> Result<()> {
+        ensure!(!self.dict_job.view().running, "正在导入词典，等导入完成再改");
+        let path = self.dictionaries_path();
+        ensure!(path.exists(), "还没有导入过词典");
+        let mut store = jp_dict::store::DictionaryStore::open(&path)?;
+        f(&mut store)?;
+        self.forget_dictionaries();
+        Ok(())
+    }
+
     fn analyzer(&self) -> Option<Arc<Analyzer>> {
         self.analyzer.get(&self.library_root())
     }
@@ -149,7 +173,7 @@ impl Session {
     ) -> Result<Option<T>> {
         let mut guard = self.dictionaries.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
-            let path = self.library_root().join("dictionaries.db");
+            let path = self.dictionaries_path();
             if !path.exists() {
                 return Ok(None);
             }
@@ -424,9 +448,122 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
                 .unwrap_or_default();
             lookup_text(&result)
         }
+
+        // ── 词典管理（同 Tauri 的 dict_import_* / dict_set_* / dict_delete）──
+        "dictImport" => {
+            let paths: Vec<String> = arg(args, "paths")?;
+            ensure!(!paths.is_empty(), "一个词典包都没选");
+            start_dict_import(session, paths)?;
+            Value::Null
+        }
+        "dictImportProgress" => serde_json::to_value(session.dict_job.view())?,
+        "dictImportCancel" => {
+            session.dict_job.request_cancel();
+            Value::Null
+        }
+        "dictSetEnabled" => {
+            let id: i64 = arg(args, "id")?;
+            let enabled: bool = arg(args, "enabled")?;
+            session.edit_dictionaries(|store| store.set_enabled(id, enabled))?;
+            Value::Null
+        }
+        "dictSetOrder" => {
+            let ids: Vec<i64> = arg(args, "ids")?;
+            session.edit_dictionaries(|store| store.set_order(&ids))?;
+            Value::Null
+        }
+        "dictDelete" => {
+            let id: i64 = arg(args, "id")?;
+            session.edit_dictionaries(|store| store.delete(id))?;
+            Value::Null
+        }
+
+        // ── Anki（AnkiConnect，本机 8765 端口）。连不上不是错误，界面显示指引 ──
+        "ankiStatus" => anki_status(&jp_anki::AnkiConnect::local()),
+        "ankiMineCheck" => {
+            let model: String = arg(args, "model")?;
+            let expressions: Vec<String> = arg(args, "expressions")?;
+            serde_json::to_value(jp_anki::lyric_mine::check(&jp_anki::AnkiConnect::local(), &model, &expressions))?
+        }
+        "ankiMine" => {
+            let request: jp_anki::lyric_mine::MineRequest = arg(args, "request")?;
+            serde_json::to_value(mine(session, &jp_anki::AnkiConnect::local(), &request)?)?
+        }
         _ => return Ok(None),
     };
     Ok(Some(v))
+}
+
+/// Anki 开着吗、有哪些牌组、自己的 Lyrics 笔记类型建了没有（同 Tauri 的 `anki_status`，不读学习记录）
+fn anki_status(anki: &jp_anki::AnkiConnect) -> Value {
+    match anki.ping() {
+        Ok(version) => json!({
+            "connected": true,
+            "version": version,
+            "decks": anki.deck_names().unwrap_or_default(),
+            "models": anki.model_names().unwrap_or_default(),
+            "message": "",
+        }),
+        Err(err) => json!({ "connected": false, "version": 0, "decks": [], "models": [], "message": err.advice() }),
+    }
+}
+
+/// 一键制卡：取例句时拿一下语料库的锁，切音频、传 Anki 时不拿（同 Tauri 的 `anki_mine`）
+fn mine(
+    session: &Session,
+    anki: &jp_anki::AnkiConnect,
+    request: &jp_anki::lyric_mine::MineRequest,
+) -> Result<jp_anki::mine::MineOutcome> {
+    let path = session.dictionaries_path();
+    ensure!(path.exists(), "还没有导入过词典，制卡要用词典里的释义");
+    let store = jp_dict::store::DictionaryStore::open(&path).context("打不开词典库")?;
+    let prepared = {
+        let corpus = session.corpus.lock().map_err(|_| anyhow!("语料库连接已损坏"))?;
+        jp_anki::lyric_mine::prepare(&corpus, &store, &session.translator, request)?
+    };
+    // 例句音频按库里记的路径切；库从别的机器拷来时，换成这台机器上找到的文件
+    let audio_roots = session.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
+    let prepared = prepared.with_media_resolved(|stored| {
+        jp_corpus::media::resolve(stored, session.root.as_deref(), &audio_roots).map(|p| p.display().to_string())
+    });
+    jp_anki::lyric_mine::send(anki, &store, &prepared, request)
+}
+
+/// 逐本导入 Yomitan 词典包（zip）。一本失败不影响后面的；取消时正在导的那本整本回滚。
+/// 进度：`done/total` 是这一本里的文件数，`stage` 是「第几本 / 共几本 · 文件名」
+fn start_dict_import(session: &Session, paths: Vec<String>) -> Result<()> {
+    for path in &paths {
+        ensure!(Path::new(path).exists(), "路径不存在：{path}");
+    }
+    let db = session.dictionaries_path();
+    session.dict_job.spawn("词典导入", move |job| {
+        let mut store = jp_dict::store::DictionaryStore::open(&db)?;
+        let total = paths.len();
+        let mut results = Vec::new();
+        for (index, path) in paths.iter().enumerate() {
+            if job.cancelled() {
+                break;
+            }
+            let name = jp_corpus::media::file_name_of(path).to_owned();
+            job.report(0, 0, format!("{}/{} · {name}", index + 1, total));
+            let outcome = (|| -> Result<jp_dict::import::ImportSummary> {
+                let mut archive = jp_dict::import::open_archive(Path::new(path))?;
+                let options = jp_dict::import::ImportOptions {
+                    source_path: path.clone(),
+                    cancel: Some(job.cancel_flag()),
+                    ..Default::default()
+                };
+                jp_dict::import::import_dictionary(&mut store, archive.as_mut(), &options, &mut |p| {
+                    job.report(p.done_files as u64, p.total_files as u64, format!("{}/{} · {name}", index + 1, total));
+                })
+            })();
+            results.push(match outcome {
+                Ok(summary) => json!({ "path": path, "summary": summary, "error": null }),
+                Err(err) => json!({ "path": path, "summary": null, "error": format!("{err:#}") }),
+            });
+        }
+        Ok((json!({ "results": results }), job.cancelled()))
+    })
 }
 
 /// 扫 + 比对 + 记下待确认的结果（同 Tauri 的 `scan_folder` / `scan_files`）。

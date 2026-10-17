@@ -25,6 +25,7 @@ struct ContentView: View {
                         case .search: SearchView()
                         case .library: LibraryView()
                         case .analysis: AnalysisView()
+                        case .dictionaries: DictionaryView()
                         case .importer: ImportView()
                         }
                     }

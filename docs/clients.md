@@ -70,6 +70,11 @@ songs(id, audio_path, duration_sec, year, album_id …)
 - **首页与曲库**：`homeSummary`（同 Tauri 的 `home_summary`，多一个 `addedLimit`）、`albums`、`albumTracks`、
   `peopleDirectory`、`personById`、`personWorks`、`collaborators`、`isFavorite` / `toggleFavorite`（收藏的歌 `entityType` 是 `"song"`）、
   `quickSearch`。macOS 的首页、曲库三栏和详情页、⌘K 都只用这些，没有自己的查询。
+- **词典管理与制卡**：`dictImport`（后台作业，`dictImportProgress` / `dictImportCancel` 轮询和停止）、`dictSetEnabled`、
+  `dictSetOrder`、`dictDelete`；`ankiStatus`、`ankiMineCheck`、`ankiMine`。制卡的应用层（取例句、查词条）从
+  `jp-app/src/mine.rs` 挪进了 `jp_anki::lyric_mine`，分 `prepare`（拿语料库的锁，很快）和 `send`（切音频、传 Anki，不拿锁）
+  两步，两个客户端共用；macOS 打开 Windows 拷来的库时，例句音频按 `media::resolve` 找到本机的文件再切。
+  链进 `jp-anki` 后静态库里多了 rodio（CoreAudio）、Rubber Band（C++）和 HTTP，Swift 包要链 libc++ 和几个系统框架（见 `macos/Package.swift`）。
 - 统计量：搭配有 logDice、MI、t、对数似然（2×2 表，期望值按实际窗口位置数算）；对比用带符号的对数似然和 log ratio（零频 0.5 平滑）。
 
 ## macOS 上建库：导入、分词词典、查词

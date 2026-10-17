@@ -211,8 +211,10 @@ J-pop 的副歌会反复唱：真实语料里重复行占了约 23% 的行、20%
   分析可以存档，之后重跑对比（和 Windows 版同一张存档表）；语料质量总览。
 - 歌词面板右键一个词可以检索它，或者查词（读语料库目录里的 `dictionaries.db`）。
 
-还没有的：刮削、在 Mac 上导入 Yomitan 词典（目前把 Windows 版导好的 `dictionaries.db` 一起拷过来）、Anki 制卡、
-换歌词和逐行编辑。架构和构建见 [docs/clients.md](docs/clients.md)。
+- 词典：导入 Yomitan 词典包（zip，可多选，带进度、可停）、启用 / 停用、拖动排序、删除，和 Windows 版同一个 `dictionaries.db`。
+- Anki 制卡：查词结果上一键制卡（Lyrics / Lapis 笔记类型、按歌手分子牌组、例句音频切那一句），和 Windows 版同一份制卡代码。
+
+还没有的：刮削、Anki 批量导出和挖词报告、换歌词和逐行编辑。架构和构建见 [docs/clients.md](docs/clients.md)。
 
 ## 第一次使用
 

@@ -3,7 +3,7 @@ import JPCore
 import Observation
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case home, search, library, analysis, importer
+    case home, search, library, analysis, dictionaries, importer
     var id: String { rawValue }
 
     var title: String {
@@ -12,6 +12,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .search: return "检索"
         case .library: return "曲库"
         case .analysis: return "分析"
+        case .dictionaries: return "词典"
         case .importer: return "导入"
         }
     }
@@ -22,6 +23,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .search: return "text.magnifyingglass"
         case .library: return "music.note.list"
         case .analysis: return "chart.bar.xaxis"
+        case .dictionaries: return "character.book.closed"
         case .importer: return "square.and.arrow.down"
         }
     }
@@ -63,6 +65,10 @@ final class AppModel {
     var analysisScope: ScopeRequest?
     /// ⌘K 全库搜索
     var showQuickSearch = false
+    /// 词典页的「试查」预先填进去的字（冒烟截图用）
+    var lookupSeed = ""
+    /// 词典库被别处改过（冒烟导入），词典页据此重读
+    var dictionaryVersion = 0
     /// 打开 ⌘K 时预先填进去的字（冒烟截图用）
     var quickSearchSeed = ""
     /// 收藏、播放记录变了就加一，首页据此重读

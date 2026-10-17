@@ -172,4 +172,29 @@ public struct DictionaryInfo: Codable, Hashable, Identifiable, Sendable {
     public var id: Int64
     public var title: String
     public var enabled: Bool
+    public var revision: String?
+    public var author: String?
+    public var frequencyMode: String?
+    public var counts: DictionaryCounts?
+    public var priority: Int64?
+
+    /// 「12,345 条 · 频率 · 图片 30」
+    public var summary: String {
+        var parts: [String] = []
+        if let terms = counts?.terms, terms > 0 { parts.append("\(terms.formatted()) 条") }
+        if let meta = counts?.termMeta {
+            if let n = meta["freq"], n > 0 { parts.append("频率 \(n.formatted())") }
+            if let n = meta["pitch"], n > 0 { parts.append("音调 \(n.formatted())") }
+        }
+        if let media = counts?.media, media > 0 { parts.append("图片 \(media.formatted())") }
+        if let revision, !revision.isEmpty { parts.append("版本 \(revision)") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// 词典里各类东西的条数（导入时记下的）。缺的项就是没有
+public struct DictionaryCounts: Codable, Hashable, Sendable {
+    public var terms: Int64?
+    public var media: Int64?
+    public var termMeta: [String: Int64]?
 }

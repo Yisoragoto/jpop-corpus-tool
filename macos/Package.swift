@@ -37,6 +37,15 @@ let package = Package(
             linkerSettings: [
                 .unsafeFlags(["-L", rustLibDir]),
                 .linkedLibrary("jp_ffi"),
+                // 制卡（jp-anki）带进来的：切例句音频用播放那套解码器（rodio → CoreAudio），
+                // Rubber Band 是 C++；AnkiConnect / 下载走的 HTTP 库要 Security
+                .linkedLibrary("c++"),
+                .linkedFramework("CoreAudio"),
+                .linkedFramework("AudioToolbox"),
+                .linkedFramework("AudioUnit"),
+                .linkedFramework("CoreFoundation"),
+                .linkedFramework("Security"),
+                .linkedFramework("SystemConfiguration"),
             ]
         ),
         .executableTarget(

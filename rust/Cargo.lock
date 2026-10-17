@@ -1901,6 +1901,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "jp-audio",
+ "jp-corpus",
  "jp-dict",
  "jp-scraper",
  "mp3lame-encoder",
@@ -1980,6 +1981,7 @@ name = "jp-ffi"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "jp-anki",
  "jp-corpus",
  "jp-dict",
  "jp-import",

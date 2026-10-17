@@ -11,14 +11,12 @@ use jp_anki::{
     AnkiConnect, AnkiError, CardOptions, DupScope, ExportOptions, ExportOutcome, RefreshOutcome,
     RefreshScope,
 };
-use jp_scraper::UreqTransport;
-use jp_scraper::http::HttpClient;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
 /// 生产用的 AnkiConnect 客户端。
 pub fn client() -> AnkiConnect {
-    AnkiConnect::new(HttpClient::new(Box::new(UreqTransport)))
+    AnkiConnect::local()
 }
 
 /// 一次导出的进度。

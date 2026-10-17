@@ -263,8 +263,12 @@ analysis, line spans, import, tokenisation, lookup, the schema and its migration
   Windows); a corpus-quality overview.
 - Right-click a word in the lyrics panel to search it or look it up (reads `dictionaries.db` in the library folder).
 
-Not there yet: scraping, importing Yomitan dictionaries on the Mac (copy the `dictionaries.db` built on Windows for
-now), Anki mining, replacing and editing lyrics. Architecture and build notes: [docs/clients.md](docs/clients.md)
+- Dictionaries: import Yomitan dictionary packages (zip, several at once, with progress and a stop button), enable /
+  disable, drag to reorder, delete — the same `dictionaries.db` as on Windows.
+- Anki mining: one click on a lookup result (Lyrics / Lapis note types, per-artist subdecks, the example's audio cut
+  from that line), using the same mining code as the Windows app.
+
+Not there yet: scraping, Anki batch export and the mining report, replacing and editing lyrics. Architecture and build notes: [docs/clients.md](docs/clients.md)
 (Chinese).
 
 ## First run

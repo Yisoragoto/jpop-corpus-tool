@@ -11,7 +11,7 @@ struct LyricsPanel: View {
     @Environment(AppModel.self) private var app
     @State private var showProfile = false
     /// 正在查的那段文字（从点的词开始到行尾，Yomitan 式从开头查）
-    @State private var lookupText: String?
+    @State private var lookup: LookupRequest?
 
     private static let contentPOS: Set<String> = ["NOUN", "PROPN", "VERB", "ADJ", "ADV"]
 
@@ -61,8 +61,8 @@ struct LyricsPanel: View {
             } else {
                 ContentUnavailableView("还没有在放的歌", systemImage: "music.note", description: Text("在检索结果里按空格试听，或在曲库里双击一首歌。"))
             }
-            if let text = lookupText {
-                LookupPane(text: text) { lookupText = nil }
+            if let lookup {
+                LookupPane(request: lookup) { self.lookup = nil }
                     .frame(maxHeight: 260)
                     .glassCard(cornerRadius: 12)
                     .padding(10)
@@ -183,100 +183,15 @@ struct LyricsPanel: View {
                 Divider()
                 ForEach(Array(line.tokens.enumerated()).filter { Self.contentPOS.contains($0.element.pos) }, id: \.offset) { index, token in
                     Button("查词「\(token.surface)」") {
-                        lookupText = line.tokens[index...].map(\.surface).joined()
+                        lookup = LookupRequest(
+                            text: line.tokens[index...].map(\.surface).joined(),
+                            songId: player.track?.id,
+                            utteranceId: line.utteranceId,
+                            tokenIndex: index
+                        )
                     }
                 }
             }
-        }
-    }
-}
-
-/// 查词结果（语料库目录里的 Yomitan 词典库 dictionaries.db，和 Windows 版同一份、同一套查法）
-@MainActor
-private struct LookupPane: View {
-    @Environment(AppModel.self) private var app
-    let text: String
-    let close: () -> Void
-    @State private var result: LookupText?
-    @State private var noDictionaries = false
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("查词").font(.headline)
-                if let result, result.originalTextLength > 0 {
-                    Text(String(text.prefix(result.originalTextLength))).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(action: close) { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if noDictionaries {
-                        Text("这个语料库目录里还没有词典（dictionaries.db）。在 Windows 版里导入 Yomitan 词典后，把 dictionaries.db 和 corpus.db 一起拷过来就能查。")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    } else if let error {
-                        Text(error).font(.callout).foregroundStyle(.orange)
-                    } else if let result {
-                        if result.entries.isEmpty {
-                            Text("没查到").foregroundStyle(.secondary)
-                        }
-                        ForEach(Array(result.entries.prefix(8).enumerated()), id: \.offset) { _, entry in
-                            entryView(entry)
-                        }
-                    } else {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(12)
-        .task(id: text) { await load() }
-    }
-
-    private func entryView(_ entry: LookupEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                ForEach(Array(entry.headwords.enumerated()), id: \.offset) { _, h in
-                    Text(h.term).font(.title3.weight(.semibold))
-                    if !h.reading.isEmpty && h.reading != h.term {
-                        Text(h.reading).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                if let first = entry.headwords.first {
-                    Button("检索") { app.search(first.term) }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                }
-            }
-            ForEach(Array(entry.definitions.enumerated()), id: \.offset) { _, d in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(d.dictionary).font(.caption2).foregroundStyle(.tertiary)
-                    ForEach(Array(d.text.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.callout).textSelection(.enabled)
-                    }
-                }
-            }
-        }
-    }
-
-    private func load() async {
-        guard let client = app.client else { return }
-        result = nil
-        error = nil
-        do {
-            noDictionaries = try await client.dictionaries().isEmpty
-            if !noDictionaries {
-                result = try await client.lookup(text)
-            }
-        } catch {
-            self.error = error.localizedDescription
         }
     }
 }

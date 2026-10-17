@@ -17,6 +17,7 @@ pub mod connect;
 pub mod dict;
 pub mod export;
 pub mod learning;
+pub mod lyric_mine;
 pub mod lyrics_model;
 pub mod mine;
 pub mod mining_report;

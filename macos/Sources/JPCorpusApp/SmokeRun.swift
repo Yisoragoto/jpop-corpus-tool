@@ -130,9 +130,44 @@ enum SmokeRun {
         shot("13-quality", into: out, note: note)
         UserDefaults.standard.set(0, forKey: "analysisTab")
 
+        // 词典：现做一本只有一个词条的 Yomitan 词典（解开的目录），经界面那条路导入，再试查「夜」
+        app.section = .dictionaries
+        do {
+            let dict = FileManager.default.temporaryDirectory.appendingPathComponent("JPCorpusSmokeDict", isDirectory: true)
+            try? FileManager.default.removeItem(at: dict)
+            try FileManager.default.createDirectory(at: dict, withIntermediateDirectories: true)
+            try #"{"title":"冒烟辞書","revision":"1","format":3,"author":"smoke"}"#.write(to: dict.appendingPathComponent("index.json"), atomically: true, encoding: .utf8)
+            try #"[["夜","よる","n","",0,["日が沈んでから昇るまでの間"],1,""]]"#.write(to: dict.appendingPathComponent("term_bank_1.json"), atomically: true, encoding: .utf8)
+            if let client = app.client {
+                try await client.dictImport([dict.path])
+                var progress = try await client.dictImportProgress()
+                while !progress.finished {
+                    await settle(0.3)
+                    progress = try await client.dictImportProgress()
+                }
+                var lines: [String] = []
+                for r in progress.result?.results ?? [] {
+                    if let summary = r.summary {
+                        lines.append("\(summary.title) \(summary.terms) 条")
+                    } else {
+                        lines.append(r.error ?? "?")
+                    }
+                }
+                note("词典导入：" + lines.joined(separator: "；") + "，错误：" + (progress.error ?? "无"))
+                let anki = try await client.ankiStatus()
+                note("Anki：\(anki.connected ? "连上了" : "连不上（\(anki.message)）")")
+            }
+        } catch {
+            note("词典失败：\(error.localizedDescription)")
+        }
+        app.lookupSeed = "夜に"
+        app.dictionaryVersion += 1
+        await settle(2.5)
+        shot("14-dictionaries", into: out, note: note)
+
         app.section = .importer
         await settle(2)
-        shot("14-import", into: out, note: note)
+        shot("15-import", into: out, note: note)
 
         try? log.joined(separator: "\n").write(to: out.appendingPathComponent("smoke.txt"), atomically: true, encoding: .utf8)
         NSApplication.shared.terminate(nil)
