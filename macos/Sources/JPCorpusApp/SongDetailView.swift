@@ -47,8 +47,12 @@ struct SongDetailView: View {
             credits = try await c
             lineage = try? await l
             favorite = (try? await f) ?? false
-            // 没分词的歌算不出画像，不算错
-            profile = (track?.lineCount ?? 0) > 0 ? try? await client.songProfile(songId) : nil
+            // 没歌词的歌算不出画像，不算错
+            if (track?.lineCount ?? 0) > 0 {
+                profile = try? await client.songProfile(songId)
+            } else {
+                profile = nil
+            }
         } catch {
             app.errorMessage = error.localizedDescription
         }

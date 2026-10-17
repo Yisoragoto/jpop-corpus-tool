@@ -406,6 +406,10 @@ private struct ArchivePane: View {
     }
 }
 
+private func orDash<T>(_ value: T?) -> String {
+    value.map { "\($0)" } ?? "—"
+}
+
 private struct IdentifiedComparison: Identifiable {
     let value: Comparison
     var id: String { "\(value.before.id)-\(value.after.id)" }
@@ -457,8 +461,8 @@ private struct ComparisonView: View {
                 Table(c.words) {
                     TableColumn("词元") { Text($0.lemma) }
                     TableColumn("词性") { Text(posLabels[$0.pos] ?? $0.pos).foregroundStyle(.secondary) }.width(60)
-                    TableColumn("名次") { w in Text("\(w.beforeRank.map(String.init) ?? "—") → \(w.afterRank.map(String.init) ?? "—")").monospacedDigit() }
-                    TableColumn("频次") { w in Text("\(w.beforeFreq.map(String.init) ?? "—") → \(w.afterFreq.map(String.init) ?? "—")").monospacedDigit() }
+                    TableColumn("名次") { w in Text("\(orDash(w.beforeRank)) → \(orDash(w.afterRank))").monospacedDigit() }
+                    TableColumn("频次") { w in Text("\(orDash(w.beforeFreq)) → \(orDash(w.afterFreq))").monospacedDigit() }
                 }
             }
         }

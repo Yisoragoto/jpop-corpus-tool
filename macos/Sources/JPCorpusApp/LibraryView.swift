@@ -103,7 +103,8 @@ private struct SongTable: View {
     }
 }
 
-/// 右键菜单里的「收藏 / 取消收藏」：先问一下现在的状态
+/// 右键菜单里的「收藏 / 取消收藏」：先问一下现在的状态。
+/// 菜单项上的 .task 不一定跑得到（AppKit 菜单是另画的），没问到时标签两个都写
 @MainActor
 struct FavoriteMenuItem: View {
     @Environment(AppModel.self) private var app
@@ -111,7 +112,7 @@ struct FavoriteMenuItem: View {
     @State private var favorite: Bool?
 
     var body: some View {
-        Button(favorite == true ? "取消收藏" : "收藏") {
+        Button(favorite.map { $0 ? "取消收藏" : "收藏" } ?? "收藏 / 取消收藏") {
             Task {
                 guard let client = app.client else { return }
                 favorite = try? await client.toggleFavorite(song: songId)
