@@ -75,6 +75,60 @@ jobs:
         working-directory: macos
         run: ./scripts/bundle.sh
 
+      # 冒烟：真的把 .app 跑起来走一遍「检索 → KWIC → 试听 → 曲库 → 分析 → 导入」，窗口自己截图（不需要录屏权限）。
+      # 示例库的歌指向 E:/music/00x.flac，这里生成同名的 FLAC（440Hz 正弦，afconvert 是系统自带的），播放那条路也走到。
+      # 截图和 smoke.txt 传成 artifact：没有 Mac 也能看到真实界面。
+      - name: Smoke run (screenshots)
+        working-directory: macos
+        run: |
+          audio="$RUNNER_TEMP/smoke-audio"; out="$RUNNER_TEMP/smoke"
+          mkdir -p "$audio" "$out"
+          python3 - "$audio/tone.wav" <<'PY'
+          import math, struct, sys, wave
+          rate = 22050
+          with wave.open(sys.argv[1], "wb") as w:
+              w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+              w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * 440 * i / rate))) for i in range(rate * 300)))
+          PY
+          for id in 001 002 003 004; do afconvert -f flac -d flac "$audio/tone.wav" "$audio/$id.flac"; done
+          # 示例库 004 的封面记的是 E:/music/covers/004.jpg：生成一张彩色渐变图放到 covers/ 下，
+          # 歌词面板的虚化封面底和播放条的小封面都能走到（按路径尾巴 covers/004.jpg 找）
+          mkdir -p "$audio/covers"
+          python3 - "$audio/covers/004.png" <<'PY'
+          import struct, sys, zlib
+          w = h = 256
+          rows = b"".join(b"\x00" + bytes(v for x in range(w) for v in (255 - y // 2, 80 + x // 3, 120 + y // 3)) for y in range(h))
+          chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+          png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+          open(sys.argv[1], "wb").write(png)
+          PY
+          sips -s format jpeg "$audio/covers/004.png" --out "$audio/covers/004.jpg" >/dev/null
+          app="$PWD/build/JPOP Corpus.app"
+          set +e
+          # 先直接跑可执行文件（stderr 里有 [smoke] 生命周期日志）
+          JPCORPUS_SMOKE="$out" JPCORPUS_SMOKE_AUDIO="$audio" perl -e 'alarm shift; exec @ARGV' 120 "$app/Contents/MacOS/JPCorpus"
+          echo "direct exit=$?"
+          # 没出截图就经 LaunchServices 再开一次：GUI 应用通常要这样才拿得到窗口服务器的会话
+          if [ ! -f "$out/02-kwic.png" ]; then
+            open -W -n --env JPCORPUS_SMOKE="$out" --env JPCORPUS_SMOKE_AUDIO="$audio" \
+              --stdout "$out/stdout.txt" --stderr "$out/stderr.txt" "$app" &
+            pid=$!; ( sleep 120; kill $pid 2>/dev/null; pkill -f "JPOP Corpus.app" ) & wait $pid
+            echo "open exit=$?"
+            cat "$out/stderr.txt" 2>/dev/null
+          fi
+          log show --last 3m --style compact --predicate 'process == "JPCorpus"' 2>/dev/null | tail -60
+          set -e
+          cat "$out/smoke.txt" 2>/dev/null || true
+          ls -la "$out"
+          test -f "$out/02-kwic.png"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macOS-smoke-screenshots
+          path: ${{ runner.temp }}/smoke
+          retention-days: 14
+
       - uses: actions/upload-artifact@v4
         with:
           name: JPOP-Corpus-macOS-unsigned

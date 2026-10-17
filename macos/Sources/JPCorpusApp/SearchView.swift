@@ -172,19 +172,25 @@ struct SearchView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .width(min: 120, ideal: 260)
+            .width(min: 100, ideal: 200)
             TableColumn("关键词") { row in
+                // 选中行的底色就是强调色：蓝字落在蓝底上看不见，选中时改用会跟着反白的 .primary
                 Text(row.hit.keyword)
                     .fontWeight(.semibold)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(selection.contains(row.id) ? AnyShapeStyle(.primary) : AnyShapeStyle(.tint))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(
+                        Capsule().fill(selection.contains(row.id) ? Color.clear : Color.accentColor.opacity(0.16))
+                    )
             }
-            .width(min: 40, ideal: 80)
+            .width(min: 40, ideal: 64)
             TableColumn("右语境") { row in
                 Text(row.hit.right)
                     .lineLimit(1)
                     .foregroundStyle(.secondary)
             }
-            .width(min: 120, ideal: 260)
+            .width(min: 100, ideal: 200)
             TableColumn("歌曲") { row in
                 HStack(spacing: 4) {
                     Text("\(row.hit.artist) · \(row.hit.title)").lineLimit(1)
@@ -193,15 +199,18 @@ struct SearchView: View {
                     }
                 }
             }
-            .width(min: 120, ideal: 220)
+            // 理想宽度加起来要放得进「侧栏 + 歌词面板」之间（1280 宽的窗口约 830pt），不然时间列被挤出去
+            .width(min: 100, ideal: 170)
             TableColumn("时间") { row in
                 Text(row.hit.timeSec.map(formatTime) ?? "—")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .help(row.hit.endKind == .estimated ? "行尾离下一行太远（间奏），结尾按字数估" : "")
             }
-            .width(48)
+            .width(min: 40, ideal: 44)
         }
+        .clearScrollBackground()
+        .alternatingRowBackgrounds(.disabled)
         .focused($tableFocused)
         .contextMenu(forSelectionType: HitRow.ID.self) { ids in
             if let row = rows.first(where: { ids.contains($0.id) }) {

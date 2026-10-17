@@ -71,6 +71,8 @@ private struct FrequencyPane: View {
                 TableColumn("曲数") { Text("\($0.songs)").monospacedDigit() }.width(48)
                 TableColumn("写法") { Text($0.surfaces.joined(separator: "、")).foregroundStyle(.secondary).lineLimit(1) }
             }
+            .clearScrollBackground()
+            .alternatingRowBackgrounds(.disabled)
             .contextMenu(forSelectionType: FrequencyItem.ID.self) { ids in
                 if let item = result?.items.first(where: { ids.contains($0.id) }) {
                     Button("检索「\(item.lemma)」") { app.search(item.lemma) }
@@ -165,7 +167,9 @@ private struct KeynessPane: View {
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { app.search(k.lemma) }
             }
-            .listStyle(.bordered)
+            .listStyle(.plain)
+            .clearScrollBackground()
+            .glassCard(cornerRadius: 12)
         }
     }
 

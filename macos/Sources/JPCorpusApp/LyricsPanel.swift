@@ -1,3 +1,4 @@
+import AppKit
 import JPCore
 import SwiftUI
 
@@ -14,39 +15,57 @@ struct LyricsPanel: View {
 
     private static let contentPOS: Set<String> = ["NOUN", "PROPN", "VERB", "ADJ", "ADV"]
 
+    /// 当前这首的封面（磁盘上的文件，库从别的机器拷来时按目录尾巴找）
+    @State private var cover: NSImage?
+
     var body: some View {
         let player = app.player
         VStack(alignment: .leading, spacing: 0) {
             if let track = player.track {
                 header(track)
-                Divider()
                 ScrollViewReader { proxy in
-                    List {
-                        ForEach(player.lines) { line in
-                            row(line, current: line.utteranceId == player.currentUtterance)
-                                .id(line.utteranceId)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(player.lines) { line in
+                                row(line, current: line.utteranceId == player.currentUtterance)
+                                    .id(line.utteranceId)
+                            }
                         }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 40)
                     }
-                    .listStyle(.plain)
+                    .scrollIndicators(.never)
+                    .mask(
+                        // 上下两头渐隐，像 Apple Music 的歌词
+                        LinearGradient(stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black, location: 0.08),
+                            .init(color: .black, location: 0.9),
+                            .init(color: .clear, location: 1),
+                        ], startPoint: .top, endPoint: .bottom)
+                    )
                     .onChange(of: player.currentUtterance) { _, id in
                         guard let id, player.isPlaying else { return }
-                        withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
+                        withAnimation(.spring(duration: 0.45)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: 0.35)) }
                     }
                     .onChange(of: player.focusUtterance) { _, id in
                         guard let id else { return }
-                        withAnimation { proxy.scrollTo(id, anchor: .center) }
+                        withAnimation { proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: 0.35)) }
                     }
                     .onAppear {
-                        if let id = player.focusUtterance ?? player.currentUtterance { proxy.scrollTo(id, anchor: .center) }
+                        if let id = player.focusUtterance ?? player.currentUtterance {
+                            proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: 0.35))
+                        }
                     }
                 }
             } else {
                 ContentUnavailableView("还没有在放的歌", systemImage: "music.note", description: Text("在检索结果里按空格试听，或在曲库里双击一首歌。"))
             }
             if let text = lookupText {
-                Divider()
                 LookupPane(text: text) { lookupText = nil }
                     .frame(maxHeight: 260)
+                    .glassCard(cornerRadius: 12)
+                    .padding(10)
             }
             if let error = player.lastError {
                 Text(error)
@@ -56,15 +75,55 @@ struct LyricsPanel: View {
                     .textSelection(.enabled)
             }
         }
+        .background { backdrop }
+        .task(id: player.track?.id) {
+            cover = nil
+            guard let track = player.track, !track.coverPath.isEmpty, let client = app.client else { return }
+            let path = try? await client.resolveMedia(track.coverPath)
+            cover = loadImage(atPath: path ?? nil)
+        }
+    }
+
+    /// 底：毛玻璃，有封面就再铺一层大幅虚化的封面，整栏带上这首歌的颜色
+    private var backdrop: some View {
+        ZStack {
+            GlassBackground(material: .sidebar)
+            if let cover {
+                Image(nsImage: cover)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .blur(radius: 70, opaque: true)
+                    .saturation(1.4)
+                    .opacity(0.55)
+                    .clipped()
+                    .transition(.opacity)
+            }
+        }
+        .ignoresSafeArea()
+        .animation(.easeInOut(duration: 0.6), value: cover != nil)
     }
 
     private func header(_ track: Track) -> some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .center, spacing: 12) {
+            Group {
+                if let cover {
+                    Image(nsImage: cover).resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    ZStack {
+                        Rectangle().fill(.quaternary)
+                        Image(systemName: "music.note").foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .frame(width: 52, height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title).font(.headline).lineLimit(2)
                 Text([track.artist, track.year].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer()
             Button {
@@ -78,28 +137,37 @@ struct LyricsPanel: View {
                 ProfileView(songId: track.id)
             }
         }
-        .padding(12)
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
     }
 
     private func row(_ line: LyricLine, current: Bool) -> some View {
         let player = app.player
         let looping = player.loop?.utteranceId == line.utteranceId
         let focused = player.focusUtterance == line.utteranceId
-        return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(line.timeSec.map(formatTime) ?? "")
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.tertiary)
-                .frame(width: 34, alignment: .trailing)
+        let hint = line.timeSec.map { formatTime($0) + " · 点一下从这里放，右键检索 / 查词 / 循环" } ?? "这一行没有时间戳"
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(line.text)
-                .font(current ? .body.weight(.semibold) : .body)
+                .font(.system(size: 19, weight: .bold))
                 .foregroundStyle(current ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .opacity(current ? 1 : (line.timeSec == nil ? 0.35 : 0.5))
+                .scaleEffect(current ? 1.0 : 0.97, anchor: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             if looping {
-                Image(systemName: "repeat").font(.caption).foregroundStyle(.tint)
+                Image(systemName: "repeat").font(.callout.weight(.semibold)).foregroundStyle(.tint)
             }
         }
-        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(focused ? Color.accentColor.opacity(0.14) : .clear)
+        )
+        .animation(.easeInOut(duration: 0.25), value: current)
         .contentShape(Rectangle())
-        .listRowBackground(focused ? Color.accentColor.opacity(0.12) : Color.clear)
+        .help(hint)
         .onTapGesture { Task { await player.playLine(line) } }
         .contextMenu {
             Button("从这里放") { Task { await player.playLine(line) } }
@@ -280,6 +348,8 @@ struct PlayerBar: View {
             .font(.title3)
             .disabled(player.track == nil)
 
+            BarCover(track: player.track)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(player.track?.title ?? "—").font(.callout.weight(.medium)).lineLimit(1)
                 Text(player.track?.artist ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -323,9 +393,36 @@ struct PlayerBar: View {
             .fixedSize()
             .help("倍速（音高不变）")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .glassCard(cornerRadius: 16)
+    }
+}
+
+/// 播放条上的小封面
+@MainActor
+private struct BarCover: View {
+    @Environment(AppModel.self) private var app
+    let track: Track?
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+            } else {
+                ZStack {
+                    Rectangle().fill(.quaternary)
+                    Image(systemName: "music.note").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(width: 36, height: 36)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .task(id: track?.id) {
+            image = nil
+            guard let track, !track.coverPath.isEmpty, let client = app.client else { return }
+            image = loadImage(atPath: (try? await client.resolveMedia(track.coverPath)) ?? nil)
+        }
     }
 }

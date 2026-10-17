@@ -59,6 +59,7 @@ struct CollocationPanel: View {
                     .listRowBackground(selected == c.lemma ? Color.accentColor.opacity(0.15) : Color.clear)
                 }
                 .listStyle(.plain)
+                .clearScrollBackground()
                 Text("节点 \(result.nodeFreq) 次 · \(result.provenance.scope) · \(result.provenance.songs) 首 / \(result.provenance.tokens) 词（\(result.provenance.unit == .distinctLines ? "重复行只算一次" : "全部词次")）· 指纹 \(String(result.provenance.snapshot.fingerprint.prefix(8)))")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

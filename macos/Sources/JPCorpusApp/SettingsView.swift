@@ -47,6 +47,8 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .clearScrollBackground()
+        .glass(.sidebar)
         .frame(width: 520, height: 380)
         .fileImporter(isPresented: $pickingLibrary, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { Task { await app.open(folder: url) } }

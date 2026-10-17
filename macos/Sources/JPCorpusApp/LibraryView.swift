@@ -34,6 +34,8 @@ struct LibraryView: View {
             }
             .width(52)
         }
+        .clearScrollBackground()
+        .alternatingRowBackgrounds(.disabled)
         .contextMenu(forSelectionType: Track.ID.self) { ids in
             if let id = ids.first, let track = app.tracks.first(where: { $0.id == id }) {
                 Button("播放") { play(track) }

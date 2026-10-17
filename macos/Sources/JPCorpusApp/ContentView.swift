@@ -27,10 +27,21 @@ struct ContentView: View {
                         case .importer: ImportView()
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // 播放条是浮在正文下方的一张玻璃卡片。只挂在正文这一栏：
+                    // 挂在整个分栏视图上时，各栏不会给它让位，卡片会盖住侧栏底部和正文最后几行
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        PlayerBar()
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 10)
+                            .padding(.top, 4)
+                    }
+                    .glass(.underWindowBackground)
                     .inspector(isPresented: $app.showLyrics) {
                         LyricsPanel()
                             .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
                     }
+                    .toolbarBackground(.hidden, for: .windowToolbar)
                     .toolbar {
                         ToolbarItem(placement: .primaryAction) {
                             Button {
@@ -42,9 +53,10 @@ struct ContentView: View {
                         }
                     }
                 }
-                .safeAreaInset(edge: .bottom, spacing: 0) { PlayerBar() }
+                .glass(.sidebar)
             }
         }
+        .background(GlassWindowConfigurator())
         .alert("出错了", isPresented: Binding(get: { app.errorMessage != nil }, set: { if !$0 { app.errorMessage = nil } })) {
             Button("好") { app.errorMessage = nil }
         } message: {
@@ -104,6 +116,7 @@ struct WelcomeView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .glass(.sidebar)
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result {
                 Task { await app.open(folder: url) }

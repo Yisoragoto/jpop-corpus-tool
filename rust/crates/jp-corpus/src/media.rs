@@ -41,7 +41,19 @@ pub fn resolve(stored: &str, library_root: Option<&Path>, search_roots: &[PathBu
     if name.is_empty() {
         return None;
     }
-    let roots = library_root.map(Path::to_path_buf).into_iter().chain(search_roots.iter().cloned());
+    let roots: Vec<PathBuf> = library_root.map(Path::to_path_buf).into_iter().chain(search_roots.iter().cloned()).collect();
+    // 先按路径的尾巴找：封面是 `raw/covers/{歌手}/001.jpg`，每个歌手目录里都有一张 001.jpg，
+    // 只按文件名找会拿到别人的封面。从长到短试最后 4…2 段，都对不上才退回只看文件名
+    let parts: Vec<&str> = stored.split(['\\', '/']).filter(|p| !p.is_empty()).collect();
+    for keep in (2..=4.min(parts.len())).rev() {
+        let tail: PathBuf = parts[parts.len() - keep..].iter().collect();
+        for root in &roots {
+            let candidate = root.join(&tail);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
     for root in roots {
         if let Some(found) = find_by_name(&root, name, MAX_DEPTH) {
             return Some(found);
@@ -90,5 +102,19 @@ mod tests {
         assert_eq!(resolve(r"D:\old\missing.flac", None, std::slice::from_ref(&dir)), None);
         assert_eq!(resolve("", None, std::slice::from_ref(&dir)), None);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn same_named_covers_are_told_apart_by_their_folders() {
+        let root = std::env::temp_dir().join(format!("jp-media-covers-{}", std::process::id()));
+        for artist in ["Aimer", "Vaundy"] {
+            let d = root.join("raw").join("covers").join(artist);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("001.jpg"), artist.as_bytes()).unwrap();
+        }
+        // Windows 那台机器上的绝对路径，拷到别处之后按目录尾巴对上
+        let found = resolve(r"C:\Users\x\AppData\Local\JPOP Corpus Tool\raw\covers\Vaundy\001.jpg", Some(&root), &[]);
+        assert_eq!(found, Some(root.join("raw").join("covers").join("Vaundy").join("001.jpg")));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
