@@ -1995,35 +1995,11 @@ pub fn cancel_import(state: State<'_, AppState>) -> CmdResult<()> {
 
 // ────────────────────────────── 刮削 ──────────────────────────────
 
-/// 复核队列里的一条：状态 + 候选，一次给全，UI 不用再逐条问。
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReviewItem {
-    pub file_path: String,
-    pub song_id: String,
-    pub status: String,
-    pub confidence: f64,
-    pub provider: String,
-    pub error_type: String,
-    pub error_message: String,
-    pub retry_count: i64,
-    pub last_attempt_at: String,
-    /// 本地文件现在写的是什么，用来和候选对照
-    pub local_title: String,
-    pub local_artist: String,
-    pub local_album: String,
-    /// 候选列表，已按分数排好
-    pub candidates: Vec<jp_scraper::ScrapeCandidate>,
-    /// 最佳候选的打分解释
-    pub explain: String,
-}
+pub use crate::scrape::ReviewItem;
 
 #[tauri::command(async)]
 pub fn scrape_summary(state: State<'_, AppState>) -> CmdResult<jp_scraper::ScrapeSummary> {
-    let corpus = state.corpus();
-    let store = jp_scraper::ScrapeStore::new(corpus.connection());
-    store.ensure_schema()?;
-    Ok(store.summary()?)
+    Ok(crate::scrape::summary(state.corpus().connection())?)
 }
 
 /// 复核队列。默认取需要人工确认的，也可以点名要别的状态。
@@ -2033,59 +2009,7 @@ pub fn scrape_review_queue(
     statuses: Option<Vec<String>>,
     limit: Option<i64>,
 ) -> CmdResult<Vec<ReviewItem>> {
-    let corpus = state.corpus();
-    let conn = corpus.connection();
-    let store = jp_scraper::ScrapeStore::new(conn);
-    store.ensure_schema()?;
-
-    let wanted: Vec<jp_scraper::ScrapeStatus> = statuses
-        .unwrap_or_else(|| vec!["low_confidence".into()])
-        .iter()
-        .map(|s| jp_scraper::ScrapeStatus::from_str_lossy(s))
-        .collect();
-    let records = store.by_status(&wanted, Some(limit.unwrap_or(200)))?;
-
-    let mut out = Vec::with_capacity(records.len());
-    for record in records {
-        let candidates: Vec<jp_scraper::ScrapeCandidate> = record
-            .candidates
-            .clone()
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
-        let explain = candidates
-            .first()
-            .and_then(|c| c.breakdown.as_ref())
-            .map(|b| b.explain())
-            .unwrap_or_default();
-        // 本地写的是什么：取原始元数据而不是可能已被覆盖的 songs 行
-        let local = store.original_metadata(&record.file_path).ok().flatten();
-        out.push(ReviewItem {
-            local_title: local
-                .as_ref()
-                .map(|t| t.title().to_string())
-                .unwrap_or_default(),
-            local_artist: local
-                .as_ref()
-                .map(|t| t.artist().to_string())
-                .unwrap_or_default(),
-            local_album: local
-                .as_ref()
-                .map(|t| t.album().to_string())
-                .unwrap_or_default(),
-            file_path: record.file_path,
-            song_id: record.song_id,
-            status: record.status.as_str().to_string(),
-            confidence: record.confidence,
-            provider: record.provider,
-            error_type: record.error_type.as_str().to_string(),
-            error_message: record.error_message,
-            retry_count: record.retry_count,
-            last_attempt_at: record.last_attempt_at,
-            candidates,
-            explain,
-        });
-    }
-    Ok(out)
+    Ok(crate::scrape::review_queue(state.corpus().connection(), statuses, limit)?)
 }
 
 /// 某个文件的尝试历史。「这首为什么反复失败」用它回答。
@@ -2109,19 +2033,7 @@ pub fn scrape_track(
 ) -> CmdResult<jp_scraper::ScrapeSummary> {
     // 要联网（识别 + 下封面），用自己的连接，见 `own_connection`
     let conn = &own_connection(&state)?;
-    let Some(track) = crate::scrape::track_file_for(conn, &song_id)? else {
-        return Err(anyhow::anyhow!("库里没有 id={song_id} 这首歌").into());
-    };
-    let resolver = jp_scraper::default_resolver(false)?;
-    let outcome = crate::scrape::scrape_one(conn, &resolver, &song_id, &track)?;
-    // 单首是同步的，封面就地下——一张图十几秒，用户点一首歌等得起
-    if let Some(candidate) = outcome.accepted
-        && let Some(path) =
-            crate::scrape::download_cover(&state.covers_dir, &song_id, &outcome.artist, &candidate)
-    {
-        crate::scrape::record_cover(conn, &song_id, &path)?;
-    }
-    Ok(jp_scraper::ScrapeStore::new(conn).summary()?)
+    Ok(crate::scrape::scrape_track(conn, &state.covers_dir, &song_id)?)
 }
 
 /// 批量刮削，后台跑。进度走 `scrape://progress` 事件。
@@ -2134,24 +2046,11 @@ pub fn scrape_start<R: tauri::Runtime>(
     only_missing: Option<bool>,
     limit: Option<i64>,
 ) -> CmdResult<usize> {
-    let song_ids: Vec<String> = {
-        let corpus = state.corpus();
-        let conn = corpus.connection();
-        jp_scraper::ScrapeStore::new(conn).ensure_schema()?;
-        // 只刮还没成功、也没被用户跳过的
-        let sql = if only_missing.unwrap_or(true) {
-            "SELECT s.id FROM songs s \
-             LEFT JOIN scrape_state st ON st.song_id = s.id \
-             WHERE st.status IS NULL OR st.status NOT IN ('success','skipped') \
-             ORDER BY s.id LIMIT ?1"
-        } else {
-            "SELECT s.id FROM songs s ORDER BY s.id LIMIT ?1"
-        };
-        let mut stmt = conn.prepare(sql)?;
-        stmt.query_map(rusqlite::params![limit.unwrap_or(1000)], |r| r.get(0))?
-            .collect::<Result<Vec<String>, _>>()?
-    };
-
+    let song_ids = crate::scrape::songs_to_scrape(
+        state.corpus().connection(),
+        only_missing.unwrap_or(true),
+        limit.unwrap_or(1000),
+    )?;
     let total = song_ids.len();
     crate::scrape::spawn_batch(
         app,
@@ -2186,50 +2085,7 @@ pub fn scrape_accept(
 ) -> CmdResult<crate::scrape::ManualApply> {
     // 最后一步要下封面，用自己的连接，见 `own_connection`
     let conn = &own_connection(&state)?;
-    let store = jp_scraper::ScrapeStore::new(conn);
-    let record = store
-        .get(&file_path)?
-        .ok_or_else(|| anyhow::anyhow!("没有 {file_path} 的刮削记录"))?;
-    let candidates: Vec<jp_scraper::ScrapeCandidate> = record
-        .candidates
-        .clone()
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
-    let candidate = candidates
-        .get(candidate_index)
-        .ok_or_else(|| anyhow::anyhow!("没有第 {candidate_index} 条候选"))?
-        .clone();
-
-    // 本地歌手名决定封面落到哪个目录，和自动流程保持一致
-    let local_artist = store
-        .original_metadata(&file_path)?
-        .map(|t| t.artist().to_string())
-        .unwrap_or_default();
-
-    let resolved = jp_scraper::ResolvedTrack {
-        file_path: file_path.clone(),
-        status: jp_scraper::ScrapeStatus::Success,
-        confidence: candidate.score(),
-        candidate: Some(candidate.clone()),
-        candidates,
-        error_message: "用户在复核界面确认".into(),
-        matched_at: jp_scraper::models::utc_now(),
-        ..Default::default()
-    };
-    store.record(&resolved, &record.song_id)?;
-
-    // 光改状态是不够的：之前 songs 一个字没写、封面也没下，
-    // 点「采用」等于什么都没发生。
-    if record.song_id.is_empty() {
-        return Err(anyhow::anyhow!("{file_path} 还没和 songs 关联，无法写入").into());
-    }
-    Ok(crate::scrape::apply_manual(
-        conn,
-        &state.covers_dir,
-        &record.song_id,
-        &local_artist,
-        &candidate,
-    )?)
+    Ok(crate::scrape::accept_candidate(conn, &state.covers_dir, &file_path, candidate_index)?)
 }
 
 /// 会联网的命令用的连接：自己开一条，**不占共享的 `corpus()` 锁**。
@@ -2252,32 +2108,13 @@ pub fn scrape_skip(
     file_path: String,
     reason: Option<String>,
 ) -> CmdResult<()> {
-    let corpus = state.corpus();
-    let store = jp_scraper::ScrapeStore::new(corpus.connection());
-    store.mark_skipped(&file_path, &reason.unwrap_or_else(|| "用户跳过".into()))?;
-    Ok(())
+    Ok(crate::scrape::skip(state.corpus().connection(), &file_path, reason.as_deref())?)
 }
 
 /// 把失败的打回待刮，供「重试全部失败」用。
 #[tauri::command(async)]
 pub fn scrape_retry_failed(state: State<'_, AppState>) -> CmdResult<usize> {
-    let corpus = state.corpus();
-    let conn = corpus.connection();
-    let store = jp_scraper::ScrapeStore::new(conn);
-    store.ensure_schema()?;
-    // low_confidence 不在内：它缺的是用户决策，不是再跑一次网络请求
-    let failed: Vec<String> = store
-        .by_status(
-            &[
-                jp_scraper::ScrapeStatus::Failed,
-                jp_scraper::ScrapeStatus::Running,
-            ],
-            None,
-        )?
-        .into_iter()
-        .map(|r| r.file_path)
-        .collect();
-    Ok(store.reset(Some(&failed))?)
+    Ok(crate::scrape::retry_failed(state.corpus().connection())?)
 }
 
 // ────────────────────────── 歌手 / 专辑封面 ──────────────────────────
@@ -2426,11 +2263,8 @@ pub async fn scrape_backfill_covers<R: tauri::Runtime>(
 ) -> CmdResult<crate::scrape::CoverBackfill> {
     blocking(app, move |state| {
         let covers = state.covers_dir.clone();
-        let corpus = state.corpus();
-        let report = crate::scrape::backfill_covers(corpus.connection(), &covers, false)?;
         // 曲目封面补上了，专辑封面也跟着能填
-        crate::scrape::fill_album_artwork(corpus.connection())?;
-        Ok(report)
+        crate::scrape::backfill_and_fill_albums(state.corpus().connection(), &covers)
     })
     .await
 }

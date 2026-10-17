@@ -81,6 +81,11 @@ pub struct AnkiConnect {
 }
 
 impl AnkiConnect {
+    /// 连本机 AnkiConnect 的真客户端（真 HTTP）。两个客户端（Tauri、macOS）都用它
+    pub fn local() -> Self {
+        Self::new(HttpClient::new(Box::new(jp_scraper::UreqTransport)))
+    }
+
     pub fn new(http: HttpClient) -> Self {
         Self {
             url: DEFAULT_URL.to_string(),

@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 @MainActor
 struct ContentView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
         @Bindable var app = app
@@ -21,9 +23,12 @@ struct ContentView: View {
                 } detail: {
                     Group {
                         switch app.section {
+                        case .home: HomeView()
                         case .search: SearchView()
                         case .library: LibraryView()
                         case .analysis: AnalysisView()
+                        case .dictionaries: DictionaryView()
+                        case .scrape: ScrapeView()
                         case .importer: ImportView()
                         }
                     }
@@ -42,6 +47,9 @@ struct ContentView: View {
                             .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
                     }
                     .toolbarBackground(.hidden, for: .windowToolbar)
+                    .sheet(isPresented: $app.showQuickSearch) {
+                        QuickSearchView()
+                    }
                     .toolbar {
                         ToolbarItem(placement: .primaryAction) {
                             Button {
@@ -57,6 +65,14 @@ struct ContentView: View {
             }
         }
         .background(GlassWindowConfigurator())
+        // 全屏歌词是单独一个窗口（JPCorpusApp 里的 Window("stage")）：盖在主窗口上做的话，
+        // 主窗口的标题栏和工具栏总会露一条出来
+        .onChange(of: app.showStage) { _, on in
+            if on { openWindow(id: "stage") } else { dismissWindow(id: "stage") }
+        }
+        .task(id: "\(app.player.track?.id ?? "")|\(app.showFurigana)|\(app.furiganaMode.rawValue)") {
+            await app.loadFurigana()
+        }
         .alert("出错了", isPresented: Binding(get: { app.errorMessage != nil }, set: { if !$0 { app.errorMessage = nil } })) {
             Button("好") { app.errorMessage = nil }
         } message: {

@@ -44,6 +44,16 @@ struct JPCorpusApp: App {
                 Divider()
                 Button(app.showLyrics ? "隐藏歌词面板" : "显示歌词面板") { app.showLyrics.toggle() }
                     .keyboardShortcut("y", modifiers: [.command])
+                Button(app.showStage ? "退出全屏歌词" : "全屏歌词") { app.showStage.toggle() }
+                    .keyboardShortcut("f", modifiers: [.command, .shift])
+                    .disabled(app.player.track == nil)
+                Toggle("振假名", isOn: Binding(get: { app.showFurigana }, set: { app.showFurigana = $0 }))
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
+            CommandGroup(after: .textEditing) {
+                Button("全库搜索…") { app.showQuickSearch = true }
+                    .keyboardShortcut("k", modifiers: [.command])
+                    .disabled(app.client == nil)
             }
             CommandGroup(after: .sidebar) {
                 ForEach(Array(SidebarItem.allCases.enumerated()), id: \.element) { index, item in
@@ -52,6 +62,15 @@ struct JPCorpusApp: App {
                 }
             }
         }
+
+        // 全屏歌词：没有标题栏的独立窗口，打开后切进原生全屏
+        Window("全屏歌词", id: "stage") {
+            LyricsStage()
+                .environment(app)
+                .frame(minWidth: 720, minHeight: 480)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1280, height: 800)
 
         Settings {
             SettingsView()

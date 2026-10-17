@@ -20,3 +20,7 @@ jp-import = { path = "../jp-import" }
 jp-tokenizer = { path = "../jp-tokenizer" }
 jp-setup = { path = "../jp-setup" }
 jp-dict = { path = "../jp-dict" }
+# 一键制卡（AnkiConnect）：和 Tauri 客户端同一份 jp_anki::lyric_mine
+jp-anki = { path = "../jp-anki" }
+# 刮削元数据、封面、歌手照片：和 Tauri 客户端同一份 jp-scrape
+jp-scrape = { path = "../jp-scrape" }

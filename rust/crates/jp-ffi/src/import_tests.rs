@@ -247,6 +247,96 @@ fn lookups_read_an_imported_yomitan_dictionary() {
     let _ = std::fs::remove_dir_all(root.parent().unwrap());
 }
 
+/// 词典管理：经后台作业导入、启用 / 停用、排序、删除，查词跟着变
+#[test]
+fn dictionaries_are_imported_ordered_disabled_and_deleted_through_the_ffi() {
+    let (s, root) = fresh_library();
+    assert!(s.call("dictSetEnabled", json!({ "id": 1, "enabled": false })).is_err(), "还没有词典库时改不了，要报错");
+    let fixture = yomitan_fixture();
+    s.call("dictImport", json!({ "paths": [fixture.to_str().unwrap()] })).unwrap();
+    let done = wait(&s, "dictImportProgress");
+    assert!(done["error"].is_null(), "{done}");
+    assert_eq!(done["result"]["results"][0]["summary"]["terms"], 1, "{done}");
+    assert!(root.join("dictionaries.db").exists(), "和 Windows 版同一个位置");
+
+    let list = s.call("dictList", json!({})).unwrap();
+    let id = list[0]["id"].as_i64().unwrap();
+    assert_eq!(list[0]["title"], "テスト辞書");
+    assert_eq!(s.call("dictLookupText", json!({ "text": "夜" })).unwrap()["entries"].as_array().unwrap().len(), 1);
+
+    s.call("dictSetEnabled", json!({ "id": id, "enabled": false })).unwrap();
+    assert_eq!(s.call("dictList", json!({})).unwrap()[0]["enabled"], false);
+    assert!(
+        s.call("dictLookupText", json!({ "text": "夜" })).unwrap()["entries"].as_array().unwrap().is_empty(),
+        "停用的词典不参与查词"
+    );
+    s.call("dictSetEnabled", json!({ "id": id, "enabled": true })).unwrap();
+    s.call("dictSetOrder", json!({ "ids": [id] })).unwrap();
+
+    // 同一本再导一次：Yomitan 的规则是同名词典拒绝，结果里有这一本的错误，作业本身不算失败
+    s.call("dictImport", json!({ "paths": [fixture.to_str().unwrap()] })).unwrap();
+    let again = wait(&s, "dictImportProgress");
+    assert!(again["error"].is_null(), "{again}");
+    assert!(again["result"]["results"][0]["error"].is_string(), "{again}");
+
+    s.call("dictDelete", json!({ "id": id })).unwrap();
+    assert!(s.call("dictList", json!({})).unwrap().as_array().unwrap().is_empty());
+    assert!(s.call("dictImport", json!({ "paths": ["/没有/这个.zip"] })).is_err());
+    drop(s);
+    let _ = std::fs::remove_dir_all(root.parent().unwrap());
+}
+
+/// 从歌词制卡的第一步：词条从词典库里重新查，例句是当前行 + 同一首歌里其他含这个词的行（重复行只放一次），
+/// 音频路径换成这台机器上找得到的文件。第二步（真连 Anki）不在这里测：本机开着 Anki 时会真加一张卡
+#[test]
+fn mining_from_a_lyric_line_prepares_the_entry_examples_and_local_audio() {
+    let dir = temp_dir("mine");
+    let db = jp_corpus::fixture::write_to(&dir).unwrap();
+    let s = Session::open(db.to_str().unwrap()).unwrap();
+    {
+        let mut store = jp_dict::store::DictionaryStore::open(&dir.join("dictionaries.db")).unwrap();
+        jp_dict::import::import_path(&mut store, &yomitan_fixture(), &mut |_| {}).unwrap();
+    }
+    // 示例库的歌记的是 E:/music/004.flac；这台机器上放在另一个目录
+    let audio = temp_dir("mine-audio");
+    std::fs::write(audio.join("004.flac"), b"x").unwrap();
+    s.call("setAudioRoots", json!({ "roots": [audio.to_str().unwrap()] })).unwrap();
+
+    let lyrics = s.call("lyrics", json!({ "songId": "004" })).unwrap();
+    let first = &lyrics[0];
+    assert_eq!(first["text"], "雨が降る夜に");
+    let token_index = first["tokens"].as_array().unwrap().iter().position(|t| t["surface"] == "夜").unwrap();
+    let request: jp_anki::lyric_mine::MineRequest = serde_json::from_value(json!({
+        "lookupText": "夜に", "term": "夜", "reading": "よる",
+        "songId": "004", "utteranceId": first["utteranceId"], "tokenIndex": token_index,
+        "deck": "JPOP", "model": "Lyrics", "mainDictionary": null,
+    }))
+    .unwrap();
+    let store = jp_dict::store::DictionaryStore::open(&dir.join("dictionaries.db")).unwrap();
+    let prepared = {
+        let corpus = s.corpus.lock().unwrap();
+        jp_anki::lyric_mine::prepare(&corpus, &store, &s.translator, &request).unwrap()
+    };
+    assert_eq!(prepared.sentence(), Some("雨が降る夜に"));
+    assert_eq!(prepared.other_sentences(), ["夜はまだ長い、"], "唱了两遍的行只放一次");
+    let roots = s.audio_roots.lock().unwrap().clone();
+    let prepared = prepared.with_media_resolved(|p| {
+        jp_corpus::media::resolve(p, s.root.as_deref(), &roots).map(|p| p.display().to_string())
+    });
+    assert_eq!(prepared.audio_path(), Some(audio.join("004.flac").display().to_string().as_str()));
+
+    // 词典里没有的词：说清楚，不是 panic
+    let mut missing = request.clone();
+    missing.term = "朝".into();
+    let corpus = s.corpus.lock().unwrap();
+    let err = jp_anki::lyric_mine::prepare(&corpus, &store, &s.translator, &missing).err().unwrap();
+    assert!(err.to_string().contains("词典里没找到"), "{err}");
+    drop(corpus);
+    drop(s);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&audio);
+}
+
 /// 一本只有一个词条的 Yomitan 词典（解开的目录，导入认这种形态）
 fn yomitan_fixture() -> PathBuf {
     let dir = temp_dir("yomitan");

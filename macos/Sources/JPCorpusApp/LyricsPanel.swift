@@ -11,7 +11,7 @@ struct LyricsPanel: View {
     @Environment(AppModel.self) private var app
     @State private var showProfile = false
     /// 正在查的那段文字（从点的词开始到行尾，Yomitan 式从开头查）
-    @State private var lookupText: String?
+    @State private var lookup: LookupRequest?
 
     private static let contentPOS: Set<String> = ["NOUN", "PROPN", "VERB", "ADJ", "ADV"]
 
@@ -61,11 +61,18 @@ struct LyricsPanel: View {
             } else {
                 ContentUnavailableView("还没有在放的歌", systemImage: "music.note", description: Text("在检索结果里按空格试听，或在曲库里双击一首歌。"))
             }
-            if let text = lookupText {
-                LookupPane(text: text) { lookupText = nil }
+            if let lookup {
+                LookupPane(request: lookup) { self.lookup = nil }
                     .frame(maxHeight: 260)
                     .glassCard(cornerRadius: 12)
                     .padding(10)
+            }
+            if app.showFurigana, let error = app.furiganaError {
+                Text("振假名：\(error)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
             }
             if let error = player.lastError {
                 Text(error)
@@ -126,6 +133,14 @@ struct LyricsPanel: View {
                     .lineLimit(1)
             }
             Spacer()
+            FuriganaMenu()
+            Button {
+                app.showStage = true
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+            }
+            .buttonStyle(.borderless)
+            .help("全屏歌词（⇧⌘F）")
             Button {
                 showProfile.toggle()
             } label: {
@@ -148,8 +163,7 @@ struct LyricsPanel: View {
         let focused = player.focusUtterance == line.utteranceId
         let hint = line.timeSec.map { formatTime($0) + " · 点一下从这里放，右键检索 / 查词 / 循环" } ?? "这一行没有时间戳"
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(line.text)
-                .font(.system(size: 19, weight: .bold))
+            FuriganaText(text: line.text, rubies: app.furigana[line.utteranceId] ?? [])
                 .foregroundStyle(current ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 .opacity(current ? 1 : (line.timeSec == nil ? 0.35 : 0.5))
                 .scaleEffect(current ? 1.0 : 0.97, anchor: .leading)
@@ -183,107 +197,22 @@ struct LyricsPanel: View {
                 Divider()
                 ForEach(Array(line.tokens.enumerated()).filter { Self.contentPOS.contains($0.element.pos) }, id: \.offset) { index, token in
                     Button("查词「\(token.surface)」") {
-                        lookupText = line.tokens[index...].map(\.surface).joined()
+                        lookup = LookupRequest(
+                            text: line.tokens[index...].map(\.surface).joined(),
+                            songId: player.track?.id,
+                            utteranceId: line.utteranceId,
+                            tokenIndex: index
+                        )
                     }
                 }
             }
-        }
-    }
-}
-
-/// 查词结果（语料库目录里的 Yomitan 词典库 dictionaries.db，和 Windows 版同一份、同一套查法）
-@MainActor
-private struct LookupPane: View {
-    @Environment(AppModel.self) private var app
-    let text: String
-    let close: () -> Void
-    @State private var result: LookupText?
-    @State private var noDictionaries = false
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("查词").font(.headline)
-                if let result, result.originalTextLength > 0 {
-                    Text(String(text.prefix(result.originalTextLength))).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(action: close) { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if noDictionaries {
-                        Text("这个语料库目录里还没有词典（dictionaries.db）。在 Windows 版里导入 Yomitan 词典后，把 dictionaries.db 和 corpus.db 一起拷过来就能查。")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    } else if let error {
-                        Text(error).font(.callout).foregroundStyle(.orange)
-                    } else if let result {
-                        if result.entries.isEmpty {
-                            Text("没查到").foregroundStyle(.secondary)
-                        }
-                        ForEach(Array(result.entries.prefix(8).enumerated()), id: \.offset) { _, entry in
-                            entryView(entry)
-                        }
-                    } else {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(12)
-        .task(id: text) { await load() }
-    }
-
-    private func entryView(_ entry: LookupEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                ForEach(Array(entry.headwords.enumerated()), id: \.offset) { _, h in
-                    Text(h.term).font(.title3.weight(.semibold))
-                    if !h.reading.isEmpty && h.reading != h.term {
-                        Text(h.reading).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                if let first = entry.headwords.first {
-                    Button("检索") { app.search(first.term) }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                }
-            }
-            ForEach(Array(entry.definitions.enumerated()), id: \.offset) { _, d in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(d.dictionary).font(.caption2).foregroundStyle(.tertiary)
-                    ForEach(Array(d.text.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.callout).textSelection(.enabled)
-                    }
-                }
-            }
-        }
-    }
-
-    private func load() async {
-        guard let client = app.client else { return }
-        result = nil
-        error = nil
-        do {
-            noDictionaries = try await client.dictionaries().isEmpty
-            if !noDictionaries {
-                result = try await client.lookup(text)
-            }
-        } catch {
-            self.error = error.localizedDescription
         }
     }
 }
 
 /// 一首歌的语料画像：重复行、特征词。特征词点了去检索
 @MainActor
-private struct ProfileView: View {
+struct ProfileView: View {
     @Environment(AppModel.self) private var app
     let songId: String
     @State private var profile: SongProfile?
@@ -424,5 +353,31 @@ private struct BarCover: View {
             guard let track, !track.coverPath.isEmpty, let client = app.client else { return }
             image = loadImage(atPath: (try? await client.resolveMedia(track.coverPath)) ?? nil)
         }
+    }
+}
+
+/// 振假名：开关 + 注法（只注汉字 / 整词注音）。歌词面板和全屏歌词各放一个，状态是同一份
+@MainActor
+struct FuriganaMenu: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        Menu {
+            Toggle("显示振假名", isOn: Binding(get: { app.showFurigana }, set: { app.showFurigana = $0 }))
+            Divider()
+            Picker("注法", selection: Binding(get: { app.furiganaMode }, set: { app.furiganaMode = $0; app.showFurigana = true })) {
+                Text("只注汉字").tag(FuriganaMode.kanji)
+                Text("整词注音").tag(FuriganaMode.word)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Text("あ")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(app.showFurigana ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("振假名（⇧⌘R）。读音来自分词词典，和 Windows 版同一套规则")
     }
 }
