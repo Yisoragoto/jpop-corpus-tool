@@ -49,6 +49,34 @@ export function mergeByLemma(rows: FrequencyRow[], limit: number): CloudWord[] {
     .map(({ posSet, ...w }) => ({ ...w, pos: posSet.size === 1 ? w.pos : null }));
 }
 
+/**
+ * 词云里该不该出现的「虚词」。分词器把它们标成名词，但单独拿出来没有意思：
+ *
+ * - **单个假名**：僕「ら」、一「つ」、「お」花、「る」——是后缀、量词、前缀被切出来的碎片；
+ * - **形式名词**：こと・もの・まま・よう・とき・ところ……在句子里只起语法作用；
+ * - **一个字母、数字都没有的**：「~」「＂」这类符号。
+ *
+ * 只认词元，不看词性：同一个词元在别的词性下也一样没意思。
+ */
+const FUNCTION_NOUNS = new Set([
+  "こと", "事", "もの", "物", "まま", "儘", "よう", "様", "とき", "ところ", "所", "ため", "為",
+  "はず", "筈", "わけ", "訳", "うち", "ほう", "つもり", "くらい", "ぐらい", "ほど", "たび", "ふり",
+  "たち", "達", "さん", "ちゃん", "くん", "等", "など", "なんか", "みたい", "ごと", "さぁ", "さあ",
+]);
+
+const SINGLE_KANA = /^[ぁ-ゟ゠-ヿー]$/u;
+const HAS_LETTER = /[\p{L}\p{N}]/u;
+
+export function isFunctionWord(lemma: string): boolean {
+  const w = lemma.trim();
+  return w === "" || FUNCTION_NOUNS.has(w) || SINGLE_KANA.test(w) || !HAS_LETTER.test(w);
+}
+
+/** 进云之前先筛：去虚词（开着时）、去用户自己拿掉的词 */
+export function filterCloudRows<T extends { lemma: string }>(rows: T[], hideFunctionWords: boolean, hidden: ReadonlySet<string>): T[] {
+  return rows.filter((r) => !hidden.has(r.lemma) && !(hideFunctionWords && isFunctionWord(r.lemma)));
+}
+
 export interface Placed {
   word: CloudWord;
   /** 0 起的名次（按次数） */

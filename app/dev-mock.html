@@ -10,6 +10,14 @@ const T = {
   health: { dbPath: "D:/jp_corpus/corpus.db", tracks: 209, lyricLines: 8443,
             tokenizerReady: true, audioReady: true, pitchSupported: true },
   overview: OVERVIEW,
+  // 有新版：启动 4 秒后弹「新版本」窗（看弹窗用；下载安装在这里是假的）
+  update_check: { current: "0.3.0", updateAvailable: true,
+    latest: { version: "0.3.1", tag: "v0.3.1", name: "0.3.1", publishedAt: "2026-10-18T08:00:00Z", url: "", prerelease: false,
+      notes: `- 设置页分类重做，词典可以拖动排序
+- 发行轴按年分列
+- 词云去虚词
+- 有新版时弹窗，由你决定什么时候更新`,
+      installer: { name: "JPOP.Corpus.Tool_0.3.1_x64-setup.exe", size: 9123456, url: "", sha256: null } } },
   list_tracks: [
     { id: "001", title: "打ち込む歌", artist: "テスト", album: "", albumId: null, year: "2026", genre: "",
       audioPath: "", coverPath: "", durationSec: 180, lineCount: 1 },

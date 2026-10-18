@@ -110,15 +110,6 @@
 /* ── 设置页里的词典管理 ── */
 /* 词典名可能很长（「小学館 例解学習国語辞典 第十二版」），让它折行而不是把开关挤出去 */
 .setting-card .setting-title { overflow-wrap: anywhere; }
-.dict-row { position: relative; }
-.dict-row.dragging { opacity: .4; }
-/* 落点提示：拖到谁身上，线就画在那一侧 */
-.dict-row.drop-before::before, .dict-row.drop-after::after {
-  content: ""; position: absolute; left: 6px; right: 6px; height: 2px;
-  background: var(--accent); border-radius: 1px;
-}
-.dict-row.drop-before::before { top: -2px; }
-.dict-row.drop-after::after { bottom: -2px; }
 .dict-grip {
   display: grid; place-items: center; width: 22px; height: 24px; border-radius: 4px;
   color: var(--muted); cursor: grab;
@@ -126,9 +117,6 @@
 .dict-grip:hover:not(:disabled) { background: var(--panel-2); color: var(--fg); }
 .dict-grip:active { cursor: grabbing; }
 .dict-grip:disabled { opacity: .3; cursor: default; }
-.dict-delete { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 5px; color: var(--muted); }
-.dict-delete:hover:not(:disabled) { background: var(--panel-2); color: var(--danger); }
-.dict-delete:disabled { opacity: .3; cursor: default; }
 .dict-legacy { margin-bottom: 24px; }
 .dict-manager .toolbar { flex-wrap: wrap; }
 .dict-progress { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
@@ -146,7 +134,12 @@
 .dict-item-actions button:hover:not(:disabled) { background: var(--panel-2); color: var(--fg); }
 .dict-item-actions button.danger { color: var(--danger); }
 .dict-item-actions button:disabled { opacity: .3; cursor: default; }
-.dict-report { font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.dict-report {
+  position: relative; font-size: 12px; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 34px 10px 12px; margin-bottom: 14px; background: var(--panel); animation: dm-drop-in 260ms var(--ease-out);
+}
+.dm-report-close { position: absolute; right: 6px; top: 6px; width: 24px; height: 24px; border-radius: 5px; color: var(--muted); font-size: 16px; line-height: 1; }
+.dm-report-close:hover { background: var(--control-hover); color: var(--fg); }
 .dict-report ul { margin: 4px 0 0; padding-left: 1.2em; }
 .dict-report .failed { color: var(--danger); }
 
@@ -368,3 +361,90 @@
 .mine-btn.existing { border-color: var(--line); color: var(--muted); }
 .mine-btn.existing:hover { color: var(--fg); }
 .mine-btn.failed { border-color: rgba(247,118,142,.5); color: var(--danger); }
+
+/* ── 设置 → 词典：分类、筛选、指针拖动排序 ── */
+.dm { display: flex; flex-direction: column; }
+.dm-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.dm-stats { display: flex; align-items: baseline; gap: 6px; color: var(--muted); }
+.dm-stats b { font-size: 22px; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+.dm-sep { width: 1px; height: 14px; background: var(--line-strong); margin: 0 8px; align-self: center; }
+.dm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.dm-progress {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 14px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); font-size: 12px;
+  animation: dm-drop-in 260ms var(--ease-out);
+}
+.dm-progress-text { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-progress-bar { width: 140px; height: 4px; border-radius: 2px; background: var(--panel-2); overflow: hidden; }
+.dm-progress-bar i { display: block; height: 100%; background: var(--accent); transition: width 300ms var(--ease-out); }
+.dm-spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: dm-spin 800ms linear infinite; }
+@keyframes dm-spin { to { transform: rotate(360deg); } }
+@keyframes dm-drop-in { from { opacity: 0; transform: translateY(-6px); } }
+
+.dm-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dm-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.dm-tabs button {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 6px;
+  color: var(--muted); transition: background 160ms, color 160ms;
+}
+.dm-tabs button:hover { color: var(--fg); background: var(--control-hover); }
+.dm-tabs button.on { color: var(--fg); background: var(--control); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+.dm-count { font-size: 11px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dm-search { margin-left: auto; width: 200px; }
+.dm-hint { margin: 10px 2px 10px; font-size: 12px; color: var(--muted); }
+.dm-none { margin: 6px 2px; }
+.dm-empty { padding: 28px; text-align: center; border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+.dm-empty p { margin: 4px 0; }
+
+.dm-list { display: flex; flex-direction: column; gap: 3px; }
+.dm-row {
+  position: relative; border: 1px solid var(--line); border-radius: 5px; background: var(--panel);
+  transition: transform 200ms var(--ease-out), background 160ms, opacity 200ms, box-shadow 200ms;
+  animation: dm-row-in 360ms calc(var(--n, 0) * 22ms) var(--ease-out) backwards;
+}
+@keyframes dm-row-in { from { opacity: 0; transform: translateY(8px); } }
+.dm-list > .dm-row:first-child { border-top-left-radius: var(--radius); border-top-right-radius: var(--radius); }
+.dm-list > .dm-row:last-child { border-bottom-left-radius: var(--radius); border-bottom-right-radius: var(--radius); }
+.dm-row:hover { background: var(--panel-2); }
+/* 停用的：名字和说明淡下去，开关本身不淡（还要能看清是 Off） */
+.dm-row.off .dm-title, .dm-row.off .dm-rank { opacity: .45; }
+/* 拖起来的那一行浮在上面、跟手走，不要过渡（否则会拖着一条尾巴） */
+.dm-row.lifted {
+  z-index: 5; transition: none; background: var(--surface-pop); border-color: var(--line-strong);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .45), 0 0 0 1px var(--accent-soft); cursor: grabbing;
+}
+.dm-row.lifted.settling { transition: transform 200ms var(--ease-out), box-shadow 200ms; box-shadow: none; }
+.dm-list.sorting { user-select: none; }
+/* 换完顺序那一帧：各行的位移是一下子清掉的，不能再过渡，否则会先跳开再滑回来 */
+.dm-list.frozen .dm-row { transition: none; }
+
+.dm-main { display: flex; align-items: center; gap: 10px; padding: 9px 12px 9px 8px; }
+.dict-grip { touch-action: none; }
+.dm-rank { width: 18px; text-align: right; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.dm-title { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; text-align: left; padding: 2px 0; }
+.dm-name { font-size: 13px; overflow-wrap: anywhere; }
+.dm-meta { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-expand { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 5px; color: var(--muted); flex: 0 0 auto; }
+.dm-expand svg { transition: transform 220ms var(--ease-out); }
+.dm-expand.on svg { transform: rotate(90deg); }
+.dm-expand:hover { background: var(--control-hover); color: var(--fg); }
+
+/* 展开详情：grid 行高 0fr → 1fr，高度能过渡，不用量 */
+.dm-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 240ms var(--ease-out); }
+.dm-detail > div { overflow: hidden; min-height: 0; }
+.dm-row.open .dm-detail { grid-template-rows: 1fr; }
+.dm-detail-body { padding: 2px 16px 14px 66px; font-size: 12px; opacity: 0; transition: opacity 200ms; }
+.dm-row.open .dm-detail-body { opacity: 1; transition-delay: 60ms; }
+.dm-detail-body dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 20px; margin: 0 0 8px; }
+.dm-detail-body dl div { min-width: 0; }
+.dm-detail-body dt { font-size: 11px; color: var(--muted); }
+.dm-detail-body dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-desc { margin: 4px 0; line-height: 1.6; max-width: 72ch; white-space: pre-wrap; }
+.dm-warn { margin: 6px 0; padding-left: 1.2em; color: var(--warn); }
+.dm-detail-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.dm-delete { display: inline-flex; align-items: center; gap: 6px; }
+.dm-delete:hover:not(:disabled) { color: var(--danger); }
+@media (prefers-reduced-motion: reduce) {
+  .dm-row, .dm-detail, .dm-expand svg, .dm-detail-body { transition: none; animation: none; }
+}

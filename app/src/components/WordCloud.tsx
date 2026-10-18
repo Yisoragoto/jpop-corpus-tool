@@ -20,9 +20,9 @@ import { imageColor, toHighlight } from "../coverColor";
 import { ensureFontFile, fetchFontCatalog, loadImportedFonts, lyricFontStack } from "../fonts";
 import { pyGrouped } from "../pyFormat";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
-import { useAppSettings } from "../settings";
+import { updateSettings, useAppSettings } from "../settings";
 import { mergeSubcorpus, useActiveScope } from "../subcorpusScope";
-import { groupHitsBySong, layoutCloud, mergeByLemma, type CloudWord, type Placed, type SongHits } from "../wordCloud";
+import { filterCloudRows, groupHitsBySong, layoutCloud, mergeByLemma, type CloudWord, type Placed, type SongHits } from "../wordCloud";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import { loadPerformers } from "./PerformerPicker";
@@ -296,7 +296,12 @@ export function WordCloud({
   }, []);
 
   const count = settings.wordCloudCount;
-  const words = useMemo(() => mergeByLemma(rows ?? [], count), [rows, count]);
+  const hideFunctionWords = settings.wordCloudHideFunctionWords;
+  const hidden = settings.wordCloudHidden;
+  const words = useMemo(
+    () => mergeByLemma(filterCloudRows(rows ?? [], hideFunctionWords, new Set(hidden)), count),
+    [rows, count, hideFunctionWords, hidden],
+  );
   const placed = useMemo(() => {
     if (size.w === 0 || size.h < 120 || ready === 0) return [];
     const ctx = document.createElement("canvas").getContext("2d");
@@ -644,6 +649,7 @@ function SongPanel({
   onShowExamples: (lemma: string) => void;
   onError: (message: string) => void;
 }) {
+  const settings = useAppSettings();
   const [songs, setSongs] = useState<SongHits[] | null>(null);
   const [truncated, setTruncated] = useState(false);
   // 词云的词频按当前子语料算，点词列出来的歌也得是这块语料里的
@@ -705,6 +711,17 @@ function SongPanel({
             ? "正在查…"
             : `出现 ${pyGrouped(total)} 次 · ${songs.length} 首歌${truncated ? `（只查了前 ${pyGrouped(KWIC_LIMIT)} 行）` : ""}`}
         </span>
+        <button
+          className="wc-pop-hide"
+          onClick={() => {
+            const current = settings.wordCloudHidden;
+            if (!current.includes(word.lemma)) updateSettings({ wordCloudHidden: [...current, word.lemma] });
+            onClose();
+          }}
+          title="以后词云里不再出现这个词。在「设置 → 词云」里能恢复"
+        >
+          不在词云里显示
+        </button>
         <button className="wc-pop-close" onClick={onClose} aria-label="关闭（Esc）">
           ✕
         </button>

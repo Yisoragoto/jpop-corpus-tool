@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FrequencyRow, KwicHit } from "./api";
-import { fontSizeFor, groupHitsBySong, layoutCloud, mergeByLemma, type CloudWord } from "./wordCloud";
+import { filterCloudRows, fontSizeFor, groupHitsBySong, isFunctionWord, layoutCloud, mergeByLemma, type CloudWord } from "./wordCloud";
 
 const row = (lemma: string, pos: string, freq: number, songCount = 1): FrequencyRow => ({
   lemma, pos, freq, songCount, surfaces: [lemma], jlpt: "",
@@ -116,5 +116,17 @@ describe("groupHitsBySong", () => {
 
   it("跳转用每首歌的第一处", () => {
     expect(groupHitsBySong([hit("001", 1, 10), hit("001", 1, 11)])[0]?.first.utteranceId).toBe(10);
+  });
+});
+
+describe("词云去虚词", () => {
+  it("单个假名、形式名词、纯符号算虚词，实词不算", () => {
+    for (const w of ["つ", "ら", "お", "る", "ー", "こと", "まま", "もの", "よう", "~", "＂", "  "]) expect(isFunctionWord(w)).toBe(true);
+    for (const w of ["夜", "心", "言葉", "思い出", "ヨルシカ", "I", "月"]) expect(isFunctionWord(w)).toBe(false);
+  });
+  it("隐藏词总会去掉，虚词只在开关开着时去掉", () => {
+    const rows = [{ lemma: "夜" }, { lemma: "つ" }, { lemma: "花" }];
+    expect(filterCloudRows(rows, true, new Set(["花"])).map((r) => r.lemma)).toEqual(["夜"]);
+    expect(filterCloudRows(rows, false, new Set(["花"])).map((r) => r.lemma)).toEqual(["夜", "つ"]);
   });
 });

@@ -135,6 +135,26 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
         <input type="checkbox" checked={jpOnly} onChange={(e) => setJpOnly(e.target.checked)} />
         仅日文
       </label>
+      <label
+        className="check wc-check"
+        title="去掉单个假名的碎片（僕「ら」、一「つ」）、形式名词（こと・もの・まま・よう）和纯符号"
+      >
+        <input
+          type="checkbox"
+          checked={settings.wordCloudHideFunctionWords}
+          onChange={(e) => updateSettings({ wordCloudHideFunctionWords: e.target.checked })}
+        />
+        去虚词
+      </label>
+      {settings.wordCloudHidden.length > 0 && (
+        <button
+          className="btn wc-btn"
+          onClick={() => updateSettings({ wordCloudHidden: [] })}
+          title={`拿掉的词：${settings.wordCloudHidden.join("、")}。点一下全部放回来`}
+        >
+          已隐藏 {settings.wordCloudHidden.length} 个 · 恢复
+        </button>
+      )}
       <select
         className="wc-select"
         value={COUNTS.includes(settings.wordCloudCount as (typeof COUNTS)[number]) ? settings.wordCloudCount : 120}
