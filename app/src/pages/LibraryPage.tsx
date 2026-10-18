@@ -45,6 +45,9 @@ import { morph } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import type { LibraryActions, LibraryState } from "../useLibrary";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
+import { useAppSettings } from "../settings";
+import { useKaraoke } from "../useKaraoke";
+import { charTimeline, type WordTiming } from "../wordTiming";
 import { audition } from "../listen";
 import { SongProfile } from "../components/SongProfile";
 import { dictApi, type FindTermsResult } from "../dict/api";
@@ -87,6 +90,28 @@ function renderPieces(pieces: Piece[]): ReactNode {
     ),
   );
 }
+
+/**
+ * 这首歌的词级时间（逐字歌词 + 手动校准），给逐字点亮用。关着时不取；换歌（歌词重读）时重取。
+ * 取不到（旧库没有这张表之类）就当没有，全部按字数估。
+ */
+function useSongWordTimings(lyrics: { utteranceId: number }[], enabled: boolean): WordTiming[] {
+  const [state, setState] = useState<{ lyrics: unknown; list: WordTiming[] }>({ lyrics: null, list: [] });
+  useEffect(() => {
+    if (!enabled || lyrics.length === 0) return;
+    let alive = true;
+    api.wordTimings(lyrics.map((l) => l.utteranceId)).then(
+      (list) => alive && setState({ lyrics, list }),
+      () => alive && setState({ lyrics, list: [] }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [lyrics, enabled]);
+  return enabled && state.lyrics === lyrics ? state.list : NO_TIMINGS;
+}
+
+const NO_TIMINGS: WordTiming[] = [];
 
 /** 右栏看的是词典还是例句，记住——下次查词还停在你上次看的那一页。 */
 const CORPUS_TAB_KEY = "jp.library.corpusTab";
@@ -335,6 +360,25 @@ export function LibraryPage({
   const currentLine = useCurrentLine(lyrics, playback.positionSec, lyricsArePlaying);
   const loopLine = useLineLoop(lyrics);
 
+  // 逐字点亮（设置「歌词」页可关）：只算当前这一行每个字的时间，动画在 useKaraoke 里直接改 DOM
+  const karaokeEnabled = useAppSettings().karaokeLyrics;
+  const wordTimings = useSongWordTimings(lyrics, karaokeEnabled);
+  const karaoke = useMemo(() => {
+    if (!karaokeEnabled || !lyricsArePlaying) return null;
+    const line = lyrics[currentLine];
+    if (line === undefined || line.timeSec === null) return null;
+    const next = lyrics.slice(currentLine + 1).find((l) => l.timeSec !== null)?.timeSec ?? null;
+    const mine = wordTimings.filter((t) => t.utteranceId === line.utteranceId);
+    return charTimeline(line.text, line.timeSec, next, mine);
+  }, [karaokeEnabled, lyricsArePlaying, lyrics, currentLine, wordTimings]);
+  useKaraoke(
+    karaoke,
+    playback.positionSec,
+    playback.playState === "playing",
+    playback.rate,
+    `${stageOpen}|${furigana !== null}|${display.furiganaMode}`,
+  );
+
   // 换歌先回到开头。歌词栏是个常驻的滚动容器，内容换了 scrollTop 不会跟着变，
   // 上一首滚到了 3:38 的位置，新歌一进来就停在半腰。
   // 放在跨页跳转那个 effect 前面：那边用 rAF 滚到指定行，后发生，赢。
@@ -387,17 +431,44 @@ export function LibraryPage({
     const line = lyrics[idx];
     if (line === undefined || selected === null) return null;
     const songId = selected.id;
+    // 逐字点亮的那一行：每个字包一层 span（`data-c` 是字符下标），按渲染顺序数下去
+    const karaokeLine = karaoke !== null && idx === currentLine;
+    let c = 0;
+    const chars = (text: string): ReactNode =>
+      karaokeLine
+        ? [...text].map((ch) => {
+            const at = c++;
+            return (
+              <span key={at} className="kc" data-c={at}>
+                {ch}
+              </span>
+            );
+          })
+        : text;
+    const pieces = (list: Piece[]): ReactNode =>
+      karaokeLine
+        ? list.map((piece, k) =>
+            piece.reading === undefined ? (
+              <Fragment key={k}>{chars(piece.text)}</Fragment>
+            ) : (
+              <ruby key={k}>
+                {chars(piece.text)}
+                <rt>{piece.reading}</rt>
+              </ruby>
+            ),
+          )
+        : renderPieces(list);
     return (
-      <span className="text" lang="ja">
+      <span className={karaokeLine ? "text karaoke-line" : "text"} lang="ja">
         {line.tokens.length === 0
-          ? line.text
+          ? chars(line.text)
           : (lineSegments[idx] ?? line.tokens.map((_, index) => ({ kind: "token" as const, index, pieces: [] }))).map((segment, k) => {
-              if (segment.kind === "gap") return <Fragment key={`gap-${k}`}>{segment.text}</Fragment>;
+              if (segment.kind === "gap") return <Fragment key={`gap-${k}`}>{chars(segment.text)}</Fragment>;
               const i = segment.index;
               const token = line.tokens[i];
               if (token === undefined) return null;
               // 分词对不齐原文时（拆分结果是 null）退回只显示词
-              const content = segment.pieces.length > 0 ? renderPieces(segment.pieces) : token.surface;
+              const content = segment.pieces.length > 0 ? pieces(segment.pieces) : chars(token.surface);
               // 从这个词起到行尾，交给词典做最长匹配
               const rest = () => line.tokens.slice(i).map((t) => t.surface).join("");
               const context = { songId, utteranceId: line.utteranceId, tokenIndex: i };
@@ -431,6 +502,12 @@ export function LibraryPage({
                 </span>
               );
             })}
+        {/* 跟在这一行歌词后面；放在 .text 里，普通视图和全屏都只认这一个元素 */}
+        {karaokeLine && karaoke.kind === "estimate" && (
+          <span className="karaoke-est" title="这首歌没有逐字时间，每个字的时间是按字数估的（可以在词云里右键校准某个词）">
+            估
+          </span>
+        )}
       </span>
     );
   };

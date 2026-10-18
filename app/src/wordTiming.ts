@@ -110,3 +110,102 @@ export function wordStart(hit: KwicHit, timings: readonly WordTiming[]): WordSta
 
 /** 按键校准时扣掉的反应时间：听到再按，手总是慢一点 */
 export const REACTION_SEC = 0.15;
+
+// ────────────────────────────── 逐字点亮 ──────────────────────────────
+
+/** 一行里每个字什么时候开始点亮、什么时候点亮完（秒）。下标是字符下标 */
+export interface CharTimeline {
+  starts: number[];
+  ends: number[];
+  /** 用到了哪种来源：有校准就是 manual，有逐字就是 lrc，都没有是按字数估 */
+  kind: "manual" | "lrc" | "estimate";
+}
+
+/**
+ * 当前行每个字的点亮时间（卡拉 OK 歌词）。
+ *
+ * 先定几个「锚点」（第几个字在第几秒）：行首是这一行的时间戳、行尾是按字数估的唱完时刻
+ * （和 `estimateWordStart` 同一个算法：取「下一行开始」和「按字数估的时长」里短的那个）；
+ * 逐字歌词的每一段开头（有结束时间的话还有结尾）、手动校准的那个字，都是锚点，校准盖过逐字。
+ * 锚点之间按拍数（`beats`）比例摊——所以没有任何逐字时间时，每个字的开始和 `estimateWordStart` 一样。
+ * 拗音的小字和前一个字一起亮。
+ */
+export function charTimeline(
+  text: string,
+  lineStart: number,
+  lineEnd: number | null,
+  timings: readonly WordTiming[],
+): CharTimeline {
+  const chars = [...text];
+  const n = chars.length;
+  const weight = chars.map(beats);
+  const all = weight.reduce((sum, w) => sum + w, 0);
+  const sung = all * SEC_PER_BEAT + 0.4;
+  const span = lineEnd !== null && lineEnd > lineStart ? Math.min(lineEnd - lineStart, sung) : sung;
+
+  const anchors = new Map<number, number>([[0, lineStart]]);
+  const lrc = timings.filter((t) => t.source === "lrc" && t.charStart < t.charEnd && t.charEnd <= n);
+  const manual = timings.filter((t) => t.source === "manual" && t.charStart >= 0 && t.charStart < n);
+  // 先放结尾、再放开头：前一段的结尾和后一段的开头落在同一个字上时，以开头为准
+  for (const t of lrc) if (t.endSec !== null) anchors.set(t.charEnd, t.endSec);
+  for (const t of lrc) anchors.set(t.charStart, t.startSec);
+  for (const t of manual) anchors.set(t.charStart, t.startSec);
+
+  // 按字的顺序走一遍，时间倒退的锚点丢掉（校准和逐字打架时，先到的那个算数）
+  const sorted = [...anchors.entries()].filter(([i]) => i < n).sort((a, b) => a[0] - b[0]);
+  const kept: [number, number][] = [];
+  for (const [i, t] of sorted) {
+    const last = kept[kept.length - 1];
+    if (last === undefined || t >= last[1]) kept.push([i, t]);
+  }
+  // 行尾：有逐字结尾就用，否则按估的时长；落在最后一个锚点之前（逐字比估的晚）就从那里按拍数往后推
+  const beatsFrom = (from: number) => weight.slice(from).reduce((sum, w) => sum + w, 0);
+  const last = kept[kept.length - 1] ?? [0, lineStart];
+  let endAt = anchors.get(n) ?? lineStart + span;
+  if (endAt <= last[1]) endAt = last[1] + Math.max(0.2, beatsFrom(last[0]) * SEC_PER_BEAT);
+  kept.push([n, endAt]);
+
+  // 逐字的一段唱完、到下一段开始之间有空当：这一段的字在它自己的结束时间就亮完，空当里不动
+  const segEnd = new Map(lrc.filter((t) => t.endSec !== null).map((t) => [t.charStart, t] as const));
+  const starts = new Array<number>(n).fill(lineStart);
+  const ends = new Array<number>(n).fill(lineStart);
+  for (let a = 0; a + 1 < kept.length; a += 1) {
+    const [i0, t0] = kept[a]!;
+    const [i1, next] = kept[a + 1]!;
+    const seg = segEnd.get(i0);
+    const t1 = seg !== undefined && seg.charEnd === i1 && seg.endSec! > t0 && seg.endSec! < next ? seg.endSec! : next;
+    const total = weight.slice(i0, i1).reduce((sum, w) => sum + w, 0);
+    let cum = 0;
+    for (let k = i0; k < i1; k += 1) {
+      // 这一段一拍都没有（全是标点）：按字数平分
+      const w = total > 0 ? weight[k]! : 1;
+      const denom = total > 0 ? total : i1 - i0;
+      starts[k] = t0 + (cum / denom) * (t1 - t0);
+      cum += w;
+      ends[k] = t0 + (cum / denom) * (t1 - t0);
+    }
+  }
+  for (let k = 1; k < n; k += 1) {
+    if (SMALL_KANA.test(chars[k]!)) {
+      starts[k] = starts[k - 1]!;
+      ends[k] = ends[k - 1]!;
+    }
+  }
+  const kind = manual.length > 0 ? "manual" : lrc.length > 0 ? "lrc" : "estimate";
+  return { starts, ends, kind };
+}
+
+/**
+ * 播到 `sec` 时这一行亮到哪：前 `done` 个字已经亮完，第 `done` 个字亮了 `frac`（0~1）。
+ * 拗音的小字和前一个字同起同止，一起算亮完。
+ */
+export function charProgress(timeline: CharTimeline, sec: number): { done: number; frac: number } {
+  const { starts, ends } = timeline;
+  let done = 0;
+  while (done < ends.length && ends[done]! <= sec) done += 1;
+  if (done >= starts.length) return { done, frac: 0 };
+  const s = starts[done]!;
+  const e = ends[done]!;
+  const frac = sec <= s || e <= s ? 0 : Math.min(1, (sec - s) / (e - s));
+  return { done, frac };
+}

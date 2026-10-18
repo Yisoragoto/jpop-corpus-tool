@@ -39,6 +39,8 @@ export interface AppSettings {
   wordCloudHidden: string[];
   /** 词云按词性上色（名词、动词、形容词……各一种颜色）；关着时按名次、前几名染照片的颜色 */
   wordCloudColorByPos: boolean;
+  /** 当前行逐字点亮（卡拉 OK）：有逐字时间用真实时间，没有按字数估。关掉就是原来的整行高亮 */
+  karaokeLyrics: boolean;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
@@ -60,6 +62,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   wordCloudHideFunctionWords: true,
   wordCloudHidden: [],
   wordCloudColorByPos: false,
+  karaokeLyrics: true,
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -99,6 +102,7 @@ export function parseSettings(raw: string | null): AppSettings {
           : d.wordCloudHideFunctionWords,
       wordCloudColorByPos:
         typeof parsed.wordCloudColorByPos === "boolean" ? parsed.wordCloudColorByPos : d.wordCloudColorByPos,
+      karaokeLyrics: typeof parsed.karaokeLyrics === "boolean" ? parsed.karaokeLyrics : d.karaokeLyrics,
       wordCloudHidden: Array.isArray(parsed.wordCloudHidden)
         ? [...new Set(parsed.wordCloudHidden.filter((w): w is string => typeof w === "string" && w.length > 0 && w.length <= 64))].slice(0, 2000)
         : d.wordCloudHidden,
