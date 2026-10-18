@@ -54,7 +54,8 @@
 
 * { box-sizing: border-box; }
 
-html, body, #root { height: 100%; }
+/* 文档本身永远不滚：滚的只是各页自己的容器。哪个子元素不小心伸出去了，也不能把整个窗口带着跑 */
+html, body, #root { height: 100%; overflow: hidden; }
 
 body {
   margin: 0;
@@ -1444,7 +1445,9 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 .setting-value { min-width: 44px; text-align: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* On / Off 开关。原生 checkbox 藏起来但仍在，键盘和读屏照常 */
-.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+/* position: relative 不能省：里面那个隐藏的 input 是绝对定位的，没有定位祖先时它的包含块是整个文档，
+   设置页靠下的几个开关会把文档撑高几千像素，滚到底再滚，整个窗口（导航、播放条）就被拖上去了 */
+.switch { position: relative; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
 .switch.disabled { opacity: .45; cursor: default; }
 .switch-state { font-size: 12px; color: var(--muted); min-width: 22px; }
 .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
