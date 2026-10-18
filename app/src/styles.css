@@ -1755,32 +1755,36 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 .wc-pop-list { overflow: auto; padding: 0 8px 8px; display: grid; gap: 2px; align-content: start; }
 .wc-pop-none { padding: 8px 10px; margin: 0; }
 .wc-song {
-  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 10px;
+  position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 10px; align-items: center; border-radius: 10px;
   animation: wc-row-in .5s var(--wc-spring) both; transition: background .2s;
 }
 .wc-song:hover { background: var(--control-hover); }
 .wc-song.now { background: color-mix(in srgb, var(--hl) 14%, transparent); }
 .wc-song.now::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--hl); animation: bar-grow .35s var(--spring) backwards; }
 @keyframes wc-row-in { from { opacity: 0; transform: translateY(10px); } }
-.wc-song-play { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 6px 8px 10px; text-align: left; min-width: 0; }
-.wc-song-face { position: relative; display: block; width: 40px; height: 40px; }
+/* 一行：封面（点了进全屏歌词）· 歌名和那一句（点了就放）· 播放键 */
+.wc-song-face { position: relative; display: block; width: 40px; height: 40px; margin: 8px 0 8px 10px; padding: 0; border-radius: 6px; }
+.wc-song-face:hover .wc-song-icon { opacity: 1; transform: none; }
 .wc-song-icon {
   position: absolute; inset: 0; display: grid; place-items: center; border-radius: 6px; font-size: 13px; color: #fff;
   background: rgba(0, 0, 0, .45); opacity: 0; transform: scale(.8); transition: opacity .2s, transform .3s var(--wc-spring);
 }
-.wc-song:hover .wc-song-icon, .wc-song.now .wc-song-icon { opacity: 1; transform: none; }
 .wc-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
 .wc-eq b { width: 3px; height: 100%; border-radius: 1px; background: #fff; animation: wc-eq .9s ease-in-out infinite; transform-origin: bottom; }
 .wc-eq b:nth-child(2) { animation-delay: -.3s; }
 .wc-eq b:nth-child(3) { animation-delay: -.6s; }
 @keyframes wc-eq { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
-.wc-song-meta { display: grid; min-width: 0; }
+.wc-song-meta { display: grid; min-width: 0; text-align: left; padding: 8px 4px 8px 0; }
 .wc-song-meta strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wc-song-meta small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .wc-song-meta em { font-style: normal; font-size: 13px; color: rgba(255, 255, 255, .78); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wc-song-meta mark { background: none; color: var(--hl); box-shadow: inset 0 -.45em 0 color-mix(in srgb, var(--hl) 30%, transparent); }
-.wc-song-open { margin: 0 10px 0 0; opacity: 0; transition: opacity .2s, background 120ms; }
-.wc-song:hover .wc-song-open, .wc-song-open:focus-visible { opacity: 1; }
+.wc-song-go {
+  display: grid; place-items: center; width: 30px; height: 30px; margin-right: 10px; border-radius: 50%;
+  color: var(--fg); background: rgba(255, 255, 255, .08); opacity: .55; transition: opacity .2s, background 150ms, transform 150ms var(--spring);
+}
+.wc-song:hover .wc-song-go, .wc-song.now .wc-song-go, .wc-song-go:focus-visible { opacity: 1; }
+.wc-song-go:hover { background: var(--hl, var(--accent)); color: #111; transform: scale(1.08); }
 .wc-pop-foot { display: flex; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--line); }
 .wc-pop-foot button { flex: 1; }
 
@@ -2729,3 +2733,31 @@ table.data tr.current td { background: var(--accent-soft); }
 }
 .wc-years { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .wc-years .wc-select { min-width: 0; width: 84px; }
+
+/* 词云面板：从关键词开始放的时间来源、校准 */
+.wc-timing {
+  display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 9.5px; line-height: 15px;
+  vertical-align: 1px; border: 1px solid currentColor; opacity: .8;
+}
+.wc-timing.estimate { color: var(--muted); border-style: dashed; }
+.wc-timing.lrc { color: #9be3a6; }
+.wc-timing.manual { color: var(--accent); }
+.wc-song.calibrating { background: rgba(255, 255, 255, .06); }
+.wc-calib-done { height: 26px; padding: 0 10px; border-radius: 13px; font-size: 11.5px; color: var(--muted); }
+.wc-calib-done:hover { color: var(--fg); background: var(--control-hover); }
+.wc-calib {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 2px 0 6px 52px;
+  animation: wc-row-in 260ms var(--ease-out) backwards;
+}
+.wc-calib-hit {
+  height: 34px; padding: 0 16px; border-radius: 17px; font-size: 13px; color: var(--accent-ink); background: var(--accent);
+  box-shadow: 0 6px 18px rgba(76, 194, 255, .35); transition: transform 120ms var(--spring), filter 150ms;
+}
+.wc-calib-hit:hover { filter: brightness(1.08); }
+.wc-calib-hit:active { transform: scale(.94); }
+.wc-calib-tools { display: inline-flex; gap: 4px; }
+.wc-calib-tools button {
+  height: 26px; padding: 0 9px; border-radius: 13px; font-size: 11.5px; color: var(--fg);
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.wc-calib-tools button:hover { background: var(--control-hover); }

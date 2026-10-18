@@ -32,7 +32,7 @@ use rusqlite::Connection;
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///
 /// 格式是 `YYYYMMDD`：单调递增，一眼看得出先后。
-pub const CURRENT: i64 = 20_261_018;
+pub const CURRENT: i64 = 20_261_019;
 
 /// 一步迁移里的一个改动。
 enum Change {
@@ -135,6 +135,12 @@ const STEPS: &[Step] = &[
             Change::AddColumn { table: "utterances", column: "tokenizer_run_id", ddl: "INTEGER" },
             Change::AddColumn { table: "songs", column: "language", ddl: "TEXT" },
         ],
+    },
+    Step {
+        version: 20_261_019,
+        what: "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
+        // 新表由 schema.sql 建，老表不用补列
+        changes: &[],
     },
 ];
 
@@ -323,7 +329,8 @@ mod tests {
                 "songs.added_at（导入时间）",
                 "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）",
                 "artists.image_manual（照片是你换的：刮削不再覆盖）",
-                "歌词版本、分词器、修订历史、字段来源、分析记录（语料质量与来源追踪）"
+                "歌词版本、分词器、修订历史、字段来源、分析记录（语料质量与来源追踪）",
+                "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
             ]
         );
 
@@ -378,7 +385,8 @@ mod tests {
                 "songs.added_at（导入时间）",
                 "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）",
                 "artists.image_manual（照片是你换的：刮削不再覆盖）",
-                "歌词版本、分词器、修订历史、字段来源、分析记录（语料质量与来源追踪）"
+                "歌词版本、分词器、修订历史、字段来源、分析记录（语料质量与来源追踪）",
+                "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）"
             ],
             "没戳过就得把每一步都重跑一遍"
         );
