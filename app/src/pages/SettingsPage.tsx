@@ -7,7 +7,7 @@
  * 制卡在 `dict/mine.ts`。所以在歌词右上角的「显示」面板里改，这一页跟着变，反过来也一样。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 
@@ -28,7 +28,6 @@ import { SudachiCard } from "../components/SudachiCard";
 import { TokenizeCard } from "../components/TokenizeCard";
 import { PitchCacheCard } from "../components/PitchCacheCard";
 import { DiagnosticsCard } from "../components/DiagnosticsCard";
-import { SettingsToc, type TocItem } from "../components/SettingsToc";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
 import { lyricFontStack, useFontOptions, useLyricFontFiles } from "../fonts";
 import {
@@ -163,6 +162,12 @@ const Icons = {
       <circle cx="18" cy="6" r="2" />
     </svg>
   ),
+  info: (
+    <svg {...ICON}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 11v5.5M12 7.6v.1" />
+    </svg>
+  ),
 };
 
 /** 作业刚开始、第一条进度还没到时显示的占位。总数未知，所以是 0/0。 */
@@ -193,17 +198,27 @@ const ROOT_SOURCE_LABELS: Record<LibraryRootInfo["source"], string> = {
   default: "默认数据目录",
 };
 
-/** 左边那一列目录。顺序和下面的分组一致 */
-const TOC: TocItem[] = [
-  { id: "settings-appearance", label: "外观" },
-  { id: "settings-lyrics", label: "歌词" },
-  { id: "settings-wordcloud", label: "词云" },
-  { id: "settings-lookup", label: "查词" },
-  { id: "settings-mining", label: "制卡" },
-  { id: "settings-library", label: "曲库维护" },
-  { id: "settings-system", label: "系统" },
-  { id: "settings-about", label: "关于" },
+type SectionId = "appearance" | "lyrics" | "wordcloud" | "dict" | "mining" | "library" | "system" | "about";
+
+/** 左边那一列：点一项换一页，不再是一整条长页面里跳锚点 */
+const SECTIONS: { id: SectionId; label: string; lead: string; icon: keyof typeof Icons }[] = [
+  { id: "appearance", label: "外观", lead: "全屏歌词的背景、播放条、首页的收听目标", icon: "stage" },
+  { id: "lyrics", label: "歌词", lead: "振假名、字体、字号和行距。在歌词右上角的「显示」面板里改也是同一份", icon: "lyrics" },
+  { id: "wordcloud", label: "词云", lead: "资料库里词云的字体，以及哪些词不进词云", icon: "font" },
+  { id: "dict", label: "词典", lead: "导入、启用、排序 Yomitan 词典。查词结果按这里的顺序排", icon: "dict" },
+  { id: "mining", label: "制卡", lead: "一键制卡发到 Anki 的牌组、笔记类型和字段", icon: "card" },
+  { id: "library", label: "曲库维护", lead: "补封面、补歌词、回填时长、分词、迁移", icon: "db" },
+  { id: "system", label: "更新与系统", lead: "检查更新、诊断报告、变调缓存", icon: "update" },
+  { id: "about", label: "关于", lead: "语料库在哪、程序的运行状态", icon: "info" },
 ];
+
+/** 上次看的是哪一页：跟着模块走，切到别的页再回来还在 */
+let lastSection: SectionId = "appearance";
+
+/** 从别处直接打开设置的某一页（例：词典页的「去设置里管理」） */
+export function openSettingsSection(id: SectionId) {
+  lastSection = id;
+}
 
 export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) {
   const settings = useAppSettings();
@@ -220,6 +235,15 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
   /** 缺歌词的歌数。null = 还没数过 */
   const [missingLyrics, setMissingLyrics] = useState<number | null>(null);
   const [lyricsJob, setLyricsJob] = useState<LyricsProgress | null>(null);
+  const [section, setSection] = useState<SectionId>(lastSection);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  const goTo = useCallback((id: SectionId) => {
+    lastSection = id;
+    setSection(id);
+    // 换页从顶上开始看
+    bodyRef.current?.closest(".page")?.scrollTo({ top: 0 });
+  }, []);
 
   useEffect(() => {
     void api.ankiStatus().then(setAnki).catch(() => undefined);
@@ -347,314 +371,421 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
     fallbackOptions.push({ value: display.fallbackFamily, label: `${display.fallbackFamily}（本机没有）` });
   }
 
+  const current = SECTIONS.find((x) => x.id === section) ?? SECTIONS[0]!;
+
   return (
     <div className="page settings-page">
       <div className="settings-layout">
-        <SettingsToc items={TOC} />
-        <div className="settings-body">
-      <SettingGroup title="外观" id="settings-appearance">
-        <SettingCard
-          icon={Icons.stage}
-          title="全屏歌词的背景用封面虚化"
-          description="关掉就用从封面取的一个纯色（原来的样子）。这首歌没有封面时自动回到纯色。"
-        >
-          <Switch
-            checked={settings.stageCoverBlur}
-            onChange={(v) => updateSettings({ stageCoverBlur: v })}
-            label="全屏背景用封面虚化"
-          />
-        </SettingCard>
-        {settings.stageCoverBlur && (
-          <SettingCard icon={Icons.blur} title="虚化强度" description="越大越糊、歌词越清楚；越小越看得出是哪张封面">
-            <SettingSlider
-              value={settings.stageBlurRadius}
-              limits={STAGE_BLUR_LIMITS}
-              onChange={(v) => updateSettings({ stageBlurRadius: v })}
-            />
-          </SettingCard>
-        )}
-        <SettingCard
-          icon={Icons.wave}
-          title="播放条上的音频可视化"
-          description="播放条顶上那排随音乐跳动的频谱条。关掉之后连采样一起停，不再每 50ms 问一次引擎。"
-        >
-          <Switch
-            checked={settings.spectrum}
-            onChange={(v) => updateSettings({ spectrum: v })}
-            label="显示音频可视化"
-          />
-        </SettingCard>
-        <SettingCard icon={Icons.clock} title="每天的收听目标" description="首页「今日」那个环按这个算">
-          <SettingSlider
-            value={settings.dailyGoalMinutes}
-            limits={DAILY_GOAL_LIMITS}
-            onChange={(v) => updateSettings({ dailyGoalMinutes: v })}
-            unit=" 分钟"
-          />
-        </SettingCard>
-      </SettingGroup>
-
-      <SettingGroup title="歌词" id="settings-lyrics">
-        <SudachiCard icon={Icons.ruby} onError={onError} onChanged={onChanged} />
-        <SettingCard icon={Icons.ruby} title="默认显示振假名" description="也可以在歌词右上角随时开关">
-          <Switch checked={display.furigana} onChange={(v) => updateLyricsDisplay({ furigana: v })} label="显示振假名" />
-        </SettingCard>
-        <SettingCard icon={Icons.ruby} title="注音方式" description="只注汉字：思(おも)い出(だ)す；整词注音：思い出す(おもいだす)">
-          <SettingSelect<FuriganaMode>
-            value={display.furiganaMode}
-            options={(Object.keys(FURIGANA_MODE_LABELS) as FuriganaMode[]).map((mode) => ({
-              value: mode,
-              label: FURIGANA_MODE_LABELS[mode],
-            }))}
-            onChange={(mode) => updateLyricsDisplay({ furiganaMode: mode, furigana: true })}
-          />
-        </SettingCard>
-        <SettingCard
-          icon={Icons.font}
-          title="歌词字体"
-          description={fonts.options === null ? "正在读取本机字体…" : `本机 ${fonts.options.length} 种`}
-        >
-          <SettingSelect value={display.fontFamily} options={fontOptions} onChange={(v) => updateLyricsDisplay({ fontFamily: v })} />
-        </SettingCard>
-        <SettingCard icon={Icons.font} title="备用字体" description="主字体里没有的字用这个显示">
-          <SettingSelect
-            value={display.fallbackFamily}
-            options={fallbackOptions}
-            onChange={(v) => updateLyricsDisplay({ fallbackFamily: v })}
-          />
-        </SettingCard>
-        <SettingCard icon={Icons.font} title="导入字体" description="ttf / otf / ttc。只记住文件位置，不复制文件">
-          <CommandButton icon="import" label="导入字体…" onClick={() => void importFonts()} />
-        </SettingCard>
-        <SettingCard icon={Icons.size} title="字号">
-          <SettingSlider value={display.fontSize} limits={DISPLAY_LIMITS.fontSize} onChange={(v) => updateLyricsDisplay({ fontSize: v })} />
-        </SettingCard>
-        <SettingCard icon={Icons.size} title="振假名字号">
-          <SettingSlider value={display.rubySize} limits={DISPLAY_LIMITS.rubySize} onChange={(v) => updateLyricsDisplay({ rubySize: v })} />
-        </SettingCard>
-        <SettingCard icon={Icons.size} title="行距">
-          <SettingSlider value={display.lineGap} limits={DISPLAY_LIMITS.lineGap} onChange={(v) => updateLyricsDisplay({ lineGap: v })} />
-        </SettingCard>
-        <SettingCard icon={Icons.size} title="字距">
-          <SettingSlider
-            value={display.letterSpacing}
-            limits={DISPLAY_LIMITS.letterSpacing}
-            onChange={(v) => updateLyricsDisplay({ letterSpacing: v })}
-          />
-        </SettingCard>
-        <SettingCard
-          title="预览"
-          description={
-            <span
-              className="setting-preview"
-              lang="ja"
-              style={{
-                fontFamily: lyricFontStack(display.fontFamily, display.fallbackFamily),
-                fontSize: display.fontSize,
-                letterSpacing: display.letterSpacing,
-              }}
-            >
-              忘れたい自分に缶コーヒーを買った
-            </span>
-          }
-        >
-          <button className="link-btn" onClick={resetLyricsDisplay}>
-            恢复默认
-          </button>
-        </SettingCard>
-      </SettingGroup>
-
-      <SettingGroup title="词云" id="settings-wordcloud">
-        <SettingCard
-          icon={Icons.font}
-          title="词云字体"
-          description="资料库里词云用的字体（词云卡片上也能直接换）。想要手写、毛笔这类风格，把字体文件导进来再在这里选"
-        >
-          <SettingSelect
-            value={settings.wordCloudFont}
-            options={cloudFontOptions}
-            onChange={(v) => updateSettings({ wordCloudFont: v })}
-          />
-        </SettingCard>
-        <SettingCard icon={Icons.font} title="导入字体" description="ttf / otf / ttc。和歌词字体共用一份导入列表">
-          <CommandButton icon="import" label="导入字体…" onClick={() => void importFonts()} />
-        </SettingCard>
-        <SettingCard
-          title="预览"
-          description={
-            <span className="setting-preview" lang="ja" style={{ fontFamily: lyricFontStack(settings.wordCloudFont, ""), fontSize: 26 }}>
-              君 僕 夢 世界 抱きしめる
-            </span>
-          }
-        >
-          <button className="link-btn" onClick={() => updateSettings({ wordCloudFont: DEFAULT_SETTINGS.wordCloudFont })}>
-            恢复默认
-          </button>
-        </SettingCard>
-      </SettingGroup>
-
-      <DictionaryManager onError={onError} />
-
-      <SettingGroup title="查词" id="settings-lookup">
-        <SettingCard icon={Icons.dict} title="折叠记忆" description="查词结果里点词典名可以折叠那一本，之后每次查词都保持折叠">
-          <button
-            className="tc-btn"
-            disabled={collapsedDicts.size === 0}
-            onClick={() => setDictionariesCollapsed([...collapsedDicts], false)}
-          >
-            {collapsedDicts.size === 0 ? "没有折叠的" : `展开这 ${collapsedDicts.size} 本`}
-          </button>
-        </SettingCard>
-      </SettingGroup>
-
-      <SettingGroup title="制卡" id="settings-mining">
-        <MineSettingsCard connected={anki?.connected ?? false} decks={anki?.decks ?? []} />
-        {anki !== null && !anki.connected && <SettingNote>{anki.message}</SettingNote>}
-      </SettingGroup>
-
-      <SettingGroup title="曲库维护" id="settings-library">
-        <SettingCard icon={Icons.cover} title="补齐缺失封面" description="只补还没有封面的那些，用刮削时存下的候选，不重新搜索">
-          <CommandButton
-            icon="photo"
-            label={busy === "covers" ? "正在补…" : "补齐封面"}
-            onClick={() => void backfillCovers()}
-            disabled={busy !== null}
-          />
-        </SettingCard>
-        <SettingCard
-          icon={Icons.lyrics}
-          title="补齐缺失歌词"
-          description={
-            missingLyrics === null
-              ? "先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空"
-              : missingLyrics === 0
-                ? "每一首都有歌词了"
-                : `${missingLyrics} 首还没有歌词。先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）`
-          }
-        >
-          {lyricsRunning ? (
-            <CommandButton icon="discard" label="停下" onClick={() => void api.lyricsFillCancel()} />
-          ) : (
-            <CommandButton
-              icon="refresh"
-              label="补齐歌词"
-              onClick={() => void fillLyrics()}
-              disabled={busy !== null || missingLyrics === 0}
-            />
-          )}
-        </SettingCard>
-        {lyricsJob !== null && (
-          <SettingNote>
-            {lyricsJob.finished
-              ? `${lyricsJob.cancelled ? "已停下" : "补齐完成"}：补上 ${lyricsJob.filled}，挑不出来 ${lyricsJob.notFound}` +
-                (lyricsJob.failed > 0 ? `，失败 ${lyricsJob.failed}` : "") +
-                // 整批断了（库打不开、线程起不来）要说出来，不能只报一句「完成」
-                (lyricsJob.message !== "" ? `。中断：${lyricsJob.message}` : "")
-              : `${lyricsJob.done}/${lyricsJob.total}　${lyricsJob.title}${
-                  lyricsJob.status === "filled"
-                    ? ` ← ${lyricsJob.matched}（${lyricsJob.lyricLines} 行）`
-                    : lyricsJob.status === "notFound"
-                      ? " 挑不出来"
-                      : lyricsJob.status === "failed"
-                        ? ` 失败：${lyricsJob.message}`
-                        : ""
-                }`}
-            {lyricsJob.finished && lyricsJob.notFound > 0 && (
-              <>
-                {" "}
-                挑不出来的那些，可以在曲库里选中那首歌，自己导入一份歌词文件。
-              </>
-            )}
-          </SettingNote>
-        )}
-        <SettingCard icon={Icons.clock} title="回填时长" description="扫一遍音频文件，把缺的 duration_sec 补上">
-          <CommandButton
-            icon="refresh"
-            label={busy === "durations" ? "正在扫…" : "回填时长"}
-            onClick={() => void backfillDurations()}
-            disabled={busy !== null}
-          />
-        </SettingCard>
-        <SettingCard
-          icon={Icons.lyrics}
-          title="启动时检查新歌"
-          description="看看语料库的文件夹里有没有还没导入的音频，有就提示。只读，不会自己导入；看哪些文件夹在「导入」页"
-        >
-          <Switch
-            checked={settings.autoCheckNewSongs}
-            onChange={(v) => updateSettings({ autoCheckNewSongs: v })}
-            label="启动时检查新歌"
-          />
-        </SettingCard>
-        <TokenizeCard icon={Icons.lyrics} onError={onError} onChanged={onChanged} />
-        <MigrateCard icon={Icons.db} onError={onError} onChanged={onChanged} />
-        <SettingCard
-          icon={Icons.card}
-          title="刮削与人工复核"
-          description="识别、补 metadata、歌手照片、专辑封面"
-          onClick={() => onNavigate("scrape")}
-        >
-          <span className="setting-chevron" aria-hidden="true">
-            ›
-          </span>
-        </SettingCard>
-        {note !== "" && <SettingNote>{note}</SettingNote>}
-      </SettingGroup>
-
-      <SettingGroup title="系统" id="settings-system">
-        <UpdateCard
-          icons={{ update: Icons.update, clock: Icons.clock, install: Icons.install }}
-          onError={onError}
-        />
-        <DiagnosticsCard icon={Icons.report} onError={onError} />
-        <PitchCacheCard icon={Icons.wave} onError={onError} />
-      </SettingGroup>
-
-      <SettingGroup title="关于" id="settings-about">
-        <SettingCard
-          icon={Icons.db}
-          title="语料库"
-          description={
-            <>
-              {health?.dbPath ?? "—"}
-              {root !== null && <>（{ROOT_SOURCE_LABELS[root.source]}）</>}
-            </>
-          }
-        >
-          <span className="muted small">{health === null ? "" : `${health.tracks} 首 · ${health.lyricLines} 行`}</span>
-          <CommandButton icon="folder" label="切换目录…" onClick={() => void pickLibraryRoot()} />
-        </SettingCard>
-        {rootNote !== "" && <SettingNote>{rootNote}，重启后生效。</SettingNote>}
-        {root !== null && root.remembered !== "" && (
-          <SettingNote>
-            设置里记着的是 {root.remembered}。
+        <nav className="settings-nav" aria-label="设置分类">
+          {SECTIONS.map((x) => (
             <button
-              className="link-btn"
-              onClick={() => {
-                void api
-                  .setLibraryRoot(null)
-                  .then(setRootNote)
-                  .then(() => api.libraryRoot().then(setRoot))
-                  .catch((err: unknown) => onError(String((err as { message?: string })?.message ?? err)));
-              }}
+              key={x.id}
+              type="button"
+              className={x.id === section ? "settings-nav-item active" : "settings-nav-item"}
+              onClick={() => goTo(x.id)}
+              aria-current={x.id === section ? "page" : undefined}
             >
-              清除
+              <span className="settings-nav-icon">{Icons[x.icon]}</span>
+              {x.label}
             </button>
-          </SettingNote>
-        )}
-        <SettingCard title="运行状态" description="分词器、音频设备">
-          <span className="muted small">
-            {health === null
-              ? "—"
-              : [
-                  health.tokenizerReady ? "分词器就绪" : "分词器未就绪",
-                  health.audioReady ? "音频可用" : "无音频设备（不能播放、变调）",
-                ].join(" · ")}
-          </span>
-        </SettingCard>
-      </SettingGroup>
+          ))}
+        </nav>
+        <div className="settings-body" key={section} ref={bodyRef}>
+          <header className="settings-head">
+            <span className="settings-head-icon">{Icons[current.icon]}</span>
+            <div>
+              <h1>{current.label}</h1>
+              <p>{current.lead}</p>
+            </div>
+          </header>
+
+          {section === "appearance" && (
+            <Group title="全屏与播放">
+            <SettingCard
+              icon={Icons.stage}
+              title="全屏歌词的背景用封面虚化"
+              description="关掉就用从封面取的一个纯色（原来的样子）。这首歌没有封面时自动回到纯色。"
+            >
+              <Switch
+                checked={settings.stageCoverBlur}
+                onChange={(v) => updateSettings({ stageCoverBlur: v })}
+                label="全屏背景用封面虚化"
+              />
+            </SettingCard>
+            {settings.stageCoverBlur && (
+              <SettingCard icon={Icons.blur} title="虚化强度" description="越大越糊、歌词越清楚；越小越看得出是哪张封面">
+                <SettingSlider
+                  value={settings.stageBlurRadius}
+                  limits={STAGE_BLUR_LIMITS}
+                  onChange={(v) => updateSettings({ stageBlurRadius: v })}
+                />
+              </SettingCard>
+            )}
+            <SettingCard
+              icon={Icons.wave}
+              title="播放条上的音频可视化"
+              description="播放条顶上那排随音乐跳动的频谱条。关掉之后连采样一起停，不再每 50ms 问一次引擎。"
+            >
+              <Switch
+                checked={settings.spectrum}
+                onChange={(v) => updateSettings({ spectrum: v })}
+                label="显示音频可视化"
+              />
+            </SettingCard>
+            <SettingCard icon={Icons.clock} title="每天的收听目标" description="首页「今日」那个环按这个算">
+              <SettingSlider
+                value={settings.dailyGoalMinutes}
+                limits={DAILY_GOAL_LIMITS}
+                onChange={(v) => updateSettings({ dailyGoalMinutes: v })}
+                unit=" 分钟"
+              />
+            </SettingCard>
+            </Group>
+          )}
+
+          {section === "lyrics" && (
+            <>
+              <Group title="振假名">
+            <SudachiCard icon={Icons.ruby} onError={onError} onChanged={onChanged} />
+            <SettingCard icon={Icons.ruby} title="默认显示振假名" description="也可以在歌词右上角随时开关">
+              <Switch checked={display.furigana} onChange={(v) => updateLyricsDisplay({ furigana: v })} label="显示振假名" />
+            </SettingCard>
+            <SettingCard icon={Icons.ruby} title="注音方式" description="只注汉字：思(おも)い出(だ)す；整词注音：思い出す(おもいだす)">
+              <SettingSelect<FuriganaMode>
+                value={display.furiganaMode}
+                options={(Object.keys(FURIGANA_MODE_LABELS) as FuriganaMode[]).map((mode) => ({
+                  value: mode,
+                  label: FURIGANA_MODE_LABELS[mode],
+                }))}
+                onChange={(mode) => updateLyricsDisplay({ furiganaMode: mode, furigana: true })}
+              />
+            </SettingCard>
+              </Group>
+              <Group title="播放">
+            <SettingCard
+              icon={Icons.lyrics}
+              title="逐字点亮当前行"
+              description="像卡拉 OK 歌词那样，唱到哪个字亮到哪个字。有逐字歌词（增强型 LRC）或手动校准时用真实时间；没有时按字数估，行尾标「估」。关掉就是原来的整行高亮。"
+            >
+              <Switch
+                checked={settings.karaokeLyrics}
+                onChange={(v) => updateSettings({ karaokeLyrics: v })}
+                label="逐字点亮当前行"
+              />
+            </SettingCard>
+              </Group>
+              <Group title="字体与排版">
+            <SettingCard
+              icon={Icons.font}
+              title="歌词字体"
+              description={fonts.options === null ? "正在读取本机字体…" : `本机 ${fonts.options.length} 种`}
+            >
+              <SettingSelect value={display.fontFamily} options={fontOptions} onChange={(v) => updateLyricsDisplay({ fontFamily: v })} />
+            </SettingCard>
+            <SettingCard icon={Icons.font} title="备用字体" description="主字体里没有的字用这个显示">
+              <SettingSelect
+                value={display.fallbackFamily}
+                options={fallbackOptions}
+                onChange={(v) => updateLyricsDisplay({ fallbackFamily: v })}
+              />
+            </SettingCard>
+            <SettingCard icon={Icons.font} title="导入字体" description="ttf / otf / ttc。只记住文件位置，不复制文件">
+              <CommandButton icon="import" label="导入字体…" onClick={() => void importFonts()} />
+            </SettingCard>
+            <SettingCard icon={Icons.size} title="字号">
+              <SettingSlider value={display.fontSize} limits={DISPLAY_LIMITS.fontSize} onChange={(v) => updateLyricsDisplay({ fontSize: v })} />
+            </SettingCard>
+            <SettingCard icon={Icons.size} title="振假名字号">
+              <SettingSlider value={display.rubySize} limits={DISPLAY_LIMITS.rubySize} onChange={(v) => updateLyricsDisplay({ rubySize: v })} />
+            </SettingCard>
+            <SettingCard icon={Icons.size} title="行距">
+              <SettingSlider value={display.lineGap} limits={DISPLAY_LIMITS.lineGap} onChange={(v) => updateLyricsDisplay({ lineGap: v })} />
+            </SettingCard>
+            <SettingCard icon={Icons.size} title="字距">
+              <SettingSlider
+                value={display.letterSpacing}
+                limits={DISPLAY_LIMITS.letterSpacing}
+                onChange={(v) => updateLyricsDisplay({ letterSpacing: v })}
+              />
+            </SettingCard>
+            <SettingCard
+              title="预览"
+              description={
+                <span
+                  className="setting-preview"
+                  lang="ja"
+                  style={{
+                    fontFamily: lyricFontStack(display.fontFamily, display.fallbackFamily),
+                    fontSize: display.fontSize,
+                    letterSpacing: display.letterSpacing,
+                  }}
+                >
+                  忘れたい自分に缶コーヒーを買った
+                </span>
+              }
+            >
+              <button className="link-btn" onClick={resetLyricsDisplay}>
+                恢复默认
+              </button>
+            </SettingCard>
+              </Group>
+            </>
+          )}
+
+          {section === "wordcloud" && (
+            <>
+            <Group title="哪些词进词云">
+              <SettingCard
+                icon={Icons.font}
+                title="去掉虚词"
+                description="单个假名的碎片（僕「ら」、一「つ」、「お」）、形式名词（こと・もの・まま・よう・とき）、纯符号。词频表和检索不受影响"
+              >
+                <Switch
+                  checked={settings.wordCloudHideFunctionWords}
+                  onChange={(v) => updateSettings({ wordCloudHideFunctionWords: v })}
+                  label="词云去掉虚词"
+                />
+              </SettingCard>
+              <SettingCard
+                icon={Icons.font}
+                title="自己隐藏的词"
+                description={
+                  settings.wordCloudHidden.length === 0 ? (
+                    "在词云里点一个词，弹出的面板上有「不在词云里显示」"
+                  ) : (
+                    <span className="hidden-words">
+                      {settings.wordCloudHidden.map((w) => (
+                        <button
+                          key={w}
+                          className="hidden-word"
+                          lang="ja"
+                          title="放回词云"
+                          onClick={() => updateSettings({ wordCloudHidden: settings.wordCloudHidden.filter((x) => x !== w) })}
+                        >
+                          {w}
+                          <span aria-hidden="true">×</span>
+                        </button>
+                      ))}
+                    </span>
+                  )
+                }
+              >
+                {settings.wordCloudHidden.length > 0 && (
+                  <button className="link-btn" onClick={() => updateSettings({ wordCloudHidden: [] })}>
+                    全部恢复
+                  </button>
+                )}
+              </SettingCard>
+            </Group>
+            <Group title="字体">
+            <SettingCard
+              icon={Icons.font}
+              title="词云字体"
+              description="资料库里词云用的字体（词云卡片上也能直接换）。想要手写、毛笔这类风格，把字体文件导进来再在这里选"
+            >
+              <SettingSelect
+                value={settings.wordCloudFont}
+                options={cloudFontOptions}
+                onChange={(v) => updateSettings({ wordCloudFont: v })}
+              />
+            </SettingCard>
+            <SettingCard icon={Icons.font} title="导入字体" description="ttf / otf / ttc。和歌词字体共用一份导入列表">
+              <CommandButton icon="import" label="导入字体…" onClick={() => void importFonts()} />
+            </SettingCard>
+            <SettingCard
+              title="预览"
+              description={
+                <span className="setting-preview" lang="ja" style={{ fontFamily: lyricFontStack(settings.wordCloudFont, ""), fontSize: 26 }}>
+                  君 僕 夢 世界 抱きしめる
+                </span>
+              }
+            >
+              <button className="link-btn" onClick={() => updateSettings({ wordCloudFont: DEFAULT_SETTINGS.wordCloudFont })}>
+                恢复默认
+              </button>
+            </SettingCard>
+            </Group>
+            </>
+          )}
+
+          {section === "dict" && (
+            <>
+              <DictionaryManager onError={onError} />
+              <Group title="查词结果">
+            <SettingCard icon={Icons.dict} title="折叠记忆" description="查词结果里点词典名可以折叠那一本，之后每次查词都保持折叠">
+              <button
+                className="tc-btn"
+                disabled={collapsedDicts.size === 0}
+                onClick={() => setDictionariesCollapsed([...collapsedDicts], false)}
+              >
+                {collapsedDicts.size === 0 ? "没有折叠的" : `展开这 ${collapsedDicts.size} 本`}
+              </button>
+            </SettingCard>
+              </Group>
+            </>
+          )}
+
+          {section === "mining" && (
+            <Group title="Anki">
+            <MineSettingsCard connected={anki?.connected ?? false} decks={anki?.decks ?? []} />
+            {anki !== null && !anki.connected && <SettingNote>{anki.message}</SettingNote>}
+            </Group>
+          )}
+
+          {section === "library" && (
+            <Group title="补齐与修复">
+            <SettingCard icon={Icons.cover} title="补齐缺失封面" description="只补还没有封面的那些，用刮削时存下的候选，不重新搜索">
+              <CommandButton
+                icon="photo"
+                label={busy === "covers" ? "正在补…" : "补齐封面"}
+                onClick={() => void backfillCovers()}
+                disabled={busy !== null}
+              />
+            </SettingCard>
+            <SettingCard
+              icon={Icons.lyrics}
+              title="补齐缺失歌词"
+              description={
+                missingLyrics === null
+                  ? "先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空"
+                  : missingLyrics === 0
+                    ? "每一首都有歌词了"
+                    : `${missingLyrics} 首还没有歌词。先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）`
+              }
+            >
+              {lyricsRunning ? (
+                <CommandButton icon="discard" label="停下" onClick={() => void api.lyricsFillCancel()} />
+              ) : (
+                <CommandButton
+                  icon="refresh"
+                  label="补齐歌词"
+                  onClick={() => void fillLyrics()}
+                  disabled={busy !== null || missingLyrics === 0}
+                />
+              )}
+            </SettingCard>
+            {lyricsJob !== null && (
+              <SettingNote>
+                {lyricsJob.finished
+                  ? `${lyricsJob.cancelled ? "已停下" : "补齐完成"}：补上 ${lyricsJob.filled}，挑不出来 ${lyricsJob.notFound}` +
+                    (lyricsJob.failed > 0 ? `，失败 ${lyricsJob.failed}` : "") +
+                    // 整批断了（库打不开、线程起不来）要说出来，不能只报一句「完成」
+                    (lyricsJob.message !== "" ? `。中断：${lyricsJob.message}` : "")
+                  : `${lyricsJob.done}/${lyricsJob.total}　${lyricsJob.title}${
+                      lyricsJob.status === "filled"
+                        ? ` ← ${lyricsJob.matched}（${lyricsJob.lyricLines} 行）`
+                        : lyricsJob.status === "notFound"
+                          ? " 挑不出来"
+                          : lyricsJob.status === "failed"
+                            ? ` 失败：${lyricsJob.message}`
+                            : ""
+                    }`}
+                {lyricsJob.finished && lyricsJob.notFound > 0 && (
+                  <>
+                    {" "}
+                    挑不出来的那些，可以在曲库里选中那首歌，自己导入一份歌词文件。
+                  </>
+                )}
+              </SettingNote>
+            )}
+            <SettingCard icon={Icons.clock} title="回填时长" description="扫一遍音频文件，把缺的 duration_sec 补上">
+              <CommandButton
+                icon="refresh"
+                label={busy === "durations" ? "正在扫…" : "回填时长"}
+                onClick={() => void backfillDurations()}
+                disabled={busy !== null}
+              />
+            </SettingCard>
+            <SettingCard
+              icon={Icons.lyrics}
+              title="启动时检查新歌"
+              description="看看语料库的文件夹里有没有还没导入的音频，有就提示。只读，不会自己导入；看哪些文件夹在「导入」页"
+            >
+              <Switch
+                checked={settings.autoCheckNewSongs}
+                onChange={(v) => updateSettings({ autoCheckNewSongs: v })}
+                label="启动时检查新歌"
+              />
+            </SettingCard>
+            <TokenizeCard icon={Icons.lyrics} onError={onError} onChanged={onChanged} />
+            <MigrateCard icon={Icons.db} onError={onError} onChanged={onChanged} />
+            <SettingCard
+              icon={Icons.card}
+              title="刮削与人工复核"
+              description="识别、补 metadata、歌手照片、专辑封面"
+              onClick={() => onNavigate("scrape")}
+            >
+              <span className="setting-chevron" aria-hidden="true">
+                ›
+              </span>
+            </SettingCard>
+            {note !== "" && <SettingNote>{note}</SettingNote>}
+            </Group>
+          )}
+
+          {section === "system" && (
+            <Group title="更新">
+            <UpdateCard
+              icons={{ update: Icons.update, clock: Icons.clock, install: Icons.install }}
+              onError={onError}
+            />
+            <DiagnosticsCard icon={Icons.report} onError={onError} />
+            <PitchCacheCard icon={Icons.wave} onError={onError} />
+            </Group>
+          )}
+
+          {section === "about" && (
+            <Group title="语料库">
+            <SettingCard
+              icon={Icons.db}
+              title="语料库"
+              description={
+                <>
+                  {health?.dbPath ?? "—"}
+                  {root !== null && <>（{ROOT_SOURCE_LABELS[root.source]}）</>}
+                </>
+              }
+            >
+              <span className="muted small">{health === null ? "" : `${health.tracks} 首 · ${health.lyricLines} 行`}</span>
+              <CommandButton icon="folder" label="切换目录…" onClick={() => void pickLibraryRoot()} />
+            </SettingCard>
+            {rootNote !== "" && <SettingNote>{rootNote}，重启后生效。</SettingNote>}
+            {root !== null && root.remembered !== "" && (
+              <SettingNote>
+                设置里记着的是 {root.remembered}。
+                <button
+                  className="link-btn"
+                  onClick={() => {
+                    void api
+                      .setLibraryRoot(null)
+                      .then(setRootNote)
+                      .then(() => api.libraryRoot().then(setRoot))
+                      .catch((err: unknown) => onError(String((err as { message?: string })?.message ?? err)));
+                  }}
+                >
+                  清除
+                </button>
+              </SettingNote>
+            )}
+            <SettingCard title="运行状态" description="分词器、音频设备">
+              <span className="muted small">
+                {health === null
+                  ? "—"
+                  : [
+                      health.tokenizerReady ? "分词器就绪" : "分词器未就绪",
+                      health.audioReady ? "音频可用" : "无音频设备（不能播放、变调）",
+                    ].join(" · ")}
+              </span>
+            </SettingCard>
+            </Group>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+/** 一页里的一组。和 SettingGroup 一样，只是标题小一号（页名已经在页头了） */
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return <SettingGroup title={title}>{children}</SettingGroup>;
 }

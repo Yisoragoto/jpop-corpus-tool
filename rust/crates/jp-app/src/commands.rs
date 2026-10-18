@@ -269,6 +269,43 @@ pub fn lyrics_furigana(
     Ok(out)
 }
 
+/// 这几行歌词的词级时间（逐字歌词、手动校准）。词云点歌「从关键词开始放」用。
+#[tauri::command(async)]
+pub fn word_timings(
+    state: State<'_, AppState>,
+    utterance_ids: Vec<i64>,
+) -> CmdResult<Vec<jp_corpus::word_timing::WordTiming>> {
+    Ok(state.corpus().word_timings(&utterance_ids)?)
+}
+
+/// 手动校准：这一行第 `char_start..char_end` 个字从 `start_sec` 开始唱。存进库，以后每次都从这里放。
+#[tauri::command(async)]
+pub fn word_time_set(
+    state: State<'_, AppState>,
+    utterance_id: i64,
+    char_start: i64,
+    char_end: i64,
+    start_sec: f64,
+) -> CmdResult<()> {
+    Ok(state.corpus().set_word_time(utterance_id, char_start, char_end, start_sec)?)
+}
+
+/// 撤掉一处手动校准。
+#[tauri::command(async)]
+pub fn word_time_clear(state: State<'_, AppState>, utterance_id: i64, char_start: i64) -> CmdResult<()> {
+    Ok(state.corpus().clear_word_time(utterance_id, char_start)?)
+}
+
+/// 词云合并异体写法用：每个词元的正规化写法和读音。没装分词词典就返回空表（词云照常显示，只是不合并）。
+#[tauri::command]
+pub async fn lemma_forms<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    lemmas: Vec<String>,
+) -> CmdResult<Vec<jp_tokenizer::LemmaForm>> {
+    // 几百个词各分一次，几十毫秒；放阻塞线程池，别占主线程
+    blocking(app, move |state| Ok(state.analyzer().map(|a| a.lemma_forms(&lemmas)).unwrap_or_default())).await
+}
+
 // ────────────────────────────── 检索 ──────────────────────────────
 
 #[tauri::command]

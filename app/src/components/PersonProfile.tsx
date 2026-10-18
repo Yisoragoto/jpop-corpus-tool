@@ -20,6 +20,7 @@ import { Cover } from "./Cover";
 import { MembersEditor } from "./MembersEditor";
 import { RelationGraph } from "./RelationGraph";
 import { buildGraph } from "../graph";
+import { buildAxisColumns } from "../releaseAxis";
 import { ROLE_COLORS, type DirectoryData } from "./LibraryBrowser";
 import { invalidatePerformers } from "./PerformerPicker";
 
@@ -369,55 +370,82 @@ function yearSpan(entry: DirectoryEntry | undefined): string {
 }
 
 /**
- * 发行轴：每张专辑一个点，横着按年份排；点越大歌越多。自己的作品实心，乐队时期的空心，合作 / 幕后是小一号的绿色。
- * 悬停看名字，点一下滚到下面那一张。乐队解散了，那一年画一道竖线。
+ * 发行轴：一年一列，这一年发的专辑 / 单曲画成封面在列里一张挨一张排开（专辑方、单曲圆）。
+ * 自己的作品正常显示，乐队时期的带一圈灰边，合作 / 幕后小一号带绿边。
+ * 悬停看名字，点一下滚到下面那一张；放不下时整条轴横着滚。
+ * 连着几年没发行折成「…」，乐队解散那一年标「解散」（见 `releaseAxis.ts`）。
  */
 function ReleaseAxis({ sections, onPick, ended }: { sections: WorkSection[]; onPick: (key: string) => void; ended: string }) {
-  const dots = sections.flatMap((sec) =>
+  const items = sections.flatMap((sec) =>
     groupByAlbum(sec.works)
       .filter((g) => /^\d{4}/.test(g.year))
       .map((g) => ({ g, kind: sec.key === "own" ? "own" : sec.key === "credits" ? "credit" : "band", year: Number(g.year.slice(0, 4)) })),
   );
-  if (dots.length === 0) return null;
   const endYear = /^\d{4}/.test(ended) ? Number(ended.slice(0, 4)) : null;
-  const years = dots.map((d) => d.year).concat(endYear ?? []);
-  const lo = Math.min(...years) - 1;
-  const hi = Math.max(...years) + 1;
-  const x = (y: number) => ((y - lo) / (hi - lo)) * 100;
-  const step = hi - lo > 24 ? 5 : hi - lo > 12 ? 2 : 1;
-  const ticks: number[] = [];
-  for (let y = lo; y <= hi; y++) if (y % step === 0) ticks.push(y);
-  // 同一年的几张错开一点，别叠成一个点
-  const seen = new Map<number, number>();
+  const columns = buildAxisColumns(items, endYear);
+  const [hover, setHover] = useState<string | null>(null);
+  if (columns.length === 0) return null;
+  const albums = items.filter((x) => x.g.albumId !== null).length;
+  const years = items.map((x) => x.year);
+  const span = `${Math.min(...years)}–${Math.max(...years)}`;
   return (
-    <section className="release-axis" aria-label="发行时间轴">
-      <div className="axis-line" />
-      {ticks.map((y) => (
-        <span key={y} className="axis-year" style={{ left: `${x(y)}%` }}>
-          {y}
-        </span>
-      ))}
-      {endYear !== null && <span className="axis-end" style={{ left: `${x(endYear)}%` }} title={`${endYear} 解散`} />}
-      {dots.map(({ g, kind, year }, i) => {
-        const k = seen.get(year) ?? 0;
-        seen.set(year, k + 1);
-        const size = Math.min(26, 10 + g.tracks.length * 2) * (kind === "credit" ? 0.75 : 1);
-        return (
-          <button
-            key={`${kind}-${g.key}`}
-            className={`axis-dot ${kind} ${x(year) < 18 ? "edge-l" : x(year) > 82 ? "edge-r" : ""}`}
-            style={{ left: `calc(${x(year)}% + ${k * 9}px)`, width: size, height: size, ["--n" as string]: i }}
-            onClick={() => onPick(g.key)}
-            aria-label={`${g.title} · ${year}`}
-          >
-            <span className="axis-label">
-              {g.title} · {year}
-            </span>
-          </button>
-        );
-      })}
+    <section className="raxis" aria-label="发行时间轴">
+      {/* 悬停的那张写在这一行（轴是横向滚动的，气泡会被裁掉，所以不用气泡） */}
+      <p className={`raxis-caption ${hover !== null ? "on" : ""}`} aria-live="polite">
+        {hover ?? `${span} · ${albums} 张专辑 · ${items.length - albums} 首单曲${endYear !== null ? ` · ${endYear} 解散` : ""}`}
+      </p>
+      <div className="raxis-scroll">
+      <div className="raxis-track">
+        {columns.map((col, i) =>
+          col.type === "gap" ? (
+            <div key={`gap-${col.from}`} className="raxis-gap" title={`${col.from}–${col.to} 没有发行`} style={{ ["--i" as string]: i }}>
+              <span className="raxis-gap-dots" aria-hidden="true" />
+              <span className="raxis-year">{col.to - col.from >= 1 ? `${col.from}–${String(col.to).slice(2)}` : col.from}</span>
+            </div>
+          ) : (
+            <div
+              key={col.year}
+              className={`raxis-col ${col.items.length === 0 ? "empty" : ""}`}
+              style={{ ["--i" as string]: i, ["--count" as string]: col.items.length }}
+            >
+              <div className="raxis-stack">
+                {col.items
+                  .sort((a, b) => a.g.year.localeCompare(b.g.year))
+                  .map(({ g, kind }, k) => (
+                    <button
+                      key={`${kind}-${g.key}`}
+                      className={`raxis-cover ${kind} ${g.albumId === null ? "single" : ""}`}
+                      style={{ ["--k" as string]: k, zIndex: col.items.length - k }}
+                      onClick={() => onPick(g.key)}
+                      onPointerEnter={() => setHover(describe(g, kind))}
+                      onPointerLeave={() => setHover(null)}
+                      onFocus={() => setHover(describe(g, kind))}
+                      onBlur={() => setHover(null)}
+                      aria-label={describe(g, kind)}
+                    >
+                      <Cover path={g.coverPath} size={kind === "credit" ? 30 : 40} rounded={g.albumId === null ? 20 : 6} alt="" />
+                    </button>
+                  ))}
+              </div>
+              <span className="raxis-node" aria-hidden="true" />
+              <span className="raxis-year">
+                {col.year}
+                {col.items.length > 1 && <small>{col.items.length}</small>}
+              </span>
+              {col.ended && <span className="raxis-end">解散</span>}
+            </div>
+          ),
+        )}
+      </div>
+      </div>
     </section>
   );
+}
+
+/** 「左右盲 · 2023-04-05 · 12 首 · 乐队时期」 */
+function describe(g: AlbumGroup, kind: string): string {
+  const role = kind === "band" ? " · 乐队时期" : kind === "credit" ? " · 合作 / 幕后" : "";
+  return `${g.title} · ${g.year.slice(0, 10)} · ${g.tracks.length} 首${role}`;
 }
 
 function Fact({ value, label }: { value: number | string; label: string }) {

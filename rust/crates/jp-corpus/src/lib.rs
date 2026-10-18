@@ -40,6 +40,7 @@ pub mod analysis;
 pub mod media;
 pub mod segments;
 pub mod subcorpus;
+pub mod word_timing;
 
 use std::path::Path;
 
@@ -222,6 +223,21 @@ impl Corpus {
     /// 一首歌的全部歌词行，带分词。整首歌只发 2 次查询。
     pub fn lyrics(&self, song_id: &str) -> Result<Vec<LyricLine>> {
         library::lyrics(&self.conn, song_id)
+    }
+
+    /// 这几行歌词的词级时间（逐字歌词和手动校准，见 [`word_timing`]）。
+    pub fn word_timings(&self, utterance_ids: &[i64]) -> Result<Vec<word_timing::WordTiming>> {
+        word_timing::for_utterances(&self.conn, utterance_ids)
+    }
+
+    /// 记一处手动校准：这一行第 `char_start..char_end` 个字从 `start_sec` 开始。
+    pub fn set_word_time(&self, utterance_id: i64, char_start: i64, char_end: i64, start_sec: f64) -> Result<()> {
+        word_timing::set_manual(&self.conn, utterance_id, char_start, char_end, start_sec)
+    }
+
+    /// 撤掉一处手动校准。
+    pub fn clear_word_time(&self, utterance_id: i64, char_start: i64) -> Result<()> {
+        word_timing::clear_manual(&self.conn, utterance_id, char_start)
     }
 
     /// 一行歌词的分词。

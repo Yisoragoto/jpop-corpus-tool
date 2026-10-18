@@ -140,38 +140,60 @@ export function buildTimeline(dir: Directory, releases: TimelineRelease[], query
   };
 }
 
-/* ── 总览里的封面：挨得太近的错开上下，再挤的合成「+N」 ── */
+/* ── 总览里的横轴和封面：年份按需撑宽，封面一张挨一张排开 ── */
 
-export interface CoverSpot {
-  /** 在原数组里的下标 */
-  index: number;
-  cx: number;
-  /** 0 = 在线上，-1 / 1 = 往上 / 往下错开半格 */
-  tier: -1 | 0 | 1;
-  /** 合进这一张的还有几张（显示「+N」） */
-  extra: number[];
+/**
+ * 横轴按年份展开：**每一年有多宽，看那一年最挤的那一行要多宽**（封面一张挨一张放下），
+ * 至少是缩放条给的 `perYear`。发行多的年份自动撑开，封面不用再上下错层、也不用合成「+N」。
+ * 年份之内仍按日期比例摆，`x(at)` 把带小数的年份换成横坐标（不含左边留白）。
+ */
+export function warpYears(
+  rows: { at: number; size: number }[][],
+  min: number,
+  max: number,
+  perYear: number,
+  gap = 6,
+): { x: (at: number) => number; width: number } {
+  const first = Math.floor(min);
+  const last = Math.max(first, Math.ceil(max));
+  const widths: number[] = [];
+  for (let y = first; y <= last; y++) {
+    let need = perYear;
+    for (const row of rows) {
+      const inYear = row.filter((r) => Math.floor(r.at) === y);
+      if (inYear.length === 0) continue;
+      need = Math.max(need, inYear.reduce((sum, r) => sum + r.size + gap, gap));
+    }
+    widths.push(need);
+  }
+  const starts: number[] = [];
+  let acc = 0;
+  for (const w of widths) {
+    starts.push(acc);
+    acc += w;
+  }
+  const x = (at: number) => {
+    const k = Math.min(widths.length - 1, Math.max(0, Math.floor(at) - first));
+    const frac = Math.min(1, Math.max(0, at - (first + k)));
+    return (starts[k] ?? 0) + frac * (widths[k] ?? perYear);
+  };
+  return { x, width: acc };
 }
 
 /**
- * 按时间先后放封面。每张先试线上，撞了试上一层、再试下一层；三层都撞了就并进线上最近那张，记成「+N」。
- * `size` 是封面边长，两张之间至少留 `gap`。
+ * 一行里的封面依次排开：先放在自己日期的位置，和前一张挨上了就往右推到刚好不重叠。
+ * 返回每张的中心（顺序和传进来的一样）。
  */
-export function placeCovers(items: { x: number; size: number }[], gap = 4): CoverSpot[] {
-  const spots: CoverSpot[] = [];
-  const lastByTier = new Map<number, { x: number; size: number; spot: CoverSpot }>();
-  items.forEach((it, index) => {
-    for (const tier of [0, -1, 1] as const) {
-      const last = lastByTier.get(tier);
-      if (last === undefined || it.x - last.x >= (last.size + it.size) / 2 + gap) {
-        const spot: CoverSpot = { index, cx: it.x, tier, extra: [] };
-        spots.push(spot);
-        lastByTier.set(tier, { x: it.x, size: it.size, spot });
-        return;
-      }
-    }
-    lastByTier.get(0)!.spot.extra.push(index);
-  });
-  return spots;
+export function packRow(items: { x: number; size: number }[], gap = 6): number[] {
+  const order = items.map((it, i) => ({ ...it, i })).sort((a, b) => a.x - b.x || a.i - b.i);
+  const centers = new Array<number>(items.length);
+  let right = -Infinity;
+  for (const it of order) {
+    const cx = Math.max(it.x, right + gap + it.size / 2);
+    centers[it.i] = cx;
+    right = cx + it.size / 2;
+  }
+  return centers;
 }
 
 /* ── 放大后的时间树：一位音乐人的发行，乐队解散后接上单飞的成员 ── */

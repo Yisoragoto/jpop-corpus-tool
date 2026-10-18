@@ -273,7 +273,7 @@ pub fn save_edited_lines(
         if text.contains('\n') {
             bail!("第 {} 行里有换行；一行歌词请拆成两行", idx + 1);
         }
-        clean.push(jp_import::lrc::LyricLine { time_sec: line.time_sec, text: text.to_string() });
+        clean.push(jp_import::lrc::LyricLine::new(line.time_sec, text));
     }
     if clean.is_empty() {
         bail!("一行歌词都没有；要删掉歌词请用「换歌词」");

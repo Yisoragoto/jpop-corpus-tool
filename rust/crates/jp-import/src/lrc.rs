@@ -18,6 +18,26 @@ pub struct LyricLine {
     /// 没有时间轴的歌词仍然有语料价值，不该丢掉。
     pub time_sec: Option<f64>,
     pub text: String,
+    /// 增强型 LRC 的逐字时间（`<00:12.34>夜<00:12.80>が`），位置是 `text` 里的字符下标。
+    /// 普通 LRC 没有，是空的。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub words: Vec<WordTime>,
+}
+
+/// 一段逐字时间：`text` 里第 `start..end` 个字从 `time_sec` 开始唱。
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WordTime {
+    pub start: usize,
+    pub end: usize,
+    pub time_sec: f64,
+}
+
+impl LyricLine {
+    /// 没有逐字时间的一行
+    pub fn new(time_sec: Option<f64>, text: impl Into<String>) -> Self {
+        Self { time_sec, text: text.into(), words: Vec::new() }
+    }
 }
 
 /// 一条信用（作词/作曲/编曲）。
@@ -143,8 +163,9 @@ pub fn parse(text: &str) -> ParsedLrc {
 
     for raw in text.lines() {
         let (stamps, body) = split_timestamps_with(raw.trim(), format);
-        let body = strip_word_timestamps(body);
-        let body = body.trim();
+        let (body, word_marks) = take_word_timestamps(body);
+        let (body, words) = trim_with_words(&body, &word_marks);
+        let body = body.as_str();
         if body.is_empty() {
             continue;
         }
@@ -190,15 +211,19 @@ pub fn parse(text: &str) -> ParsedLrc {
 
         // 一行可以带多个时间戳（副歌复用），每个都算一行
         if stamps.is_empty() {
-            out.lines.push(LyricLine {
-                time_sec: None,
-                text: body.to_string(),
-            });
+            out.lines.push(LyricLine::new(None, body));
         } else {
+            // 逐字时间是绝对时间，属于第一个行时间戳；同一行复用到别的时间戳（副歌）时整体平移过去
+            let first = stamps[0];
             for stamp in stamps {
+                let shift = stamp - first - offset_sec;
                 out.lines.push(LyricLine {
                     time_sec: Some((stamp - offset_sec).max(0.0)),
                     text: body.to_string(),
+                    words: words
+                        .iter()
+                        .map(|w| WordTime { time_sec: (w.time_sec + shift).max(0.0), ..*w })
+                        .collect(),
                 });
             }
         }
@@ -328,30 +353,64 @@ fn netease_json_text(line: &str) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-/// 剥掉增强型 LRC 的逐字时间戳 `<mm:ss>` / `<mm:ss.xx>` / `<mm:ss.xxx>`。
+/// 剥掉增强型 LRC 的逐字时间戳 `<mm:ss>` / `<mm:ss.xx>` / `<mm:ss.xxx>`，**记下每个落在第几个字前面**。
 ///
-/// 这个库只要行级时间轴，逐字的那一层不用；留在正文里的话，分词会把
-/// `<00:12.34>` 切成一串符号 token，检索和制卡里都是噪音。
+/// 留在正文里的话，分词会把 `<00:12.34>` 切成一串符号 token，检索和制卡里都是噪音；
+/// 但时间本身要留下——从关键词开始放、逐字歌词都靠它（见 `jp_corpus::word_timing`）。
 /// 尖括号里不是时间的（`<愛>`）原样保留——那是正文。
-fn strip_word_timestamps(body: &str) -> std::borrow::Cow<'_, str> {
+fn take_word_timestamps(body: &str) -> (String, Vec<(usize, f64)>) {
+    let mut marks = Vec::new();
     if !body.contains('<') {
-        return std::borrow::Cow::Borrowed(body);
+        return (body.to_string(), marks);
     }
     let mut out = String::with_capacity(body.len());
+    let mut chars = 0usize;
     let mut rest = body;
     while let Some(open) = rest.find('<') {
         out.push_str(&rest[..open]);
+        chars += rest[..open].chars().count();
         let after = &rest[open + 1..];
         match after.find('>') {
-            Some(close) if is_word_timestamp(&after[..close]) => rest = &after[close + 1..],
+            Some(close) if is_word_timestamp(&after[..close]) => {
+                if let Some(sec) = word_timestamp_sec(&after[..close]) {
+                    marks.push((chars, sec));
+                }
+                rest = &after[close + 1..];
+            }
             _ => {
                 out.push('<');
+                chars += 1;
                 rest = after;
             }
         }
     }
     out.push_str(rest);
-    std::borrow::Cow::Owned(out)
+    (out, marks)
+}
+
+/// 去掉行首行尾空白，同时把逐字时间换成去掉空白之后的位置、切成一段一段。
+/// 每个时间管到下一个时间之前；最后一个时间后面没有字的（`夜<00:12.80>` 那种收尾标记）不成段。
+fn trim_with_words(body: &str, marks: &[(usize, f64)]) -> (String, Vec<WordTime>) {
+    let lead = body.chars().take_while(|c| c.is_whitespace()).count();
+    let trimmed = body.trim().to_string();
+    let len = trimmed.chars().count();
+    let mut words = Vec::new();
+    for (i, &(at, time_sec)) in marks.iter().enumerate() {
+        let start = at.saturating_sub(lead).min(len);
+        let end = marks.get(i + 1).map_or(len, |&(next, _)| next.saturating_sub(lead).min(len));
+        // 段首的空白不算这个词（「<00:12>　夜」）
+        let skip = trimmed.chars().skip(start).take(end.saturating_sub(start)).take_while(|c| c.is_whitespace()).count();
+        if start + skip < end {
+            words.push(WordTime { start: start + skip, end, time_sec });
+        }
+    }
+    (trimmed, words)
+}
+
+/// `mm:ss(.xxx)` → 秒
+fn word_timestamp_sec(inner: &str) -> Option<f64> {
+    let (minutes, seconds) = inner.split_once(':')?;
+    Some(minutes.parse::<f64>().ok()? * 60.0 + seconds.parse::<f64>().ok()?)
 }
 
 /// `mm:ss`，可选 `.` 加一到三位小数。分钟允许一到三位。
@@ -533,9 +592,9 @@ mod format_tests {
     #[test]
     fn timed_lines_round_trip_through_the_parser() {
         let lines = vec![
-            LyricLine { time_sec: Some(3.1), text: "春も　思い出した日々".into() },
-            LyricLine { time_sec: Some(61.25), text: "打ち込んでいませんでした".into() },
-            LyricLine { time_sec: None, text: "（間奏）".into() },
+            LyricLine::new(Some(3.1), "春も　思い出した日々"),
+            LyricLine::new(Some(61.25), "打ち込んでいませんでした"),
+            LyricLine::new(None, "（間奏）"),
         ];
         let text = format(&lines);
         assert_eq!(text, "[00:03.10]春も　思い出した日々\n[01:01.25]打ち込んでいませんでした\n（間奏）\n");
@@ -924,5 +983,35 @@ mod tests {
         let parsed = parse("[00:01.00]<愛>って何\n[00:02.00]a <b> c\n");
         assert_eq!(parsed.lines[0].text, "<愛>って何");
         assert_eq!(parsed.lines[1].text, "a <b> c");
+    }
+
+    #[test]
+    fn word_timestamps_are_kept_as_character_positions() {
+        let parsed = parse("[00:10.00]<00:10.00>夜が<00:10.40>明ける<00:11.20>\n[00:20.00]ただ  <00:20.50>君に\n");
+        let first = &parsed.lines[0];
+        assert_eq!(first.text, "夜が明ける");
+        assert_eq!(
+            first.words,
+            vec![WordTime { start: 0, end: 2, time_sec: 10.0 }, WordTime { start: 2, end: 5, time_sec: 10.4 }],
+            "收尾那个时间后面没字，不成段"
+        );
+        let second = &parsed.lines[1];
+        assert_eq!(second.text, "ただ  君に");
+        assert_eq!(second.words, vec![WordTime { start: 4, end: 6, time_sec: 20.5 }]);
+    }
+
+    #[test]
+    fn repeated_lines_shift_their_word_times() {
+        let parsed = parse("[00:10.00][01:10.00]<00:10.20>夜<00:10.60>が\n");
+        assert_eq!(parsed.lines.len(), 2);
+        assert_eq!(parsed.lines[0].words[1].time_sec, 10.6);
+        assert!((parsed.lines[1].words[0].time_sec - 70.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn lines_without_word_times_have_none() {
+        let parsed = parse("[00:10.00]夜が明ける\n[00:12.00]<愛>してる\n");
+        assert!(parsed.lines.iter().all(|l| l.words.is_empty()));
+        assert_eq!(parsed.lines[1].text, "<愛>してる");
     }
 }

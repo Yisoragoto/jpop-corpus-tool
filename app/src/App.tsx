@@ -12,7 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { api, NO_DICTIONARY, type HealthReport, type NewAudio, type Overview, type QuickHit } from "./api";
+import { api, NO_DICTIONARY, type HealthReport, type NewAudio, type Overview, type QuickHit, type ReleaseInfo } from "./api";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { messageOf } from "./errors";
 import { CommandPalette, type PaletteCommand, type PaletteMode } from "./components/CommandPalette";
 import { NavIcon } from "./components/NavIcons";
@@ -32,7 +33,7 @@ import { DictionaryPage } from "./pages/DictionaryPage";
 import { ScrapePage } from "./pages/ScrapePage";
 import { KwicPage, type KwicRequest } from "./pages/KwicPage";
 import { LibraryPage } from "./pages/LibraryPage";
-import { SettingsPage } from "./pages/SettingsPage";
+import { openSettingsSection, SettingsPage } from "./pages/SettingsPage";
 import { useLibrary } from "./useLibrary";
 import { toggleFullscreen } from "./fullscreen";
 import { useHotkeys } from "./useHotkeys";
@@ -98,26 +99,20 @@ export default function App() {
     void api.pitchCacheSetLimit(settings.pitchCacheLimitMb).catch(() => undefined);
   }, [settings.pitchCacheLimitMb]);
 
-  // 启动时检查更新（设置里可关）。只问版本号；开了「下载后自动安装」才会接着下。
+  // 启动时检查更新（设置里可关）。只问版本号；有新版就弹窗，装不装、什么时候装由人决定
+  // （装更新会关掉应用，不能趁人听歌时自己装）。点过「跳过这个版本」的那一版不再弹。
   // 放在这里而不是设置页：用户不进设置也该知道有新版。
+  const [updateOffer, setUpdateOffer] = useState<{ current: string; release: ReleaseInfo } | null>(null);
   useEffect(() => {
     if (!settings.autoCheckUpdates) return;
     let alive = true;
     const timer = setTimeout(() => {
       void api
         .updateCheck()
-        .then(async (status) => {
+        .then((status) => {
           if (!alive || !status.updateAvailable || status.latest === null) return;
-          const asset = status.latest.installer;
-          if (!settings.autoInstallUpdates || asset === null) {
-            setNotice(`有新版本 ${status.latest.version}，到「设置 → 系统」里更新`);
-            return;
-          }
-          // 用户明确开过「下载后自动安装」才走到这里；装之前先说一声要关应用
-          setNotice(`正在下载新版本 ${status.latest.version}，装好会自动重启应用`);
-          await api.updateDownload(status.latest.version);
-          if (!alive) return;
-          await api.updateInstall();
+          if (status.latest.version === settings.skippedUpdateVersion) return;
+          setUpdateOffer({ current: status.current, release: status.latest });
         })
         .catch(() => undefined); // 没网、被限流都不该在启动时打扰用户
     }, 4000);
@@ -500,7 +495,15 @@ export default function App() {
         {route === "settings" && (
           <SettingsPage health={health} onError={onError} onNavigate={setRoute} onChanged={refreshOverview} />
         )}
-        {route === "dict" && <DictionaryPage onError={onError} onOpenSettings={() => setRoute("settings")} />}
+        {route === "dict" && (
+          <DictionaryPage
+            onError={onError}
+            onOpenSettings={() => {
+              openSettingsSection("dict");
+              setRoute("settings");
+            }}
+          />
+        )}
         {route === "analytics" && (
           <AnalyticsPage
             key={libraryVersion}
@@ -515,6 +518,15 @@ export default function App() {
         )}
         </div>
       </main>
+
+      {updateOffer !== null && (
+        <UpdateDialog
+          current={updateOffer.current}
+          release={updateOffer.release}
+          offerSkip
+          onClose={() => setUpdateOffer(null)}
+        />
+      )}
 
       {palette && (
         <CommandPalette

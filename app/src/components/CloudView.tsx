@@ -33,9 +33,12 @@ interface Memory {
   picked: string | null;
   /** 全屏开着：从全屏歌词、歌词页回来时还开着 */
   present: boolean;
+  /** 发行年份范围，null = 不限 */
+  yearFrom: number | null;
+  yearTo: number | null;
 }
 
-const memory: Memory = { performerIds: [], pos: ["NOUN"], jpOnly: true, picked: null, present: false };
+const memory: Memory = { performerIds: [], pos: ["NOUN"], jpOnly: true, picked: null, present: false, yearFrom: null, yearTo: null };
 
 /** 从某个人的档案打开：换成这个人，选中的词清掉（换了人，那个词多半不在了） */
 export function focusCloudOn(personId: number) {
@@ -66,18 +69,42 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
   const [rows, setRows] = useState<FrequencyRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [present, setPresent] = useState(memory.present);
+  const [yearFrom, setYearFrom] = useState(memory.yearFrom);
+  const [yearTo, setYearTo] = useState(memory.yearTo);
+  /** 曲库里有哪些年份（下拉的选项） */
+  const [years, setYears] = useState<number[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api
+      .listTracks()
+      .then((tracks) => {
+        const ys = new Set<number>();
+        for (const t of tracks) if (/^\d{4}/.test(t.year)) ys.add(Number(t.year.slice(0, 4)));
+        if (alive) setYears([...ys].sort((a, b) => a - b));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
   const request = useRef(0);
   const scope = useActiveScope();
 
   // 改了就记下来
   useEffect(() => {
-    Object.assign(memory, { performerIds, pos, jpOnly, picked, present });
-  }, [performerIds, pos, jpOnly, picked, present]);
+    Object.assign(memory, { performerIds, pos, jpOnly, picked, present, yearFrom, yearTo });
+  }, [performerIds, pos, jpOnly, picked, present, yearFrom, yearTo]);
 
   useEffect(() => {
     const id = ++request.current;
     setLoading(true);
-    const filter = withScope({ performerIds, jpOnly }, scope);
+    // 这里选的年份压过子语料里的年份：词云上明明写着 2019–2021，就得是这几年
+    const scoped = withScope({ performerIds, jpOnly }, scope);
+    const filter = {
+      ...scoped,
+      yearFrom: yearFrom ?? scoped.yearFrom ?? null,
+      yearTo: yearTo ?? scoped.yearTo ?? null,
+    };
     const job =
       pos.length === 0
         ? api.statsFrequency(filter, undefined, PER_POS * 2)
@@ -86,7 +113,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
       .then((result) => id === request.current && setRows(result))
       .catch((err: unknown) => id === request.current && onError(`读不出词频：${messageOf(err)}`))
       .finally(() => id === request.current && setLoading(false));
-  }, [performerIds, pos, jpOnly, scope, onError]);
+  }, [performerIds, pos, jpOnly, scope, yearFrom, yearTo, onError]);
 
   const togglePos = (p: string) =>
     setPos((cur) => {
@@ -135,6 +162,85 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
         <input type="checkbox" checked={jpOnly} onChange={(e) => setJpOnly(e.target.checked)} />
         仅日文
       </label>
+      <label
+        className="check wc-check"
+        title="去掉单个假名的碎片（僕「ら」、一「つ」）、形式名词（こと・もの・まま・よう）和纯符号"
+      >
+        <input
+          type="checkbox"
+          checked={settings.wordCloudHideFunctionWords}
+          onChange={(e) => updateSettings({ wordCloudHideFunctionWords: e.target.checked })}
+        />
+        去虚词
+      </label>
+      <label className="check wc-check" title="名词、动词、形容词……各一种颜色，云下面有图例">
+        <input
+          type="checkbox"
+          checked={settings.wordCloudColorByPos}
+          onChange={(e) => updateSettings({ wordCloudColorByPos: e.target.checked })}
+        />
+        按词性上色
+      </label>
+      {years.length > 1 && (
+        <span className="wc-years" title="只看这几年发行的歌">
+          <select
+            className="wc-select"
+            value={yearFrom ?? ""}
+            onChange={(e) => {
+              const v = e.target.value === "" ? null : Number(e.target.value);
+              setYearFrom(v);
+              if (v !== null && yearTo !== null && yearTo < v) setYearTo(v);
+            }}
+            aria-label="从哪一年"
+          >
+            <option value="">最早</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+          <span aria-hidden="true">–</span>
+          <select
+            className="wc-select"
+            value={yearTo ?? ""}
+            onChange={(e) => {
+              const v = e.target.value === "" ? null : Number(e.target.value);
+              setYearTo(v);
+              if (v !== null && yearFrom !== null && yearFrom > v) setYearFrom(v);
+            }}
+            aria-label="到哪一年"
+          >
+            <option value="">最近</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+          {(yearFrom !== null || yearTo !== null) && (
+            <button
+              className="link-btn"
+              onClick={() => {
+                setYearFrom(null);
+                setYearTo(null);
+              }}
+              title="不限年份"
+            >
+              ×
+            </button>
+          )}
+        </span>
+      )}
+      {settings.wordCloudHidden.length > 0 && (
+        <button
+          className="btn wc-btn"
+          onClick={() => updateSettings({ wordCloudHidden: [] })}
+          title={`拿掉的词：${settings.wordCloudHidden.join("、")}。点一下全部放回来`}
+        >
+          已隐藏 {settings.wordCloudHidden.length} 个 · 恢复
+        </button>
+      )}
       <select
         className="wc-select"
         value={COUNTS.includes(settings.wordCloudCount as (typeof COUNTS)[number]) ? settings.wordCloudCount : 120}
@@ -170,6 +276,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
       <WordCloud
         rows={rows}
         performerIds={performerIds}
+        years={{ from: yearFrom, to: yearTo }}
         loading={loading}
         toolbar={toolbar}
         pickedLemma={picked}

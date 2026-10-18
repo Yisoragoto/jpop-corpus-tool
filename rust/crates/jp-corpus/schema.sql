@@ -411,3 +411,16 @@ CREATE INDEX IF NOT EXISTS idx_utt_song_id ON utterances(song_id);
 CREATE INDEX IF NOT EXISTS idx_utterances_song_time ON utterances(song_id, time_sec);
 
 CREATE INDEX IF NOT EXISTS idx_yomitan_zh_reading ON yomitan_zh(reading);
+
+-- 词级时间：一行歌词里某个词从第几秒开始唱（见 jp-corpus/src/word_timing.rs）。
+-- 位置是这一行 text 里的字符下标 [char_start, char_end)。
+-- source：lrc（导入的逐字时间）/ manual（手动校准，同一处两种都有时以它为准）
+CREATE TABLE IF NOT EXISTS word_timings (
+    utterance_id INTEGER NOT NULL REFERENCES utterances(id),
+    char_start   INTEGER NOT NULL,
+    char_end     INTEGER NOT NULL,
+    start_sec    REAL    NOT NULL,
+    end_sec      REAL,
+    source       TEXT    NOT NULL,
+    PRIMARY KEY (utterance_id, char_start, source)
+);

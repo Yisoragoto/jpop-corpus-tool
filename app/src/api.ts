@@ -11,6 +11,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+import type { LemmaForm } from "./wordCloud";
+import type { WordTiming } from "./wordTiming";
+
 // ────────────────────────────── 曲库 ──────────────────────────────
 
 export interface Track {
@@ -962,6 +965,14 @@ export const api = {
 
   // 检查更新
   /** 问一次 GitHub Releases：有没有比正在跑的这一版更新的。 */
+  /** 这几行歌词的词级时间（逐字歌词 lrc、手动校准 manual） */
+  wordTimings: (utteranceIds: number[]) => call<WordTiming[]>("word_timings", { utteranceIds }),
+  /** 手动校准：这一行第 charStart..charEnd 个字从 startSec 开始 */
+  wordTimeSet: (utteranceId: number, charStart: number, charEnd: number, startSec: number) =>
+    call<void>("word_time_set", { utteranceId, charStart, charEnd, startSec }),
+  wordTimeClear: (utteranceId: number, charStart: number) => call<void>("word_time_clear", { utteranceId, charStart }),
+  /** 词元的正规化写法和读音（词云合并异体写法用）。没装分词词典时是空表 */
+  lemmaForms: (lemmas: string[]) => call<LemmaForm[]>("lemma_forms", { lemmas }),
   updateCheck: () => call<UpdateStatus>("update_check"),
   /** 最近几次发布，给「查看更新日志」用。 */
   updateChangelog: (limit?: number) => call<ReleaseInfo[]>("update_changelog", { limit }),

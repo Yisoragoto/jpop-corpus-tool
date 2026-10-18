@@ -498,6 +498,14 @@ fn attach_parsed(
         )?;
         let utterance_id = tx.last_insert_rowid();
         stats.lyric_lines += 1;
+        if !line.words.is_empty() {
+            let segments: Vec<_> = line
+                .words
+                .iter()
+                .map(|w| jp_corpus::word_timing::Segment { start: w.start, end: w.end, time_sec: w.time_sec })
+                .collect();
+            jp_corpus::word_timing::insert_lrc(tx, utterance_id, &segments)?;
+        }
 
         // utterances_fts 是 content=utterances 的外部内容表，**没有触发器**。
         // 漏掉这一步，歌能存进去但全文检索永远搜不到。
@@ -904,6 +912,33 @@ mod tests {
                 "J-Pop".into(),
                 Some(233.5)
             )
+        );
+    }
+
+    #[test]
+    fn word_timestamps_from_the_lrc_are_kept() {
+        let dir = tempdir();
+        let (audio, _) = with_lyrics(&dir, "song", "[00:10.00]<00:10.00>夜が<00:10.40>明ける
+[00:15.00]君を待っている
+");
+        let mut conn = test_db();
+        let mut t = track(&audio, "夜行", "ヨルシカ");
+        t.lyrics_path = Some(audio.replace(".flac", ".lrc"));
+        run(&mut conn, &[t]);
+
+        let words: Vec<(String, i64, i64, f64)> = conn
+            .prepare(
+                "SELECT u.text, w.char_start, w.char_end, w.start_sec FROM word_timings w                  JOIN utterances u ON u.id = w.utterance_id WHERE w.source = 'lrc' ORDER BY w.char_start",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            words,
+            vec![("夜が明ける".to_string(), 0, 2, 10.0), ("夜が明ける".to_string(), 2, 5, 10.4)],
+            "逐字时间要跟着导进来"
         );
     }
 

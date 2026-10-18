@@ -1,6 +1,6 @@
 /**
  * 时间轴：总览是每位演唱者一条泳道，发行按日期落在上面，**画的是封面**（专辑方、单曲圆，越大歌越多）；
- * 挨得太近的上下错开，再挤的合成「+N」（`placeCovers`）。乐队解散处一道竖杠，一条虚线接到单飞的成员那一行。
+ * 发行多的年份自动撑宽（`warpYears`），同一行的封面一张挨一张排开（`packRow`），不叠、不合并。乐队解散处一道竖杠，一条虚线接到单飞的成员那一行。
  *
  * 点名字（或者某张封面）放大成这位音乐人的时间树（`TimelineTree`，横竖可选）。
  * 放大了谁、横还是竖都记在模块里：去档案、去放歌再回来，还是刚才那棵树。
@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type TimelineRelease } from "../api";
 import { messageOf } from "../errors";
-import { buildTimeline, placeCovers } from "../timeline";
+import { buildTimeline, packRow, warpYears } from "../timeline";
 import { releaseKey, TimelineTree, type TreeOrient } from "./TimelineTree";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
@@ -19,6 +19,8 @@ import type { DirectoryData } from "./LibraryBrowser";
 const ROW = 64;
 const HEAD = 30;
 const PAD = 40;
+/** 同一行两张封面之间至少留这么宽 */
+const GAP = 6;
 const ZOOM_KEY = "jp.library.timelineZoom";
 
 function readZoom(): number {
@@ -142,8 +144,15 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
   }
 
   const { rows, connectors, min, max } = layout;
-  const width = (max - min) * perYear + PAD * 2;
-  const x = (at: number) => PAD + (at - min) * perYear;
+  const axis = warpYears(
+    rows.map((r) => r.releases.map((rel) => ({ at: rel.at, size: coverSize(rel) }))),
+    min,
+    max,
+    perYear,
+    GAP,
+  );
+  const width = axis.width + PAD * 2;
+  const x = (at: number) => PAD + axis.x(at);
   const y = (i: number) => HEAD + i * ROW + ROW / 2;
   const years: number[] = [];
   const step = perYear < 45 ? 5 : perYear < 70 ? 2 : 1;
@@ -231,18 +240,17 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
                 })}
               </svg>
               {rows.map((r, i) =>
-                placeCovers(r.releases.map((rel) => ({ x: x(rel.at), size: coverSize(rel) }))).map((spot) => {
-                  const rel = r.releases[spot.index]!;
+                packRow(r.releases.map((rel) => ({ x: x(rel.at), size: coverSize(rel) })), GAP).map((cx, index) => {
+                  const rel = r.releases[index]!;
                   const size = coverSize(rel);
-                  const more = spot.extra.map((k) => r.releases[k]!);
                   return (
                     <button
                       key={`${r.id}-${releaseKey(rel)}`}
                       className={`tl-cover-btn ${rel.albumId === null ? "single" : ""}`}
                       style={{
-                        left: spot.cx,
-                        top: y(i) + spot.tier * 11,
-                        ["--d" as string]: `${Math.min(i, 20) * 40 + Math.min(spot.index, 14) * 45 + 300}ms`,
+                        left: cx,
+                        top: y(i),
+                        ["--d" as string]: `${Math.min(i, 20) * 40 + Math.min(index, 14) * 45 + 300}ms`,
                       }}
                       onMouseEnter={(e) => {
                         const box = (e.currentTarget.closest(".timeline-view") as HTMLElement).getBoundingClientRect();
@@ -254,7 +262,6 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
                       aria-label={`${rel.title}，${rel.date}`}
                     >
                       <Cover path={rel.coverPath} size={size} rounded={rel.albumId === null ? size : 5} />
-                      {more.length > 0 && <span className="tl-more" title={more.map((m) => m.title).join("、")}>+{more.length}</span>}
                     </button>
                   );
                 }),

@@ -238,6 +238,7 @@ pub fn delete_song(conn: &Connection, song_id: &str) -> Result<DeleteReport> {
             |r| r.get::<_, i64>(0),
         )? as usize;
     }
+    jp_corpus::word_timing::delete_for_song(conn, song_id)?;
     conn.execute("DELETE FROM utterances WHERE song_id=?1", params![song_id])?;
     if table_exists(conn, "chapters")? {
         conn.execute("DELETE FROM chapters WHERE source_id=?1", params![song_id])?;
@@ -314,6 +315,7 @@ pub fn clear_lyrics(conn: &Connection, song_id: &str) -> Result<ClearedLyrics> {
         )?;
         report.tokens += conn.execute("DELETE FROM tokens WHERE utterance_id=?1", params![id])?;
     }
+    jp_corpus::word_timing::delete_for_song(conn, song_id)?;
     conn.execute("DELETE FROM utterances WHERE song_id=?1", params![song_id])?;
     // 旧版的原文留在 lyric_versions 里，只是不再是当前版
     if table_exists(conn, "lyric_versions")? {

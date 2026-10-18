@@ -11,18 +11,31 @@
  * 字体在设置页「词云」一组里选，可以是自带、导入或本机的任何一种。
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 
-import { api, type FrequencyRow, type PersonSummary } from "../api";
+import { api, POS_LABELS, type FrequencyRow, type PersonSummary } from "../api";
 import { imageColor, toHighlight } from "../coverColor";
 import { ensureFontFile, fetchFontCatalog, loadImportedFonts, lyricFontStack } from "../fonts";
 import { pyGrouped } from "../pyFormat";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
-import { useAppSettings } from "../settings";
+import { updateSettings, useAppSettings } from "../settings";
+import { keywordSpan, REACTION_SEC, wordStart, type WordStart, type WordTiming } from "../wordTiming";
 import { mergeSubcorpus, useActiveScope } from "../subcorpusScope";
-import { groupHitsBySong, layoutCloud, mergeByLemma, type CloudWord, type Placed, type SongHits } from "../wordCloud";
+import {
+  filterCloudRows,
+  groupHitsBySong,
+  layoutCloud,
+  mergeByLemma,
+  OTHER_POS_COLOR,
+  POS_COLORS,
+  variantKey,
+  type CloudWord,
+  type LemmaForm,
+  type Placed,
+  type SongHits,
+} from "../wordCloud";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import { loadPerformers } from "./PerformerPicker";
@@ -45,6 +58,8 @@ interface Props {
   rows: FrequencyRow[] | null;
   /** 筛选的演唱者，空 = 全部 */
   performerIds: number[];
+  /** 发行年份范围（含两端），点词查歌时也按它筛。null = 不限 */
+  years: { from: number | null; to: number | null };
   loading: boolean;
   /** 卡片头右边的工具（筛选、字体……） */
   toolbar?: ReactNode;
@@ -73,11 +88,47 @@ interface Props {
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** 名次 → 颜色。前几名染上照片的颜色，其余白色按名次渐淡 */
-function wordColor(rank: number, total: number, tint: string): { color: string; shadow: string } {
-  if (rank < 6) return { color: tint, shadow: `0 0 24px ${withAlpha(tint, 0.4)}, 0 2px 10px rgba(0,0,0,.35)` };
+/**
+ * 名次 → 颜色。默认前几名染上照片的颜色，其余白色按名次渐淡；
+ * 按词性上色时（`pos` 给了颜色）每种词性一种颜色，同样按名次渐淡、前几名带光晕。
+ */
+function wordColor(rank: number, total: number, tint: string, pos: string | null = null): { color: string; shadow: string } {
   const alpha = 0.5 + 0.5 * Math.pow(1 - rank / Math.max(1, total), 1.4);
+  if (pos !== null) {
+    if (rank < 6) return { color: pos, shadow: `0 0 24px ${withAlpha(pos, 0.4)}, 0 2px 10px rgba(0,0,0,.35)` };
+    return { color: withAlpha(pos, Number(Math.max(0.62, alpha).toFixed(2))), shadow: "0 1px 8px rgba(0,0,0,.35)" };
+  }
+  if (rank < 6) return { color: tint, shadow: `0 0 24px ${withAlpha(tint, 0.4)}, 0 2px 10px rgba(0,0,0,.35)` };
   return { color: `rgba(255,255,255,${alpha.toFixed(2)})`, shadow: "0 1px 8px rgba(0,0,0,.35)" };
+}
+
+function posColor(word: CloudWord): string {
+  return POS_COLORS[word.mainPos] ?? OTHER_POS_COLOR;
+}
+
+/* ── 异体写法：词元的正规化写法和读音，查过的记在模块里，换筛选不用再问 ── */
+const formCache = new Map<string, LemmaForm>();
+
+function useLemmaForms(rows: FrequencyRow[] | null): number {
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    if (rows === null) return;
+    const missing = [...new Set(rows.map((r) => r.lemma))].filter((l) => !formCache.has(l));
+    if (missing.length === 0) return;
+    let alive = true;
+    api
+      .lemmaForms(missing)
+      .then((forms) => {
+        for (const f of forms) formCache.set(f.lemma, f);
+        if (alive && forms.length > 0) setVersion((v) => v + 1);
+      })
+      // 没装分词词典、后端出错：不合并就是了，云照样画
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [rows]);
+  return version;
 }
 
 function withAlpha(rgb: string, alpha: number): string {
@@ -198,6 +249,7 @@ class CloudMotion {
 export function WordCloud({
   rows,
   performerIds,
+  years,
   loading,
   toolbar,
   pickedLemma,
@@ -296,7 +348,25 @@ export function WordCloud({
   }, []);
 
   const count = settings.wordCloudCount;
-  const words = useMemo(() => mergeByLemma(rows ?? [], count), [rows, count]);
+  const hideFunctionWords = settings.wordCloudHideFunctionWords;
+  const hidden = settings.wordCloudHidden;
+  const formsVersion = useLemmaForms(rows);
+  const colorByPos = settings.wordCloudColorByPos;
+  const words = useMemo(
+    () =>
+      mergeByLemma(filterCloudRows(rows ?? [], hideFunctionWords, new Set(hidden)), count, (lemma) =>
+        variantKey(lemma, formCache.get(lemma)),
+      ),
+    // formsVersion：后端的词形回来了要重新合并
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, count, hideFunctionWords, hidden, formsVersion],
+  );
+  // 图例：云里实际有哪些词性、各几个
+  const legend = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const w of words) n.set(w.mainPos, (n.get(w.mainPos) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1]);
+  }, [words]);
   const placed = useMemo(() => {
     if (size.w === 0 || size.h < 120 || ready === 0) return [];
     const ctx = document.createElement("canvas").getContext("2d");
@@ -360,7 +430,8 @@ export function WordCloud({
   const showTip = (p: Placed, e: React.PointerEvent) => {
     const tip = tipRef.current;
     if (!tip) return;
-    tip.textContent = `${p.word.lemma} · ${pyGrouped(p.word.freq)} 次 · ${pyGrouped(p.word.songCount)} 首`;
+    const spellings = p.word.variants.length > 1 ? `（${p.word.variants.join("・")}）` : "";
+    tip.textContent = `${p.word.lemma}${spellings} · ${POS_LABELS[p.word.mainPos] ?? p.word.mainPos} · ${pyGrouped(p.word.freq)} 次 · ${pyGrouped(p.word.songCount)} 首`;
     tip.hidden = false;
     moveTip(e);
   };
@@ -415,7 +486,8 @@ export function WordCloud({
     onPick(pickedLemma === p.word.lemma ? null : p.word.lemma);
   };
 
-  const pickedWord = pickedLemma === null ? null : (words.find((w) => w.lemma === pickedLemma) ?? null);
+  const pickedWord =
+    pickedLemma === null ? null : (words.find((w) => w.lemma === pickedLemma || w.variants.includes(pickedLemma)) ?? null);
   // 右边那一栏出来时，云整片缩小让出位置（不重排：重排的话每个词都会跳一下）
   const panelWidth = Math.min(340, size.w * 0.36);
   const shrink = pickedWord !== null && size.w > 0 ? Math.max(0.5, (size.w - panelWidth) / size.w) : 1;
@@ -435,7 +507,7 @@ export function WordCloud({
         filters: [{ name: "PNG 图片", extensions: ["png"] }],
       });
       if (!path) return;
-      const bytes = await renderPng({ placed, width: size.w, height: size.h, stack, tint, title: who, photos: backdrop.map((p) => p.imagePath) });
+      const bytes = await renderPng({ placed, width: size.w, height: size.h, stack, tint, title: who, photos: backdrop.map((p) => p.imagePath), colorByPos });
       await api.exportPng(path, bytes);
     } catch (err) {
       onError(`词云没能保存：${message(err)}`);
@@ -504,12 +576,18 @@ export function WordCloud({
           lang="ja"
         >
           {placed.map((p, i) => {
-            const c = wordColor(p.rank, words.length, tint);
+            const c = wordColor(p.rank, words.length, tint, colorByPos ? posColor(p.word) : null);
             return (
               <span
                 key={`${p.word.lemma}:${size.w}:${size.h}:${stack}`}
                 className={`wc-word${p.vertical ? " v" : ""}${p.word.lemma === pickedLemma ? " chosen" : ""}`}
-                style={{ left: p.x, top: p.y, width: p.w, height: p.h, ["--glow" as string]: p.rank < 6 ? tint : "rgba(255,255,255,.55)" }}
+                style={{
+                  left: p.x,
+                  top: p.y,
+                  width: p.w,
+                  height: p.h,
+                  ["--glow" as string]: colorByPos ? posColor(p.word) : p.rank < 6 ? tint : "rgba(255,255,255,.55)",
+                }}
                 role="button"
                 tabIndex={0}
                 aria-label={`${p.word.lemma}，${p.word.freq} 次，列出出现它的歌`}
@@ -548,6 +626,7 @@ export function WordCloud({
             highlight={pickedRank >= 0 && pickedRank < 6 ? tint : "rgb(255,255,255)"}
             stack={stack}
             performerIds={performerIds}
+            years={years}
             people={people}
             playing={playing}
             compact={present}
@@ -561,6 +640,17 @@ export function WordCloud({
           />
         )}
       </div>
+      {colorByPos && legend.length > 0 && (
+        <div className="wc-legend" aria-label="词性颜色">
+          {legend.map(([pos, n]) => (
+            <span key={pos}>
+              <i style={{ background: POS_COLORS[pos] ?? OTHER_POS_COLOR }} />
+              {POS_LABELS[pos] ?? pos}
+              <small>{n}</small>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="wc-tip" ref={tipRef} hidden />
     </section>
@@ -618,6 +708,7 @@ function SongPanel({
   highlight,
   stack,
   performerIds,
+  years,
   people,
   playing,
   compact,
@@ -633,6 +724,7 @@ function SongPanel({
   highlight: string;
   stack: string;
   performerIds: number[];
+  years: { from: number | null; to: number | null };
   people: PersonSummary[];
   playing: { songId: string; utteranceId: number } | null;
   compact: boolean;
@@ -644,6 +736,7 @@ function SongPanel({
   onShowExamples: (lemma: string) => void;
   onError: (message: string) => void;
 }) {
+  const settings = useAppSettings();
   const [songs, setSongs] = useState<SongHits[] | null>(null);
   const [truncated, setTruncated] = useState(false);
   // 词云的词频按当前子语料算，点词列出来的歌也得是这块语料里的
@@ -652,7 +745,15 @@ function SongPanel({
   useEffect(() => {
     let alive = true;
     api
-      .kwic({ keywords: [word.lemma], field: "lemma", pos: word.pos, personIds: performerIds, limit: KWIC_LIMIT, subcorpus: mergeSubcorpus({}, scope) })
+      .kwic({
+        // 几种写法合并成一个词的，每种写法都查（关键词之间是「或」）
+        keywords: word.variants.length > 0 ? word.variants : [word.lemma],
+        field: "lemma",
+        pos: word.pos,
+        personIds: performerIds,
+        limit: KWIC_LIMIT,
+        subcorpus: mergeSubcorpus({ yearFrom: years.from, yearTo: years.to }, scope),
+      })
       .then((hits) => {
         if (!alive) return;
         setSongs(groupHitsBySong(hits));
@@ -666,7 +767,69 @@ function SongPanel({
     return () => {
       alive = false;
     };
-  }, [word, performerIds, scope, onError]);
+  }, [word, performerIds, years.from, years.to, scope, onError]);
+
+  // 每首歌显示的那一处：拿它的词级时间（逐字 / 校准），没有就估
+  const [timings, setTimings] = useState<WordTiming[]>([]);
+  const loadTimings = useCallback(() => {
+    if (songs === null || songs.length === 0) return;
+    api
+      .wordTimings(songs.map((s) => s.first.utteranceId))
+      .then(setTimings)
+      .catch(() => setTimings([]));
+  }, [songs]);
+  useEffect(loadTimings, [loadTimings]);
+
+  /** 正在校准哪一首：从这行开头放，听到这个词时按一下 */
+  const [calibrating, setCalibrating] = useState<string | null>(null);
+  const startOf = (s: SongHits): WordStart | null => wordStart(s.first, timings);
+  const playFromWord = (s: SongHits, fullscreen: boolean) => {
+    const at = startOf(s);
+    onPlayLine(s.songId, s.first.utteranceId, at?.sec ?? s.first.timeSec, fullscreen);
+  };
+  const beginCalibrate = (s: SongHits) => {
+    setCalibrating(s.songId);
+    // 从这一行开头前一点放，留出反应的时间
+    onPlayLine(s.songId, s.first.utteranceId, Math.max(0, (s.first.timeSec ?? 0) - 0.5), false);
+  };
+  const markHeard = async (s: SongHits) => {
+    try {
+      const state = await api.audioState();
+      if (state.songId !== s.songId) {
+        onError("现在放的不是这首，先点「校准」从这一行放起来");
+        return;
+      }
+      const span = keywordSpan(s.first);
+      const at = Math.max(0, state.positionSec - REACTION_SEC);
+      await api.wordTimeSet(s.first.utteranceId, span.start, span.end, at);
+      const fresh = await api.wordTimings(songs?.map((x) => x.first.utteranceId) ?? []);
+      setTimings(fresh);
+      // 马上从校准的位置再放一遍，听听准不准
+      onPlayLine(s.songId, s.first.utteranceId, Math.max(0, at - 0.05), false);
+    } catch (e) {
+      onError(message(e));
+    }
+  };
+  const nudge = async (s: SongHits, delta: number) => {
+    const manual = timings.find((t) => t.utteranceId === s.first.utteranceId && t.source === "manual" && t.charStart === keywordSpan(s.first).start);
+    if (!manual) return;
+    try {
+      const at = Math.max(0, manual.startSec + delta);
+      await api.wordTimeSet(manual.utteranceId, manual.charStart, manual.charEnd, at);
+      setTimings(await api.wordTimings(songs?.map((x) => x.first.utteranceId) ?? []));
+      onPlayLine(s.songId, s.first.utteranceId, Math.max(0, at - 0.05), false);
+    } catch (e) {
+      onError(message(e));
+    }
+  };
+  const clearCalibration = async (s: SongHits) => {
+    try {
+      await api.wordTimeClear(s.first.utteranceId, keywordSpan(s.first).start);
+      setTimings(await api.wordTimings(songs?.map((x) => x.first.utteranceId) ?? []));
+    } catch (e) {
+      onError(message(e));
+    }
+  };
 
   // Esc 关掉这一栏（全屏时第二下 Esc 才退出全屏）。盖着全屏歌词时不管
   useEffect(() => {
@@ -705,6 +868,18 @@ function SongPanel({
             ? "正在查…"
             : `出现 ${pyGrouped(total)} 次 · ${songs.length} 首歌${truncated ? `（只查了前 ${pyGrouped(KWIC_LIMIT)} 行）` : ""}`}
         </span>
+        <button
+          className="wc-pop-hide"
+          onClick={() => {
+            const current = settings.wordCloudHidden;
+            const add = word.variants.filter((v) => !current.includes(v));
+            if (add.length > 0) updateSettings({ wordCloudHidden: [...current, ...add] });
+            onClose();
+          }}
+          title="以后词云里不再出现这个词。在「设置 → 词云」里能恢复"
+        >
+          不在词云里显示
+        </button>
         <button className="wc-pop-close" onClick={onClose} aria-label="关闭（Esc）">
           ✕
         </button>
@@ -723,38 +898,95 @@ function SongPanel({
         {songs !== null && songs.length === 0 && <p className="muted small wc-pop-none">没查到例句</p>}
         {songs?.map((s, i) => {
           const now = playing?.songId === s.songId;
+          const at = startOf(s);
+          const cal = calibrating === s.songId;
           return (
-            <div key={s.songId} className={`wc-song${now ? " now" : ""}`} style={{ animationDelay: `${60 + Math.min(i, 12) * 35}ms` }}>
+            <div
+              key={s.songId}
+              className={`wc-song${now ? " now" : ""}${cal ? " calibrating" : ""}`}
+              style={{ animationDelay: `${60 + Math.min(i, 12) * 35}ms` }}
+              onContextMenu={(e) => {
+                // 校准不占位置：在这一行上右键打开（再右键收起）
+                if (at === null || at.kind === "line") return;
+                e.preventDefault();
+                if (cal) setCalibrating(null);
+                else beginCalibrate(s);
+              }}
+            >
+              {/* 只有点封面才进全屏歌词 */}
               <button
-                className="wc-song-play"
-                onClick={() => onPlayLine(s.songId, s.first.utteranceId, s.first.timeSec, true)}
-                title="从这一句开始放，进全屏歌词（退出来还是词云）"
+                className="wc-song-face"
+                onClick={() => playFromWord(s, true)}
+                title={`从「${s.first.keyword}」开始放，进全屏歌词（退出来还是词云）`}
               >
-                <span className="wc-song-face">
-                  {coverOf(s.songId) ? <Cover path={coverOf(s.songId)} size={40} rounded={6} /> : <Avatar path={photoOf(s.artist)} name={s.artist} size={40} />}
-                  <span className="wc-song-icon" aria-hidden="true">
-                    {now ? <i className="wc-eq"><b /><b /><b /></i> : "▶"}
-                  </span>
-                </span>
-                <span className="wc-song-meta">
-                  <strong>{s.title}</strong>
-                  <small>
-                    {s.artist} · {s.count} 次{s.first.timeSec !== null ? ` · ${formatTime(s.first.timeSec)}` : ""}
-                  </small>
-                  <em lang="ja" style={{ fontFamily: stack }}>
-                    {s.first.left}
-                    <mark>{s.first.keyword}</mark>
-                    {s.first.right}
-                  </em>
+                {coverOf(s.songId) ? <Cover path={coverOf(s.songId)} size={40} rounded={6} /> : <Avatar path={photoOf(s.artist)} name={s.artist} size={40} />}
+                <span className="wc-song-icon" aria-hidden="true">
+                  ⤢
                 </span>
               </button>
-              <button
-                className="link-btn wc-song-open"
-                onClick={() => onPlayLine(s.songId, s.first.utteranceId, s.first.timeSec, false)}
-                title="只放，不进全屏歌词"
-              >
-                只播放
+              <button className="wc-song-meta" onClick={() => playFromWord(s, false)} title={`从「${s.first.keyword}」开始放`}>
+                <strong>{s.title}</strong>
+                <small>
+                  {s.artist} · {s.count} 次{at !== null ? ` · ${formatTime(at.sec)}` : ""}
+                  {at !== null && at.kind !== "line" && (
+                    <span className={`wc-timing ${at.kind}`} title={`${TIMING_HINT[at.kind]}。右键这一行可以校准`}>
+                      {TIMING_LABEL[at.kind]}
+                    </span>
+                  )}
+                </small>
+                <em lang="ja" style={{ fontFamily: stack }}>
+                  {s.atStart && (
+                    <span className="wc-start" title="这一行就从这个词开始：放出来第一个听到的就是它">
+                      句首
+                    </span>
+                  )}
+                  {s.first.left}
+                  <mark>{s.first.keyword}</mark>
+                  {s.first.right}
+                </em>
               </button>
+              <button
+                className="wc-song-go"
+                onClick={() => playFromWord(s, false)}
+                title={`从「${s.first.keyword}」开始放`}
+                aria-label={`播放 ${s.title}`}
+              >
+                {now ? (
+                  <i className="wc-eq" aria-hidden="true">
+                    <b />
+                    <b />
+                    <b />
+                  </i>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+                    <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.6-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
+                  </svg>
+                )}
+              </button>
+              {cal && (
+                <div className="wc-calib">
+                  <button className="wc-calib-hit" onClick={() => void markHeard(s)}>
+                    听到「{s.first.keyword}」时点这里
+                  </button>
+                  <button className="wc-calib-done" onClick={() => setCalibrating(null)} title="收起（在这一行上再右键也行）">
+                    完成
+                  </button>
+                  {at?.kind === "manual" && (
+                    <span className="wc-calib-tools">
+                      <button onClick={() => void nudge(s, -0.1)} title="早 0.1 秒">
+                        −0.1
+                      </button>
+                      <button onClick={() => void nudge(s, 0.1)} title="晚 0.1 秒">
+                        +0.1
+                      </button>
+                      <button onClick={() => playFromWord(s, false)}>重听</button>
+                      <button onClick={() => void clearCalibration(s)} title="删掉这处校准，回到估算">
+                        撤销
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -768,6 +1000,13 @@ function SongPanel({
     </aside>
   );
 }
+
+const TIMING_LABEL: Record<string, string> = { manual: "已校准", lrc: "逐字", estimate: "估" };
+const TIMING_HINT: Record<string, string> = {
+  manual: "从你校准过的位置放",
+  lrc: "从逐字歌词里这个词的时间放",
+  estimate: "这一行没有逐字时间，按字数估的位置，可能差零点几秒",
+};
 
 function formatTime(sec: number): string {
   const s = Math.max(0, Math.floor(sec));
@@ -806,8 +1045,9 @@ async function renderPng(opts: {
   tint: string;
   title: string;
   photos: string[];
+  colorByPos: boolean;
 }): Promise<Uint8Array> {
-  const { placed, width, height, stack, tint, title, photos } = opts;
+  const { placed, width, height, stack, tint, title, photos, colorByPos } = opts;
   const SCALE = 2;
   const PAD = 28;
   const HEAD = 64;
@@ -874,9 +1114,10 @@ async function renderPng(opts: {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (const p of placed) {
-    const c = wordColor(p.rank, placed.length, tint);
+    const pc = colorByPos ? posColor(p.word) : null;
+    const c = wordColor(p.rank, placed.length, tint, pc);
     ctx.fillStyle = c.color;
-    ctx.shadowColor = p.rank < 6 ? withAlpha(tint, 0.45) : "rgba(0,0,0,.35)";
+    ctx.shadowColor = p.rank < 6 ? withAlpha(pc ?? tint, 0.45) : "rgba(0,0,0,.35)";
     ctx.shadowBlur = p.rank < 6 ? 20 : 8;
     ctx.font = `${p.fontSize}px ${stack}`;
     const x = PAD + p.x + p.w / 2;
