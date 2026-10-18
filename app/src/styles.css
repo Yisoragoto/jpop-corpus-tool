@@ -1936,7 +1936,7 @@ button.chip.on { color: var(--accent-text); background: var(--accent-soft); bord
 .cloud-moved-art em { left: 30px; top: 26px; font-size: 16px; opacity: .7; }
 .cloud-moved-go { font-size: 13px; color: var(--accent); }
 
-/* 发行轴：一年一列，封面叠在列里，鼠标移上去摊开 */
+/* 发行轴：一年一列，封面在列里一张挨一张排开 */
 .raxis { margin: 6px 0 0; min-width: 0; }
 .raxis-caption {
   margin: 0 14px 4px; height: 20px; font-size: 12px; color: var(--muted);
@@ -1956,14 +1956,13 @@ button.chip.on { color: var(--accent-text); background: var(--accent-soft); bord
   animation: raxis-in 480ms calc(120ms + var(--i, 0) * 45ms) var(--ease-out) backwards;
 }
 @keyframes raxis-in { from { opacity: 0; transform: translateY(10px); } }
-/* 叠放：每多一张往右错 12px；悬停时摊开成一张挨一张 */
+/* 一张挨一张排开，不叠（叠着看不清是哪几张）。悬停的那列整体亮一点 */
 .raxis-stack {
-  --step: 12px;
+  --step: 46px;
   position: relative; height: 46px; margin: 0 6px;
   width: calc(40px + (var(--count, 1) - 1) * var(--step));
   transition: width 320ms var(--spring);
 }
-.raxis-col:hover .raxis-stack, .raxis-col:focus-within .raxis-stack { --step: 46px; }
 .raxis-col.empty .raxis-stack { width: 14px; }
 .raxis-cover {
   position: absolute; bottom: 0; left: calc(var(--k, 0) * var(--step)); padding: 0; border-radius: 6px; line-height: 0;
@@ -2233,11 +2232,6 @@ button.chip.on { color: var(--accent-text); background: var(--accent-soft); bord
 .tl-cover-btn .cover { display: block; object-fit: cover; }
 .tl-cover-btn:hover, .tl-cover-btn:focus-visible { z-index: 3; transform: translate(-50%, -50%) scale(1.8); box-shadow: 0 0 0 2px var(--content), 0 10px 26px rgba(0, 0, 0, .55); }
 @keyframes tl-cover-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.2); } }
-.tl-more {
-  position: absolute; right: -10px; top: -9px; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 999px;
-  display: grid; place-items: center; font-size: 10px; line-height: 1; color: var(--fg);
-  background: var(--surface-pop); border: 1px solid var(--line-strong);
-}
 .timeline-plot { position: relative; }
 
 /* 时间树（放大后） */

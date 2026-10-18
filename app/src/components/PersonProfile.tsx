@@ -370,9 +370,9 @@ function yearSpan(entry: DirectoryEntry | undefined): string {
 }
 
 /**
- * 发行轴：一年一列，这一年发的专辑 / 单曲画成封面叠在列里（专辑方、单曲圆）。
+ * 发行轴：一年一列，这一年发的专辑 / 单曲画成封面在列里一张挨一张排开（专辑方、单曲圆）。
  * 自己的作品正常显示，乐队时期的带一圈灰边，合作 / 幕后小一号带绿边。
- * 鼠标移到一列上，叠着的封面摊开；悬停看名字，点一下滚到下面那一张。
+ * 悬停看名字，点一下滚到下面那一张；放不下时整条轴横着滚。
  * 连着几年没发行折成「…」，乐队解散那一年标「解散」（见 `releaseAxis.ts`）。
  */
 function ReleaseAxis({ sections, onPick, ended }: { sections: WorkSection[]; onPick: (key: string) => void; ended: string }) {

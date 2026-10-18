@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DirectoryEntry, Membership, TimelineRelease } from "./api";
 import { buildDirectory } from "./libraryIndex";
-import { buildTimeline, buildTree, placeCovers, yearValue } from "./timeline";
+import { buildTimeline, buildTree, packRow, warpYears, yearValue } from "./timeline";
 
 const e = (id: number, name: string, extra: Partial<DirectoryEntry> = {}): DirectoryEntry => ({
   id, name, imagePath: "", artistType: "", ended: "", imageManual: false, performer: 1, composer: 0, lyricist: 0, arranger: 0, songs: 1, firstYear: "", lastYear: "", ...extra,
@@ -54,22 +54,28 @@ describe("buildTimeline", () => {
   });
 });
 
-describe("placeCovers", () => {
-  it("staggers close covers and folds the rest into +N", () => {
-    const spots = placeCovers([
-      { x: 0, size: 30 },
-      { x: 10, size: 30 },
-      { x: 20, size: 30 },
-      { x: 25, size: 30 },
+describe("warpYears", () => {
+  it("发行多的年份撑宽，空的年份按缩放给的宽度", () => {
+    // 2020 年一行里有三张 40px 的：3 × (40 + 6) + 6 = 144
+    const rows = [[2020.1, 2020.2, 2020.3].map((at) => ({ at, size: 40 })), [{ at: 2021.5, size: 40 }]];
+    const { x, width } = warpYears(rows, 2020, 2022, 90);
+    expect(x(2020)).toBe(0);
+    expect(x(2021)).toBe(144);
+    expect(x(2022)).toBe(144 + 90);
+    expect(width).toBe(144 + 90 + 90);
+    expect(x(2021.5)).toBe(144 + 45);
+  });
+});
+
+describe("packRow", () => {
+  it("挨上了就往右推，刚好不重叠", () => {
+    const centers = packRow([
+      { x: 10, size: 40 },
+      { x: 12, size: 40 },
       { x: 200, size: 30 },
+      { x: 14, size: 20 },
     ]);
-    expect(spots.map((s) => [s.index, s.tier])).toEqual([
-      [0, 0],
-      [1, -1],
-      [2, 1],
-      [4, 0],
-    ]);
-    expect(spots[0]!.extra).toEqual([3]);
+    expect(centers).toEqual([10, 56, 200, 92]);
   });
 });
 
