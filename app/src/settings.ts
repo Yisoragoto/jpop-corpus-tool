@@ -37,6 +37,8 @@ export interface AppSettings {
   wordCloudHideFunctionWords: boolean;
   /** 自己从词云里拿掉的词（词元） */
   wordCloudHidden: string[];
+  /** 词云按词性上色（名词、动词、形容词……各一种颜色）；关着时按名次、前几名染照片的颜色 */
+  wordCloudColorByPos: boolean;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
@@ -57,6 +59,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   wordCloudCount: 120,
   wordCloudHideFunctionWords: true,
   wordCloudHidden: [],
+  wordCloudColorByPos: false,
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -94,6 +97,8 @@ export function parseSettings(raw: string | null): AppSettings {
         typeof parsed.wordCloudHideFunctionWords === "boolean"
           ? parsed.wordCloudHideFunctionWords
           : d.wordCloudHideFunctionWords,
+      wordCloudColorByPos:
+        typeof parsed.wordCloudColorByPos === "boolean" ? parsed.wordCloudColorByPos : d.wordCloudColorByPos,
       wordCloudHidden: Array.isArray(parsed.wordCloudHidden)
         ? [...new Set(parsed.wordCloudHidden.filter((w): w is string => typeof w === "string" && w.length > 0 && w.length <= 64))].slice(0, 2000)
         : d.wordCloudHidden,

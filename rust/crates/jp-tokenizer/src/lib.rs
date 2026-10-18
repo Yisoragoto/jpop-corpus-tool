@@ -211,6 +211,44 @@ impl Analyzer {
     }
 }
 
+/// 一个词元的标准写法和读音（词云合并异体写法用）。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LemmaForm {
+    pub lemma: String,
+    /// Sudachi 的正规化写法：想い出 → 思い出、頰 → 頬。认不准时就是词元本身
+    pub normalized: String,
+    /// 平假名读音；认不准时为空
+    pub reading: String,
+}
+
+impl Analyzer {
+    /// 把词元单独再分一次，取正规化写法和读音。
+    ///
+    /// 只认「整个词元正好分成一个词」的情况；分成好几段（复合词、生僻写法）就当认不准，
+    /// 原样返回——宁可不合并，也不要把两个不同的词并成一个。
+    pub fn lemma_forms(&self, lemmas: &[String]) -> Vec<LemmaForm> {
+        lemmas
+            .iter()
+            .map(|lemma| {
+                let single = self
+                    .analyze(lemma)
+                    .ok()
+                    .filter(|tokens| tokens.len() == 1 && tokens[0].surface == *lemma)
+                    .and_then(|mut tokens| tokens.pop());
+                match single {
+                    Some(t) => LemmaForm {
+                        lemma: lemma.clone(),
+                        normalized: t.normalized,
+                        reading: furigana::katakana_to_hiragana(&t.reading),
+                    },
+                    None => LemmaForm { lemma: lemma.clone(), normalized: lemma.clone(), reading: String::new() },
+                }
+            })
+            .collect()
+    }
+}
+
 /// 语料库目录里自带的那一份词典放在哪（`locate_sudachipy` 的第二条路）。
 pub const BUNDLED_DIR: &str = "sudachi";
 

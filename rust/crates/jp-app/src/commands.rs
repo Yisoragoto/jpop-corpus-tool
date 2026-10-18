@@ -269,6 +269,16 @@ pub fn lyrics_furigana(
     Ok(out)
 }
 
+/// 词云合并异体写法用：每个词元的正规化写法和读音。没装分词词典就返回空表（词云照常显示，只是不合并）。
+#[tauri::command]
+pub async fn lemma_forms<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    lemmas: Vec<String>,
+) -> CmdResult<Vec<jp_tokenizer::LemmaForm>> {
+    // 几百个词各分一次，几十毫秒；放阻塞线程池，别占主线程
+    blocking(app, move |state| Ok(state.analyzer().map(|a| a.lemma_forms(&lemmas)).unwrap_or_default())).await
+}
+
 // ────────────────────────────── 检索 ──────────────────────────────
 
 #[tauri::command]

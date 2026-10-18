@@ -95,6 +95,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::pitch_cache_status,
             commands::pitch_cache_set_limit,
             commands::lyrics_furigana,
+            commands::lemma_forms,
             commands::fonts_catalog,
             commands::library_edit_song,
             commands::library_delete_song,

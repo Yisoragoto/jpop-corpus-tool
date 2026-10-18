@@ -11,6 +11,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+import type { LemmaForm } from "./wordCloud";
+
 // ────────────────────────────── 曲库 ──────────────────────────────
 
 export interface Track {
@@ -962,6 +964,8 @@ export const api = {
 
   // 检查更新
   /** 问一次 GitHub Releases：有没有比正在跑的这一版更新的。 */
+  /** 词元的正规化写法和读音（词云合并异体写法用）。没装分词词典时是空表 */
+  lemmaForms: (lemmas: string[]) => call<LemmaForm[]>("lemma_forms", { lemmas }),
   updateCheck: () => call<UpdateStatus>("update_check"),
   /** 最近几次发布，给「查看更新日志」用。 */
   updateChangelog: (limit?: number) => call<ReleaseInfo[]>("update_changelog", { limit }),

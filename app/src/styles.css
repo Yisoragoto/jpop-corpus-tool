@@ -2720,3 +2720,18 @@ table.data tr.current td { background: var(--accent-soft); }
 .update-skip { font-size: 12px; }
 .update-fine { margin: 0 22px 16px; font-size: 11px; color: var(--muted); text-align: right; }
 @media (prefers-reduced-motion: reduce) { .update-dialog, .update-backdrop { animation: none; } }
+
+/* 词云：词性图例（按词性上色时）、句首标记、年份范围 */
+.wc-legend {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; margin: -4px 6px 0;
+  font-size: 11.5px; color: rgba(255, 255, 255, .82); animation: badge-in 300ms var(--spring) backwards;
+}
+.wc-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.wc-legend i { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+.wc-legend small { font-size: 10px; color: rgba(255, 255, 255, .5); font-variant-numeric: tabular-nums; }
+.wc-start {
+  display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 4px; vertical-align: 1px;
+  font-size: 9.5px; font-style: normal; line-height: 15px; color: var(--hl, var(--accent)); border: 1px solid currentColor; opacity: .85;
+}
+.wc-years { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.wc-years .wc-select { min-width: 0; width: 84px; }
