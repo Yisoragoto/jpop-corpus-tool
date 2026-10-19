@@ -12,6 +12,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { nodeAt, Simulation, type Graph, type GraphNode } from "../graph";
 import { prefersReducedMotion } from "../motion";
 import { ROLE_COLORS } from "./LibraryBrowser";
+import { tr } from "../i18n";
 
 interface Props {
   graph: Graph;
@@ -385,7 +386,7 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
       onPointerCancel={onPointerUp}
       onPointerLeave={onLeave}
       onDoubleClick={onDoubleClick}
-      aria-label="关系网：拖动节点、拖空白处平移、滚轮缩放，双击打开这个人"
+      aria-label={tr("关系网：拖动节点、拖空白处平移、滚轮缩放，双击打开这个人")}
     />
   );
 }

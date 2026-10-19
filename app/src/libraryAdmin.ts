@@ -4,6 +4,7 @@
  */
 
 import { call } from "./api";
+import { tr } from "./i18n";
 
 export interface SongEdit {
   title: string;
@@ -72,11 +73,11 @@ export interface RelinkBatch {
 export const AUDIO_EXTENSIONS = ["flac", "mp3", "wav", "m4a", "ogg", "aac"];
 
 export const FIELD_LABELS: Record<keyof SongEdit, string> = {
-  title: "歌名",
-  artist: "歌手",
-  year: "年份",
-  album: "专辑",
-  genre: "流派",
+  title: tr("歌名"),
+  artist: tr("歌手"),
+  year: tr("年份"),
+  album: tr("专辑"),
+  genre: tr("流派"),
 };
 
 export const libraryApi = {
@@ -94,20 +95,20 @@ export function csvProblem(csv: CsvSync | undefined): string | null {
 
 /** 保存后给人看的一句话 */
 export function describeEdit(report: EditReport): string {
-  if (report.changed.length === 0) return "没有改动";
-  const parts = [`改了${report.changed.map((f) => FIELD_LABELS[f]).join("、")}`];
-  if (report.performers > 0) parts.push(`演唱署名重写为 ${report.performers} 人`);
-  if (report.correctionsRenamed > 0) parts.push(`${report.correctionsRenamed} 条分词校正跟着改了歌名歌手`);
-  if (report.csv === "updated") parts.push("songs.csv 已同步");
-  return parts.join("，");
+  if (report.changed.length === 0) return tr("没有改动");
+  const parts = [tr("改了{map}", { map: report.changed.map((f) => FIELD_LABELS[f]).join(tr("、")) })];
+  if (report.performers > 0) parts.push(tr("演唱署名重写为 {performers} 人", { performers: report.performers }));
+  if (report.correctionsRenamed > 0) parts.push(tr("{correctionsRenamed} 条分词校正跟着改了歌名歌手", { correctionsRenamed: report.correctionsRenamed }));
+  if (report.csv === "updated") parts.push(tr("songs.csv 已同步"));
+  return parts.join(tr("，"));
 }
 
 export function describeDelete(result: DeleteResult): string {
-  const parts = [`已删除《${result.title}》：${result.lyricLines} 行歌词、${result.tokens} 个词`];
-  if (result.plays > 0) parts.push(`${result.plays} 条收听记录`);
-  if (result.albumsRemoved > 0) parts.push(`${result.albumsRemoved} 张空专辑`);
-  if (result.peopleRemoved > 0) parts.push(`${result.peopleRemoved} 个没有作品了的人`);
-  if (result.coverRemoved) parts.push("下载的封面");
-  const kept = result.correctionsKept > 0 ? `；${result.correctionsKept} 条分词校正留着，重新导入时恢复` : "";
-  return `${parts.join("、")}${kept}。音频文件没有动。`;
+  const parts = [tr("已删除《{title}》：{lyricLines} 行歌词、{tokens} 个词", { title: result.title, lyricLines: result.lyricLines, tokens: result.tokens })];
+  if (result.plays > 0) parts.push(tr("{plays} 条收听记录", { plays: result.plays }));
+  if (result.albumsRemoved > 0) parts.push(tr("{albumsRemoved} 张空专辑", { albumsRemoved: result.albumsRemoved }));
+  if (result.peopleRemoved > 0) parts.push(tr("{peopleRemoved} 个没有作品了的人", { peopleRemoved: result.peopleRemoved }));
+  if (result.coverRemoved) parts.push(tr("下载的封面"));
+  const kept = result.correctionsKept > 0 ? tr("；{correctionsKept} 条分词校正留着，重新导入时恢复", { correctionsKept: result.correctionsKept }) : "";
+  return tr("{parts}{kept}。音频文件没有动。", { parts: parts.join(tr("、")), kept });
 }

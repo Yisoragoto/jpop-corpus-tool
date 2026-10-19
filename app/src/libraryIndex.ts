@@ -7,14 +7,15 @@
  */
 
 import type { DirectoryEntry, Membership, PersonWork } from "./api";
+import { tr, trBackend } from "./i18n";
 
 export type BehindRole = "all" | "composer" | "lyricist" | "arranger";
 
 export const BEHIND_ROLES: { key: BehindRole; label: string }[] = [
-  { key: "all", label: "全部" },
-  { key: "composer", label: "作曲" },
-  { key: "lyricist", label: "作词" },
-  { key: "arranger", label: "编曲" },
+  { key: "all", label: tr("全部") },
+  { key: "composer", label: tr("作曲") },
+  { key: "lyricist", label: tr("作词") },
+  { key: "arranger", label: tr("编曲") },
 ];
 
 /** 日期只要年份：YYYY、YYYY-MM、YYYY-MM-DD 都行；`?`（知道离开了、不知道哪年）原样留着 */
@@ -31,7 +32,7 @@ export function validDate(value: string): boolean {
 /** 「2007–2019」「2017–至今」「?–2019」 */
 export function spanOf(joined: string, leftAt: string): string {
   const from = yearOf(joined) || "?";
-  return `${from}–${leftAt ? yearOf(leftAt) : "至今"}`;
+  return `${from}–${leftAt ? yearOf(leftAt) : tr("至今")}`;
 }
 
 export interface MemberRow {
@@ -147,22 +148,22 @@ export function rolesOf(entry: DirectoryEntry): ("composer" | "lyricist" | "arra
 export function musicianSubtitle(row: MusicianRow): string {
   const { entry } = row;
   if (row.isBand) {
-    const ended = entry.ended ? ` · ${yearOf(entry.ended)} 解散` : "";
-    return `乐队 · ${entry.performer} 首${ended}`;
+    const ended = entry.ended ? tr(" · {ended} 解散", { ended: yearOf(entry.ended) }) : "";
+    return tr("乐队 · {performer} 首{ended}", { performer: entry.performer, ended });
   }
   const band = row.bands[0];
   if (band !== undefined) {
-    const was = band.leftAt !== "" ? "曾属" : "也在";
-    return `个人 · ${entry.performer} 首 · ${was} ${band.bandName}`;
+    const was = band.leftAt !== "" ? tr("曾属") : tr("也在");
+    return tr("个人 · {performer} 首 · {was} {bandName}", { performer: entry.performer, was, bandName: band.bandName });
   }
-  return `${entry.performer} 首`;
+  return tr("{performer} 首", { performer: entry.performer });
 }
 
 /** 成员一行的副标题：前成员写年份段，现役写分工 */
 export function memberSubtitle(m: MemberRow): string {
   const { membership } = m;
-  if (m.former) return `前成员 · ${spanOf(membership.joined, membership.leftAt)}`;
-  return membership.part || "成员";
+  if (m.former) return tr("前成员 · {joined}", { joined: spanOf(membership.joined, membership.leftAt) });
+  return trBackend(membership.part) || tr("成员");
 }
 
 /** 专辑的署名里取第一位（`A/B` 这种合作专辑归到 A） */
@@ -220,15 +221,15 @@ export function sectionWorks(personId: number, works: PersonWork[], bands: Membe
 
   const sections: WorkSection[] = [];
   if (own.length > 0) {
-    sections.push({ key: "own", title: bands.length > 0 ? "个人作品" : "作品", note: "", collapsed: false, works: own });
+    sections.push({ key: "own", title: bands.length > 0 ? tr("个人作品") : tr("作品"), note: "", collapsed: false, works: own });
   }
   for (const { band, list } of bandSections) {
     if (list.length === 0) continue;
     const wrote = list.filter((w) => w.roles.length > 0).length;
     sections.push({
       key: `band-${band.bandId}`,
-      title: `在 ${band.bandName} 时`,
-      note: `${spanOf(band.joined, band.leftAt)} · 这些歌属于乐队${wrote > 0 ? `，其中 ${wrote} 首有署名` : ""}`,
+      title: tr("在 {bandName} 时", { bandName: band.bandName }),
+      note: tr("{joined} · 这些歌属于乐队{v}", { joined: spanOf(band.joined, band.leftAt), v: wrote > 0 ? tr("，其中 {wrote} 首有署名", { wrote }) : "" }),
       collapsed: hasOther,
       works: list,
     });
@@ -236,7 +237,7 @@ export function sectionWorks(personId: number, works: PersonWork[], bands: Membe
   if (rest.length > 0) {
     sections.push({
       key: "credits",
-      title: own.length > 0 || bandSections.some((b) => b.list.length > 0) ? "合作 / 幕后" : "作品",
+      title: own.length > 0 || bandSections.some((b) => b.list.length > 0) ? tr("合作 / 幕后") : tr("作品"),
       note: "",
       collapsed: false,
       works: rest,

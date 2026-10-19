@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../events";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { CommandButton } from "../components/CommandButton";
@@ -32,6 +32,7 @@ import {
   type ScanResult,
 } from "../api";
 import { Stat } from "../components/Stat";
+import { tr } from "../i18n";
 
 /** 「带着这几个文件来复核」：启动横幅上点「查看」时由外壳发过来。`nonce` 让同一批文件能再发一次 */
 export interface ImportRequest {
@@ -85,7 +86,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
       }
     } catch (e) {
       // 选目录失败不该让页面卡住——还能手敲路径
-      onError(`打不开目录选择框：${String((e as Error)?.message ?? e)}`);
+      onError(tr("打不开目录选择框：{String}", { String: String((e as Error)?.message ?? e) }));
     }
   }, [onError]);
 
@@ -93,8 +94,8 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
     try {
       const chosen = await openDialog({
         multiple: true,
-        title: "选择音频文件",
-        filters: [{ name: "音频", extensions: AUDIO_EXTENSIONS }],
+        title: tr("选择音频文件"),
+        filters: [{ name: tr("音频"), extensions: AUDIO_EXTENSIONS }],
       });
       const picked = chosen === null ? [] : Array.isArray(chosen) ? chosen : [chosen];
       if (picked.length > 0) {
@@ -102,7 +103,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
         setPath("");
       }
     } catch (e) {
-      onError(`打不开文件选择框：${String((e as Error)?.message ?? e)}`);
+      onError(tr("打不开文件选择框：{String}", { String: String((e as Error)?.message ?? e) }));
     }
   }, [onError]);
 
@@ -128,7 +129,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
   const doScan = useCallback(async () => {
     const target = path.trim();
     if (files.length === 0 && target === "") {
-      onError("先选一个目录，或者选几个音频文件");
+      onError(tr("先选一个目录，或者选几个音频文件"));
       return;
     }
     await scanTargets(files, target);
@@ -202,9 +203,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
 
   return (
     <div className="page tools">
-      <p className="page-lead">
-        选一个装着音频的目录，或者直接选几首歌。扫描只读取，不写库；看过计划再决定导不导。
-      </p>
+      <p className="page-lead">{tr("选一个装着音频的目录，或者直接选几首歌。扫描只读取，不写库；看过计划再决定导不导。")}</p>
 
       <WatchedFolders
         onReview={reviewFiles}
@@ -218,40 +217,38 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
           <input
             className="search"
             value={path}
-            placeholder="音频目录，例如 D:\jp_corpus\raw\audio"
+            placeholder={tr("音频目录，例如 D:\\jp_corpus\\raw\\audio")}
             onChange={(e) => setPath(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void doScan();
             }}
           />
-          <CommandButton icon="folder" label="选目录…" onClick={() => void pick()} disabled={busy !== ""} />
+          <CommandButton icon="folder" label={tr("选目录…")} onClick={() => void pick()} disabled={busy !== ""} />
           <CommandButton
             icon="import"
-            label="选单曲…"
+            label={tr("选单曲…")}
             onClick={() => void pickFiles()}
             disabled={busy !== ""}
-            title="直接选一首或几首音频文件，不用先把它们挪进一个目录"
+            title={tr("直接选一首或几首音频文件，不用先把它们挪进一个目录")}
           />
           <CommandButton
             icon="scan"
-            label={busy === "scanning" ? "扫描中…" : "扫描"}
+            label={busy === "scanning" ? tr("扫描中…") : tr("扫描")}
             onClick={() => void doScan()}
             disabled={busy !== "" || (files.length === 0 && path.trim() === "")}
             primary
-            title="只读：和现有曲库比对，什么都不写"
+            title={tr("只读：和现有曲库比对，什么都不写")}
           />
         </div>
         {files.length > 0 && (
           <div className="chosen-files">
-            <span className="muted small">选中 {files.length} 个文件</span>
+            <span className="muted small">{tr("选中 {length} 个文件", { length: files.length })}</span>
             <ul className="list compact">
               {files.map((f) => (
                 <li key={f}>{fileName(f)}</li>
               ))}
             </ul>
-            <button className="link-btn" onClick={() => setFiles([])}>
-              清空，改回按目录扫
-            </button>
+            <button className="link-btn" onClick={() => setFiles([])}>{tr("清空，改回按目录扫")}</button>
           </div>
         )}
       </div>
@@ -259,37 +256,26 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
       {scan !== null && (
         <div className="card">
           <div className="card-head">
-            <h2>计划</h2>
-            <span className="muted small">共 {scan.summary.total} 个文件</span>
+            <h2>{tr("计划")}</h2>
+            <span className="muted small">{tr("共 {total} 个文件", { total: scan.summary.total })}</span>
           </div>
 
           <div className="stats">
-            <Stat label="新增" value={scan.summary.new} />
-            <Stat label="已在库中" value={scan.summary.alreadyImported} />
-            <Stat label="疑似重复" value={scan.summary.possibleDuplicates} />
-            <Stat label="本批重复" value={scan.summary.duplicatesInBatch} />
-            <Stat label="跳过" value={scan.summary.skipped} />
+            <Stat label={tr("新增")} value={scan.summary.new} />
+            <Stat label={tr("已在库中")} value={scan.summary.alreadyImported} />
+            <Stat label={tr("疑似重复")} value={scan.summary.possibleDuplicates} />
+            <Stat label={tr("本批重复")} value={scan.summary.duplicatesInBatch} />
+            <Stat label={tr("跳过")} value={scan.summary.skipped} />
           </div>
 
           {scan.summary.possibleDuplicates > 0 && (
-            <p className="warn">
-              有 {scan.summary.possibleDuplicates} 首曲名歌手对得上、但文件不同。
-              这类<strong>不会</strong>被导入——可能是换了音源，也可能真有两个版本，
-              需要你自己判断。
-            </p>
+            <p className="warn">{tr("有 {possibleDuplicates} 首曲名歌手对得上、但文件不同。 这类", { possibleDuplicates: scan.summary.possibleDuplicates })}<strong>{tr("不会")}</strong>{tr("被导入——可能是换了音源，也可能真有两个版本， 需要你自己判断。")}</p>
           )}
           {scan.ignored.length > 0 && (
-            <p className="warn">
-              这 {scan.ignored.length} 个不是音频文件，没有进计划：{scan.ignored.join("、")}。
-              歌词文件不用在这里选——导入时会自动认音频旁边的同名 .lrc，
-              也可以在曲库里给某一首单独导入歌词。
-            </p>
+            <p className="warn">{tr("这 {length} 个不是音频文件，没有进计划：{ignored}。 歌词文件不用在这里选——导入时会自动认音频旁边的同名 .lrc， 也可以在曲库里给某一首单独导入歌词。", { length: scan.ignored.length, ignored: scan.ignored.join(tr("、")) })}</p>
           )}
           {!scan.tokenizerReady && (
-            <p className="warn">
-              找不到 Sudachi 词典，这次导入不会写分词。歌和歌词照常入库，
-              之后补上词典再重新分词即可。
-            </p>
+            <p className="warn">{tr("找不到 Sudachi 词典，这次导入不会写分词。歌和歌词照常入库， 之后补上词典再重新分词即可。")}</p>
           )}
 
           <div className="chips">
@@ -306,7 +292,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
                     className={`chip${filter === key ? " on" : ""}`}
                     onClick={() => setFilter(key)}
                   >
-                    {key === "all" ? "全部" : ACTION_LABELS[key]} {n}
+                    {key === "all" ? tr("全部") : ACTION_LABELS[key]} {n}
                   </button>
                 );
               },
@@ -322,36 +308,34 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
                 checked={tokenize}
                 onChange={(e) => setTokenize(e.target.checked)}
                 disabled={!scan.tokenizerReady}
-              />
-              同时分词（慢一些，但语料立刻可检索）
-            </label>
+              />{tr("同时分词（慢一些，但语料立刻可检索）")}</label>
             <CommandButton
               icon="import"
               label={
                 busy === "importing"
                   ? progress === null
-                    ? "导入中…"
-                    : `导入中 ${progress.done}/${progress.total}`
-                  : `导入 ${scan.summary.new} 首`
+                    ? tr("导入中…")
+                    : tr("导入中 {done}/{total}", { done: progress.done, total: progress.total })
+                  : tr("导入 {new} 首", { new: scan.summary.new })
               }
               onClick={() => void doImport()}
               disabled={busy !== "" || scan.summary.new === 0}
               primary
-              title="写库就在这一步"
+              title={tr("写库就在这一步")}
             />
             {/* 导入中这个按钮是「停止」：一首歌一个事务，停在哪儿哪儿之前是真导进去了 */}
             <CommandButton
               icon="discard"
-              label={busy === "importing" ? "停止" : "丢弃"}
+              label={busy === "importing" ? tr("停止") : tr("丢弃")}
               onClick={() => void doCancel()}
               disabled={busy === "scanning"}
             />
           </div>
           {progress !== null && progress.title !== "" && (
-            <p className="muted small">正在导：{progress.title}</p>
+            <p className="muted small">{tr("正在导：{title}", { title: progress.title })}</p>
           )}
           {scan.summary.new === 0 && scan.summary.total > 0 && (
-            <p className="muted small">这一批里没有新东西，不需要导入。</p>
+            <p className="muted small">{tr("这一批里没有新东西，不需要导入。")}</p>
           )}
         </div>
       )}
@@ -359,26 +343,23 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
       {report !== null && (
         <div className="card">
           <div className="card-head">
-            <h2>导入结果</h2>
+            <h2>{tr("导入结果")}</h2>
           </div>
           {report.cancelled && (
-            <p className="muted small">
-              你中途停了。下面这 {report.tracks.length} 首是<strong>真的导进去了</strong>
-              （一首一个事务），剩下的一行都没写——再点一次「导入」会接着往下走。
-            </p>
+            <p className="muted small">{tr("你中途停了。下面这 {length} 首是", { length: report.tracks.length })}<strong>{tr("真的导进去了")}</strong>{tr("（一首一个事务），剩下的一行都没写——再点一次「导入」会接着往下走。")}</p>
           )}
           <div className="stats">
-            <Stat label="成功" value={imported.length} />
-            <Stat label="失败" value={failures.length} />
+            <Stat label={tr("成功")} value={imported.length} />
+            <Stat label={tr("失败")} value={failures.length} />
             <Stat
-              label="歌词行"
+              label={tr("歌词行")}
               value={imported.reduce(
                 (n, t) => n + (t.outcome.kind === "imported" ? t.outcome.lyricLines : 0),
                 0,
               )}
             />
             <Stat
-              label="词"
+              label={tr("词")}
               value={imported.reduce(
                 (n, t) => n + (t.outcome.kind === "imported" ? t.outcome.tokens : 0),
                 0,
@@ -389,7 +370,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
               (t) => t.outcome.kind === "imported" && t.outcome.correctionsRestored > 0,
             ) && (
               <Stat
-                label="分词校正已恢复"
+                label={tr("分词校正已恢复")}
                 value={imported.reduce(
                   (n, t) =>
                     n + (t.outcome.kind === "imported" ? t.outcome.correctionsRestored : 0),
@@ -401,10 +382,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
           {failures.length > 0 ? (
             <>
               {/* 失败要逐条说清是哪首、为什么。只报一个数字等于没报。 */}
-              <p className="warn">
-                下面这些没能导入，其余的已经进库了（每首歌一个事务，
-                失败的那首一行都没留下）。重新扫描一次可以再试。
-              </p>
+              <p className="warn">{tr("下面这些没能导入，其余的已经进库了（每首歌一个事务， 失败的那首一行都没留下）。重新扫描一次可以再试。")}</p>
               <ul className="list">
                 {failures.map((t) => (
                   <li key={t.path}>
@@ -417,7 +395,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
               </ul>
             </>
           ) : (
-            <p className="muted small">全部成功。</p>
+            <p className="muted small">{tr("全部成功。")}</p>
           )}
         </div>
       )}
@@ -427,7 +405,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
 
 function PlanTable({ items }: { items: PlanItem[] }) {
   if (items.length === 0) {
-    return <p className="muted small">这一类没有条目。</p>;
+    return <p className="muted small">{tr("这一类没有条目。")}</p>;
   }
   // 只渲染前 300 条。复核是抽查，不是逐条读完两千行；
   // 真要全看，筛选器能把范围缩小。
@@ -438,14 +416,14 @@ function PlanTable({ items }: { items: PlanItem[] }) {
         {cut.map((item) => (
           <div className="track" key={item.path}>
             <div className="track-title">
-              {item.title || <span className="muted">（读不出曲名）</span>}
+              {item.title || <span className="muted">{tr("（读不出曲名）")}</span>}
             </div>
             <div className="track-meta">
               <span>{item.artist || "—"}</span>
               <span>{item.album || "—"}</span>
               <span>{formatDuration(item.durationSec)}</span>
               <span className={item.hasLyrics ? "" : "muted"}>
-                {item.hasLyrics ? "有歌词" : "无歌词"}
+                {item.hasLyrics ? tr("有歌词") : tr("无歌词")}
               </span>
               <span className={`tag action-${item.action.kind}`}>
                 {ACTION_LABELS[item.action.kind]}
@@ -456,7 +434,7 @@ function PlanTable({ items }: { items: PlanItem[] }) {
         ))}
       </div>
       {items.length > cut.length && (
-        <p className="muted small">还有 {items.length - cut.length} 条未显示。</p>
+        <p className="muted small">{tr("还有 {v} 条未显示。", { v: items.length - cut.length })}</p>
       )}
     </>
   );
@@ -468,18 +446,18 @@ function explain(item: PlanItem): string {
   switch (a.kind) {
     case "new": {
       // 新歌要写库，拿不准的地方在这里说出来：复核看的就是这几句
-      const notes = [`将写入 id ${a.songId}`];
+      const notes = [tr("将写入 id {songId}", { songId: a.songId })];
       if (item.warning !== null) notes.push(item.warning);
-      if (item.artistSource === "folder") notes.push("歌手是从文件夹名猜的");
-      if (item.artistSource === "none") notes.push("定不出歌手");
+      if (item.artistSource === "folder") notes.push(tr("歌手是从文件夹名猜的"));
+      if (item.artistSource === "none") notes.push(tr("定不出歌手"));
       return notes.join(" · ");
     }
     case "alreadyImported":
-      return `已经是库里的 ${a.songId}`;
+      return tr("已经是库里的 {songId}", { songId: a.songId });
     case "possibleDuplicate":
-      return `曲名歌手对上了库里的 ${a.songId}（${a.existingPath}），不会导入`;
+      return tr("曲名歌手对上了库里的 {songId}（{existingPath}），不会导入", { songId: a.songId, existingPath: a.existingPath });
     case "duplicateInBatch":
-      return `本批里 ${a.firstPath} 已经占了这个位置`;
+      return tr("本批里 {firstPath} 已经占了这个位置", { firstPath: a.firstPath });
     case "skipped":
       return a.reason;
   }

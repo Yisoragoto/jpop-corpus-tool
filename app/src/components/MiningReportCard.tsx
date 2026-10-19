@@ -10,6 +10,7 @@ import { useState } from "react";
 
 import { api, type MiningReportResult } from "../api";
 import { CommandButton } from "./CommandButton";
+import { tr } from "../i18n";
 
 /** 「生成时间」：本地时间 `YYYY-MM-DD HH:MM`，和 Python 的 `strftime("%Y-%m-%d %H:%M")` 一样 */
 export function localTimestamp(date = new Date()): string {
@@ -40,29 +41,23 @@ export function MiningReportCard({ onError }: Props) {
   return (
     <div className="card">
       <div className="card-head">
-        <h2>挖词报告</h2>
-        {result && <span className="muted small">{result.noteTypes.join("、")}</span>}
+        <h2>{tr("挖词报告")}</h2>
+        {result && <span className="muted small">{result.noteTypes.join(tr("、"))}</span>}
       </div>
-      <p className="muted small">
-        按歌手、歌曲和 JLPT 统计已经挖进 Anki 的词（JPOP Corpus 和 Lyrics 两种卡）和复习进度，
-        生成一个能搜索、能排序的网页，用浏览器打开。只读 Anki 的库，不需要 Anki 开着。
-      </p>
+      <p className="muted small">{tr("按歌手、歌曲和 JLPT 统计已经挖进 Anki 的词（JPOP Corpus 和 Lyrics 两种卡）和复习进度， 生成一个能搜索、能排序的网页，用浏览器打开。只读 Anki 的库，不需要 Anki 开着。")}</p>
       <div className="toolbar">
         <CommandButton
           icon="report"
-          label={running ? "生成中…" : "生成挖词报告"}
+          label={running ? tr("生成中…") : tr("生成挖词报告")}
           onClick={() => void generate()}
           disabled={running}
           primary
         />
       </div>
       {result && (
-        <p className="small">
-          {result.cards} 张卡（{result.studied} 张复习过）· {result.words} 个词 · {result.artists} 位歌手 ·{" "}
-          {result.songs} 首歌
-          <br />
+        <p className="small">{tr("{cards} 张卡（{studied} 张复习过）· {words} 个词 · {artists} 位歌手 ·{v}{songs} 首歌", { cards: result.cards, studied: result.studied, words: result.words, artists: result.artists, v: " ", songs: result.songs })}<br />
           <span className="muted">
-            {result.openError ? "没能自动打开浏览器，文件在：" : "已在浏览器打开："}
+            {result.openError ? tr("没能自动打开浏览器，文件在：") : tr("已在浏览器打开：")}
             <code>{result.path}</code>
           </span>
           {result.openError && <span className="warn"> {result.openError}</span>}

@@ -39,9 +39,12 @@ just heard into Anki cards.
 [Releases](https://github.com/Yisoragoto/jpop-corpus-tool/releases). Windows 10/11 needs the
 **WebView2 runtime**, which the system usually already has and the installer offers to add if not.
 
-**Settings → System** checks for new releases, shows the changelog, and can download and install
-an update for you — the installer is pulled from this repository's Releases and its SHA-256 is verified
-before anything is run. Automatic installing is off by default.
+The interface comes in **English and Simplified Chinese**: pick one on first launch, and switch any time
+under **Settings → Appearance**.
+
+When a new release is out, a dialog shows what changed and lets you choose **Update now**, **Later** or
+**Skip this version**. The installer is pulled from this repository's Releases, its SHA-256 is verified,
+and it installs over the current version (no uninstall step) and reopens the app.
 
 **macOS**: a native SwiftUI client lives in `macos/`; for now it is built from source — see
 [Native macOS client](#native-macos-client). Both clients share one Rust core and one library format, so a

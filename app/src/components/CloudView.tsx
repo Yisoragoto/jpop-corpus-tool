@@ -18,6 +18,7 @@ import { PerformerPicker } from "./PerformerPicker";
 import { SubcorpusPicker } from "./SubcorpusPicker";
 import { useActiveScope, withScope } from "../subcorpusScope";
 import { WordCloud, type NowLine } from "./WordCloud";
+import { tr } from "../i18n";
 
 /** 可选的词性。「全部」= 不限 */
 export const CLOUD_POS = ["NOUN", "PROPN", "VERB", "ADJ", "ADV"] as const;
@@ -111,7 +112,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
         : Promise.all(pos.map((p) => api.statsFrequency(filter, p, PER_POS))).then((lists) => lists.flat());
     job
       .then((result) => id === request.current && setRows(result))
-      .catch((err: unknown) => id === request.current && onError(`读不出词频：${messageOf(err)}`))
+      .catch((err: unknown) => id === request.current && onError(tr("读不出词频：{err}", { err: messageOf(err) })))
       .finally(() => id === request.current && setLoading(false));
   }, [performerIds, pos, jpOnly, scope, yearFrom, yearTo, onError]);
 
@@ -126,7 +127,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
   // 字体：下拉列出自带、导入、本机的；导入的文件当场加载
   const fonts = useFontOptions(true, onError);
   useLyricFontFiles([settings.wordCloudFont], onError);
-  const fontChoices = [{ value: "", label: "界面字体" }, ...(fonts.options ?? []).map((o) => ({ value: o.value, label: o.label }))];
+  const fontChoices = [{ value: "", label: tr("界面字体") }, ...(fonts.options ?? []).map((o) => ({ value: o.value, label: o.label }))];
   if (settings.wordCloudFont !== "" && !fontChoices.some((o) => o.value === settings.wordCloudFont)) {
     fontChoices.push({ value: settings.wordCloudFont, label: settings.wordCloudFont });
   }
@@ -134,8 +135,8 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
     try {
       const chosen = await openDialog({
         multiple: true,
-        title: "导入字体",
-        filters: [{ name: "字体文件", extensions: ["ttf", "otf", "ttc"] }],
+        title: tr("导入字体"),
+        filters: [{ name: tr("字体文件"), extensions: ["ttf", "otf", "ttc"] }],
       });
       const paths = chosen === null ? [] : Array.isArray(chosen) ? chosen : [chosen];
       if (paths.length > 0) fonts.addImported(paths);
@@ -148,41 +149,33 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
     <div className="wc-filters">
       <PerformerPicker selected={performerIds} onChange={setPerformerIds} onError={onError} />
       <SubcorpusPicker onError={onError} />
-      <div className="segmented wc-pos" role="group" aria-label="词性">
-        <button className={pos.length === 0 ? "on" : ""} onClick={() => togglePos("")}>
-          全部
-        </button>
+      <div className="segmented wc-pos" role="group" aria-label={tr("词性")}>
+        <button className={pos.length === 0 ? "on" : ""} onClick={() => togglePos("")}>{tr("全部")}</button>
         {CLOUD_POS.map((p) => (
           <button key={p} className={pos.includes(p) ? "on" : ""} onClick={() => togglePos(p)}>
             {POS_LABELS[p] ?? p}
           </button>
         ))}
       </div>
-      <label className="check wc-check" title="只要含假名或汉字的词（去掉英文、数字）">
-        <input type="checkbox" checked={jpOnly} onChange={(e) => setJpOnly(e.target.checked)} />
-        仅日文
-      </label>
+      <label className="check wc-check" title={tr("只要含假名或汉字的词（去掉英文、数字）")}>
+        <input type="checkbox" checked={jpOnly} onChange={(e) => setJpOnly(e.target.checked)} />{tr("仅日文")}</label>
       <label
         className="check wc-check"
-        title="去掉单个假名的碎片（僕「ら」、一「つ」）、形式名词（こと・もの・まま・よう）和纯符号"
+        title={tr("去掉单个假名的碎片（僕「ら」、一「つ」）、形式名词（こと・もの・まま・よう）和纯符号")}
       >
         <input
           type="checkbox"
           checked={settings.wordCloudHideFunctionWords}
           onChange={(e) => updateSettings({ wordCloudHideFunctionWords: e.target.checked })}
-        />
-        去虚词
-      </label>
-      <label className="check wc-check" title="名词、动词、形容词……各一种颜色，云下面有图例">
+        />{tr("去虚词")}</label>
+      <label className="check wc-check" title={tr("名词、动词、形容词……各一种颜色，云下面有图例")}>
         <input
           type="checkbox"
           checked={settings.wordCloudColorByPos}
           onChange={(e) => updateSettings({ wordCloudColorByPos: e.target.checked })}
-        />
-        按词性上色
-      </label>
+        />{tr("按词性上色")}</label>
       {years.length > 1 && (
-        <span className="wc-years" title="只看这几年发行的歌">
+        <span className="wc-years" title={tr("只看这几年发行的歌")}>
           <select
             className="wc-select"
             value={yearFrom ?? ""}
@@ -191,9 +184,9 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
               setYearFrom(v);
               if (v !== null && yearTo !== null && yearTo < v) setYearTo(v);
             }}
-            aria-label="从哪一年"
+            aria-label={tr("从哪一年")}
           >
-            <option value="">最早</option>
+            <option value="">{tr("最早")}</option>
             {years.map((y) => (
               <option key={y} value={y}>
                 {y}
@@ -209,9 +202,9 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
               setYearTo(v);
               if (v !== null && yearFrom !== null && yearFrom > v) setYearFrom(v);
             }}
-            aria-label="到哪一年"
+            aria-label={tr("到哪一年")}
           >
-            <option value="">最近</option>
+            <option value="">{tr("最近")}</option>
             {years.map((y) => (
               <option key={y} value={y}>
                 {y}
@@ -225,7 +218,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
                 setYearFrom(null);
                 setYearTo(null);
               }}
-              title="不限年份"
+              title={tr("不限年份")}
             >
               ×
             </button>
@@ -236,28 +229,24 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
         <button
           className="btn wc-btn"
           onClick={() => updateSettings({ wordCloudHidden: [] })}
-          title={`拿掉的词：${settings.wordCloudHidden.join("、")}。点一下全部放回来`}
-        >
-          已隐藏 {settings.wordCloudHidden.length} 个 · 恢复
-        </button>
+          title={tr("拿掉的词：{wordCloudHidden}。点一下全部放回来", { wordCloudHidden: settings.wordCloudHidden.join(tr("、")) })}
+        >{tr("已隐藏 {length} 个 · 恢复", { length: settings.wordCloudHidden.length })}</button>
       )}
       <select
         className="wc-select"
         value={COUNTS.includes(settings.wordCloudCount as (typeof COUNTS)[number]) ? settings.wordCloudCount : 120}
         onChange={(e) => updateSettings({ wordCloudCount: Number(e.target.value) })}
-        title="云里放多少个词"
+        title={tr("云里放多少个词")}
       >
         {COUNTS.map((n) => (
-          <option key={n} value={n}>
-            {n} 个词
-          </option>
+          <option key={n} value={n}>{tr("{n} 个词", { n })}</option>
         ))}
       </select>
       <select
         className="wc-select font"
         value={settings.wordCloudFont}
         onChange={(e) => updateSettings({ wordCloudFont: e.target.value })}
-        title="词云字体（自带、导入或本机的）"
+        title={tr("词云字体（自带、导入或本机的）")}
       >
         {fontChoices.map((o) => (
           <option key={o.value} value={o.value} style={{ fontFamily: o.value ? `"${o.value}"` : undefined }}>
@@ -265,9 +254,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
           </option>
         ))}
       </select>
-      <button className="btn wc-btn" onClick={() => void importFont()} title="导入 ttf / otf / ttc，只记住位置，不复制文件">
-        导入字体…
-      </button>
+      <button className="btn wc-btn" onClick={() => void importFont()} title={tr("导入 ttf / otf / ttc，只记住位置，不复制文件")}>{tr("导入字体…")}</button>
     </div>
   );
 

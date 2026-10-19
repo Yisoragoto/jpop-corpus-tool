@@ -14,6 +14,7 @@ import { useCallback, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { api, LYRICS_SOURCE_LABELS, type AttachedLyrics } from "../api";
+import { tr } from "../i18n";
 
 interface Props {
   songId: string;
@@ -35,7 +36,7 @@ export function LyricsFill({ songId, hasLyrics, onAttached, onError }: Props) {
       const result = await api.lyricsFillOne(songId);
       if (result === null) {
         // 挑不出来不是错误：同名曲太多，塞错一首的歌词比没有歌词糟得多
-        setNote("在线没找到对得上的（曲名、歌手、时长都要像）。可以自己导入一份。");
+        setNote(tr("在线没找到对得上的（曲名、歌手、时长都要像）。可以自己导入一份。"));
         return;
       }
       setNote(describe(result));
@@ -51,8 +52,8 @@ export function LyricsFill({ songId, hasLyrics, onAttached, onError }: Props) {
     try {
       const picked = await openDialog({
         multiple: false,
-        title: "选择歌词文件",
-        filters: [{ name: "歌词", extensions: ["lrc", "txt"] }],
+        title: tr("选择歌词文件"),
+        filters: [{ name: tr("歌词"), extensions: ["lrc", "txt"] }],
       });
       if (typeof picked !== "string") return;
       setBusy("file");
@@ -71,11 +72,11 @@ export function LyricsFill({ songId, hasLyrics, onAttached, onError }: Props) {
     <div className="lyrics-fill">
       {!hasLyrics && (
         <button className="link-btn" onClick={() => void fillOnline()} disabled={busy !== ""}>
-          {busy === "online" ? "正在搜…" : "在线补齐"}
+          {busy === "online" ? tr("正在搜…") : tr("在线补齐")}
         </button>
       )}
       <button className="link-btn" onClick={() => void importFile()} disabled={busy !== ""}>
-        {busy === "file" ? "正在导入…" : hasLyrics ? "换一份歌词…" : "导入歌词文件…"}
+        {busy === "file" ? tr("正在导入…") : hasLyrics ? tr("换一份歌词…") : tr("导入歌词文件…")}
       </button>
       {note !== "" && <span className="muted small">{note}</span>}
     </div>
@@ -84,11 +85,11 @@ export function LyricsFill({ songId, hasLyrics, onAttached, onError }: Props) {
 
 function describe(result: AttachedLyrics): string {
   const parts = [
-    `${LYRICS_SOURCE_LABELS[result.source]}：${result.lyricLines} 行`,
-    result.tokens > 0 ? `${result.tokens} 词` : "没分词（缺 Sudachi 词典）",
+    tr("{LYRICS_SOURCE_LABELS}：{lyricLines} 行", { LYRICS_SOURCE_LABELS: LYRICS_SOURCE_LABELS[result.source], lyricLines: result.lyricLines }),
+    result.tokens > 0 ? tr("{tokens} 词", { tokens: result.tokens }) : tr("没分词（缺 Sudachi 词典）"),
   ];
-  if (result.credits > 0) parts.push(`${result.credits} 条署名`);
-  if (result.correctionsRestored > 0) parts.push(`恢复了 ${result.correctionsRestored} 条分词校正`);
+  if (result.credits > 0) parts.push(tr("{credits} 条署名", { credits: result.credits }));
+  if (result.correctionsRestored > 0) parts.push(tr("恢复了 {correctionsRestored} 条分词校正", { correctionsRestored: result.correctionsRestored }));
   if (result.matched !== "") parts.push(`← ${result.matched}`);
-  return parts.join("，");
+  return parts.join(tr("，"));
 }

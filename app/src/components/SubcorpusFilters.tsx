@@ -19,6 +19,7 @@ import {
   type Scope,
   type SavedSubcorpus,
 } from "../corpusQuality";
+import { tr } from "../i18n";
 
 interface Props {
   filter: StatsFilter;
@@ -28,10 +29,10 @@ interface Props {
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 const COMPLETENESS_OPTIONS: [string, number | null][] = [
-  ["完整度不限", null],
-  ["完整度 ≥ 50%", 0.5],
-  ["完整度 ≥ 80%", 0.8],
-  ["完整度 ≥ 95%", 0.95],
+  [tr("完整度不限"), null],
+  [tr("完整度 ≥ 50%"), 0.5],
+  [tr("完整度 ≥ 80%"), 0.8],
+  [tr("完整度 ≥ 95%"), 0.95],
 ];
 
 export function SubcorpusFilters({ filter, onChange, onError }: Props) {
@@ -79,31 +80,29 @@ export function SubcorpusFilters({ filter, onChange, onError }: Props) {
             const pick = saved.find((s) => String(s.id) === e.target.value);
             onChange(pick ? pick.filter : { performerIds: [], jpOnly: filter.jpOnly });
           }}
-          title="存过的子语料"
+          title={tr("存过的子语料")}
         >
-          <option value="">{active || isWholeCorpus(filter) ? "整个库" : "（未保存的条件）"}</option>
+          <option value="">{active || isWholeCorpus(filter) ? tr("整个库") : tr("（未保存的条件）")}</option>
           {saved.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}（{s.songCount} 首）
-            </option>
+            <option key={s.id} value={s.id}>{tr("{name}（{songCount} 首）", { name: s.name, songCount: s.songCount })}</option>
           ))}
         </select>
 
-        <label className="year-range" title="发行年份（含两端）。设了年份时，年份不明的歌不算进来">
+        <label className="year-range" title={tr("发行年份（含两端）。设了年份时，年份不明的歌不算进来")}>
           <input
             type="number"
-            placeholder={facets?.yearMin ? String(facets.yearMin) : "起"}
+            placeholder={facets?.yearMin ? String(facets.yearMin) : tr("起")}
             value={filter.yearFrom ?? ""}
             onChange={(e) => set({ yearFrom: year(e.target.value) })}
           />
           <span>–</span>
           <input
             type="number"
-            placeholder={facets?.yearMax ? String(facets.yearMax) : "止"}
+            placeholder={facets?.yearMax ? String(facets.yearMax) : tr("止")}
             value={filter.yearTo ?? ""}
             onChange={(e) => set({ yearTo: year(e.target.value) })}
           />
-          <span className="muted small">年</span>
+          <span className="muted small">{tr("年")}</span>
         </label>
 
         <select
@@ -111,10 +110,10 @@ export function SubcorpusFilters({ filter, onChange, onError }: Props) {
           value={filter.genres?.[0] ?? ""}
           onChange={(e) => set({ genres: e.target.value ? [e.target.value] : [] })}
         >
-          <option value="">全部流派</option>
+          <option value="">{tr("全部流派")}</option>
           {facets?.genres.map(([g, n]) => (
             <option key={g} value={g}>
-              {g}（{n}）
+              {g}{tr("（")}{n}{tr("）")}
             </option>
           ))}
         </select>
@@ -123,12 +122,12 @@ export function SubcorpusFilters({ filter, onChange, onError }: Props) {
           className="rate"
           value={filter.languages?.[0] ?? ""}
           onChange={(e) => set({ languages: e.target.value ? [e.target.value] : [] })}
-          title="按歌词字符推断的语言，可以在歌的「来源与校验」里手动改"
+          title={tr("按歌词字符推断的语言，可以在歌的「来源与校验」里手动改")}
         >
-          <option value="">全部语言</option>
+          <option value="">{tr("全部语言")}</option>
           {facets?.languages.map(([code, n]) => (
             <option key={code} value={code}>
-              {LANGUAGE_LABELS[code] ?? code}（{n}）
+              {LANGUAGE_LABELS[code] ?? code}{tr("（")}{n}{tr("）")}
             </option>
           ))}
         </select>
@@ -137,7 +136,7 @@ export function SubcorpusFilters({ filter, onChange, onError }: Props) {
           className="rate"
           value={filter.minCompleteness ?? ""}
           onChange={(e) => set({ minCompleteness: e.target.value === "" ? null : Number(e.target.value) })}
-          title="按歌词校验估计的完整度排除可能漏行、截断、乱码的歌"
+          title={tr("按歌词校验估计的完整度排除可能漏行、截断、乱码的歌")}
         >
           {COMPLETENESS_OPTIONS.map(([label, value]) => (
             <option key={label} value={value ?? ""}>
@@ -146,22 +145,16 @@ export function SubcorpusFilters({ filter, onChange, onError }: Props) {
           ))}
         </select>
 
-        <label className="check" title="同一首歌里文本相同的行只算第一次：看「用了哪些词」时开，看「听到多少次」时关">
-          <input type="checkbox" checked={!!filter.distinctLines} onChange={(e) => set({ distinctLines: e.target.checked })} />
-          副歌只算一遍
-        </label>
+        <label className="check" title={tr("同一首歌里文本相同的行只算第一次：看「用了哪些词」时开，看「听到多少次」时关")}>
+          <input type="checkbox" checked={!!filter.distinctLines} onChange={(e) => set({ distinctLines: e.target.checked })} />{tr("副歌只算一遍")}</label>
       </div>
 
       <div className="subcorpus-row muted small">
-        <span>
-          范围：{describeFilter(filter)}
-          {scope && ` · ${scope.songCount} 首 / ${scope.lineCount} 行`}
+        <span>{tr("范围：{filter}", { filter: describeFilter(filter) })}{scope && tr(" · {songCount} 首 / {lineCount} 行", { songCount: scope.songCount, lineCount: scope.lineCount })}
         </span>
         {naming === null ? (
           <>
-            <button className="link-btn" onClick={() => setNaming(active?.name ?? "")}>
-              存为子语料…
-            </button>
+            <button className="link-btn" onClick={() => setNaming(active?.name ?? "")}>{tr("存为子语料…")}</button>
             {active && (
               <button
                 className="link-btn danger"
@@ -173,9 +166,7 @@ export function SubcorpusFilters({ filter, onChange, onError }: Props) {
                     onError(message(err));
                   }
                 }}
-              >
-                删除「{active.name}」
-              </button>
+              >{tr("删除「{name}」", { name: active.name })}</button>
             )}
           </>
         ) : (
@@ -186,13 +177,9 @@ export function SubcorpusFilters({ filter, onChange, onError }: Props) {
               if (naming.trim()) void saveAs(naming);
             }}
           >
-            <input type="text" autoFocus value={naming} placeholder="名字，比如「2010 年代」" onChange={(e) => setNaming(e.target.value)} />
-            <button className="primary" type="submit" disabled={!naming.trim()}>
-              保存
-            </button>
-            <button className="ghost" type="button" onClick={() => setNaming(null)}>
-              取消
-            </button>
+            <input type="text" autoFocus value={naming} placeholder={tr("名字，比如「2010 年代」")} onChange={(e) => setNaming(e.target.value)} />
+            <button className="primary" type="submit" disabled={!naming.trim()}>{tr("保存")}</button>
+            <button className="ghost" type="button" onClick={() => setNaming(null)}>{tr("取消")}</button>
           </form>
         )}
       </div>

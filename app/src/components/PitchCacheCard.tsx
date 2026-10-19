@@ -14,6 +14,7 @@ import { api, type PitchCacheStatus } from "../api";
 import { PITCH_CACHE_LIMITS_MB, limitLabel, usageLabel } from "../pitchCache";
 import { updateSettings, useAppSettings } from "../settings";
 import { SettingCard, SettingSelect } from "./SettingCard";
+import { tr } from "../i18n";
 
 interface Props {
   icon: React.ReactNode;
@@ -40,13 +41,13 @@ export function PitchCacheCard({ icon, onError }: Props) {
   return (
     <SettingCard
       icon={icon}
-      title="变调缓存"
-      description="变调过的歌存一份在语料库里（一首约 45 MB）。超过上限时清掉最久没放的，下次用到再重新生成"
+      title={tr("变调缓存")}
+      description={tr("变调过的歌存一份在语料库里（一首约 45 MB）。超过上限时清掉最久没放的，下次用到再重新生成")}
     >
       <span className="muted small">{status === null ? "" : usageLabel(status)}</span>
       <SettingSelect
         value={String(settings.pitchCacheLimitMb)}
-        options={limits.map((mb) => ({ value: String(mb), label: `上限 ${limitLabel(mb)}` }))}
+        options={limits.map((mb) => ({ value: String(mb), label: tr("上限 {mb}", { mb: limitLabel(mb) }) }))}
         onChange={(value) => {
           const limitMb = Number(value);
           updateSettings({ pitchCacheLimitMb: limitMb });

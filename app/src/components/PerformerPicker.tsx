@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type PersonSummary } from "../api";
+import { tr } from "../i18n";
 
 let cached: Promise<PersonSummary[]> | null = null;
 
@@ -120,17 +121,17 @@ export function PerformerPicker({ selected, onChange, onError }: Props) {
 
   const label =
     selected.length === 0
-      ? "全部歌手"
+      ? tr("全部歌手")
       : names.length === 1
         ? names[0]
-        : `${names[0] ?? "…"} 等 ${selected.length} 人`;
+        : tr("{v} 等 {length} 人", { v: names[0] ?? "…", length: selected.length });
 
   return (
     <div className="picker" ref={root}>
       <button
         className={`picker-button${selected.length ? " on" : ""}`}
         onClick={() => setOpen((v) => !v)}
-        title={names.length > 1 ? names.join("、") : undefined}
+        title={names.length > 1 ? names.join(tr("、")) : undefined}
       >
         <span>{label}</span>
       </button>
@@ -139,24 +140,22 @@ export function PerformerPicker({ selected, onChange, onError }: Props) {
           <div className="picker-head">
             <input
               className="search"
-              placeholder="筛选歌手"
+              placeholder={tr("筛选歌手")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               autoFocus
             />
-            <button className="link-btn" disabled={!selected.length} onClick={() => onChange([])}>
-              清除
-            </button>
+            <button className="link-btn" disabled={!selected.length} onClick={() => onChange([])}>{tr("清除")}</button>
           </div>
           <div className="picker-list">
             {visible.map((p) => (
               <label key={p.id} className="picker-item">
                 <input type="checkbox" checked={chosen.has(p.id)} onChange={() => toggle(p.id)} />
                 <span className="picker-name">{p.name}</span>
-                <span className="muted small">{p.trackCount} 首</span>
+                <span className="muted small">{tr("{trackCount} 首", { trackCount: p.trackCount })}</span>
               </label>
             ))}
-            {visible.length === 0 && <p className="muted small pad">没有匹配的歌手</p>}
+            {visible.length === 0 && <p className="muted small pad">{tr("没有匹配的歌手")}</p>}
           </div>
         </div>
       )}

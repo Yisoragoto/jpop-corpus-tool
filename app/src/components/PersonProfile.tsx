@@ -23,6 +23,7 @@ import { buildGraph } from "../graph";
 import { buildAxisColumns } from "../releaseAxis";
 import { ROLE_COLORS, type DirectoryData } from "./LibraryBrowser";
 import { invalidatePerformers } from "./PerformerPicker";
+import { tr } from "../i18n";
 
 /** 没有成员关系时的空列表。用同一个引用：每次新建 [] 会让依赖它的 effect 每帧重跑 */
 const NONE: Membership[] = [];
@@ -48,7 +49,7 @@ export function groupByAlbum(tracks: Track[]): AlbumGroup[] {
     const key = albumKey(t);
     let g = groups.get(key);
     if (g === undefined) {
-      g = { key, albumId: t.albumId, title: t.album || "单曲", year: t.year, coverPath: t.coverPath, tracks: [] };
+      g = { key, albumId: t.albumId, title: t.album || tr("单曲"), year: t.year, coverPath: t.coverPath, tracks: [] };
       groups.set(key, g);
     }
     // 同一首歌可能因为几个角色重复出现
@@ -101,7 +102,7 @@ export function PersonProfile({
       .catch((err: unknown) => {
         if (!alive) return;
         setWorks([]);
-        onError(`读不出作品：${messageOf(err)}`);
+        onError(tr("读不出作品：{err}", { err: messageOf(err) }));
       });
     return () => {
       alive = false;
@@ -131,14 +132,14 @@ export function PersonProfile({
   const [photoBusy, setPhotoBusy] = useState(false);
   const changePhoto = async () => {
     try {
-      const picked = await openDialog({ title: `给 ${name} 换照片`, filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp"] }] });
+      const picked = await openDialog({ title: tr("给 {name} 换照片", { name }), filters: [{ name: tr("图片"), extensions: ["jpg", "jpeg", "png", "webp"] }] });
       if (typeof picked !== "string") return;
       setPhotoBusy(true);
       await api.artistImageSet(name, picked);
       invalidatePerformers();
       onMembersChanged();
     } catch (err) {
-      onError(`照片没换成：${messageOf(err)}`);
+      onError(tr("照片没换成：{err}", { err: messageOf(err) }));
     } finally {
       setPhotoBusy(false);
     }
@@ -150,7 +151,7 @@ export function PersonProfile({
       invalidatePerformers();
       onMembersChanged();
     } catch (err) {
-      onError(`没恢复成：${messageOf(err)}`);
+      onError(tr("没恢复成：{err}", { err: messageOf(err) }));
     } finally {
       setPhotoBusy(false);
     }
@@ -201,7 +202,7 @@ export function PersonProfile({
   const isBand = members.length > 0 || entry?.artistType === "Group";
   const years = yearSpan(entry);
 
-  if (name === "") return <p className="muted pad">加载中…</p>;
+  if (name === "") return <p className="muted pad">{tr("加载中…")}</p>;
 
   return (
     <div className="profile" key={personId}>
@@ -209,14 +210,14 @@ export function PersonProfile({
         <div className="profile-hero-bg" style={image ? { backgroundImage: `url("${cssUrl(image)}")` } : undefined} aria-hidden="true" />
         <span className="profile-photo">
           <Avatar path={image} name={name} size={104} />
-          <button className="photo-change" onClick={() => void changePhoto()} disabled={photoBusy} title="换一张照片（jpg / png / webp）">
-            {photoBusy ? "…" : "换照片"}
+          <button className="photo-change" onClick={() => void changePhoto()} disabled={photoBusy} title={tr("换一张照片（jpg / png / webp）")}>
+            {photoBusy ? "…" : tr("换照片")}
           </button>
         </span>
         <div className="profile-hero-text">
           <h1>{name}</h1>
           <div className="role-tags">
-            {isBand && <span className="role-tag band">乐队</span>}
+            {isBand && <span className="role-tag band">{tr("乐队")}</span>}
             {roles.map((r) => (
               <span key={r} className="role-tag" style={{ ["--role" as string]: ROLE_COLORS[r] }}>
                 {ROLE_LABELS[r] ?? r}
@@ -224,22 +225,20 @@ export function PersonProfile({
             ))}
           </div>
           {entry?.imageManual && (
-            <button className="link-btn photo-reset" onClick={() => void resetPhoto()} disabled={photoBusy}>
-              恢复刮削的照片
-            </button>
+            <button className="link-btn photo-reset" onClick={() => void resetPhoto()} disabled={photoBusy}>{tr("恢复刮削的照片")}</button>
           )}
           {bands.map((b) => (
             <button key={b.bandId} className="belong" onClick={() => onOpenPerson(b.bandId)}>
               <Avatar path={b.bandImage} name={b.bandName} size={20} />
-              {b.leftAt ? `曾属 ${b.bandName} · ${spanOf(b.joined, b.leftAt)}` : `${b.bandName} 成员${b.part ? ` · ${b.part}` : ""}`}
+              {b.leftAt ? tr("曾属 {bandName} · {joined}", { bandName: b.bandName, joined: spanOf(b.joined, b.leftAt) }) : tr("{bandName} 成员{v}", { bandName: b.bandName, v: b.part ? ` · ${b.part}` : "" })}
             </button>
           ))}
           <ArtistProvenance name={name} refreshKey={`${image}|${entry?.imageManual ?? ""}`} />
           <div className="profile-stats">
-            {entry && entry.performer > 0 && <Fact value={entry.performer} label={bands.length > 0 ? "个人演唱" : "演唱"} />}
-            {entry && entry.songs - entry.performer > 0 && <Fact value={entry.songs - entry.performer} label="幕后署名" />}
-            {works !== null && albumCount > 0 && <Fact value={albumCount} label="专辑 / 单曲" />}
-            {years && <Fact value={years} label={entry?.ended ? "已结束活动" : "有作品的年份"} />}
+            {entry && entry.performer > 0 && <Fact value={entry.performer} label={bands.length > 0 ? tr("个人演唱") : tr("演唱")} />}
+            {entry && entry.songs - entry.performer > 0 && <Fact value={entry.songs - entry.performer} label={tr("幕后署名")} />}
+            {works !== null && albumCount > 0 && <Fact value={albumCount} label={tr("专辑 / 单曲")} />}
+            {years && <Fact value={years} label={entry?.ended ? tr("已结束活动") : tr("有作品的年份")} />}
           </div>
         </div>
         {works !== null && works.length > 0 && (
@@ -247,13 +246,9 @@ export function PersonProfile({
             <button className="primary play-all" onClick={() => onPlayAll(sections[0]?.works ?? works)}>
               <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
                 <path d="M7 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 7 5.5Z" fill="currentColor" />
-              </svg>
-              播放
-            </button>
+              </svg>{tr("播放")}</button>
             {entry !== undefined && entry.performer > 0 && (
-              <button className="btn" onClick={onOpenCloud} title="这个人唱的歌里最常出现的词">
-                词云
-              </button>
+              <button className="btn" onClick={onOpenCloud} title={tr("这个人唱的歌里最常出现的词")}>{tr("词云")}</button>
             )}
           </div>
         )}
@@ -275,8 +270,8 @@ export function PersonProfile({
       )}
 
       <section className="profile-works">
-        {works === null && <p className="muted">加载作品…</p>}
-        {works !== null && works.length === 0 && <p className="muted">没有作品记录</p>}
+        {works === null && <p className="muted">{tr("加载作品…")}</p>}
+        {works !== null && works.length === 0 && <p className="muted">{tr("没有作品记录")}</p>}
         {sections.map((sec) => {
           const open = isOpen(sec.key, sec.collapsed);
           return (
@@ -284,10 +279,10 @@ export function PersonProfile({
               {sec.title && (
                 <h2 className="section-label section-head">
                   {sec.title}
-                  <span className="section-count">{sec.works.length} 首</span>
+                  <span className="section-count">{tr("{length} 首", { length: sec.works.length })}</span>
                   {sec.collapsed && (
                     <button className="link-btn" onClick={() => toggleSection(sec.key)} aria-expanded={open}>
-                      {open ? "收起" : "展开"}
+                      {open ? tr("收起") : tr("展开")}
                     </button>
                   )}
                 </h2>
@@ -301,9 +296,7 @@ export function PersonProfile({
                       <h3>
                         {g.title}
                         <small>
-                          {g.year && `${g.year.slice(0, 4)} · `}
-                          {g.tracks.length} 首
-                        </small>
+                          {g.year && `${g.year.slice(0, 4)} · `}{tr("{length} 首", { length: g.tracks.length })}</small>
                       </h3>
                       <div className="song-chips">
                         {g.tracks.map((t) => (
@@ -346,20 +339,20 @@ function ArtistProvenance({ name, refreshKey }: { name: string; refreshKey: stri
   const bySource = new Map<string, FieldProvenance[]>();
   for (const r of rows) bySource.set(r.source, [...(bySource.get(r.source) ?? []), r]);
   const parts = [...bySource].map(([source, list]) => {
-    const fields = list.map((r) => ARTIST_FIELD_LABELS[r.field] ?? r.field).join("、");
+    const fields = list.map((r) => ARTIST_FIELD_LABELS[r.field] ?? r.field).join(tr("、"));
     const conf = list[0]?.confidence;
-    return `${fields}：${FIELD_SOURCE_LABELS[source] ?? source}${conf != null ? `（置信度 ${percent(conf)}）` : ""}`;
+    return `${fields}${tr("：")}${FIELD_SOURCE_LABELS[source] ?? source}${conf != null ? tr("（置信度 {conf}）", { conf: percent(conf) }) : ""}`;
   });
-  return <p className="muted small artist-provenance" title="资料来源">资料来源 · {parts.join(" · ")}</p>;
+  return <p className="muted small artist-provenance" title={tr("资料来源")}>{tr("资料来源 · {parts}", { parts: parts.join(" · ") })}</p>;
 }
 
 const ARTIST_FIELD_LABELS: Record<string, string> = {
-  artist_type: "类型",
-  country: "国家",
-  formed: "成立",
-  ended: "结束",
-  mbid: "MusicBrainz 编号",
-  image_path: "照片",
+  artist_type: tr("类型"),
+  country: tr("国家"),
+  formed: tr("成立"),
+  ended: tr("结束"),
+  mbid: tr("MusicBrainz 编号"),
+  image_path: tr("照片"),
 };
 
 function yearSpan(entry: DirectoryEntry | undefined): string {
@@ -389,16 +382,16 @@ function ReleaseAxis({ sections, onPick, ended }: { sections: WorkSection[]; onP
   const years = items.map((x) => x.year);
   const span = `${Math.min(...years)}–${Math.max(...years)}`;
   return (
-    <section className="raxis" aria-label="发行时间轴">
+    <section className="raxis" aria-label={tr("发行时间轴")}>
       {/* 悬停的那张写在这一行（轴是横向滚动的，气泡会被裁掉，所以不用气泡） */}
       <p className={`raxis-caption ${hover !== null ? "on" : ""}`} aria-live="polite">
-        {hover ?? `${span} · ${albums} 张专辑 · ${items.length - albums} 首单曲${endYear !== null ? ` · ${endYear} 解散` : ""}`}
+        {hover ?? tr("{span} · {albums} 张专辑 · {v} 首单曲{v2}", { span, albums, v: items.length - albums, v2: endYear !== null ? tr(" · {endYear} 解散", { endYear }) : "" })}
       </p>
       <div className="raxis-scroll">
       <div className="raxis-track">
         {columns.map((col, i) =>
           col.type === "gap" ? (
-            <div key={`gap-${col.from}`} className="raxis-gap" title={`${col.from}–${col.to} 没有发行`} style={{ ["--i" as string]: i }}>
+            <div key={`gap-${col.from}`} className="raxis-gap" title={tr("{from}–{to} 没有发行", { from: col.from, to: col.to })} style={{ ["--i" as string]: i }}>
               <span className="raxis-gap-dots" aria-hidden="true" />
               <span className="raxis-year">{col.to - col.from >= 1 ? `${col.from}–${String(col.to).slice(2)}` : col.from}</span>
             </div>
@@ -432,7 +425,7 @@ function ReleaseAxis({ sections, onPick, ended }: { sections: WorkSection[]; onP
                 {col.year}
                 {col.items.length > 1 && <small>{col.items.length}</small>}
               </span>
-              {col.ended && <span className="raxis-end">解散</span>}
+              {col.ended && <span className="raxis-end">{tr("解散")}</span>}
             </div>
           ),
         )}
@@ -444,8 +437,8 @@ function ReleaseAxis({ sections, onPick, ended }: { sections: WorkSection[]; onP
 
 /** 「左右盲 · 2023-04-05 · 12 首 · 乐队时期」 */
 function describe(g: AlbumGroup, kind: string): string {
-  const role = kind === "band" ? " · 乐队时期" : kind === "credit" ? " · 合作 / 幕后" : "";
-  return `${g.title} · ${g.year.slice(0, 10)} · ${g.tracks.length} 首${role}`;
+  const role = kind === "band" ? tr(" · 乐队时期") : kind === "credit" ? tr(" · 合作 / 幕后") : "";
+  return tr("{title} · {slice} · {length} 首{role}", { title: g.title, slice: g.year.slice(0, 10), length: g.tracks.length, role });
 }
 
 function Fact({ value, label }: { value: number | string; label: string }) {
@@ -492,7 +485,7 @@ export function PersonSide({
       .catch((err: unknown) => {
         if (!alive) return;
         setPeers([]);
-        onError(`读不出合作者：${messageOf(err)}`);
+        onError(tr("读不出合作者：{err}", { err: messageOf(err) }));
       });
     return () => {
       alive = false;
@@ -517,10 +510,8 @@ export function PersonSide({
       {local !== null && local.nodes.length > 1 && (
         <>
           <div className="side-head-row">
-            <h3 className="side-head">关系网</h3>
-            <button className="link-btn" onClick={onOpenGraph}>
-              全局 ↗
-            </button>
+            <h3 className="side-head">{tr("关系网")}</h3>
+            <button className="link-btn" onClick={onOpenGraph}>{tr("全局 ↗")}</button>
           </div>
           <RelationGraph
             className="local-graph"
@@ -531,10 +522,10 @@ export function PersonSide({
           />
         </>
       )}
-      <h3 className="side-head">合作者</h3>
-      <p className="muted small">同一首歌里一起署名的人</p>
-      {peers === null && <p className="muted">加载中…</p>}
-      {peers !== null && peers.length === 0 && <p className="muted">没有合作者。多数歌只有一位歌手，关系的多少取决于数据本身。</p>}
+      <h3 className="side-head">{tr("合作者")}</h3>
+      <p className="muted small">{tr("同一首歌里一起署名的人")}</p>
+      {peers === null && <p className="muted">{tr("加载中…")}</p>}
+      {peers !== null && peers.length === 0 && <p className="muted">{tr("没有合作者。多数歌只有一位歌手，关系的多少取决于数据本身。")}</p>}
       {peers?.map((p, i) => (
         <button key={p.personId} className="peer" style={{ ["--n" as string]: Math.min(i, 14) }} onClick={() => onOpenPerson(p.personId)}>
           <Avatar path={p.imagePath} name={p.name} size={30} />
@@ -544,9 +535,7 @@ export function PersonSide({
               <i style={{ width: `${(p.sharedTracks / max) * 100}%`, background: ROLE_COLORS[p.roles[0] ?? ""] ?? "var(--accent)" }} />
             </span>
             <small>
-              {bandmates.has(p.personId) && "同队 · "}
-              {p.sharedTracks} 首共同 · {p.roles.map((r) => ROLE_LABELS[r] ?? r).join(" / ")}
-            </small>
+              {bandmates.has(p.personId) && tr("同队 · ")}{tr("{sharedTracks} 首共同 · {map}", { sharedTracks: p.sharedTracks, map: p.roles.map((r) => ROLE_LABELS[r] ?? r).join(" / ") })}</small>
           </span>
         </button>
       ))}
@@ -582,7 +571,7 @@ export function AlbumView({
       .catch((err: unknown) => {
         if (!alive) return;
         setTracks([]);
-        onError(`读不出专辑：${messageOf(err)}`);
+        onError(tr("读不出专辑：{err}", { err: messageOf(err) }));
       });
     return () => {
       alive = false;
@@ -602,17 +591,15 @@ export function AlbumView({
             {[album?.albumArtist, album?.year?.slice(0, 4)].filter(Boolean).join(" · ")}
           </p>
           <div className="profile-stats">
-            {album && <Fact value={album.trackCount} label="首" />}
+            {album && <Fact value={album.trackCount} label={tr("首")} />}
           </div>
         </div>
         {tracks !== null && tracks.length > 0 && (
-          <button className="primary play-all" onClick={() => onPlayAll(tracks)}>
-            ▶ 播放
-          </button>
+          <button className="primary play-all" onClick={() => onPlayAll(tracks)}>{tr("▶ 播放")}</button>
         )}
       </header>
       <section className="album-tracklist">
-        {tracks === null && <p className="muted">加载中…</p>}
+        {tracks === null && <p className="muted">{tr("加载中…")}</p>}
         {tracks?.map((t, i) => (
           <button
             key={t.id}

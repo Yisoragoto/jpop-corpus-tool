@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../events";
 
 import {
   ANKI_OUTCOME_LABELS,
@@ -32,6 +32,7 @@ import { CommandButton } from "../components/CommandButton";
 import { MiningReportCard } from "../components/MiningReportCard";
 import { Stat } from "../components/Stat";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
+import { tr } from "../i18n";
 
 interface Props {
   onError: (message: string) => void;
@@ -159,7 +160,7 @@ export function AnkiPage({ onError }: Props) {
   const start = useCallback(async () => {
     const selected = words.filter((w) => picked.has(w.lemma));
     if (selected.length === 0) {
-      errorRef.current("先勾几个词");
+      errorRef.current(tr("先勾几个词"));
       return;
     }
     setBusy(true);
@@ -184,7 +185,7 @@ export function AnkiPage({ onError }: Props) {
   const startUpdate = useCallback(async () => {
     const selected = words.filter((w) => picked.has(w.lemma));
     if (selected.length === 0) {
-      errorRef.current("先勾几个词");
+      errorRef.current(tr("先勾几个词"));
       return;
     }
     setBusy(true);
@@ -243,47 +244,39 @@ export function AnkiPage({ onError }: Props) {
   return (
     <div className="page tools">
       <p className="page-lead">
-        把语料里的词做成卡片。例句取自你自己听的歌——
-        「夜」的例句是《夜に駆ける》里的那一句，不是教科书造的。
+        {tr("把语料里的词做成卡片。例句取自你自己听的歌——「夜」的例句是《夜に駆ける》里的那一句，不是教科书造的。")}
       </p>
 
       <div className="card">
         <div className="card-head">
-          <h2>连接</h2>
+          <h2>{tr("连接")}</h2>
           {status !== null && (
             <span className="muted small">
-              {status.connected ? `AnkiConnect v${status.version}` : "未连接"}
+              {status.connected ? `AnkiConnect v${status.version}` : tr("未连接")}
             </span>
           )}
         </div>
         {status !== null && (
           <>
             <div className="stats">
-              <Stat label="牌组" value={status.decks.length} />
-              <Stat label="已进 Anki 的词" value={status.knownWords} />
-              <Stat label="其中复习过" value={status.studiedWords} />
+              <Stat label={tr("牌组")} value={status.decks.length} />
+              <Stat label={tr("已进 Anki 的词")} value={status.knownWords} />
+              <Stat label={tr("其中复习过")} value={status.studiedWords} />
             </div>
             {!status.connected && (
               <p className="warn">
                 {status.message}
-                <br />
-                选词和预览不需要 Anki——那些只读本地文件。只有真正推卡片
-                才需要它开着。
-              </p>
+                <br />{tr("选词和预览不需要 Anki——那些只读本地文件。只有真正推卡片 才需要它开着。")}</p>
             )}
             {status.collectionPath !== "" && (
-              <p className="muted small">学习状态读自 {status.collectionPath}</p>
+              <p className="muted small">{tr("学习状态读自 {collectionPath}", { collectionPath: status.collectionPath })}</p>
             )}
             {status.connected && !status.noteTypeReady && (
-              <p className="muted small">
-                还没有「JPOP Corpus」笔记类型，第一次导出时会自动建。
-              </p>
+              <p className="muted small">{tr("还没有「JPOP Corpus」笔记类型，第一次导出时会自动建。")}</p>
             )}
             {status.connected && (
               <div className="toolbar">
-                <label className="check">
-                  牌组
-                  <select value={deck} onChange={(e) => setDeck(e.target.value)}>
+                <label className="check">{tr("牌组")}<select value={deck} onChange={(e) => setDeck(e.target.value)}>
                     {status.decks.map((d) => (
                       <option key={d} value={d}>
                         {d}
@@ -297,16 +290,14 @@ export function AnkiPage({ onError }: Props) {
         )}
       </div>
 
-      <MineSettingsCard connected={status?.connected ?? false} decks={status?.decks ?? []} title="一键制卡" />
+      <MineSettingsCard connected={status?.connected ?? false} decks={status?.decks ?? []} title={tr("一键制卡")} />
 
       <MiningReportCard onError={onError} />
 
       <div className="card">
         <div className="card-head">
-          <h2>选词</h2>
-          <span className="muted small">
-            {picked.size} / {words.length} 已选
-          </span>
+          <h2>{tr("选词")}</h2>
+          <span className="muted small">{tr("{size} / {length} 已选", { size: picked.size, length: words.length })}</span>
         </div>
         <div className="chips">
           {POS_CHOICES.map((p) => (
@@ -325,9 +316,7 @@ export function AnkiPage({ onError }: Props) {
           <button
             className={`chip${skipStudied ? " on" : ""}`}
             onClick={() => setSkipStudied((v) => !v)}
-          >
-            藏起已学过的
-          </button>
+          >{tr("藏起已学过的")}</button>
         </div>
 
         <div className="word-picker">
@@ -342,25 +331,20 @@ export function AnkiPage({ onError }: Props) {
                 <b>{w.lemma}</b>
               </label>
               <span className="muted small">
-                {POS_LABELS[w.pos] ?? w.pos} · {w.count} 次 · {w.songCount} 首
-                {w.studied ? " · 已学过" : w.inAnki ? " · 已在 Anki" : ""}
+                {POS_LABELS[w.pos] ?? w.pos}{" "}{tr("· {count} 次 · {songCount} 首", { count: w.count, songCount: w.songCount })}{w.studied ? tr(" · 已学过") : w.inAnki ? tr(" · 已在 Anki") : ""}
               </span>
-              <button className="chip" onClick={() => void showPreview(w)}>
-                预览
-              </button>
+              <button className="chip" onClick={() => void showPreview(w)}>{tr("预览")}</button>
             </div>
           ))}
           {words.length === 0 && (
-            <p className="muted small">没有符合条件的词。</p>
+            <p className="muted small">{tr("没有符合条件的词。")}</p>
           )}
         </div>
 
         <div className="toolbar">
-          <CommandButton icon="check" label="全选" onClick={() => setPicked(new Set(words.map((w) => w.lemma)))} />
-          <CommandButton icon="clear" label="清空" onClick={() => setPicked(new Set())} />
-          <label className="check">
-            每张卡例句
-            <input
+          <CommandButton icon="check" label={tr("全选")} onClick={() => setPicked(new Set(words.map((w) => w.lemma)))} />
+          <CommandButton icon="clear" label={tr("清空")} onClick={() => setPicked(new Set())} />
+          <label className="check">{tr("每张卡例句")}<input
               type="number"
               min={1}
               max={8}
@@ -369,9 +353,7 @@ export function AnkiPage({ onError }: Props) {
               style={{ width: 52 }}
             />
           </label>
-          <label className="check">
-            释义取前几部词典
-            <input
+          <label className="check">{tr("释义取前几部词典")}<input
               type="number"
               min={0}
               max={20}
@@ -381,19 +363,14 @@ export function AnkiPage({ onError }: Props) {
             />
           </label>
         </div>
-        <p className="muted small">
-          库里启用了 19 部词典，全上的话一个常用词的释义能到 17,000 字符，
-          卡片背面读不完。取前几部就够——顺序就是你在词典管理里排的优先级。
-        </p>
+        <p className="muted small">{tr("库里启用了 19 部词典，全上的话一个常用词的释义能到 17,000 字符， 卡片背面读不完。取前几部就够——顺序就是你在词典管理里排的优先级。")}</p>
       </div>
 
       {preview !== null && (
         <div className="card">
           <div className="card-head">
-            <h2>预览 · {preview.expression}</h2>
-            <button className="chip" onClick={() => setPreview(null)}>
-              收起
-            </button>
+            <h2>{tr("预览 · {expression}", { expression: preview.expression })}</h2>
+            <button className="chip" onClick={() => setPreview(null)}>{tr("收起")}</button>
           </div>
           <div className="track-meta">
             <span>{preview.reading || "—"}</span>
@@ -403,7 +380,7 @@ export function AnkiPage({ onError }: Props) {
             {preview.freq !== "" && <span>JPDB {preview.freq}</span>}
           </div>
           {preview.noExamples ? (
-            <p className="warn">语料里没有这个词的例句，这张卡做出来没法用。</p>
+            <p className="warn">{tr("语料里没有这个词的例句，这张卡做出来没法用。")}</p>
           ) : (
             <div
               className="card-preview"
@@ -411,12 +388,10 @@ export function AnkiPage({ onError }: Props) {
             />
           )}
           {preview.noDefinitions ? (
-            <p className="muted small">本地词典里查不到释义。</p>
+            <p className="muted small">{tr("本地词典里查不到释义。")}</p>
           ) : (
             <details>
-              <summary className="muted small">
-                释义（{preview.meaning.length.toLocaleString()} 字符）
-              </summary>
+              <summary className="muted small">{tr("释义（{length} 字符）", { length: preview.meaning.length.toLocaleString() })}</summary>
               <div
                 className="card-preview"
                 dangerouslySetInnerHTML={{ __html: preview.meaning }}
@@ -428,25 +403,19 @@ export function AnkiPage({ onError }: Props) {
 
       <div className="card">
         <div className="card-head">
-          <h2>导出</h2>
+          <h2>{tr("导出")}</h2>
         </div>
         <div className="toolbar">
-          <label className="check" title="从原曲里切出例句那一句，放进卡片">
-            <input type="checkbox" checked={clipAudio} onChange={(e) => setClipAudio(e.target.checked)} />
-            音频片段
-          </label>
-          <label className="check">
-            已有这个词时
-            <select value={dupMode} onChange={(e) => setDupMode(e.target.value as AnkiDupMode)}>
-              <option value="append">追加新例句</option>
-              <option value="skip">跳过</option>
+          <label className="check" title={tr("从原曲里切出例句那一句，放进卡片")}>
+            <input type="checkbox" checked={clipAudio} onChange={(e) => setClipAudio(e.target.checked)} />{tr("音频片段")}</label>
+          <label className="check">{tr("已有这个词时")}<select value={dupMode} onChange={(e) => setDupMode(e.target.value as AnkiDupMode)}>
+              <option value="append">{tr("追加新例句")}</option>
+              <option value="skip">{tr("跳过")}</option>
             </select>
           </label>
-          <label className="check">
-            查重范围
-            <select value={dupScope} onChange={(e) => setDupScope(e.target.value as AnkiDupScope)}>
-              <option value="deck">当前牌组</option>
-              <option value="root">主牌组及子牌组</option>
+          <label className="check">{tr("查重范围")}<select value={dupScope} onChange={(e) => setDupScope(e.target.value as AnkiDupScope)}>
+              <option value="deck">{tr("当前牌组")}</option>
+              <option value="root">{tr("主牌组及子牌组")}</option>
             </select>
           </label>
         </div>
@@ -463,10 +432,10 @@ export function AnkiPage({ onError }: Props) {
         )}
         {progress?.finished && (
           <p className="muted small">
-            {progress.cancelled ? "已中断。" : "跑完了。"}
+            {progress.cancelled ? tr("已中断。") : tr("跑完了。")}
             {Object.entries(counts)
               .map(([k, n]) => `${ANKI_OUTCOME_LABELS[k] ?? k} ${n}`)
-              .join("，")}
+              .join(tr("，"))}
           </p>
         )}
         <div className="toolbar">
@@ -474,21 +443,17 @@ export function AnkiPage({ onError }: Props) {
             onClick={() => void start()}
             disabled={busy || running || picked.size === 0 || status?.connected !== true}
           >
-            {running ? "处理中…" : `导出 ${picked.size} 张`}
+            {running ? tr("处理中…") : tr("导出 {size} 张", { size: picked.size })}
           </button>
           <button
             onClick={() => void startUpdate()}
             disabled={busy || running || picked.size === 0 || status?.connected !== true}
-            title="只重查读音、释义、JLPT、音高、词频、词性，不动例句、音频和出处"
-          >
-            更新选中的 {picked.size} 张
-          </button>
-          <button onClick={() => void api.ankiCancel()} disabled={!running}>
-            中断
-          </button>
+            title={tr("只重查读音、释义、JLPT、音高、词频、词性，不动例句、音频和出处")}
+          >{tr("更新选中的 {size} 张", { size: picked.size })}</button>
+          <button onClick={() => void api.ankiCancel()} disabled={!running}>{tr("中断")}</button>
         </div>
         {status?.connected !== true && (
-          <p className="muted small">Anki 没开，导出按钮不可用。</p>
+          <p className="muted small">{tr("Anki 没开，导出按钮不可用。")}</p>
         )}
 
         {log.length > 0 && (
@@ -496,7 +461,7 @@ export function AnkiPage({ onError }: Props) {
             {log.slice(0, 30).map((entry, i) => (
               <p className="muted small" key={`${entry.lemma}-${i}`}>
                 {entry.lemma} · {ANKI_OUTCOME_LABELS[entry.outcome] ?? entry.outcome}
-                {entry.outcome === "updated" ? `（+${entry.newSentences} 句）` : ""}
+                {entry.outcome === "updated" ? tr("（+{newSentences} 句）", { newSentences: entry.newSentences }) : ""}
                 {entry.message !== "" ? ` · ${entry.message}` : ""}
               </p>
             ))}
@@ -506,24 +471,18 @@ export function AnkiPage({ onError }: Props) {
 
       <div className="card">
         <div className="card-head">
-          <h2>刷新旧牌组</h2>
-          <span className="muted small">{deck || "先在上面选牌组"}</span>
+          <h2>{tr("刷新旧牌组")}</h2>
+          <span className="muted small">{deck || tr("先在上面选牌组")}</span>
         </div>
-        <p className="muted small">
-          按现在的词典重写范围内所有 JPOP Corpus 卡片的读音、释义、JLPT、音高、词频、词性，
-          顺带更新卡片模板。<b>不动例句、音频和出处。</b>
-          释义不按上面的「取前几部词典」截断——已有的卡是按全量做的，截断的话刷一次所有卡都会变短。
-        </p>
+        <p className="muted small">{tr("按现在的词典重写范围内所有 JPOP Corpus 卡片的读音、释义、JLPT、音高、词频、词性， 顺带更新卡片模板。")}<b>{tr("不动例句、音频和出处。")}</b>{tr("释义不按上面的「取前几部词典」截断——已有的卡是按全量做的，截断的话刷一次所有卡都会变短。")}</p>
         <div className="toolbar">
-          <label className="check">
-            范围
-            <select
+          <label className="check">{tr("范围")}<select
               value={refreshScope}
               onChange={(e) => setRefreshScope(e.target.value as AnkiRefreshScope)}
             >
-              <option value="deck">仅当前牌组</option>
-              <option value="deckAndChildren">当前牌组及子牌组</option>
-              <option value="rootAndChildren">主牌组及子牌组</option>
+              <option value="deck">{tr("仅当前牌组")}</option>
+              <option value="deckAndChildren">{tr("当前牌组及子牌组")}</option>
+              <option value="rootAndChildren">{tr("主牌组及子牌组")}</option>
             </select>
           </label>
           {refreshCount === null ? (
@@ -531,14 +490,14 @@ export function AnkiPage({ onError }: Props) {
               onClick={() => void countRefresh()}
               disabled={counting || running || !deck || status?.connected !== true}
             >
-              {counting ? "统计中…" : "先数一下有几张"}
+              {counting ? tr("统计中…") : tr("先数一下有几张")}
             </button>
           ) : (
             <button
               onClick={() => void startRefresh()}
               disabled={busy || running || refreshCount === 0}
             >
-              {refreshCount === 0 ? "范围内没有旧卡" : `刷新这 ${refreshCount} 张`}
+              {refreshCount === 0 ? tr("范围内没有旧卡") : tr("刷新这 {refreshCount} 张", { refreshCount })}
             </button>
           )}
         </div>

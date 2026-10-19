@@ -4,7 +4,8 @@
  * 原来启动时查到新版，开着「下载后自动安装」就直接下载、直接装——装更新会关掉应用，
  * 正在听歌、正在制卡的人一下子就被打断。现在一律先弹这个窗：
  *
- * - **立即更新**：下载、校验 SHA-256、启动安装程序（应用会关闭）。下载中可以看进度；
+ * - **立即更新**：下载、校验 SHA-256，启动安装程序覆盖安装（`/P /UPDATE /R`：不问问题、不先卸载，
+ *   装完自动重新打开）。下载中可以看进度；
  * - **稍后**：关掉，下次启动再提醒；
  * - **跳过这个版本**：这一版不再提醒，再出新版照样提醒（记在设置 `skippedUpdateVersion`）。
  *
@@ -12,10 +13,11 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../events";
 
 import { api, type ReleaseInfo, type UpdateProgress } from "../api";
 import { updateSettings } from "../settings";
+import { tr } from "../i18n";
 
 type Phase = "ask" | "downloading" | "installing" | "failed";
 
@@ -52,7 +54,7 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
   const install = useCallback(async () => {
     if (release.installer === null) {
       setPhase("failed");
-      setError("这次发布没有可直接安装的安装包，请到发布页手动下载。");
+      setError(tr("这次发布没有可直接安装的安装包，请到发布页手动下载。"));
       return;
     }
     setPhase("downloading");
@@ -82,7 +84,7 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
         className="update-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={`新版本 ${release.version}`}
+        aria-label={tr("新版本 {version}", { version: release.version })}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="update-head">
@@ -94,49 +96,43 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
             </svg>
           </span>
           <div>
-            <h2>有新版本 {release.version}</h2>
-            <p>
-              当前 {current}
-              {release.publishedAt && ` · 发布于 ${new Date(release.publishedAt).toLocaleDateString()}`}
-              {release.installer && ` · 安装包 ${formatSize(release.installer.size)}`}
+            <h2>{tr("有新版本 {version}", { version: release.version })}</h2>
+            <p>{tr("当前 {current}", { current })}{release.publishedAt && tr(" · 发布于 {publishedAt}", { publishedAt: new Date(release.publishedAt).toLocaleDateString() })}
+              {release.installer && tr(" · 安装包 {size}", { size: formatSize(release.installer.size) })}
             </p>
           </div>
         </header>
 
         <div className="update-notes">
-          {notes === "" ? <p className="muted">这次发布没有写说明。</p> : <pre>{notes}</pre>}
+          {notes === "" ? <p className="muted">{tr("这次发布没有写说明。")}</p> : <pre>{notes}</pre>}
         </div>
 
         {phase !== "ask" && (
           <div className={`update-status ${phase}`} role="status">
             {phase === "downloading" && (
               <>
-                <span>{pct === null ? "正在下载…" : `正在下载 ${pct}%`}</span>
+                <span>{pct === null ? tr("正在下载…") : tr("正在下载 {pct}%", { pct })}</span>
                 <span className="update-bar">
                   <i style={{ width: `${pct ?? 6}%` }} className={pct === null ? "indeterminate" : ""} />
                 </span>
               </>
             )}
-            {phase === "installing" && <span>校验通过，正在启动安装程序，应用马上会关闭…</span>}
+            {phase === "installing" && <span>{tr("校验通过，正在安装。应用会关闭一下，装好后自动重新打开…")}</span>}
             {phase === "failed" && <span>{error}</span>}
           </div>
         )}
 
         <footer className="update-foot">
           {offerSkip && (
-            <button className="link-btn update-skip" onClick={skip} disabled={busy} title="这一版不再提醒，出了更新的版本照样提醒">
-              跳过这个版本
-            </button>
+            <button className="link-btn update-skip" onClick={skip} disabled={busy} title={tr("这一版不再提醒，出了更新的版本照样提醒")}>{tr("跳过这个版本")}</button>
           )}
           <span className="update-spacer" />
-          <button className="btn" onClick={onClose} disabled={busy}>
-            稍后
-          </button>
+          <button className="btn" onClick={onClose} disabled={busy}>{tr("稍后")}</button>
           <button className="btn primary" onClick={() => void install()} disabled={busy} autoFocus>
-            {phase === "failed" ? "重试" : "立即更新"}
+            {phase === "failed" ? tr("重试") : tr("立即更新")}
           </button>
         </footer>
-        <p className="update-fine">更新会下载安装包并校验，然后关闭应用完成安装。</p>
+        <p className="update-fine">{tr("下载、校验后直接覆盖安装，不用先卸载；装好自动重新打开。")}</p>
       </div>
     </div>
   );

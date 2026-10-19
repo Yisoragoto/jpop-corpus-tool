@@ -26,6 +26,7 @@ import { previewText, splitLineBreaks } from "./glossaryText";
 import { distributeFurigana } from "./japanese";
 import { DownstepNotation, PitchText } from "./Pronunciation";
 import { DefinitionImage, StructuredContentView, type RenderContext } from "./StructuredContent";
+import { tr } from "../i18n";
 
 /** 一本词典的释义展开后最多先显示多高（像素），超出截断 */
 const CLAMP_HEIGHT = { full: 420, compact: 200 };
@@ -117,8 +118,8 @@ function Headword({ headword }: { headword: TermHeadword }) {
 
 const INFLECTION_SOURCE_LABELS: Record<string, string> = {
   algorithm: "",
-  dictionary: "词典给出的变形",
-  both: "活用规则与词典都认可",
+  dictionary: tr("词典给出的变形"),
+  both: tr("活用规则与词典都认可"),
 };
 
 function InflectionChains({ entry }: { entry: TermDictionaryEntry }) {
@@ -154,7 +155,7 @@ function TagList({ tags }: { tags: Tag[] }) {
           key={`${tag.category}-${tag.name}-${i}`}
           className="dict-tag"
           data-category={tag.category}
-          title={[...tag.content, tag.dictionaries.join("、")].filter((s) => s.length > 0).join("\n")}
+          title={[...tag.content, tag.dictionaries.join(tr("、"))].filter((s) => s.length > 0).join("\n")}
         >
           {tag.name}
         </span>
@@ -180,12 +181,12 @@ function Frequencies({
           key={dictionary}
           className="dict-frequency-group"
           data-frequency-mode={items[0]?.frequencyMode ?? undefined}
-          title={items[0]?.frequencyMode === "rank-based" ? "按排名：数字越小越常用" : undefined}
+          title={items[0]?.frequencyMode === "rank-based" ? tr("按排名：数字越小越常用") : undefined}
         >
           <span className="dict-frequency-dictionary">{items[0]?.dictionaryAlias ?? dictionary}</span>
           <span className="dict-frequency-values">
             {items.map((f, i) => (
-              <span key={i} className="dict-frequency-value" title={f.hasReading ? undefined : "不分读音"}>
+              <span key={i} className="dict-frequency-value" title={f.hasReading ? undefined : tr("不分读音")}>
                 {showHeadword && <span className="dict-frequency-headword">{headwordLabel(headwords[f.headwordIndex])} </span>}
                 {f.displayValue ?? String(f.frequency)}
               </span>
@@ -270,7 +271,7 @@ function Clamp({ maxHeight, children }: { maxHeight: number; children: ReactNode
       </div>
       {overflow && (
         <button className="dict-clamp-toggle" onClick={() => setOpen(!open)}>
-          {open ? "收起" : "展开全文"}
+          {open ? tr("收起") : tr("展开全文")}
         </button>
       )}
     </div>
@@ -312,7 +313,7 @@ function Definitions({
             <button
               className="dict-dictionary-name"
               onClick={() => setDictionaryCollapsed(dictionary, !isCollapsed)}
-              title={isCollapsed ? "展开这本词典（之后查词也保持展开）" : "折叠这本词典（之后查词也保持折叠）"}
+              title={isCollapsed ? tr("展开这本词典（之后查词也保持展开）") : tr("折叠这本词典（之后查词也保持折叠）")}
             >
               <span className="dict-chevron" aria-hidden="true">
                 {isCollapsed ? "▸" : "▾"}
@@ -333,7 +334,7 @@ function Definitions({
                         <div className="dict-definition-meta">
                           {headwords.length > 1 && definition.headwordIndices.length < headwords.length && (
                             <span className="dict-definition-only">
-                              {definition.headwordIndices.map((i) => headwordLabel(headwords[i])).join("、")}
+                              {definition.headwordIndices.map((i) => headwordLabel(headwords[i])).join(tr("、"))}
                             </span>
                           )}
                           <TagList tags={definition.tags} />
