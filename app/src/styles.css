@@ -746,14 +746,6 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 /* 注音跟着它下面的字亮：底下有一个字亮了，注音就亮 */
 .karaoke-line ruby:has(.kc-on, .kc-now) rt { color: var(--k-lit); opacity: 1; }
 .stage-line .karaoke-line .kc.kc-on { text-shadow: 0 0 18px rgba(255, 255, 255, .25); }
-/* 按字数估的行在末尾标一个「估」 */
-.karaoke-est {
-  flex: none; align-self: center; margin-left: 8px; padding: 0 5px; border-radius: 4px;
-  font-size: 10px; line-height: 16px; color: var(--muted); border: 1px solid var(--line-strong);
-  vertical-align: middle; user-select: none; -webkit-user-select: none;
-}
-.stage-line .karaoke-est { font-size: 12px; line-height: 18px; color: rgba(255, 255, 255, .5); border-color: rgba(255, 255, 255, .25); }
-
 .banner.error { color: var(--danger); background: rgba(247,118,142,.08); cursor: pointer; }
 
 /* ── 内容区 ── */
