@@ -503,10 +503,6 @@ export function LibraryPage({
                 </span>
               );
             })}
-        {/* 跟在这一行歌词后面；放在 .text 里，普通视图和全屏都只认这一个元素 */}
-        {karaokeLine && karaoke.kind === "estimate" && (
-          <span className="karaoke-est" title={tr("这首歌没有逐字时间，每个字的时间是按字数估的（可以在词云里右键校准某个词）")}>{tr("估")}</span>
-        )}
       </span>
     );
   };

@@ -156,7 +156,6 @@ export const en5: Record<string, string> = {
 
   // LibraryPage.tsx
   "查词典": "Look up",
-  "这首歌没有逐字时间，每个字的时间是按字数估的（可以在词云里右键校准某个词）": "This song has no word timings, so each character's time is estimated (you can calibrate a word by right-clicking it in the word cloud)",
   "关闭这次查词": "Close this lookup",
   "词典里没有查到（在「词典」页导入词典）": "Not found in your dictionaries (import some on the Dictionaries page)",
   "试听这一句（到行尾自动停）": "Preview this line (stops at the end of the line)",
@@ -321,7 +320,7 @@ export const en5: Record<string, string> = {
   "也可以在歌词右上角随时开关": "You can also toggle it anytime at the top right of the lyrics",
   "只注汉字：思(おも)い出(だ)す；整词注音：思い出す(おもいだす)": "Kanji only: 思(おも)い出(だ)す; whole word: 思い出す(おもいだす)",
   "逐字点亮当前行": "Karaoke-style highlighting",
-  "像卡拉 OK 歌词那样，唱到哪个字亮到哪个字。有逐字歌词（增强型 LRC）或手动校准时用真实时间；没有时按字数估，行尾标「估」。关掉就是原来的整行高亮。": "Lights up each character as it's sung, like karaoke. Uses real timings from word-timed lyrics (enhanced LRC) or your calibrations; otherwise estimates from character counts and marks the line “Est.”. When off, the whole line is highlighted as before.",
+  "像卡拉 OK 歌词那样，唱到哪个字亮到哪个字。有逐字歌词（增强型 LRC）或手动校准时用真实时间；没有时按字数估。关掉就是原来的整行高亮。": "Lights up each character as it's sung, like karaoke. Uses real timings from word-timed lyrics (enhanced LRC) or your calibrations; otherwise estimates from character counts. When off, the whole line is highlighted as before.",
   "字体与排版": "Font & layout",
   "歌词字体": "Lyrics font",
   "正在读取本机字体…": "Reading installed fonts…",
