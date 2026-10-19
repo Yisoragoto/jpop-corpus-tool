@@ -296,7 +296,8 @@ fn the_no_dictionary_wording_is_the_same_on_both_sides() {
     let source = std::fs::read_to_string(&api_ts)
         .unwrap_or_else(|err| panic!("读不了 {}：{err}", api_ts.display()));
     assert!(
-        source.contains(&format!("export const NO_DICTIONARY = \"{phrase}\"")),
+        // 界面会翻译（英文界面下前后端都换成同一句英文，见 rustMessages.test.ts）
+        source.contains(&format!("export const NO_DICTIONARY = tr(\"{phrase}\")")),
         "app/src/api.ts 里的 NO_DICTIONARY 和 Rust 这边对不上（Rust 是「{phrase}」）"
     );
 }

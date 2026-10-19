@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { backendKey, interpolate, setLanguageForTest, trBackend, trPayload } from "./i18n";
 import { backendEn } from "./locales/backend";
+import { en } from "./locales/en";
 
 const RUST = import.meta.glob<string>(["../../rust/crates/*/src/**/*.rs"], { query: "?raw", import: "default", eager: true });
 
@@ -147,6 +148,12 @@ describe("trBackend", () => {
     } finally {
       setLanguageForTest("zh");
     }
+  });
+});
+
+describe("前后端同一句话", () => {
+  it("没有分词词典：前端 NO_DICTIONARY 的英文和后端报错的英文一样（App 靠 includes 认这条提示）", () => {
+    expect(backendEn["找不到 Sudachi 词典"]).toBe(en["找不到 Sudachi 词典"]);
   });
 });
 
