@@ -36,6 +36,7 @@ import { Stat } from "../components/Stat";
 import { describeFilter, toSubcorpus } from "../corpusQuality";
 import { pyFixed, pyGrouped } from "../pyFormat";
 import type { LibraryActions } from "../useLibrary";
+import { tr } from "../i18n";
 
 /** Python `pos_options`：统计页可选的词性 */
 const POS_FILTERS = ["", "NOUN", "VERB", "ADJ", "ADV", "AUX", "PRON", "PROPN", "INTJ", "ADP", "CCONJ"] as const;
@@ -128,13 +129,13 @@ export function AnalyticsPage({
     if (!report) return;
     try {
       const path = await save({
-        title: "保存统计报告",
+        title: tr("保存统计报告"),
         defaultPath: "corpus_report.txt",
-        filters: [{ name: "文本文件", extensions: ["txt"] }],
+        filters: [{ name: tr("文本文件"), extensions: ["txt"] }],
       });
       if (!path) return;
       await api.exportText(path, report.text);
-      setExportNote(`已保存：${path}`);
+      setExportNote(tr("已保存：{path}", { path }));
     } catch (err) {
       onError(message(err));
     }
@@ -146,20 +147,20 @@ export function AnalyticsPage({
     <div className="page analytics">
       {overview && (
         <section className="card">
-          <h2>语料概览</h2>
+          <h2>{tr("语料概览")}</h2>
           <div className="overview-grid">
-            <Stat label="曲目" value={overview.tracks} align="start" />
-            <Stat label="专辑" value={overview.albums} align="start" />
-            <Stat label="人物" value={overview.people} align="start" />
-            <Stat label="演唱" value={overview.performers} align="start" />
-            <Stat label="作曲" value={overview.composers} align="start" />
-            <Stat label="作词" value={overview.lyricists} align="start" />
-            <Stat label="编曲" value={overview.arrangers} align="start" />
-            <Stat label="歌词行" value={overview.lyricLines} align="start" />
-            <Stat label="词次" value={overview.tokens} align="start" />
-            <Stat label="词汇量" value={overview.vocabulary} align="start" />
+            <Stat label={tr("曲目")} value={overview.tracks} align="start" />
+            <Stat label={tr("专辑")} value={overview.albums} align="start" />
+            <Stat label={tr("人物")} value={overview.people} align="start" />
+            <Stat label={tr("演唱")} value={overview.performers} align="start" />
+            <Stat label={tr("作曲")} value={overview.composers} align="start" />
+            <Stat label={tr("作词")} value={overview.lyricists} align="start" />
+            <Stat label={tr("编曲")} value={overview.arrangers} align="start" />
+            <Stat label={tr("歌词行")} value={overview.lyricLines} align="start" />
+            <Stat label={tr("词次")} value={overview.tokens} align="start" />
+            <Stat label={tr("词汇量")} value={overview.vocabulary} align="start" />
             <Stat
-              label="总时长"
+              label={tr("总时长")}
               value={formatLongDuration(overview.totalDurationSec)}
               align="start"
             />
@@ -167,10 +168,7 @@ export function AnalyticsPage({
 
           {overview.totalDurationSec === 0 && !backfill && (
             <div className="maintenance">
-              <p className="muted small">
-                总时长为空：<code>songs.duration_sec</code> 还没回填。
-                回填会逐个读音频文件的时长写回库，幂等，可随时重跑。
-              </p>
+              <p className="muted small">{tr("总时长为空：")}<code>songs.duration_sec</code>{" "}{tr("还没回填。 回填会逐个读音频文件的时长写回库，幂等，可随时重跑。")}</p>
               <button
                 className="primary"
                 disabled={backfilling}
@@ -187,18 +185,16 @@ export function AnalyticsPage({
                   }
                 }}
               >
-                {backfilling ? "回填中…" : "回填时长"}
+                {backfilling ? tr("回填中…") : tr("回填时长")}
               </button>
             </div>
           )}
 
           {backfill && (
             <div className="maintenance">
-              <p className="small">
-                扫描 {backfill.scanned} 首：写入 {backfill.written}
-                {backfill.missing > 0 && `，文件缺失 ${backfill.missing}`}
-                {backfill.unknown > 0 && `，无时长 ${backfill.unknown}`}
-                {backfill.failed > 0 && `，失败 ${backfill.failed}`}
+              <p className="small">{tr("扫描 {scanned} 首：写入 {written}", { scanned: backfill.scanned, written: backfill.written })}{backfill.missing > 0 && tr("，文件缺失 {missing}", { missing: backfill.missing })}
+                {backfill.unknown > 0 && tr("，无时长 {unknown}", { unknown: backfill.unknown })}
+                {backfill.failed > 0 && tr("，失败 {failed}", { failed: backfill.failed })}
               </p>
               {backfill.samples.length > 0 && (
                 <ul className="muted small samples">
@@ -220,13 +216,13 @@ export function AnalyticsPage({
       />
 
       <section className="card">
-        <h2>时间线</h2>
-        <p className="muted small">按年份的作品数与词汇量。年份为空的曲目不计入。</p>
-        {timeline.length === 0 && <p className="muted">没有带年份的曲目</p>}
+        <h2>{tr("时间线")}</h2>
+        <p className="muted small">{tr("按年份的作品数与词汇量。年份为空的曲目不计入。")}</p>
+        {timeline.length === 0 && <p className="muted">{tr("没有带年份的曲目")}</p>}
         {timeline.length > 0 && (
           <div className="timeline">
             {timeline.map((y) => (
-              <div className="year" key={y.year} title={`${y.trackCount} 首 · ${y.vocabulary} 词`}>
+              <div className="year" key={y.year} title={tr("{trackCount} 首 · {vocabulary} 词", { trackCount: y.trackCount, vocabulary: y.vocabulary })}>
                 <div className="year-bars">
                   <span
                     className="bar tracks"
@@ -241,21 +237,19 @@ export function AnalyticsPage({
       </section>
 
       <div className="stats-filters">
-        <span className="muted small">筛选</span>
+        <span className="muted small">{tr("筛选")}</span>
         <PerformerPicker
           selected={filter.performerIds}
           onChange={(performerIds) => setFilter((f) => ({ ...f, performerIds }))}
           onError={onError}
         />
-        <label className="check" title="只统计含假名或汉字的词元（去掉英文、数字）">
+        <label className="check" title={tr("只统计含假名或汉字的词元（去掉英文、数字）")}>
           <input
             type="checkbox"
             checked={filter.jpOnly}
             onChange={(e) => setFilter((f) => ({ ...f, jpOnly: e.target.checked }))}
-          />
-          仅日文
-        </label>
-        <span className="muted small">词频表、报告和存档都按这里筛选</span>
+          />{tr("仅日文")}</label>
+        <span className="muted small">{tr("词频表、报告和存档都按这里筛选")}</span>
         <SubcorpusFilters filter={filter} onChange={setFilter} onError={onError} />
       </div>
 
@@ -266,44 +260,41 @@ export function AnalyticsPage({
           <em>世界</em>
         </span>
         <span>
-          <strong>词云搬到「资料库」了</strong>
-          <small>可以选词性（默认名词）、换字体、点歌就从那一句开始放，还能全屏</small>
+          <strong>{tr("词云搬到「资料库」了")}</strong>
+          <small>{tr("可以选词性（默认名词）、换字体、点歌就从那一句开始放，还能全屏")}</small>
         </span>
-        <span className="cloud-moved-go">打开 →</span>
+        <span className="cloud-moved-go">{tr("打开 →")}</span>
       </button>
 
       <section className="card">
         <div className="card-head">
-          <h2>词频统计</h2>
+          <h2>{tr("词频统计")}</h2>
           <div className="card-tools">
             <span className="muted small">
-              {loadingRows ? "读取中…" : rows ? `${rows.length} 个词` : ""}
+              {loadingRows ? tr("读取中…") : rows ? tr("{length} 个词", { length: rows.length }) : ""}
             </span>
             <select className="rate" value={pos} onChange={(e) => setPos(e.target.value)}>
               {POS_FILTERS.map((p) => (
                 <option key={p} value={p}>
-                  {p === "" ? "全部词性" : `${POS_LABELS[p] ?? p} ${p}`}
+                  {p === "" ? tr("全部词性") : `${POS_LABELS[p] ?? p} ${p}`}
                 </option>
               ))}
             </select>
           </div>
         </div>
-        <p className="muted small">
-          词元 × 词性按出现次数排，前 {TABLE_LIMIT} 个，不含标点和符号。JLPT 等级来自本地缓存。
-          点词元看例句，点「检索」到检索页看 KWIC。
-        </p>
+        <p className="muted small">{tr("词元 × 词性按出现次数排，前 {TABLE_LIMIT} 个，不含标点和符号。JLPT 等级来自本地缓存。 点词元看例句，点「检索」到检索页看 KWIC。", { TABLE_LIMIT })}</p>
         {rows && rows.length > 0 && (
           <div className={`table-wrap${loadingRows ? " stale" : ""}`}>
             <table className="data">
               <thead>
                 <tr>
                   <th className="num">#</th>
-                  <th>词元</th>
-                  <th>词性</th>
+                  <th>{tr("词元")}</th>
+                  <th>{tr("词性")}</th>
                   <th className="mid">JLPT</th>
-                  <th className="num">出现次数</th>
-                  <th className="num">出现曲数</th>
-                  <th>表层形例</th>
+                  <th className="num">{tr("出现次数")}</th>
+                  <th className="num">{tr("出现曲数")}</th>
+                  <th>{tr("表层形例")}</th>
                   <th />
                 </tr>
               </thead>
@@ -326,9 +317,7 @@ export function AnalyticsPage({
                       <span className="surfaces">{w.surfaces.slice(0, 5).join("、")}</span>
                     </td>
                     <td className="row-actions">
-                      <button className="link-btn" onClick={() => onSearchWord(w.lemma)}>
-                        检索
-                      </button>
+                      <button className="link-btn" onClick={() => onSearchWord(w.lemma)}>{tr("检索")}</button>
                     </td>
                   </tr>
                 ))}
@@ -336,7 +325,7 @@ export function AnalyticsPage({
             </table>
           </div>
         )}
-        {rows && rows.length === 0 && !loadingRows && <p className="muted">没有数据</p>}
+        {rows && rows.length === 0 && !loadingRows && <p className="muted">{tr("没有数据")}</p>}
       </section>
 
       <RepeatEffectCard
@@ -350,23 +339,19 @@ export function AnalyticsPage({
 
       <section className="card report">
         <div className="card-head">
-          <h2>语料报告</h2>
+          <h2>{tr("语料报告")}</h2>
           <div className="card-tools">
             <span className="muted small">
               {loadingReport
-                ? "计算中…"
+                ? tr("计算中…")
                 : report
-                  ? `${pyGrouped(report.report.songCount)} 曲 / ${pyGrouped(report.report.tokenCount)} tokens`
+                  ? tr("{songCount} 曲 / {tokenCount} tokens", { songCount: pyGrouped(report.report.songCount), tokenCount: pyGrouped(report.report.tokenCount) })
                   : ""}
             </span>
-            <button className="ghost" disabled={!report || loadingReport} onClick={() => void exportReport()}>
-              导出 TXT
-            </button>
+            <button className="ghost" disabled={!report || loadingReport} onClick={() => void exportReport()}>{tr("导出 TXT")}</button>
           </div>
         </div>
-        <p className="muted small">
-          TTR、STTR、Hapax、词性分布、高频词覆盖率。导出的 TXT 和 PyQt 版格式相同。
-          {exportNote && <span className="export-note"> {exportNote}</span>}
+        <p className="muted small">{tr("TTR、STTR、Hapax、词性分布、高频词覆盖率。导出的 TXT 和 PyQt 版格式相同。")}{exportNote && <span className="export-note"> {exportNote}</span>}
         </p>
         {report && <ReportBody data={report} filterDesc={filterDesc} stale={loadingReport} onWord={openWord} />}
       </section>
@@ -411,41 +396,41 @@ function ReportBody({
   const maxFreq = r.topWords[0]?.[1] ?? 1;
   return (
     <div className={`report-body${stale ? " stale" : ""}`}>
-      <p className="small">筛选：{filterDesc}</p>
+      <p className="small">{tr("筛选：{filterDesc}", { filterDesc })}</p>
 
       <div className="report-cards">
-        <ReportCard label="曲数" value={pyGrouped(r.songCount)} />
-        <ReportCard label="歌词行数" value={pyGrouped(r.utteranceCount)} />
-        <ReportCard label="Token 数" value={pyGrouped(r.tokenCount)} note="实词 token，去除标点" />
-        <ReportCard label="Type 数" value={pyGrouped(r.typeCount)} note="唯一 lemma 数" />
+        <ReportCard label={tr("曲数")} value={pyGrouped(r.songCount)} />
+        <ReportCard label={tr("歌词行数")} value={pyGrouped(r.utteranceCount)} />
+        <ReportCard label={tr("Token 数")} value={pyGrouped(r.tokenCount)} note={tr("实词 token，去除标点")} />
+        <ReportCard label={tr("Type 数")} value={pyGrouped(r.typeCount)} note={tr("唯一 lemma 数")} />
       </div>
 
-      <h3>词汇多样性</h3>
+      <h3>{tr("词汇多样性")}</h3>
       <div className="report-cards">
         <ReportCard label="TTR" value={pyFixed(r.ttr, 4)} note="Types / Tokens" />
         <ReportCard
           label="STTR"
           value={r.sttr === null ? "—" : pyFixed(r.sttr, 4)}
-          note={r.sttrChunk ? `标准化 TTR / ${r.sttrChunk} tokens` : "标准化 TTR（词次不足 1000）"}
+          note={r.sttrChunk ? tr("标准化 TTR / {sttrChunk} tokens", { sttrChunk: r.sttrChunk }) : tr("标准化 TTR（词次不足 1000）")}
         />
         <ReportCard
-          label="Hapax 比率"
+          label={tr("Hapax 比率")}
           value={`${pyFixed(r.hapaxRatio * 100, 1)}%`}
-          note={`${pyGrouped(r.hapaxCount)} 个词只出现 1 次`}
+          note={tr("{hapaxCount} 个词只出现 1 次", { hapaxCount: pyGrouped(r.hapaxCount) })}
         />
-        <ReportCard label="平均每曲词汇量" value={pyFixed(r.avgTypesPerSong, 0)} note="Types / Song" />
-        <ReportCard label="平均每行 token" value={pyFixed(r.avgTokensPerLine, 1)} note="Tokens / Line" />
+        <ReportCard label={tr("平均每曲词汇量")} value={pyFixed(r.avgTypesPerSong, 0)} note="Types / Song" />
+        <ReportCard label={tr("平均每行 token")} value={pyFixed(r.avgTokensPerLine, 1)} note="Tokens / Line" />
       </div>
 
-      <h3>词性分布</h3>
+      <h3>{tr("词性分布")}</h3>
       <table className="data">
         <thead>
           <tr>
-            <th>词性</th>
-            <th>和名</th>
-            <th className="num">Token 数</th>
-            <th className="num">比率</th>
-            <th className="num">Type 数</th>
+            <th>{tr("词性")}</th>
+            <th>{tr("和名")}</th>
+            <th className="num">{tr("Token 数")}</th>
+            <th className="num">{tr("比率")}</th>
+            <th className="num">{tr("Type 数")}</th>
             <th className="bar-col" />
           </tr>
         </thead>
@@ -465,7 +450,7 @@ function ReportBody({
         </tbody>
       </table>
 
-      <h3>高频词覆盖</h3>
+      <h3>{tr("高频词覆盖")}</h3>
       <div className="report-cards">
         {r.coverage.map((c) => (
           <ReportCard key={c.n} label={`Top ${pyGrouped(c.n)}`} value={`${pyFixed(c.pct, 1)}%`}>
@@ -474,13 +459,13 @@ function ReportBody({
         ))}
       </div>
 
-      <h3>高频词元 Top 20</h3>
+      <h3>{tr("高频词元 Top 20")}</h3>
       <table className="data">
         <thead>
           <tr>
-            <th className="num">排名</th>
-            <th>词元</th>
-            <th className="num">出现次数</th>
+            <th className="num">{tr("排名")}</th>
+            <th>{tr("词元")}</th>
+            <th className="num">{tr("出现次数")}</th>
             <th className="bar-col" />
           </tr>
         </thead>

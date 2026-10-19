@@ -15,6 +15,7 @@ import { CommandButton } from "./CommandButton";
 import { SettingCard, SettingNote, Switch } from "./SettingCard";
 import { updateSettings, useAppSettings } from "../settings";
 import { UpdateDialog } from "./UpdateDialog";
+import { tr } from "../i18n";
 
 interface Props {
   icons: { update: React.ReactNode; clock: React.ReactNode; install: React.ReactNode };
@@ -52,7 +53,7 @@ export function UpdateCard({ icons, onError }: Props) {
     try {
       const next = await api.updateCheck();
       setStatus(next);
-      setNote(next.updateAvailable ? `有新版本 ${next.latest?.version ?? ""}` : `已经是最新版（${next.current}）`);
+      setNote(next.updateAvailable ? tr("有新版本 {v}", { v: next.latest?.version ?? "" }) : tr("已经是最新版（{current}）", { current: next.current }));
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -76,25 +77,25 @@ export function UpdateCard({ icons, onError }: Props) {
     <>
       <SettingCard
         icon={icons.update}
-        title="检查更新"
+        title={tr("检查更新")}
         description={
           status === null
-            ? "从本仓库的 Releases 取版本；只在你点的时候联网。"
+            ? tr("从本仓库的 Releases 取版本；只在你点的时候联网。")
             : status.updateAvailable
-              ? `当前 ${status.current}，有新版本 ${status.latest?.version}（${formatDate(status.latest?.publishedAt)}）`
-              : `当前 ${status.current}，已是最新`
+              ? tr("当前 {current}，有新版本 {version}（{publishedAt}）", { current: status.current, version: status.latest?.version, publishedAt: formatDate(status.latest?.publishedAt) })
+              : tr("当前 {current}，已是最新", { current: status.current })
         }
       >
         {status?.updateAvailable && status.latest !== null && (
           <CommandButton
             icon="import"
-            label={`更新到 ${status.latest.version}…`}
+            label={tr("更新到 {version}…", { version: status.latest.version })}
             onClick={() => setDialog(true)}
             primary
-            title="先看这一版改了什么，确认后再下载安装（应用会关闭）"
+            title={tr("先看这一版改了什么，确认后再下载安装（应用会关闭一下，装好自动重新打开）")}
           />
         )}
-        <CommandButton icon="refresh" label={checking ? "检查中…" : "检查更新"} onClick={() => void check()} disabled={checking} />
+        <CommandButton icon="refresh" label={checking ? tr("检查中…") : tr("检查更新")} onClick={() => void check()} disabled={checking} />
       </SettingCard>
       {note !== "" && <SettingNote>{note}</SettingNote>}
       {dialog && status?.latest && (
@@ -103,28 +104,26 @@ export function UpdateCard({ icons, onError }: Props) {
 
       <SettingCard
         icon={icons.clock}
-        title="启动时检查更新"
-        description="只问一次版本号。有新版会弹窗说明改了什么，由你选「立即更新」「稍后」或「跳过这个版本」，不会自己下载安装。"
+        title={tr("启动时检查更新")}
+        description={tr("只问一次版本号。有新版会弹窗说明改了什么，由你选「立即更新」「稍后」或「跳过这个版本」，不会自己下载安装。")}
       >
         <Switch
           checked={settings.autoCheckUpdates}
           onChange={(v) => updateSettings({ autoCheckUpdates: v })}
-          label="启动时检查更新"
+          label={tr("启动时检查更新")}
         />
       </SettingCard>
 
       {skipped !== "" && (
-        <SettingCard icon={icons.install} title="跳过的版本" description={`${skipped} 启动时不再提醒；出了更新的版本照样提醒`}>
-          <button className="link-btn" onClick={() => updateSettings({ skippedUpdateVersion: "" })}>
-            恢复提醒
-          </button>
+        <SettingCard icon={icons.install} title={tr("跳过的版本")} description={tr("{skipped} 启动时不再提醒；出了更新的版本照样提醒", { skipped })}>
+          <button className="link-btn" onClick={() => updateSettings({ skippedUpdateVersion: "" })}>{tr("恢复提醒")}</button>
         </SettingCard>
       )}
 
       <SettingCard
         icon={icons.clock}
-        title="查看更新日志"
-        description="最近几次发布改了什么"
+        title={tr("查看更新日志")}
+        description={tr("最近几次发布改了什么")}
         onClick={() => void openLog()}
       >
         <span className="setting-chevron" aria-hidden="true">
@@ -133,17 +132,17 @@ export function UpdateCard({ icons, onError }: Props) {
       </SettingCard>
       {showLog && (
         <div className="changelog">
-          {changelog === null && <p className="muted small">读取中…</p>}
+          {changelog === null && <p className="muted small">{tr("读取中…")}</p>}
           {changelog?.map((release) => (
             <article key={release.tag}>
               <h4>
                 {release.name || release.version}
                 <span className="muted small">{formatDate(release.publishedAt)}</span>
               </h4>
-              <pre>{release.notes.trim() || "（这次发布没有写说明）"}</pre>
+              <pre>{release.notes.trim() || tr("（这次发布没有写说明）")}</pre>
             </article>
           ))}
-          {changelog?.length === 0 && <p className="muted small">还没有发布记录。</p>}
+          {changelog?.length === 0 && <p className="muted small">{tr("还没有发布记录。")}</p>}
         </div>
       )}
     </>

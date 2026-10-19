@@ -2786,3 +2786,22 @@ table.data tr.current td { background: var(--accent-soft); }
   background: var(--panel-2); border: 1px solid var(--line);
 }
 .wc-calib-tools button:hover { background: var(--control-hover); }
+
+/* ── 第一次启动：选界面语言 ── */
+.lang-backdrop { z-index: 200; background: rgba(0, 0, 0, .62); }
+.lang-dialog { width: min(440px, 92vw); padding: 26px 26px 22px; align-items: stretch; gap: 0; }
+.lang-dialog h2 { display: grid; gap: 2px; margin: 0 0 18px; text-align: center; font-size: 19px; font-weight: 600; }
+.lang-dialog h2 span + span { font-size: 14px; font-weight: 500; color: var(--muted); }
+.lang-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.lang-option {
+  display: grid; gap: 4px; justify-items: center; padding: 18px 10px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); color: var(--fg);
+  transition: border-color 150ms, background 150ms, transform 150ms var(--spring);
+}
+.lang-option strong { font-size: 17px; font-weight: 600; }
+.lang-option small { font-size: 11.5px; color: var(--muted); }
+.lang-option:hover { background: var(--control-hover); }
+.lang-option.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+.lang-option:active { transform: scale(.97); }
+.lang-hint { margin: 14px 0 16px; text-align: center; font-size: 12px; color: var(--muted); }
+.lang-go { align-self: center; min-width: 140px; justify-content: center; }

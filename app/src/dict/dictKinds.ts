@@ -9,14 +9,15 @@
  */
 
 import type { DictionaryInfo } from "./api";
+import { tr } from "../i18n";
 
 export type DictKind = "terms" | "freq" | "pitch" | "other";
 
 export const DICT_KINDS: { kind: DictKind; label: string; hint: string }[] = [
-  { kind: "terms", label: "释义", hint: "查词时释义按这个顺序往下排" },
-  { kind: "freq", label: "词频", hint: "词条旁边的词频标签按这个顺序排" },
-  { kind: "pitch", label: "发音", hint: "音调、IPA 按这个顺序显示" },
-  { kind: "other", label: "其他", hint: "没有词条、词频、音调的（只有标签之类）" },
+  { kind: "terms", label: tr("释义"), hint: tr("查词时释义按这个顺序往下排") },
+  { kind: "freq", label: tr("词频"), hint: tr("词条旁边的词频标签按这个顺序排") },
+  { kind: "pitch", label: tr("发音"), hint: tr("音调、IPA 按这个顺序显示") },
+  { kind: "other", label: tr("其他"), hint: tr("没有词条、词频、音调的（只有标签之类）") },
 ];
 
 export function dictKind(d: Pick<DictionaryInfo, "counts">): DictKind {

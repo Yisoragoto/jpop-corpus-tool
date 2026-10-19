@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../events";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { CommandButton } from "../components/CommandButton";
@@ -25,6 +25,7 @@ import {
 } from "./api";
 import { DICT_KINDS, dictKind, dropIndex, reorderWithin, type DictKind } from "./dictKinds";
 import { invalidateDictionaryStyles } from "./LookupResults";
+import { tr } from "../i18n";
 
 const ICON = {
   viewBox: "0 0 24 24",
@@ -75,13 +76,13 @@ export function basename(path: string): string {
 export function describeCounts(d: DictionaryInfo): string {
   const parts: string[] = [];
   const counts = d.counts;
-  if (counts.terms) parts.push(`${counts.terms.toLocaleString()} 条`);
+  if (counts.terms) parts.push(tr("{terms} 条", { terms: counts.terms.toLocaleString() }));
   const meta = counts.termMeta ?? {};
-  if (meta.freq) parts.push(`词频 ${meta.freq.toLocaleString()}`);
-  if (meta.pitch) parts.push(`音高 ${meta.pitch.toLocaleString()}`);
+  if (meta.freq) parts.push(tr("词频 {freq}", { freq: meta.freq.toLocaleString() }));
+  if (meta.pitch) parts.push(tr("音高 {pitch}", { pitch: meta.pitch.toLocaleString() }));
   if (meta.ipa) parts.push(`IPA ${meta.ipa.toLocaleString()}`);
-  if (counts.media) parts.push(`图片 ${counts.media.toLocaleString()}`);
-  if (d.warnings.length > 0) parts.push(`${d.warnings.length} 条警告`);
+  if (counts.media) parts.push(tr("图片 {media}", { media: counts.media.toLocaleString() }));
+  if (d.warnings.length > 0) parts.push(tr("{length} 条警告", { length: d.warnings.length }));
   parts.push(d.revision);
   return parts.join(" · ");
 }
@@ -93,7 +94,7 @@ export function errorMessage(e: unknown): string {
 /** 挑 zip 导入。词典页的空状态也用它，所以单独放出来 */
 export async function pickDictionaryFiles(onError: (message: string) => void): Promise<string[]> {
   try {
-    const picked = await openDialog({ multiple: true, filters: [{ name: "Yomitan 词典", extensions: ["zip"] }] });
+    const picked = await openDialog({ multiple: true, filters: [{ name: tr("Yomitan 词典"), extensions: ["zip"] }] });
     if (picked === null) return [];
     return Array.isArray(picked) ? picked : [picked];
   } catch (e) {
@@ -214,16 +215,16 @@ export function DictionaryManager({ onError }: Props) {
       <div className="dm-head">
         <div className="dm-stats">
           <b>{dictionaries.length}</b>
-          <span>本词典</span>
+          <span>{tr("本词典")}</span>
           <span className="dm-sep" />
           <b>{enabled}</b>
-          <span>本启用</span>
+          <span>{tr("本启用")}</span>
         </div>
         <div className="dm-actions">
           {migratable.length > 0 && (
             <CommandButton
               icon="folder"
-              label={`从旧版迁移 ${migratable.length} 本`}
+              label={tr("从旧版迁移 {length} 本", { length: migratable.length })}
               onClick={() => void startImport(migratable.map((s) => s.path))}
               disabled={importing}
               title={migratable.map((s) => s.name).join("\n")}
@@ -231,11 +232,11 @@ export function DictionaryManager({ onError }: Props) {
           )}
           <CommandButton
             icon="import"
-            label="导入 .zip"
+            label={tr("导入 .zip")}
             onClick={() => void pickDictionaryFiles(onError).then(startImport)}
             disabled={importing}
             primary
-            title="Yomitan 格式：词条、词频、音调都认，一次可以选好几本"
+            title={tr("Yomitan 格式：词条、词频、音调都认，一次可以选好几本")}
           />
         </div>
       </div>
@@ -245,30 +246,28 @@ export function DictionaryManager({ onError }: Props) {
           <span className="dm-spinner" aria-hidden="true" />
           <span className="dm-progress-text">
             {progress === null
-              ? "准备导入…"
-              : `第 ${progress.index + 1} / ${progress.total} 本：${basename(progress.path)}　${progress.doneFiles} / ${progress.totalFiles}`}
+              ? tr("准备导入…")
+              : tr("第 {v} / {total} 本：{path}　{doneFiles} / {totalFiles}", { v: progress.index + 1, total: progress.total, path: basename(progress.path), doneFiles: progress.doneFiles, totalFiles: progress.totalFiles })}
           </span>
           {progress !== null && progress.totalFiles > 0 && (
             <span className="dm-progress-bar">
               <i style={{ width: `${Math.round((progress.doneFiles / progress.totalFiles) * 100)}%` }} />
             </span>
           )}
-          <button className="tc-btn" onClick={() => void dictApi.importCancel()}>
-            取消
-          </button>
+          <button className="tc-btn" onClick={() => void dictApi.importCancel()}>{tr("取消")}</button>
         </div>
       )}
       {report !== null && <ImportReport done={report} onClose={() => setReport(null)} />}
 
       {loaded && dictionaries.length === 0 && !importing ? (
         <div className="dm-empty">
-          <p>还没有导入词典。</p>
-          <p className="muted small">支持 Yomitan 格式的 zip：Jitendex、大辞泉、JPDB 词频、アクセント辞典等。</p>
+          <p>{tr("还没有导入词典。")}</p>
+          <p className="muted small">{tr("支持 Yomitan 格式的 zip：Jitendex、大辞泉、JPDB 词频、アクセント辞典等。")}</p>
         </div>
       ) : (
         <>
           <div className="dm-bar">
-            <div className="dm-tabs" role="tablist" aria-label="词典类别">
+            <div className="dm-tabs" role="tablist" aria-label={tr("词典类别")}>
               {tabs.map((t) => (
                 <button
                   key={t.kind}
@@ -285,13 +284,13 @@ export function DictionaryManager({ onError }: Props) {
             <input
               className="dm-search"
               type="search"
-              placeholder="按名字筛"
+              placeholder={tr("按名字筛")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
           <p className="dm-hint">
-            {filtering ? "筛选时不能拖动排序，清空筛选再拖。" : `${hint}。按住左边的抓手拖动，或者选中抓手按 ↑ / ↓。`}
+            {filtering ? tr("筛选时不能拖动排序，清空筛选再拖。") : tr("{hint}。按住左边的抓手拖动，或者选中抓手按 ↑ / ↓。", { hint })}
           </p>
           <SortableDictionaries
             key={kind}
@@ -302,17 +301,17 @@ export function DictionaryManager({ onError }: Props) {
             onToggle={(d) => void act(() => dictApi.setEnabled(d.id, !d.enabled))}
             onDelete={(d) => void act(() => dictApi.remove(d.id))}
           />
-          {shown.length === 0 && <p className="muted small dm-none">{filtering ? "没有名字对得上的" : "这一类还没有词典"}</p>}
+          {shown.length === 0 && <p className="muted small dm-none">{filtering ? tr("没有名字对得上的") : tr("这一类还没有词典")}</p>}
         </>
       )}
 
       {legacy.length > 0 && (
         <details className="small muted dict-legacy">
-          <summary>旧版登记的词典包（{legacy.length}）</summary>
+          <summary>{tr("旧版登记的词典包（{length}）", { length: legacy.length })}</summary>
           <ul>
             {legacy.map((s) => (
               <li key={s.path} title={s.path}>
-                {s.name} · {s.kind} · {s.imported ? "已导入" : s.exists ? "可迁移" : "原始文件不在了"}
+                {s.name} · {s.kind} · {s.imported ? tr("已导入") : s.exists ? tr("可迁移") : tr("原始文件不在了")}
               </li>
             ))}
           </ul>
@@ -472,8 +471,8 @@ function SortableDictionaries({
             <div className="dm-main">
               <button
                 className="dict-grip"
-                title={sortable ? "按住拖动排序（也可以按 ↑ / ↓）" : "筛选时不能排序"}
-                aria-label={`调整 ${d.title} 的顺序`}
+                title={sortable ? tr("按住拖动排序（也可以按 ↑ / ↓）") : tr("筛选时不能排序")}
+                aria-label={tr("调整 {title} 的顺序", { title: d.title })}
                 disabled={!sortable}
                 onPointerDown={(e) => begin(i, e)}
                 onPointerMove={(e) => {
@@ -499,11 +498,11 @@ function SortableDictionaries({
                 <span className="dm-name">{d.title}</span>
                 <span className="dm-meta">{describeCounts(d)}</span>
               </button>
-              <Switch checked={d.enabled} disabled={importing} onChange={() => onToggle(d)} label={`启用 ${d.title}`} />
+              <Switch checked={d.enabled} disabled={importing} onChange={() => onToggle(d)} label={tr("启用 {title}", { title: d.title })} />
               <button
                 className={`dm-expand ${expanded ? "on" : ""}`}
                 onClick={() => setOpen(expanded ? null : d.id)}
-                aria-label={expanded ? "收起" : "详情"}
+                aria-label={expanded ? tr("收起") : tr("详情")}
               >
                 <IconChevron />
               </button>
@@ -531,12 +530,12 @@ function slotOffset(rects: { top: number; height: number }[], from: number, to: 
 function DictionaryDetail({ d, importing, onDelete }: { d: DictionaryInfo; importing: boolean; onDelete: () => void }) {
   const [confirm, setConfirm] = useState(false);
   const facts: [string, string | null][] = [
-    ["作者", d.author],
-    ["版本", d.revision],
-    ["语言", [d.sourceLanguage, d.targetLanguage].filter(Boolean).join(" → ") || null],
-    ["词频方式", d.frequencyMode === "rank-based" ? "按名次（数字越小越常用）" : d.frequencyMode === "occurrence-based" ? "按出现次数" : d.frequencyMode],
-    ["导入于", d.importedAt > 0 ? new Date(d.importedAt).toLocaleString() : null],
-    ["原始文件", d.sourcePath || null],
+    [tr("作者"), d.author],
+    [tr("版本"), d.revision],
+    [tr("语言"), [d.sourceLanguage, d.targetLanguage].filter(Boolean).join(" → ") || null],
+    [tr("词频方式"), d.frequencyMode === "rank-based" ? tr("按名次（数字越小越常用）") : d.frequencyMode === "occurrence-based" ? tr("按出现次数") : d.frequencyMode],
+    [tr("导入于"), d.importedAt > 0 ? new Date(d.importedAt).toLocaleString() : null],
+    [tr("原始文件"), d.sourcePath || null],
   ];
   return (
     <div className="dm-detail-body">
@@ -551,7 +550,7 @@ function DictionaryDetail({ d, importing, onDelete }: { d: DictionaryInfo; impor
           ))}
         {d.url && (
           <div>
-            <dt>主页</dt>
+            <dt>{tr("主页")}</dt>
             <dd>{d.url}</dd>
           </div>
         )}
@@ -563,24 +562,19 @@ function DictionaryDetail({ d, importing, onDelete }: { d: DictionaryInfo; impor
           {d.warnings.slice(0, 6).map((w, i) => (
             <li key={i}>{w}</li>
           ))}
-          {d.warnings.length > 6 && <li>……还有 {d.warnings.length - 6} 条</li>}
+          {d.warnings.length > 6 && <li>{tr("……还有 {v} 条", { v: d.warnings.length - 6 })}</li>}
         </ul>
       )}
       <div className="dm-detail-actions">
         {confirm ? (
           <>
-            <span className="small muted">只删词典库里的数据，原始 zip 不动。</span>
-            <button className="tc-btn" onClick={() => setConfirm(false)}>
-              取消
-            </button>
-            <button className="tc-btn danger" onClick={onDelete} autoFocus>
-              确认删除
-            </button>
+            <span className="small muted">{tr("只删词典库里的数据，原始 zip 不动。")}</span>
+            <button className="tc-btn" onClick={() => setConfirm(false)}>{tr("取消")}</button>
+            <button className="tc-btn danger" onClick={onDelete} autoFocus>{tr("确认删除")}</button>
           </>
         ) : (
           <button className="tc-btn dm-delete" onClick={() => setConfirm(true)} disabled={importing}>
-            <IconTrash /> 删除这本
-          </button>
+            <IconTrash />{" "}{tr("删除这本")}</button>
         )}
       </div>
     </div>
@@ -592,25 +586,21 @@ function ImportReport({ done, onClose }: { done: DictImportDone; onClose: () => 
   const failed = done.results.filter((r) => r.error !== null);
   return (
     <div className="dict-report">
-      <button className="dm-report-close" onClick={onClose} aria-label="关闭">
+      <button className="dm-report-close" onClick={onClose} aria-label={tr("关闭")}>
         ×
       </button>
-      <b>
-        导入{done.cancelled ? "已取消" : "完成"}：成功 {ok.length} 本
-        {failed.length > 0 ? `，失败 ${failed.length} 本` : ""}
+      <b>{tr("导入")}{done.cancelled ? tr("已取消") : tr("完成")}{tr("：成功 {length} 本", { length: ok.length })}{failed.length > 0 ? tr("，失败 {length} 本", { length: failed.length }) : ""}
       </b>
       <ul>
         {ok.map((r) =>
           r.summary === null ? null : (
-            <li key={r.path}>
-              {r.summary.title}：{r.summary.terms.toLocaleString()} 条，{(r.summary.elapsedMs / 1000).toFixed(1)} 秒
-              {r.summary.warningCount > 0 ? `，${r.summary.warningCount} 条警告` : ""}
+            <li key={r.path}>{tr("{title}：{terms} 条，{toFixed} 秒", { title: r.summary.title, terms: r.summary.terms.toLocaleString(), toFixed: (r.summary.elapsedMs / 1000).toFixed(1) })}{r.summary.warningCount > 0 ? tr("，{warningCount} 条警告", { warningCount: r.summary.warningCount }) : ""}
             </li>
           ),
         )}
         {failed.map((r) => (
           <li key={r.path} className="failed" title={r.path}>
-            {basename(r.path)}：{r.error}
+            {basename(r.path)}{tr("：")}{r.error}
           </li>
         ))}
       </ul>

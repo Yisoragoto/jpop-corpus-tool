@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { tr } from "../i18n";
 
 export interface ColumnWidths {
   left: number;
@@ -285,7 +286,7 @@ export function ColumnSplitter({ edge, onDrag, onNudge, onReset, label, classNam
           onReset();
         }
       }}
-      title={`${label}（拖动调整，双击恢复默认）`}
+      title={tr("{label}（拖动调整，双击恢复默认）", { label })}
     />
   );
 }

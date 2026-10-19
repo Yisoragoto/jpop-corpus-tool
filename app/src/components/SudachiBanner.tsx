@@ -9,10 +9,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../events";
 
 import { api, DICT_DOWNLOAD_BYTES, type DictProgress } from "../api";
 import { retryFurigana } from "../lyricsDisplay";
+import { tr } from "../i18n";
 
 const MB = 1024 * 1024;
 
@@ -60,24 +61,24 @@ export function SudachiBanner({ message, onDone, onDismiss }: Props) {
       : null;
   const stage =
     progress === null
-      ? "准备中…"
+      ? tr("准备中…")
       : progress.stage === "downloading"
-        ? `下载中 ${pct}%（${(progress.received / MB).toFixed(0)} / ${(progress.total / MB).toFixed(0)} MB）`
+        ? tr("下载中 {pct}%（{toFixed} / {toFixed2} MB）", { pct, toFixed: (progress.received / MB).toFixed(0), toFixed2: (progress.total / MB).toFixed(0) })
         : progress.stage === "extracting"
-          ? "解压中…（207 MB，要一会儿）"
-          : "装上了";
+          ? tr("解压中…（207 MB，要一会儿）")
+          : tr("装上了");
 
   return (
     <div className="banner error sudachi-banner">
       <span className="sudachi-text">
-        {failed === "" ? message : `下载失败：${failed}`}
+        {failed === "" ? message : tr("下载失败：{failed}", { failed })}
         {busy && <span className="muted small"> · {stage}</span>}
       </span>
       <button className="sudachi-get" onClick={() => void download()} disabled={busy}>
-        {busy ? "下载中…" : `下载词典（${(DICT_DOWNLOAD_BYTES / MB).toFixed(0)} MB，只下这一次）`}
+        {busy ? tr("下载中…") : tr("下载词典（{toFixed} MB，只下这一次）", { toFixed: (DICT_DOWNLOAD_BYTES / MB).toFixed(0) })}
       </button>
       {!busy && (
-        <button className="sudachi-close" onClick={onDismiss} title="先不下" aria-label="关闭">
+        <button className="sudachi-close" onClick={onDismiss} title={tr("先不下")} aria-label={tr("关闭")}>
           ✕
         </button>
       )}

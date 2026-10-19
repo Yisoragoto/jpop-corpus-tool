@@ -15,6 +15,7 @@ import { prefersReducedMotion } from "../motion";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import type { DirectoryData } from "./LibraryBrowser";
+import { tr } from "../i18n";
 
 export type TreeOrient = "vertical" | "horizontal";
 
@@ -72,7 +73,7 @@ export function TimelineTree({
       .catch((err: unknown) => {
         if (!alive) return;
         setWorks(new Map());
-        onError(`读不出作品：${messageOf(err)}`);
+        onError(tr("读不出作品：{err}", { err: messageOf(err) }));
       });
     return () => {
       alive = false;
@@ -98,22 +99,18 @@ export function TimelineTree({
     <div className="tree-view">
       <div className="timeline-bar">
         <div className="tree-crumb">
-          <button className="link-btn" onClick={onBack}>← 全部音乐人</button>
+          <button className="link-btn" onClick={onBack}>{tr("← 全部音乐人")}</button>
           <span>/</span>
           <b>{entry?.name ?? ""}</b>
         </div>
         <div className="segmented seg-slide tree-orient" style={{ ["--seg-i" as string]: orient === "vertical" ? 0 : 1, ["--seg-n" as string]: 2 }}>
           <span className="seg-thumb" aria-hidden="true" />
-          <button className={orient === "vertical" ? "on" : ""} onClick={() => onOrient("vertical")}>
-            竖向
-          </button>
-          <button className={orient === "horizontal" ? "on" : ""} onClick={() => onOrient("horizontal")}>
-            横向
-          </button>
+          <button className={orient === "vertical" ? "on" : ""} onClick={() => onOrient("vertical")}>{tr("竖向")}</button>
+          <button className={orient === "horizontal" ? "on" : ""} onClick={() => onOrient("horizontal")}>{tr("横向")}</button>
         </div>
         <div className="timeline-legend muted small" aria-hidden="true">
-          <span><i className="tl-node" />{isBand ? "乐队时期" : "发行"}</span>
-          {parts !== null && parts.length > 1 && <span><i className="tl-node solo" />解散后单飞</span>}
+          <span><i className="tl-node" />{isBand ? tr("乐队时期") : tr("发行")}</span>
+          {parts !== null && parts.length > 1 && <span><i className="tl-node solo" />{tr("解散后单飞")}</span>}
         </div>
       </div>
 
@@ -123,18 +120,16 @@ export function TimelineTree({
           <div>
             <h2>{entry?.name}</h2>
             <p className="muted">
-              {[isBand ? "乐队" : "个人", first && `${yearOf(first)}–${entry?.ended ? yearOf(entry.ended) : "至今"}`, `${total} 次发行`]
+              {[isBand ? tr("乐队") : tr("个人"), first && `${yearOf(first)}–${entry?.ended ? yearOf(entry.ended) : tr("至今")}`, tr("{total} 次发行", { total })]
                 .filter(Boolean)
                 .join(" · ")}
-              {parts !== null && parts.length > 1 && ` · 之后 ${parts.slice(1).map((p) => p.name).join("、")} 单飞`}
+              {parts !== null && parts.length > 1 && tr(" · 之后 {map} 单飞", { map: parts.slice(1).map((p) => p.name).join(tr("、")) })}
             </p>
           </div>
-          <button className="btn" onClick={() => onOpenPerson(personId)}>
-            打开档案
-          </button>
+          <button className="btn" onClick={() => onOpenPerson(personId)}>{tr("打开档案")}</button>
         </header>
-        {parts === null && <p className="muted pad">加载中…</p>}
-        {parts !== null && total === 0 && <p className="muted pad">没有带日期的发行。刮削补上发行日期之后这里就有了</p>}
+        {parts === null && <p className="muted pad">{tr("加载中…")}</p>}
+        {parts !== null && total === 0 && <p className="muted pad">{tr("没有带日期的发行。刮削补上发行日期之后这里就有了")}</p>}
         {parts !== null && total > 0 && orient === "vertical" && (
           <VerticalTree parts={parts} playing={playingSongId} onOpenAlbum={onOpenAlbum} onPlaySong={onPlaySong} />
         )}
@@ -148,7 +143,7 @@ export function TimelineTree({
 
 function SongTwig({ song, n, playing, onPlay }: { song: PersonWork; n: number; playing: boolean; onPlay: () => void }) {
   return (
-    <button className={`twig ${playing ? "now" : ""}`} onClick={onPlay} title="从头播放">
+    <button className={`twig ${playing ? "now" : ""}`} onClick={onPlay} title={tr("从头播放")}>
       <em>{playing ? "♪" : n}</em>
       <span lang="ja">{song.title}</span>
       <span className="twig-play">▶</span>
@@ -179,13 +174,9 @@ function VerticalTree({
           <section key={part.personId} className={`vtree-part ${part.after ? "solo" : ""}`}>
             {part.after && (
               <div className="split-card">
-                <b>
-                  {yearOf(part.after.ended)} 年 {part.after.bandName} 解散
-                </b>
+                <b>{tr("{ended} 年 {bandName} 解散", { ended: yearOf(part.after.ended), bandName: part.after.bandName })}</b>
                 <span className="split-who">
-                  <Avatar path="" name={part.name} size={22} />
-                  {part.name} 的个人作品从这里接着长
-                </span>
+                  <Avatar path="" name={part.name} size={22} />{tr("{name} 的个人作品从这里接着长", { name: part.name })}</span>
               </div>
             )}
             {part.items.map((item) => {
@@ -208,7 +199,7 @@ function VerticalTree({
                     <div className="vtree-body">
                       <h3 lang="ja">{item.release.title}</h3>
                       <p className="vtree-meta">
-                        {item.release.date} · {item.release.albumId === null ? "单曲" : `${item.release.tracks} 首`}
+                        {item.release.date} · {item.release.albumId === null ? tr("单曲") : tr("{tracks} 首", { tracks: item.release.tracks })}
                         {part.after && ` · ${part.name}`}
                       </p>
                       <div className="twigs">
@@ -227,7 +218,7 @@ function VerticalTree({
                               })
                             }
                           >
-                            {open ? "收起" : `还有 ${item.songs.length - SHOW_SONGS} 首`}
+                            {open ? tr("收起") : tr("还有 {v} 首", { v: item.songs.length - SHOW_SONGS })}
                           </button>
                         )}
                       </div>
@@ -250,7 +241,7 @@ function AlbumCover({ item, size, onOpenAlbum }: { item: TreeRelease; size: numb
       <Cover path={item.release.coverPath} size={size} rounded={size} />
     </span>
   ) : (
-    <button className="tree-cover" onClick={() => onOpenAlbum(item.personId, albumId)} title="在档案里看这张专辑">
+    <button className="tree-cover" onClick={() => onOpenAlbum(item.personId, albumId)} title={tr("在档案里看这张专辑")}>
       <Cover path={item.release.coverPath} size={size} rounded={8} />
     </button>
   );
@@ -360,7 +351,7 @@ function HorizontalTree({
           data-rel={n.key}
           style={{ left: n.cx, top: nodeY, ["--d" as string]: `${k * 50}ms` }}
         >
-          <button className={`htree-cover ${n.item.release.albumId === null ? "single" : ""}`} onClick={() => toggle(n.key)} title={n.isOpen ? "收起这张的歌" : "展开这张的歌"} aria-expanded={n.isOpen}>
+          <button className={`htree-cover ${n.item.release.albumId === null ? "single" : ""}`} onClick={() => toggle(n.key)} title={n.isOpen ? tr("收起这张的歌") : tr("展开这张的歌")} aria-expanded={n.isOpen}>
             <Cover path={n.item.release.coverPath} size={n.item.release.albumId === null ? 60 : 84} rounded={n.item.release.albumId === null ? 60 : 8} />
           </button>
           <b lang="ja">{n.item.release.title}</b>
@@ -369,9 +360,7 @@ function HorizontalTree({
             {n.part.after && ` · ${n.part.name}`}
           </small>
           {n.item.release.albumId !== null && (
-            <button className="link-btn htree-open" onClick={() => onOpenAlbum(n.item.personId, n.item.release.albumId!)}>
-              档案 →
-            </button>
+            <button className="link-btn htree-open" onClick={() => onOpenAlbum(n.item.personId, n.item.release.albumId!)}>{tr("档案 →")}</button>
           )}
         </div>
       ))}
@@ -385,7 +374,7 @@ function HorizontalTree({
                 className={`htree-song ${playing === song.id ? "now" : ""}`}
                 style={{ ["--d" as string]: `${j * 35}ms` }}
                 onClick={() => onPlaySong(song.id)}
-                title="从头播放"
+                title={tr("从头播放")}
                 lang="ja"
               >
                 {playing === song.id ? "♪ " : ""}

@@ -13,6 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { LemmaForm } from "./wordCloud";
 import type { WordTiming } from "./wordTiming";
+import { tr, trBackend, trPayload } from "./i18n";
 
 // ────────────────────────────── 曲库 ──────────────────────────────
 
@@ -733,7 +734,7 @@ export const RATE_STEPS = [0.5, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0] as const;
 export const PITCH_STEPS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6] as const;
 
 export function pitchLabel(semitones: number): string {
-  return semitones === 0 ? "原调" : `${semitones > 0 ? "+" : ""}${semitones} 半音`;
+  return semitones === 0 ? tr("原调") : tr("{v}{semitones} 半音", { v: semitones > 0 ? "+" : "", semitones });
 }
 
 // ────────────────────────────── 调用 ──────────────────────────────
@@ -767,10 +768,12 @@ function kicked<T>(pending: Promise<T>): Promise<T> {
 
 export async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   try {
-    return await invoke<T>(cmd, args);
+    // 结果里后端写的报错、提示句：英文界面下换成英文（trPayload 只认那几个字段名）
+    return trPayload(await invoke<T>(cmd, args));
   } catch (err) {
-    if (isCommandError(err)) throw new Error(err.message);
-    throw err instanceof Error ? err : new Error(String(err));
+    // 后端的报错是中文；英文界面下按 Rust 源码里的模板换成英文（locales/backend.ts）
+    if (isCommandError(err)) throw new Error(trBackend(err.message));
+    throw err instanceof Error ? err : new Error(trBackend(String(err)));
   }
 }
 
@@ -1082,31 +1085,31 @@ export const api = {
 
 /** UPOS → 中文标签。只覆盖 UI 里会显示的那些。 */
 export const POS_LABELS: Record<string, string> = {
-  NOUN: "名词",
-  PROPN: "专名",
-  VERB: "动词",
-  ADJ: "形容词",
-  ADV: "副词",
-  AUX: "助动词",
-  PRON: "代词",
-  DET: "连体词",
-  NUM: "数词",
-  ADP: "助词",
-  SCONJ: "接续助词",
-  CCONJ: "接续词",
-  PART: "终助词",
-  INTJ: "感叹词",
+  NOUN: tr("名词"),
+  PROPN: tr("专名"),
+  VERB: tr("动词"),
+  ADJ: tr("形容词"),
+  ADV: tr("副词"),
+  AUX: tr("助动词"),
+  PRON: tr("代词"),
+  DET: tr("连体词"),
+  NUM: tr("数词"),
+  ADP: tr("助词"),
+  SCONJ: tr("接续助词"),
+  CCONJ: tr("接续词"),
+  PART: tr("终助词"),
+  INTJ: tr("感叹词"),
 };
 
 /** 实词。只有这些在歌词里可点击——助词点开也没有研究价值。 */
 export const CONTENT_POS = new Set(["NOUN", "PROPN", "VERB", "ADJ", "ADV"]);
 
 export const ROLE_LABELS: Record<string, string> = {
-  lyricist: "作词",
-  composer: "作曲",
-  arranger: "编曲",
+  lyricist: tr("作词"),
+  composer: tr("作曲"),
+  arranger: tr("编曲"),
   translator: "translator",
-  performer: "演唱",
+  performer: tr("演唱"),
 };
 
 /** 长时段显示：14.7 小时这种。总时长用它，单曲用 formatDuration。 */
@@ -1114,8 +1117,8 @@ export function formatLongDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "—";
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.round((seconds % 3600) / 60);
-  if (hours === 0) return `${minutes} 分`;
-  return `${hours} 小时 ${minutes} 分`;
+  if (hours === 0) return tr("{minutes} 分", { minutes });
+  return tr("{hours} 小时 {minutes} 分", { hours, minutes });
 }
 
 export function formatDuration(seconds: number | null): string {
@@ -1347,7 +1350,7 @@ export interface DictProgress {
 export const DICT_DOWNLOAD_BYTES = 45_128_544;
 
 /** 后端说「没有词典」时错误里一定有这一句，界面据此换成「下载」那条横幅 */
-export const NO_DICTIONARY = "找不到 Sudachi 词典";
+export const NO_DICTIONARY = tr("找不到 Sudachi 词典");
 
 /** 一次发布里能装的那个文件（`update_check` 给的，只用来显示；下载时只回传版本号）。 */
 export interface UpdateAsset {
@@ -1387,10 +1390,10 @@ export interface UpdateProgress {
 }
 
 export const LYRICS_SOURCE_LABELS: Record<LyricsSource, string> = {
-  embedded: "音频文件内嵌",
-  sibling: "音频旁边的 .lrc",
-  netease: "在线搜到",
-  manual: "手动导入",
+  embedded: tr("音频文件内嵌"),
+  sibling: tr("音频旁边的 .lrc"),
+  netease: tr("在线搜到"),
+  manual: tr("手动导入"),
 };
 
 export type ImportOutcome =
@@ -1434,11 +1437,11 @@ export interface ImportProgress {
 }
 
 export const ACTION_LABELS: Record<ImportAction["kind"], string> = {
-  new: "新增",
-  alreadyImported: "已在库中",
-  possibleDuplicate: "疑似重复",
-  duplicateInBatch: "本批重复",
-  skipped: "跳过",
+  new: tr("新增"),
+  alreadyImported: tr("已在库中"),
+  possibleDuplicate: tr("疑似重复"),
+  duplicateInBatch: tr("本批重复"),
+  skipped: tr("跳过"),
 };
 
 // ────────────────────────────── 刮削 ──────────────────────────────
@@ -1553,26 +1556,26 @@ export interface ScrapeProgress {
 }
 
 export const SCRAPE_STATUS_LABELS: Record<ScrapeStatusName, string> = {
-  pending: "待刮",
-  running: "进行中",
-  success: "已匹配",
-  low_confidence: "需确认",
-  failed: "失败",
-  skipped: "已跳过",
+  pending: tr("待刮"),
+  running: tr("进行中"),
+  success: tr("已匹配"),
+  low_confidence: tr("需确认"),
+  failed: tr("失败"),
+  skipped: tr("已跳过"),
 };
 
 /** 失败原因 → 该怎么办。分类的意义就在这里。 */
 export const ERROR_HINTS: Record<string, string> = {
-  timeout: "请求超时，稍后重试",
-  rate_limit: "被限流，等一会儿再重试",
-  network: "网络不通",
-  unavailable: "对方服务暂时不可用",
-  invalid_response: "返回结构不对，可能是接口变了",
-  not_found: "对方明确说没有这条记录",
-  no_results: "搜索没有结果，改写法或换源才有用，重试没用",
-  no_match: "有候选但都不够像，需要人工挑",
-  download_failed: "元数据对上了，封面没下下来",
-  unknown: "未分类的错误",
+  timeout: tr("请求超时，稍后重试"),
+  rate_limit: tr("被限流，等一会儿再重试"),
+  network: tr("网络不通"),
+  unavailable: tr("对方服务暂时不可用"),
+  invalid_response: tr("返回结构不对，可能是接口变了"),
+  not_found: tr("对方明确说没有这条记录"),
+  no_results: tr("搜索没有结果，改写法或换源才有用，重试没用"),
+  no_match: tr("有候选但都不够像，需要人工挑"),
+  download_failed: tr("元数据对上了，封面没下下来"),
+  unknown: tr("未分类的错误"),
 };
 
 // ────────────────────────── 歌手 / 专辑封面 ──────────────────────────
@@ -1746,14 +1749,14 @@ export interface AnkiProgress {
 }
 
 export const ANKI_OUTCOME_LABELS: Record<string, string> = {
-  added: "新增",
-  updated: "追加例句",
-  alreadyComplete: "已是最新",
-  skipped: "已有，跳过",
-  noExamples: "无例句",
-  refreshed: "已刷新",
-  notFound: "Anki 里没有",
-  failed: "失败",
+  added: tr("新增"),
+  updated: tr("追加例句"),
+  alreadyComplete: tr("已是最新"),
+  skipped: tr("已有，跳过"),
+  noExamples: tr("无例句"),
+  refreshed: tr("已刷新"),
+  notFound: tr("Anki 里没有"),
+  failed: tr("失败"),
 };
 
 /** 已有这个词时：追加新例句 / 跳过 */

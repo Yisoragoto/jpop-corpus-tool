@@ -6,11 +6,12 @@
  */
 
 import type { Tokenized } from "./api";
+import { tr } from "./i18n";
 
 export function backfillNote(tokenized: Tokenized, error: string): string {
   if (error !== "") {
-    return `顺手补分词没成功（库没被改动）：${error}。可以到「曲库维护 → 补齐缺失分词」再试。`;
+    return tr("顺手补分词没成功（库没被改动）：{error}。可以到「曲库维护 → 补齐缺失分词」再试。", { error });
   }
   if (tokenized.songs === 0) return "";
-  return `顺手给 ${tokenized.songs} 首没分词的歌补上了分词（${tokenized.tokens.toLocaleString()} 个词），那几首现在能查词、有振假名了。`;
+  return tr("顺手给 {songs} 首没分词的歌补上了分词（{tokens} 个词），那几首现在能查词、有振假名了。", { songs: tokenized.songs, tokens: tokenized.tokens.toLocaleString() });
 }

@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import type { Track } from "../api";
 import { FIELD_LABELS, libraryApi, type EditReport, type SongEdit } from "../libraryAdmin";
+import { tr } from "../i18n";
 
 interface Props {
   track: Track;
@@ -54,20 +55,16 @@ export function SongEditor({ track, onSaved, onCancel, onError }: Props) {
           <input
             value={draft[field]}
             onChange={(e) => setDraft({ ...draft, [field]: e.target.value })}
-            placeholder={field === "artist" ? "多人用 / 隔开" : ""}
+            placeholder={field === "artist" ? tr("多人用 / 隔开") : ""}
             autoFocus={field === "title"}
           />
         </label>
       ))}
-      <p className="muted small song-editor-note">
-        只改曲库，不写音频文件的标签。改歌手会按新名字重写演唱署名（多人用 / 隔开）；改专辑会重新归到对应专辑。
-      </p>
+      <p className="muted small song-editor-note">{tr("只改曲库，不写音频文件的标签。改歌手会按新名字重写演唱署名（多人用 / 隔开）；改专辑会重新归到对应专辑。")}</p>
       <div className="song-editor-actions">
-        <button type="button" className="ghost" onClick={onCancel} disabled={saving}>
-          取消
-        </button>
+        <button type="button" className="ghost" onClick={onCancel} disabled={saving}>{tr("取消")}</button>
         <button type="submit" className="primary" disabled={!dirty || !valid || saving}>
-          {saving ? "保存中…" : "保存"}
+          {saving ? tr("保存中…") : tr("保存")}
         </button>
       </div>
     </form>

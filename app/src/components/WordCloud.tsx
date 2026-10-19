@@ -39,6 +39,7 @@ import {
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import { loadPerformers } from "./PerformerPicker";
+import { tr } from "../i18n";
 
 /** 弹出的歌曲列表：KWIC 最多取这么多行再按歌分组 */
 const KWIC_LIMIT = 3000;
@@ -430,8 +431,8 @@ export function WordCloud({
   const showTip = (p: Placed, e: React.PointerEvent) => {
     const tip = tipRef.current;
     if (!tip) return;
-    const spellings = p.word.variants.length > 1 ? `（${p.word.variants.join("・")}）` : "";
-    tip.textContent = `${p.word.lemma}${spellings} · ${POS_LABELS[p.word.mainPos] ?? p.word.mainPos} · ${pyGrouped(p.word.freq)} 次 · ${pyGrouped(p.word.songCount)} 首`;
+    const spellings = p.word.variants.length > 1 ? `${tr("（")}${p.word.variants.join("・")}${tr("）")}` : "";
+    tip.textContent = tr("{lemma}{spellings} · {v} · {freq} 次 · {songCount} 首", { lemma: p.word.lemma, spellings, v: POS_LABELS[p.word.mainPos] ?? p.word.mainPos, freq: pyGrouped(p.word.freq), songCount: pyGrouped(p.word.songCount) });
     tip.hidden = false;
     moveTip(e);
   };
@@ -495,22 +496,22 @@ export function WordCloud({
   const pickedRank = pickedWord === null ? -1 : words.indexOf(pickedWord);
 
   const who =
-    chosen.length === 0 ? "全部歌手" : chosen.length <= 3 ? chosen.map((p) => p.name).join("、") : `${chosen.slice(0, 3).map((p) => p.name).join("、")} 等 ${chosen.length} 位`;
+    chosen.length === 0 ? tr("全部歌手") : chosen.length <= 3 ? chosen.map((p) => p.name).join(tr("、")) : tr("{map} 等 {length} 位", { map: chosen.slice(0, 3).map((p) => p.name).join(tr("、")), length: chosen.length });
   const songTotal = chosen.length === 0 ? null : chosen.reduce((n, p) => n + p.trackCount, 0);
 
   const savePng = async () => {
     setSaving(true);
     try {
       const path = await save({
-        title: "保存词云",
+        title: tr("保存词云"),
         defaultPath: "wordcloud.png",
-        filters: [{ name: "PNG 图片", extensions: ["png"] }],
+        filters: [{ name: tr("PNG 图片"), extensions: ["png"] }],
       });
       if (!path) return;
       const bytes = await renderPng({ placed, width: size.w, height: size.h, stack, tint, title: who, photos: backdrop.map((p) => p.imagePath), colorByPos });
       await api.exportPng(path, bytes);
     } catch (err) {
-      onError(`词云没能保存：${message(err)}`);
+      onError(tr("词云没能保存：{err}", { err: message(err) }));
     } finally {
       setSaving(false);
     }
@@ -543,7 +544,7 @@ export function WordCloud({
 
       <div className="wc-head">
         <div className="wc-faces">
-          {chosen.length === 0 && backdrop.length === 0 && <span className="avatar avatar-text wc-all">全</span>}
+          {chosen.length === 0 && backdrop.length === 0 && <span className="avatar avatar-text wc-all">{tr("全")}</span>}
           {(chosen.length > 0 ? chosen : backdrop).slice(0, 3).map((p) => (
             <Avatar key={p.id} path={p.imagePath} name={p.name} size={chosen.length === 1 ? 56 : 40} />
           ))}
@@ -551,19 +552,19 @@ export function WordCloud({
         <div className="wc-who">
           <h2>{who}</h2>
           <span>
-            {songTotal !== null && `${pyGrouped(songTotal)} 首 · `}
-            {loading ? "读取中…" : `前 ${placed.length} 个词`}
-            {!present && " · 点词看出现在哪些歌"}
+            {songTotal !== null && tr("{songTotal} 首 · ", { songTotal: pyGrouped(songTotal) })}
+            {loading ? tr("读取中…") : tr("前 {length} 个词", { length: placed.length })}
+            {!present && tr(" · 点词看出现在哪些歌")}
           </span>
         </div>
         <div className="wc-tools">
           {!present && (
             <button className="btn wc-btn" disabled={placed.length === 0 || saving} onClick={() => void savePng()}>
-              {saving ? "保存中…" : "保存 PNG"}
+              {saving ? tr("保存中…") : tr("保存 PNG")}
             </button>
           )}
-          <button className="primary wc-btn" onClick={() => onPresent(!present)} title={present ? "退出全屏（Esc）" : "全屏显示词云"}>
-            {present ? "退出全屏" : "全屏"}
+          <button className="primary wc-btn" onClick={() => onPresent(!present)} title={present ? tr("退出全屏（Esc）") : tr("全屏显示词云")}>
+            {present ? tr("退出全屏") : tr("全屏")}
           </button>
         </div>
       </div>
@@ -590,7 +591,7 @@ export function WordCloud({
                 }}
                 role="button"
                 tabIndex={0}
-                aria-label={`${p.word.lemma}，${p.word.freq} 次，列出出现它的歌`}
+                aria-label={tr("{lemma}，{freq} 次，列出出现它的歌", { lemma: p.word.lemma, freq: p.word.freq })}
                 onPointerEnter={(e) => enter(i, p, e)}
                 onPointerMove={moveTip}
                 onPointerLeave={() => leave(i)}
@@ -617,7 +618,7 @@ export function WordCloud({
             );
           })}
         </div>
-        {empty && <p className="wc-empty">这组筛选下没有词</p>}
+        {empty && <p className="wc-empty">{tr("这组筛选下没有词")}</p>}
         {nowLine !== null && <Caption line={nowLine} word={pickedWord} stack={stack} tint={tint} />}
         {pickedWord !== null && (
           <SongPanel
@@ -641,7 +642,7 @@ export function WordCloud({
         )}
       </div>
       {colorByPos && legend.length > 0 && (
-        <div className="wc-legend" aria-label="词性颜色">
+        <div className="wc-legend" aria-label={tr("词性颜色")}>
           {legend.map(([pos, n]) => (
             <span key={pos}>
               <i style={{ background: POS_COLORS[pos] ?? OTHER_POS_COLOR }} />
@@ -796,7 +797,7 @@ function SongPanel({
     try {
       const state = await api.audioState();
       if (state.songId !== s.songId) {
-        onError("现在放的不是这首，先点「校准」从这一行放起来");
+        onError(tr("现在放的不是这首，先点「校准」从这一行放起来"));
         return;
       }
       const span = keywordSpan(s.first);
@@ -855,7 +856,7 @@ function SongPanel({
   const total = songs?.reduce((n, s) => n + s.count, 0) ?? 0;
 
   return (
-    <aside className={`wc-panel${compact ? " compact" : ""}`} aria-label={`「${word.lemma}」出现的歌`} style={{ ["--hl" as string]: highlight }}>
+    <aside className={`wc-panel${compact ? " compact" : ""}`} aria-label={tr("「{lemma}」出现的歌", { lemma: word.lemma })} style={{ ["--hl" as string]: highlight }}>
       <div className="wc-pop-head">
         <span className="wc-pop-ghost" style={{ fontFamily: stack }} aria-hidden="true">
           {word.lemma}
@@ -865,8 +866,8 @@ function SongPanel({
         </b>
         <span>
           {songs === null
-            ? "正在查…"
-            : `出现 ${pyGrouped(total)} 次 · ${songs.length} 首歌${truncated ? `（只查了前 ${pyGrouped(KWIC_LIMIT)} 行）` : ""}`}
+            ? tr("正在查…")
+            : tr("出现 {total} 次 · {length} 首歌{v}", { total: pyGrouped(total), length: songs.length, v: truncated ? tr("（只查了前 {KWIC_LIMIT} 行）", { KWIC_LIMIT: pyGrouped(KWIC_LIMIT) }) : "" })}
         </span>
         <button
           className="wc-pop-hide"
@@ -876,11 +877,9 @@ function SongPanel({
             if (add.length > 0) updateSettings({ wordCloudHidden: [...current, ...add] });
             onClose();
           }}
-          title="以后词云里不再出现这个词。在「设置 → 词云」里能恢复"
-        >
-          不在词云里显示
-        </button>
-        <button className="wc-pop-close" onClick={onClose} aria-label="关闭（Esc）">
+          title={tr("以后词云里不再出现这个词。在「设置 → 词云」里能恢复")}
+        >{tr("不在词云里显示")}</button>
+        <button className="wc-pop-close" onClick={onClose} aria-label={tr("关闭（Esc）")}>
           ✕
         </button>
       </div>
@@ -895,7 +894,7 @@ function SongPanel({
         </div>
       )}
       <div className="wc-pop-list">
-        {songs !== null && songs.length === 0 && <p className="muted small wc-pop-none">没查到例句</p>}
+        {songs !== null && songs.length === 0 && <p className="muted small wc-pop-none">{tr("没查到例句")}</p>}
         {songs?.map((s, i) => {
           const now = playing?.songId === s.songId;
           const at = startOf(s);
@@ -917,28 +916,25 @@ function SongPanel({
               <button
                 className="wc-song-face"
                 onClick={() => playFromWord(s, true)}
-                title={`从「${s.first.keyword}」开始放，进全屏歌词（退出来还是词云）`}
+                title={tr("从「{keyword}」开始放，进全屏歌词（退出来还是词云）", { keyword: s.first.keyword })}
               >
                 {coverOf(s.songId) ? <Cover path={coverOf(s.songId)} size={40} rounded={6} /> : <Avatar path={photoOf(s.artist)} name={s.artist} size={40} />}
                 <span className="wc-song-icon" aria-hidden="true">
                   ⤢
                 </span>
               </button>
-              <button className="wc-song-meta" onClick={() => playFromWord(s, false)} title={`从「${s.first.keyword}」开始放`}>
+              <button className="wc-song-meta" onClick={() => playFromWord(s, false)} title={tr("从「{keyword}」开始放", { keyword: s.first.keyword })}>
                 <strong>{s.title}</strong>
-                <small>
-                  {s.artist} · {s.count} 次{at !== null ? ` · ${formatTime(at.sec)}` : ""}
+                <small>{tr("{artist} · {count} 次", { artist: s.artist, count: s.count })}{at !== null ? ` · ${formatTime(at.sec)}` : ""}
                   {at !== null && at.kind !== "line" && (
-                    <span className={`wc-timing ${at.kind}`} title={`${TIMING_HINT[at.kind]}。右键这一行可以校准`}>
+                    <span className={`wc-timing ${at.kind}`} title={tr("{TIMING_HINT}。右键这一行可以校准", { TIMING_HINT: TIMING_HINT[at.kind] })}>
                       {TIMING_LABEL[at.kind]}
                     </span>
                   )}
                 </small>
                 <em lang="ja" style={{ fontFamily: stack }}>
                   {s.atStart && (
-                    <span className="wc-start" title="这一行就从这个词开始：放出来第一个听到的就是它">
-                      句首
-                    </span>
+                    <span className="wc-start" title={tr("这一行就从这个词开始：放出来第一个听到的就是它")}>{tr("句首")}</span>
                   )}
                   {s.first.left}
                   <mark>{s.first.keyword}</mark>
@@ -948,8 +944,8 @@ function SongPanel({
               <button
                 className="wc-song-go"
                 onClick={() => playFromWord(s, false)}
-                title={`从「${s.first.keyword}」开始放`}
-                aria-label={`播放 ${s.title}`}
+                title={tr("从「{keyword}」开始放", { keyword: s.first.keyword })}
+                aria-label={tr("播放 {title}", { title: s.title })}
               >
                 {now ? (
                   <i className="wc-eq" aria-hidden="true">
@@ -965,24 +961,18 @@ function SongPanel({
               </button>
               {cal && (
                 <div className="wc-calib">
-                  <button className="wc-calib-hit" onClick={() => void markHeard(s)}>
-                    听到「{s.first.keyword}」时点这里
-                  </button>
-                  <button className="wc-calib-done" onClick={() => setCalibrating(null)} title="收起（在这一行上再右键也行）">
-                    完成
-                  </button>
+                  <button className="wc-calib-hit" onClick={() => void markHeard(s)}>{tr("听到「{keyword}」时点这里", { keyword: s.first.keyword })}</button>
+                  <button className="wc-calib-done" onClick={() => setCalibrating(null)} title={tr("收起（在这一行上再右键也行）")}>{tr("完成")}</button>
                   {at?.kind === "manual" && (
                     <span className="wc-calib-tools">
-                      <button onClick={() => void nudge(s, -0.1)} title="早 0.1 秒">
+                      <button onClick={() => void nudge(s, -0.1)} title={tr("早 0.1 秒")}>
                         −0.1
                       </button>
-                      <button onClick={() => void nudge(s, 0.1)} title="晚 0.1 秒">
+                      <button onClick={() => void nudge(s, 0.1)} title={tr("晚 0.1 秒")}>
                         +0.1
                       </button>
-                      <button onClick={() => playFromWord(s, false)}>重听</button>
-                      <button onClick={() => void clearCalibration(s)} title="删掉这处校准，回到估算">
-                        撤销
-                      </button>
+                      <button onClick={() => playFromWord(s, false)}>{tr("重听")}</button>
+                      <button onClick={() => void clearCalibration(s)} title={tr("删掉这处校准，回到估算")}>{tr("撤销")}</button>
                     </span>
                   )}
                 </div>
@@ -993,19 +983,19 @@ function SongPanel({
       </div>
       {!compact && (
         <div className="wc-pop-foot">
-          <button onClick={() => onSearchWord(word.lemma)}>在检索页看 KWIC</button>
-          <button onClick={() => onShowExamples(word.lemma)}>看例句和释义</button>
+          <button onClick={() => onSearchWord(word.lemma)}>{tr("在检索页看 KWIC")}</button>
+          <button onClick={() => onShowExamples(word.lemma)}>{tr("看例句和释义")}</button>
         </div>
       )}
     </aside>
   );
 }
 
-const TIMING_LABEL: Record<string, string> = { manual: "已校准", lrc: "逐字", estimate: "估" };
+const TIMING_LABEL: Record<string, string> = { manual: tr("已校准"), lrc: tr("逐字"), estimate: tr("估") };
 const TIMING_HINT: Record<string, string> = {
-  manual: "从你校准过的位置放",
-  lrc: "从逐字歌词里这个词的时间放",
-  estimate: "这一行没有逐字时间，按字数估的位置，可能差零点几秒",
+  manual: tr("从你校准过的位置放"),
+  lrc: tr("从逐字歌词里这个词的时间放"),
+  estimate: tr("这一行没有逐字时间，按字数估的位置，可能差零点几秒"),
 };
 
 function formatTime(sec: number): string {
@@ -1057,7 +1047,7 @@ async function renderPng(opts: {
   canvas.width = W * SCALE;
   canvas.height = H * SCALE;
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("画布不可用");
+  if (!ctx) throw new Error(tr("画布不可用"));
   ctx.scale(SCALE, SCALE);
 
   // 底图：照片放大、糊开、提饱和，和屏幕上一样
@@ -1130,6 +1120,6 @@ async function renderPng(opts: {
   }
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (!blob) throw new Error("生成图片失败");
+  if (!blob) throw new Error(tr("生成图片失败"));
   return new Uint8Array(await blob.arrayBuffer());
 }

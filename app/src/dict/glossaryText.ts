@@ -3,6 +3,7 @@
  */
 
 import type { GlossaryEntry, StructuredContent } from "./api";
+import { tr } from "../i18n";
 
 const LINE_BREAK = /<br\s*\/?>/i;
 
@@ -34,7 +35,7 @@ function structuredText(content: StructuredContent | undefined): string {
 export function glossaryPlainText(entry: GlossaryEntry): string {
   if (typeof entry === "string") return splitLineBreaks(entry).join(" ");
   if (entry.type === "structured-content") return structuredText(entry.content);
-  return typeof entry.description === "string" ? entry.description : "［图］";
+  return typeof entry.description === "string" ? entry.description : tr("［图］");
 }
 
 /** 折叠时显示的一行：前几条释义的纯文本，压掉多余空白。 */

@@ -15,6 +15,7 @@ import { releaseKey, TimelineTree, type TreeOrient } from "./TimelineTree";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import type { DirectoryData } from "./LibraryBrowser";
+import { tr } from "../i18n";
 
 const ROW = 64;
 const HEAD = 30;
@@ -93,7 +94,7 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
       .catch((err: unknown) => {
         if (!alive) return;
         setReleases([]);
-        onError(`读不出时间轴：${messageOf(err)}`);
+        onError(tr("读不出时间轴：{err}", { err: messageOf(err) }));
       });
     return () => {
       alive = false;
@@ -121,7 +122,7 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
     scroller.current.scrollLeft = scroller.current.scrollWidth;
   }, [layout]);
 
-  if (layout === null || data === null || releases === null) return <p className="muted pad">加载中…</p>;
+  if (layout === null || data === null || releases === null) return <p className="muted pad">{tr("加载中…")}</p>;
 
   if (zoom !== null) {
     return (
@@ -162,21 +163,21 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
   return (
     <div className="timeline-view">
       <div className="timeline-bar">
-        <input className="search" placeholder="筛选音乐人" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input className="search" placeholder={tr("筛选音乐人")} value={query} onChange={(e) => setQuery(e.target.value)} />
         <label className="graph-slider timeline-zoom">
-          <span>缩放</span>
+          <span>{tr("缩放")}</span>
           <input type="range" min={30} max={240} value={perYear} onChange={(e) => setPerYear(Number(e.target.value))} />
         </label>
         <div className="timeline-legend muted small" aria-hidden="true">
-          <span><i className="tl-cover" />专辑</span>
-          <span><i className="tl-dot" />单曲（越大歌越多）</span>
-          <span><i className="tl-end" />解散</span>
-          <span><i className="tl-link" />之后单飞</span>
+          <span><i className="tl-cover" />{tr("专辑")}</span>
+          <span><i className="tl-dot" />{tr("单曲（越大歌越多）")}</span>
+          <span><i className="tl-end" />{tr("解散")}</span>
+          <span><i className="tl-link" />{tr("之后单飞")}</span>
         </div>
       </div>
 
       {rows.length === 0 ? (
-        <p className="muted pad">{query ? "没有匹配的音乐人" : "还没有带年份的歌。刮削补上发行日期之后这里就有了"}</p>
+        <p className="muted pad">{query ? tr("没有匹配的音乐人") : tr("还没有带年份的歌。刮削补上发行日期之后这里就有了")}</p>
       ) : (
         <div className="timeline-scroll" ref={scroller} onScroll={() => tip && setTip(null)}>
           <div className="timeline-grid" style={{ height: HEAD + rows.length * ROW + 16 }}>
@@ -188,16 +189,15 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
                   className={`timeline-name ${r.under !== null ? "under" : ""}`}
                   style={{ height: ROW, ["--n" as string]: Math.min(i, 20) }}
                   onClick={() => setZoom(r.id)}
-                  title={`放大看 ${r.name} 的时间树`}
+                  title={tr("放大看 {name} 的时间树", { name: r.name })}
                 >
                   <Avatar path={r.imagePath} name={r.name} size={r.under !== null ? 26 : 32} />
                   <span className="timeline-name-text">
                     <b>{r.name}</b>
                     <small>
-                      {r.isBand ? "乐队" : "个人"} · {r.releases.length} 次发行
-                    </small>
+                      {r.isBand ? tr("乐队") : tr("个人")}{" "}{tr("· {length} 次发行", { length: r.releases.length })}</small>
                   </span>
-                  <span className="timeline-zoom-in">放大 →</span>
+                  <span className="timeline-zoom-in">{tr("放大 →")}</span>
                 </button>
               ))}
             </div>
@@ -259,7 +259,7 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
                       }}
                       onMouseLeave={() => setTip(null)}
                       onClick={() => setZoom(r.id, releaseKey(rel))}
-                      aria-label={`${rel.title}，${rel.date}`}
+                      aria-label={`${rel.title}${tr("，")}${rel.date}`}
                     >
                       <Cover path={rel.coverPath} size={size} rounded={rel.albumId === null ? size : 5} />
                     </button>
@@ -276,9 +276,7 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
           <Cover path={tip.r.coverPath} size={40} rounded={6} />
           <span>
             <b>{tip.r.title}</b>
-            <small>
-              {tip.r.date} · {tip.r.tracks} 首
-            </small>
+            <small>{tr("{date} · {tracks} 首", { date: tip.r.date, tracks: tip.r.tracks })}</small>
           </span>
         </div>
       )}

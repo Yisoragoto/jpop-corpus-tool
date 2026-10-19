@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, formatDuration, POS_LABELS, ROLE_LABELS, type QuickHit } from "../api";
+import { tr } from "../i18n";
 
 /** 一条可执行的命令。 */
 export interface PaletteCommand {
@@ -155,7 +156,7 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
           className="palette-input"
           value={text}
           placeholder={
-            commandMode ? "输入命令…" : "搜索曲目 / 歌手 / 专辑 / 词 / 歌词（打 > 切到命令）"
+            commandMode ? tr("输入命令…") : tr("搜索曲目 / 歌手 / 专辑 / 词 / 歌词（打 > 切到命令）")
           }
           onChange={(e) => {
             setText(e.target.value);
@@ -196,22 +197,20 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
             ))}
 
           {!commandMode && query.length > 0 && !busy && hits.length === 0 && (
-            <p className="muted pad">没有结果</p>
+            <p className="muted pad">{tr("没有结果")}</p>
           )}
           {!commandMode && query.length === 0 && (
-            <p className="muted pad">
-              输入关键词搜索全库；打 <code>&gt;</code> 切换到命令模式。
-            </p>
+            <p className="muted pad">{tr("输入关键词搜索全库；打")}{" "}<code>&gt;</code>{" "}{tr("切换到命令模式。")}</p>
           )}
           {commandMode && visibleCommands.length === 0 && (
-            <p className="muted pad">没有匹配的命令</p>
+            <p className="muted pad">{tr("没有匹配的命令")}</p>
           )}
         </div>
 
         <div className="palette-footer muted">
-          <span>↑↓ 选择</span>
-          <span>Enter 执行</span>
-          <span>Esc 关闭</span>
+          <span>{tr("↑↓ 选择")}</span>
+          <span>{tr("Enter 执行")}</span>
+          <span>{tr("Esc 关闭")}</span>
         </div>
       </div>
     </div>
@@ -219,11 +218,11 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
 }
 
 export const KIND_LABELS: Record<QuickHit["kind"], string> = {
-  track: "曲目",
-  album: "专辑",
-  person: "人物",
-  word: "词",
-  lyric: "歌词",
+  track: tr("曲目"),
+  album: tr("专辑"),
+  person: tr("人物"),
+  word: tr("词"),
+  lyric: tr("歌词"),
 };
 
 export function hitKey(hit: QuickHit): string {
@@ -263,11 +262,11 @@ export function hitHint(hit: QuickHit): string {
         .filter((x) => x && x !== "—")
         .join(" · ");
     case "album":
-      return `${hit.albumArtist} · ${hit.trackCount} 首`;
+      return tr("{albumArtist} · {trackCount} 首", { albumArtist: hit.albumArtist, trackCount: hit.trackCount });
     case "person":
-      return `${hit.roles.map((r) => ROLE_LABELS[r] ?? r).join(" / ")} · ${hit.trackCount} 首`;
+      return tr("{map} · {trackCount} 首", { map: hit.roles.map((r) => ROLE_LABELS[r] ?? r).join(" / "), trackCount: hit.trackCount });
     case "word":
-      return `${POS_LABELS[hit.pos] ?? hit.pos} · ${hit.freq} 次 · ${hit.songCount} 首`;
+      return tr("{v} · {freq} 次 · {songCount} 首", { v: POS_LABELS[hit.pos] ?? hit.pos, freq: hit.freq, songCount: hit.songCount });
     case "lyric":
       return `${hit.artist} · ${hit.title}`;
   }

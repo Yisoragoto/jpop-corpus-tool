@@ -55,6 +55,7 @@ import { LookupResults } from "../dict/LookupResults";
 import { MineButton } from "../dict/MineButton";
 import { mineApi, useMineSettings, type MineCheck } from "../dict/mine";
 import { ColumnSplitter, useColumnWidths } from "../components/ColumnSplitter";
+import { tr } from "../i18n";
 
 /** 查词是从哪一行第几个词发起的（制卡时用来取例句、切音频）。点释义里的链接查词时没有。 */
 interface LineContext {
@@ -496,7 +497,7 @@ export function LibraryPage({
                     lookUp(rest(), context);
                     setStageSide(true);
                   }}
-                  title="查词典"
+                  title={tr("查词典")}
                 >
                   {content}
                 </span>
@@ -504,9 +505,7 @@ export function LibraryPage({
             })}
         {/* 跟在这一行歌词后面；放在 .text 里，普通视图和全屏都只认这一个元素 */}
         {karaokeLine && karaoke.kind === "estimate" && (
-          <span className="karaoke-est" title="这首歌没有逐字时间，每个字的时间是按字数估的（可以在词云里右键校准某个词）">
-            估
-          </span>
+          <span className="karaoke-est" title={tr("这首歌没有逐字时间，每个字的时间是按字数估的（可以在词云里右键校准某个词）")}>{tr("估")}</span>
         )}
       </span>
     );
@@ -719,7 +718,7 @@ export function LibraryPage({
             ? matchedPrefix(lookup.text, lookup.result.originalTextLength)
             : matchedPrefix(lookup.text, 8)}
         </span>
-        <button className="corpus-dict-close" onClick={() => setLookup(null)} title="关闭这次查词">
+        <button className="corpus-dict-close" onClick={() => setLookup(null)} title={tr("关闭这次查词")}>
           ✕
         </button>
       </h3>
@@ -728,7 +727,7 @@ export function LibraryPage({
           result={lookup.result}
           loading={lookup.loading}
           error={lookup.error}
-          emptyText="词典里没有查到（在「词典」页导入词典）"
+          emptyText={tr("词典里没有查到（在「词典」页导入词典）")}
           onLookup={lookUpLink}
           compact
           entryActions={(entry) => {
@@ -782,15 +781,15 @@ export function LibraryPage({
             <button
               className="kwic-play"
               onClick={() => void audition(actions, ex.utteranceId).catch((e) => onAudioError(String(e)))}
-              title="试听这一句（到行尾自动停）"
-              aria-label="试听这一句"
+              title={tr("试听这一句（到行尾自动停）")}
+              aria-label={tr("试听这一句")}
             >
               ▶
             </button>
           )}
         </div>
       ))}
-      {word.examples.length === 0 && <p className="muted">没有例句</p>}
+      {word.examples.length === 0 && <p className="muted">{tr("没有例句")}</p>}
     </div>
   );
 
@@ -798,17 +797,17 @@ export function LibraryPage({
     <>
       {!word && !wordLoading && lookup === null && selected !== null && (
         <div className="song-facts">
-          <h3 className="side-head">这首歌</h3>
+          <h3 className="side-head">{tr("这首歌")}</h3>
           <dl className="facts">
-            {selected.album && <><dt>专辑</dt><dd>{selected.album}</dd></>}
-            {selected.year && <><dt>年份</dt><dd>{selected.year}</dd></>}
-            {selected.genre && <><dt>流派</dt><dd>{selected.genre}</dd></>}
-            {selected.durationSec !== null && <><dt>时长</dt><dd>{formatDuration(selected.durationSec)}</dd></>}
-            <dt>歌词</dt><dd>{lyrics.length > 0 ? `${lyrics.length} 行` : "没有"}</dd>
+            {selected.album && <><dt>{tr("专辑")}</dt><dd>{selected.album}</dd></>}
+            {selected.year && <><dt>{tr("年份")}</dt><dd>{selected.year}</dd></>}
+            {selected.genre && <><dt>{tr("流派")}</dt><dd>{selected.genre}</dd></>}
+            {selected.durationSec !== null && <><dt>{tr("时长")}</dt><dd>{formatDuration(selected.durationSec)}</dd></>}
+            <dt>{tr("歌词")}</dt><dd>{lyrics.length > 0 ? tr("{length} 行", { length: lyrics.length }) : tr("没有")}</dd>
           </dl>
           {credits.length > 0 && (
             <>
-              <h3 className="side-head">署名</h3>
+              <h3 className="side-head">{tr("署名")}</h3>
               {creditPeople.map((c, i) => (
                 <button key={c.personId} className="peer" style={{ ["--n" as string]: i }} onClick={() => openPerson(c.personId)}>
                   <Avatar path={c.roles.includes("performer") ? photoOf(c.name) : ""} name={c.name} size={30} />
@@ -821,20 +820,20 @@ export function LibraryPage({
             </>
           )}
           <SongProfile songId={selected.id} onSearchWord={onSearchWord} />
-          <p className="muted small hint">点歌词里的词，这里换成释义和它在整个语料里的例句</p>
+          <p className="muted small hint">{tr("点歌词里的词，这里换成释义和它在整个语料里的例句")}</p>
         </div>
       )}
       {!word && !wordLoading && lookup === null && selected === null && (
-        <p className="muted pad">点歌词里的词：看释义，以及它在整个语料里的样子</p>
+        <p className="muted pad">{tr("点歌词里的词：看释义，以及它在整个语料里的样子")}</p>
       )}
-      {wordLoading && <p className="muted pad">查询中…</p>}
+      {wordLoading && <p className="muted pad">{tr("查询中…")}</p>}
       {word && !wordLoading && (
         <>
           <h2 className="lemma">{word.lemma}</h2>
           <div className="numbers">
-            <Stat label="出现" value={word.occurrences} align="start" />
-            <Stat label="歌曲" value={word.songCount} align="start" />
-            <Stat label="歌手" value={word.artistCount} align="start" />
+            <Stat label={tr("出现")} value={word.occurrences} align="start" />
+            <Stat label={tr("歌曲")} value={word.songCount} align="start" />
+            <Stat label={tr("歌手")} value={word.artistCount} align="start" />
           </div>
           <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma)} />
           {word.firstYear && (
@@ -855,23 +854,20 @@ export function LibraryPage({
       {(word !== null || lookup !== null) && !wordLoading && (
         <>
           <div className="segmented corpus-tabs">
-            <button className={corpusTab === "dict" ? "on" : ""} onClick={() => pickTab("dict")}>
-              词典
-            </button>
-            <button className={corpusTab === "examples" ? "on" : ""} onClick={() => pickTab("examples")}>
-              例句{word ? ` ${word.examples.length}` : ""}
+            <button className={corpusTab === "dict" ? "on" : ""} onClick={() => pickTab("dict")}>{tr("词典")}</button>
+            <button className={corpusTab === "examples" ? "on" : ""} onClick={() => pickTab("examples")}>{tr("例句")}{word ? ` ${word.examples.length}` : ""}
             </button>
           </div>
           {corpusTab === "dict"
-            ? dictionarySection || <p className="muted pad">这次没有查词典（点歌词里的词会查）</p>
-            : examplesSection || <p className="muted pad">没有例句</p>}
+            ? dictionarySection || <p className="muted pad">{tr("这次没有查词典（点歌词里的词会查）")}</p>
+            : examplesSection || <p className="muted pad">{tr("没有例句")}</p>}
         </>
       )}
     </>
   );
 
   const backButton = canBack && (
-    <button className="btn nav-back" onClick={back} title="返回" aria-label="返回">
+    <button className="btn nav-back" onClick={back} title={tr("返回")} aria-label={tr("返回")}>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="m14 7-5 5 5 5" />
       </svg>
@@ -888,7 +884,7 @@ export function LibraryPage({
       ref={columns.container}
     >
       {browserHidden && (
-        <button className="btn browser-reveal" onClick={toggleBrowser} title="展开左栏" aria-label="展开左栏">
+        <button className="btn browser-reveal" onClick={toggleBrowser} title={tr("展开左栏")} aria-label={tr("展开左栏")}>
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
             <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
             <path d="M9 4.5v15M13 10l2 2-2 2" />
@@ -910,9 +906,7 @@ export function LibraryPage({
         onHide={toggleBrowser}
         banner={
           missing.length > 0 && (
-            <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title="扫文件夹或逐首选文件找回">
-              ⚠ {missing.length} 首找不到音频文件 · 找回
-            </button>
+            <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title={tr("扫文件夹或逐首选文件找回")}>{tr("⚠ {length} 首找不到音频文件 · 找回", { length: missing.length })}</button>
           )
         }
       />
@@ -920,7 +914,7 @@ export function LibraryPage({
       <ColumnSplitter
         className="split-left"
         edge="left"
-        label="资料库左栏宽度"
+        label={tr("资料库左栏宽度")}
         onDrag={columns.drag}
         onNudge={columns.nudge}
         onReset={columns.reset}
@@ -1020,17 +1014,17 @@ export function LibraryPage({
             onApplied={(ids) => {
               refreshMissing();
               void actions.refreshAfterChange(ids, false);
-              setMaintainNote({ forSong: selected?.id ?? null, text: `找回了 ${ids.length} 首的音频` });
+              setMaintainNote({ forSong: selected?.id ?? null, text: tr("找回了 {length} 首的音频", { length: ids.length }) });
             }}
             onClose={() => setPanel(null)}
             onError={onAudioError}
           />
         )}
         {panel !== "repair" && note && !selected && <p className="maintain-note">{note}</p>}
-        {panel !== "repair" && !selected && <p className="muted pad">从左侧选一位音乐人、一张专辑或一首歌</p>}
+        {panel !== "repair" && !selected && <p className="muted pad">{tr("从左侧选一位音乐人、一张专辑或一首歌")}</p>}
         {panel !== "repair" && selected && (
           <>
-            <nav className="crumbs" aria-label="这首歌在哪">
+            <nav className="crumbs" aria-label={tr("这首歌在哪")}>
               {performers.length > 0
                 ? performers.map((c, i) => (
                     <Fragment key={c.personId}>
@@ -1038,7 +1032,7 @@ export function LibraryPage({
                       <button onClick={() => openPerson(c.personId)}>{c.name}</button>
                     </Fragment>
                   ))
-                : <span>{selected.artist || "未知歌手"}</span>}
+                : <span>{selected.artist || tr("未知歌手")}</span>}
               {selected.album && (
                 <>
                   <span className="crumb-sep">›</span>
@@ -1065,7 +1059,7 @@ export function LibraryPage({
                   <ul className="credits">
                     {credits.map((c) => (
                       <li key={`${c.role}-${c.personId}`}>
-                        <button className="credit-link" onClick={() => openPerson(c.personId)} title={`看 ${c.name} 的档案`}>
+                        <button className="credit-link" onClick={() => openPerson(c.personId)} title={tr("看 {name} 的档案", { name: c.name })}>
                           <span className="role">{ROLE_LABELS[c.role] ?? c.role}</span>
                           {c.name}
                         </button>
@@ -1081,8 +1075,8 @@ export function LibraryPage({
                     <button
                       className={`btn more-btn ${menuOpen ? "on" : ""}`}
                       onClick={() => setMenuOpen((v) => !v)}
-                      title="更多"
-                      aria-label="更多"
+                      title={tr("更多")}
+                      aria-label={tr("更多")}
                       aria-expanded={menuOpen}
                     >
                       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -1093,37 +1087,23 @@ export function LibraryPage({
                     </button>
                     {menuOpen && (
                       <div className="menu-panel" role="menu">
-                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "edit" ? null : "edit"); }}>
-                          编辑信息
-                        </button>
-                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lineage" ? null : "lineage"); }}>
-                          来源与校验
-                        </button>
+                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "edit" ? null : "edit"); }}>{tr("编辑信息")}</button>
+                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lineage" ? null : "lineage"); }}>{tr("来源与校验")}</button>
                         {lyrics.length > 0 && (
-                          <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lyrics" ? null : "lyrics"); }}>
-                            逐行编辑歌词
-                          </button>
+                          <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lyrics" ? null : "lyrics"); }}>{tr("逐行编辑歌词")}</button>
                         )}
                         {lyrics.length > 0 && (
                           <LyricsFill songId={selected.id} hasLyrics onAttached={() => void actions.reloadLyrics()} onError={onAudioError} />
                         )}
                         <hr />
-                        <button role="menuitem" className="danger" onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}>
-                          删除这首歌…
-                        </button>
+                        <button role="menuitem" className="danger" onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}>{tr("删除这首歌…")}</button>
                       </div>
                     )}
                   </div>
                 </div>
                 {confirmDelete && (
-                  <span className="confirm-delete">
-                    删掉《{selected.title}》？歌词和分词一起删，音频文件不动
-                    <button className="link-btn danger" onClick={() => void deleteSelected()}>
-                      确认删除
-                    </button>
-                    <button className="link-btn" onClick={() => setConfirmDelete(false)}>
-                      取消
-                    </button>
+                  <span className="confirm-delete">{tr("删掉《{title}》？歌词和分词一起删，音频文件不动", { title: selected.title })}<button className="link-btn danger" onClick={() => void deleteSelected()}>{tr("确认删除")}</button>
+                    <button className="link-btn" onClick={() => setConfirmDelete(false)}>{tr("取消")}</button>
                   </span>
                 )}
               </div>
@@ -1169,30 +1149,22 @@ export function LibraryPage({
             )}
             {note && <p className="maintain-note">{note}</p>}
             {missingIds.has(selected.id) && (
-              <p className="warn small">
-                这首歌的音频文件找不到了：{selected.audioPath || "（没有记录路径）"}。
-                <button className="link-btn" onClick={() => setPanel("repair")}>
-                  找回
-                </button>
+              <p className="warn small">{tr("这首歌的音频文件找不到了：")}{selected.audioPath || tr("（没有记录路径）")}{tr("。")}
+                <button className="link-btn" onClick={() => setPanel("repair")}>{tr("找回")}</button>
               </p>
             )}
 
             {untokenized && (
-              <p className="warn small">
-                这首歌有歌词但还没分词，所以点不了词、也没有振假名（多半是在还没有分词词典时入库的）。
-                <button className="link-btn" onClick={() => void tokenizeNow()} disabled={tokenizing}>
-                  {tokenizing ? "分词中…" : "现在补分词"}
+              <p className="warn small">{tr("这首歌有歌词但还没分词，所以点不了词、也没有振假名（多半是在还没有分词词典时入库的）。")}<button className="link-btn" onClick={() => void tokenizeNow()} disabled={tokenizing}>
+                  {tokenizing ? tr("分词中…") : tr("现在补分词")}
                 </button>
               </p>
             )}
-            {lyricsLoading && <p className="muted pad">加载歌词…</p>}
+            {lyricsLoading && <p className="muted pad">{tr("加载歌词…")}</p>}
             {!lyricsLoading && lyrics.length === 0 && (
               <div className="empty-state pad">
-                <p>这首歌还没有歌词</p>
-                <p className="muted small">
-                  导入只认音频旁边的同名 .lrc。在线搜一下，或者自己选一份文件——
-                  歌词会存进语料库目录的 raw/lyrics_lrc，和导入进来的一样。
-                </p>
+                <p>{tr("这首歌还没有歌词")}</p>
+                <p className="muted small">{tr("导入只认音频旁边的同名 .lrc。在线搜一下，或者自己选一份文件—— 歌词会存进语料库目录的 raw/lyrics_lrc，和导入进来的一样。")}</p>
                 <LyricsFill
                   songId={selected.id}
                   hasLyrics={false}
@@ -1221,7 +1193,7 @@ export function LibraryPage({
                     className="time"
                     disabled={!audioReady || line.timeSec === null}
                     onClick={() => line.timeSec !== null && void api.audioSeek(line.timeSec)}
-                    title={line.timeSec === null ? "这行没有时间轴" : "跳到这一句"}
+                    title={line.timeSec === null ? tr("这行没有时间轴") : tr("跳到这一句")}
                   >
                     {line.timeSec === null ? "—" : formatDuration(line.timeSec)}
                   </button>
@@ -1232,10 +1204,10 @@ export function LibraryPage({
                       if (looped) {
                         await api.audioSetLoop();
                       } else if (!(await loopLine(idx))) {
-                        onAudioError("这一句太短，无法循环");
+                        onAudioError(tr("这一句太短，无法循环"));
                       }
                     }}
-                    title={looped ? "取消单句循环" : "循环这一句"}
+                    title={looped ? tr("取消单句循环") : tr("循环这一句")}
                   >
                     🔁
                   </button>
@@ -1250,7 +1222,7 @@ export function LibraryPage({
       <ColumnSplitter
         className={`split-right ${wide ? "is-hidden" : ""}`}
         edge="right"
-        label="查词栏宽度"
+        label={tr("查词栏宽度")}
         onDrag={columns.drag}
         onNudge={columns.nudge}
         onReset={columns.reset}

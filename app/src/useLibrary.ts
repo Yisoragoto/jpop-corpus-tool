@@ -13,6 +13,7 @@ import { useCallback, useState } from "react";
 
 import { api, type Credit, type LyricLine, type Track, type WordInCorpus } from "./api";
 import { getActiveScope } from "./subcorpusScope";
+import { tr } from "./i18n";
 
 export interface LibraryState {
   tracks: Track[];
@@ -104,7 +105,7 @@ export function useLibrary(
       const known = tracks.find((t) => t.id === songId);
       const track = known ?? (await api.getTrack(songId).catch(() => null));
       if (!track) {
-        onError(`找不到曲目 ${songId}`);
+        onError(tr("找不到曲目 {songId}", { songId }));
         return false;
       }
       await openTrack(track, opts);

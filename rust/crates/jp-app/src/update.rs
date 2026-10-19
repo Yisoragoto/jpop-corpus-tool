@@ -413,6 +413,9 @@ impl UpdateMemory {
     }
 }
 
+/// 拉起安装程序时带的参数，见 [`launch_installer`]
+pub const INSTALLER_ARGS: [&str; 3] = ["/P", "/UPDATE", "/R"];
+
 /// 拉起安装程序。调用方随后退出应用——NSIS 要替换正在运行的 exe。
 pub fn launch_installer(path: &Path) -> Result<()> {
     anyhow::ensure!(path.is_file(), "找不到安装包：{}", path.display());
@@ -421,7 +424,13 @@ pub fn launch_installer(path: &Path) -> Result<()> {
     if INSTALL_LAUNCHED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return Ok(());
     }
+    // 带上 Tauri 安装程序（NSIS）的更新参数，和官方 updater 插件一样：
+    // - `/P` 被动模式：只显示一个进度条，不问任何问题、跳过所有页面；
+    // - `/UPDATE` 覆盖安装：不先卸载旧版（不弹「先卸载旧版本？」），快捷方式、开机自启保持原样；
+    // - `/R` 装完自动重新打开应用。
+    // 安装位置沿用上次的（安装程序自己从注册表读）。
     std::process::Command::new(path)
+        .args(INSTALLER_ARGS)
         .spawn()
         .with_context(|| format!("启动安装程序失败：{}", path.display()))?;
     Ok(())
@@ -437,6 +446,14 @@ mod tests {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/github-releases.json"),
         )
         .expect("缺少 tests/data/github-releases.json")
+    }
+
+    #[test]
+    fn the_installer_updates_in_place_without_asking() {
+        // 不带 /UPDATE 时 NSIS 会先弹「要先卸载旧版本吗」；不带 /P 会走完整的安装向导
+        for flag in ["/P", "/UPDATE", "/R"] {
+            assert!(INSTALLER_ARGS.contains(&flag), "缺 {flag}");
+        }
     }
 
     #[test]

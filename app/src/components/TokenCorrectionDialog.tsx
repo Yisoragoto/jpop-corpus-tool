@@ -21,6 +21,7 @@ import {
   sameTokens,
   splitToken,
 } from "../corrections";
+import { tr } from "../i18n";
 
 const KNOWN_POS = new Set<string>(UPOS_TAGS);
 
@@ -47,7 +48,7 @@ export function TokenCorrectionDialog({ utteranceId, onClose, onChanged, onError
       .then((v) => {
         if (!alive) return;
         if (!v) {
-          onError("这一行已经不在库里了");
+          onError(tr("这一行已经不在库里了"));
           onClose();
           return;
         }
@@ -133,15 +134,15 @@ export function TokenCorrectionDialog({ utteranceId, onClose, onChanged, onError
       <div
         className="palette tc-dialog"
         role="dialog"
-        aria-label="分词校正"
+        aria-label={tr("分词校正")}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="tc-head">
-          <div className="tc-text">{view?.text ?? "加载中…"}</div>
+          <div className="tc-text">{view?.text ?? tr("加载中…")}</div>
           {view && (
             <div className="muted small">
               {view.artist} · {view.title}
-              {view.corrected && " · 已校正过"}
+              {view.corrected && tr(" · 已校正过")}
             </div>
           )}
         </div>
@@ -149,19 +150,19 @@ export function TokenCorrectionDialog({ utteranceId, onClose, onChanged, onError
         <div className="tc-table">
           <div className="tc-row tc-header">
             <span />
-            <span>表层形</span>
-            <span>词元</span>
-            <span>词性</span>
+            <span>{tr("表层形")}</span>
+            <span>{tr("词元")}</span>
+            <span>{tr("词性")}</span>
           </div>
           {tokens.map((t, i) => (
             <div key={i} className={`tc-row ${selected.includes(i) ? "on" : ""}`}>
-              <button className="tc-pick" onClick={() => toggle(i)} title="选中 / 取消选中">
+              <button className="tc-pick" onClick={() => toggle(i)} title={tr("选中 / 取消选中")}>
                 {i + 1}
               </button>
               <input value={t.surface} onChange={(e) => edit(i, "surface", e.target.value)} />
               <input value={t.lemma} onChange={(e) => edit(i, "lemma", e.target.value)} />
               <select value={t.pos} onChange={(e) => edit(i, "pos", e.target.value)}>
-                {!KNOWN_POS.has(t.pos) && <option value={t.pos}>{t.pos || "（空）"}</option>}
+                {!KNOWN_POS.has(t.pos) && <option value={t.pos}>{t.pos || tr("（空）")}</option>}
                 {UPOS_TAGS.map((p) => (
                   <option key={p} value={p}>
                     {p}
@@ -174,10 +175,8 @@ export function TokenCorrectionDialog({ utteranceId, onClose, onChanged, onError
         </div>
 
         <div className="tc-actions">
-          <button className="tc-btn" disabled={!canMerge || busy} onClick={merge}>
-            合并选中的词
-          </button>
-          <span className="muted small">在第</span>
+          <button className="tc-btn" disabled={!canMerge || busy} onClick={merge}>{tr("合并选中的词")}</button>
+          <span className="muted small">{tr("在第")}</span>
           <input
             type="number"
             className="tc-split"
@@ -187,48 +186,38 @@ export function TokenCorrectionDialog({ utteranceId, onClose, onChanged, onError
             disabled={!canSplit}
             onChange={(e) => setSplitAt(Number(e.target.value) || 1)}
           />
-          <span className="muted small">个字后</span>
+          <span className="muted small">{tr("个字后")}</span>
           <button
             className="tc-btn"
             disabled={!canSplit || busy || splitAt < 1 || splitAt > singleLen - 1}
             onClick={split}
-          >
-            拆开
-          </button>
-          <span className="muted small tc-hint">点左边的序号选词</span>
+          >{tr("拆开")}</button>
+          <span className="muted small tc-hint">{tr("点左边的序号选词")}</span>
         </div>
 
         {!aligned && (
-          <p className="warn small tc-note">
-            词拼起来和原句对不上。可以保存，但 KWIC 的左右语境会退回按词拼接。
-          </p>
+          <p className="warn small tc-note">{tr("词拼起来和原句对不上。可以保存，但 KWIC 的左右语境会退回按词拼接。")}</p>
         )}
 
         <div className="tc-footer">
           {view?.corrected ? (
             <button className="tc-btn danger" disabled={busy} onClick={() => void revert()}>
-              {confirmRevert ? "再点一次，撤销校正" : "撤销校正"}
+              {confirmRevert ? tr("再点一次，撤销校正") : tr("撤销校正")}
             </button>
           ) : (
             <button
               className="tc-btn"
               disabled={!dirty || busy}
               onClick={() => view && setTokens(view.tokens)}
-            >
-              放弃修改
-            </button>
+            >{tr("放弃修改")}</button>
           )}
           <span className="spacer" />
-          <button className="tc-btn" onClick={onClose}>
-            取消
-          </button>
+          <button className="tc-btn" onClick={onClose}>{tr("取消")}</button>
           <button
             className="tc-btn primary"
             disabled={!dirty || cleaned.length === 0 || busy}
             onClick={() => void save()}
-          >
-            保存
-          </button>
+          >{tr("保存")}</button>
         </div>
       </div>
     </div>
