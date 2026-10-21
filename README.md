@@ -340,6 +340,7 @@ raw/           本地音频和歌词目录，Git 默认忽略内容
 
 | 文档 | 内容 |
 |---|---|
+| [BUGS.md](docs/BUGS.md) | Bug 复现、根因、回归测试与修复索引 |
 | [clients.md](docs/clients.md) | 一个 Rust 核心、两个客户端；数据怎么关联到音频；分析的计数口径 |
 | [provenance.md](docs/provenance.md) | 歌词版本、校验、修订历史、字段来源、可复现的分析存档 |
 | [import.md](docs/import.md) | 扫描、计划、写库，歌词匹配 |

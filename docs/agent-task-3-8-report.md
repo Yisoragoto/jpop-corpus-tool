@@ -29,3 +29,16 @@
 
 限制与范围外记录：基线只许缩减，增加存量例外必须在评审时拒绝；不改视觉样式。
 存量 `jp-setup::net` 有一项测试会连 example.invalid，导致离线全量测试等待网络超时；本项不改下载逻辑。
+
+## B：Bug 建档与索引
+
+文件：`docs/BUGS.md`、`docs/bugs/.gitkeep`、`scripts/bug.ps1`、
+`scripts/tests/bug.Tests.ps1`、`README.md`。
+
+- `./scripts/tests/bug.Tests.ps1`：通过；独立临时仓库中连续 new 得到 0001/0002，
+  手工制造重号后 renumber 修复，settle 再跑索引不变。
+- `npm run typecheck` 和 `npm test`：通过，33 文件、232 测试。
+- `cargo test --workspace --no-fail-fast --offline`：通过；Rust 源码未改，clippy 沿用 A 的通过结果。
+- README 的文档表已链接 BUGS.md；“两个勾没打满不算修完”写入仓库规则。
+
+未做：没有把 Issue #15 标成修复；本计划不包含它的 macOS 根因修复。
