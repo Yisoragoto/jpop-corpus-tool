@@ -27,7 +27,10 @@ final class AppModelTests: XCTestCase {
         model.cancelCreation()
         XCTAssertNil(model.pendingCreationURL)
         await model.selectLibrary(folder: folder)
-        await model.confirmCreation()
+        // SwiftUI may dismiss before invoking the button action; the captured URL must survive.
+        let confirmedFolder = try XCTUnwrap(model.pendingCreationURL)
+        model.cancelCreation()
+        await model.confirmCreation(in: confirmedFolder)
         opened = await recorder.urls
         XCTAssertEqual(opened, [folder.appendingPathComponent("corpus.db")])
         XCTAssertEqual(model.section, .importer)

@@ -46,7 +46,7 @@ public final class AppModel {
     public var pendingCreationURL: URL?
     public let player = PlayerModel()
     /// Shared with ImportView so smoke exercises the model actually displayed in the window.
-    public let importer = ImportModel()
+    public private(set) var importer = ImportModel()
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let openClient: @Sendable (URL) async throws -> any CorpusCalling
@@ -102,7 +102,7 @@ public final class AppModel {
             && !isDirectory.boolValue
     }
 
-    /// Selecting a non-library folder requests confirmation; only confirmCreation() creates it.
+    /// Selecting a non-library folder requests confirmation; only the explicit create action creates it.
     public func selectLibrary(folder: URL) async {
         errorMessage = nil
         if Self.hasDatabase(in: folder) {
@@ -113,8 +113,8 @@ public final class AppModel {
         }
     }
 
-    public func confirmCreation() async {
-        guard let folder = pendingCreationURL else { return }
+    /// The alert action passes its captured URL: dismissal may already have cleared the pending prompt.
+    public func confirmCreation(in folder: URL) async {
         pendingCreationURL = nil
         await createOrOpen(folder: folder)
         if errorMessage == nil { section = .importer }
@@ -141,6 +141,7 @@ public final class AppModel {
             let fetched = try await next.tracks()
             client = next
             libraryURL = folder
+            importer = ImportModel()
             updateTracks(fetched)
             isDemo = false
             defaults.set(folder.path, forKey: Keys.library)

@@ -131,7 +131,7 @@ struct WelcomeView: View {
             set: { if !$0 { app.cancelCreation() } }
         )) {
             if let folder = app.pendingCreationURL {
-                Button("新建") { Task { await app.createOrOpen(folder: folder); app.section = .importer } }
+                Button("新建") { Task { await app.confirmCreation(in: folder) } }
                 Button("取消", role: .cancel) { app.cancelCreation() }
             }
         } message: {
