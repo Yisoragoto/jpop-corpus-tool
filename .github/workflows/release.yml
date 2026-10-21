@@ -91,7 +91,12 @@ jobs:
           } else {
             Copy-Item "rust/target/release/bundle/msi/*.msi" release-assets/
           }
-          "自动构建：$env:GITHUB_SHA / $([DateTime]::UtcNow.ToString('o')) / build $env:JPOP_BUILD_ID" | Set-Content release-notes.md -Encoding utf8NoBOM
+          $notes = "docs/releases/v$version.md"
+          if ($env:CHANNEL -eq 'stable' -and (Test-Path -LiteralPath $notes)) {
+            Get-Content -LiteralPath $notes -Raw | Set-Content release-notes.md -Encoding utf8NoBOM
+          } else {
+            "自动构建：$env:GITHUB_SHA / $([DateTime]::UtcNow.ToString('o')) / build $env:JPOP_BUILD_ID" | Set-Content release-notes.md -Encoding utf8NoBOM
+          }
       - name: Publish verified channel
         if: steps.policy.outputs.publish == 'true'
         shell: pwsh
