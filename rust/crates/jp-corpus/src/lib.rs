@@ -22,6 +22,8 @@
 pub mod completeness;
 mod corpus;
 pub mod home;
+pub mod library_root;
+pub mod enrichment;
 mod library;
 pub mod members;
 mod models;

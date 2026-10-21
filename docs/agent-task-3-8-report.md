@@ -42,3 +42,22 @@
 - README 的文档表已链接 BUGS.md；“两个勾没打满不算修完”写入仓库规则。
 
 未做：没有把 Issue #15 标成修复；本计划不包含它的 macOS 根因修复。
+
+## C：CLI 与共享目录解析
+
+文件：`rust/crates/jp-cli/{Cargo.toml,src/main.rs,tests/cli.rs}`、`rust/Cargo.lock`、
+`jp-corpus/src/{lib.rs,library_root.rs,enrichment.rs}`、`jp-app/src/{library_root.rs,scrape.rs}`、
+`app/src/rustMessages.test.ts`、`docs/cli.md`、`README.md`。
+
+- `cargo test -p jp-cli --offline`：5 个集成测试通过，覆盖空库 info、空目录只读 JSON 扫描、
+  单文件导入后重扫去重、真实卡片字段与 HTML 例句导出、0/1/2 退出码。
+- `cargo test --workspace --no-fail-fast --offline`、全 workspace/all-targets clippy `-D warnings`：通过。
+- `npm run typecheck`、`npm test`：通过；CLI 文案不会送到前端，因此后端翻译守卫明确排除该壳。
+- `JPOP_CORPUS_HOME=<真实库隔离副本> jp info`：结构 20261019，210 首 / 8443 行 / 58628 词次。
+  副本由 SQLite backup 从 993214464 字节、结构 20261015 的用户库取得；仅副本执行升级。
+- 目录解析实现在 `jp_corpus::library_root::locate()`；jp-app 原模块只 re-export。
+- CLI 直接依赖均为已有 workspace crate 和标准库，未引入外部依赖。
+
+实现选择：`export-anki` 输出 Anki 可导入的 TSV（使用 jp-anki 的笔记字段和 HTML 卡片构造），
+不连接 AnkiConnect、不导出 apkg 或音频。刮削沿用现有 provider 限流，结果为 JSON Lines，
+已导入歌曲的空元数据和来源使用新抽到核心的共用函数；未导入文件只保存刮削状态，不凭空建歌。

@@ -1952,6 +1952,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "jp-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-anki",
+ "jp-corpus",
+ "jp-import",
+ "jp-scraper",
+ "jp-tokenizer",
+ "serde_json",
+]
+
+[[package]]
 name = "jp-corpus"
 version = "0.1.0"
 dependencies = [

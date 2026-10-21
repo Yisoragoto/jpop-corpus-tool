@@ -181,64 +181,11 @@ fn apply_candidate(
     candidate: &jp_scraper::ScrapeCandidate,
     confidence: Option<f64>,
 ) -> Result<usize> {
-    // 先看哪几个字段是空的。
-    //
-    // **不能用 `execute` 的返回值当「填了几个」**：那是受影响的行数，
-    // UPDATE 永远命中这一行，所以恒为 1，不管 CASE 里有没有真的改动。
-    let (album, year, genre): (String, String, String) = conn.query_row(
-        "SELECT COALESCE(album,''), COALESCE(year,''), COALESCE(genre,'')
-         FROM songs WHERE id=?1",
-        rusqlite::params![song_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    )?;
-    let filled = [
-        (album.is_empty(), &candidate.album),
-        (year.is_empty(), &candidate.year),
-        (genre.is_empty(), &candidate.genre),
-    ]
-    .iter()
-    .filter(|(empty, value)| *empty && !value.is_empty())
-    .count();
-    let provenance = |field: &str| {
-        jp_corpus::lineage::set_provenance(conn, "song", song_id, field, &candidate.provider, &candidate.provider_id, confidence)
-    };
-    for (field, empty, value) in [
-        ("album", album.is_empty(), &candidate.album),
-        ("year", year.is_empty(), &candidate.year),
-        ("genre", genre.is_empty(), &candidate.genre),
-    ] {
-        if empty && !value.is_empty() {
-            provenance(field)?;
-        }
-    }
-
-    conn.execute(
-        "UPDATE songs SET
-            album = CASE WHEN COALESCE(album,'')='' THEN ?1 ELSE album END,
-            year  = CASE WHEN COALESCE(year,'')=''  THEN ?2 ELSE year  END,
-            genre = CASE WHEN COALESCE(genre,'')='' THEN ?3 ELSE genre END
-         WHERE id=?4",
-        rusqlite::params![candidate.album, candidate.year, candidate.genre, song_id],
-    )
-    .context("写 songs 失败")?;
-
-    // 完整发行日期（时间轴按月份排要用）。同样只补空的；
-    // 而且**年份对得上才补**：本地文件写的是 2019、候选说 2020-03-04，那这个日期不是这首歌的
-    let date = &candidate.release_date;
-    if !date.is_empty() {
-        let written = conn
-            .execute(
-                "UPDATE songs SET release_date = ?1
-                 WHERE id = ?2 AND COALESCE(release_date,'') = ''
-                   AND (COALESCE(year,'') = '' OR substr(year,1,4) = substr(?1,1,4))",
-                rusqlite::params![date, song_id],
-            )
-            .context("写发行日期失败")?;
-        if written > 0 {
-            provenance("release_date")?;
-        }
-    }
-    Ok(filled)
+    jp_corpus::enrichment::fill_missing(conn, song_id, &jp_corpus::enrichment::Metadata {
+        album: &candidate.album, year: &candidate.year, genre: &candidate.genre,
+        release_date: &candidate.release_date, provider: &candidate.provider,
+        provider_id: &candidate.provider_id, confidence,
+    })
 }
 
 /// 下封面到盘上。**不碰数据库**，所以能在任意线程里跑。

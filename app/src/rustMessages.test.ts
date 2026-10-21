@@ -20,7 +20,7 @@ const RUST = import.meta.glob<string>(["../../rust/crates/*/src/**/*.rs"], { que
  * 挖词报告的 HTML（导出的文件，后续再做）
  */
 const SKIP_FILE =
-  /jp-ffi\/|jp-tokenizer\/|jp-normalize\/|jp-app\/src\/diagnostics\.rs|jp-app\/src\/log\.rs|\/bin\/|\/examples\/|jp-import\/src\/lrc\.rs|jp-corpus\/src\/fixture\.rs|jp-corpus\/src\/stats\.rs|jp-anki\/src\/(card|model|lyrics_model|mining_report|dict)\.rs/;
+  /jp-cli\/|jp-ffi\/|jp-tokenizer\/|jp-normalize\/|jp-app\/src\/diagnostics\.rs|jp-app\/src\/log\.rs|\/bin\/|\/examples\/|jp-import\/src\/lrc\.rs|jp-corpus\/src\/fixture\.rs|jp-corpus\/src\/stats\.rs|jp-anki\/src\/(card|model|lyrics_model|mining_report|dict)\.rs/;
 const HAN = /\p{Script=Han}/u;
 const KANA = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
 const ZH_ONLY = /[们这说里个么没为从词选择发应该时会对设导认点开关显单纯样号与查读写库]/;
