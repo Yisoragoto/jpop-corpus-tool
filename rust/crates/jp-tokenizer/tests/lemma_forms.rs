@@ -11,10 +11,11 @@ fn analyzer() -> Option<Analyzer> {
 }
 
 #[test]
+#[ignore = "需要 JP_SUDACHI_SOURCE 指向真实 Sudachi 词典"]
 fn variant_spellings_share_a_normalized_form() {
     let Some(a) = analyzer() else {
         eprintln!("跳过：没有 JP_SUDACHI_SOURCE");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
     let lemmas: Vec<String> = ["思い出", "想い出", "夜"].iter().map(|s| s.to_string()).collect();
     let forms = a.lemma_forms(&lemmas);
@@ -25,10 +26,11 @@ fn variant_spellings_share_a_normalized_form() {
 }
 
 #[test]
+#[ignore = "需要 JP_SUDACHI_SOURCE 指向真实 Sudachi 词典"]
 fn compounds_are_left_alone() {
     let Some(a) = analyzer() else {
         eprintln!("跳过：没有 JP_SUDACHI_SOURCE");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
     // 分成好几段的不算认准：原样返回、读音为空
     let forms = a.lemma_forms(&["夏風邪薬局前".to_string()]);
@@ -38,7 +40,7 @@ fn compounds_are_left_alone() {
 
 /// 本机看效果：`LEMMAS=词表文件 cargo test -p jp-tokenizer --test lemma_forms probe -- --ignored --nocapture`
 #[test]
-#[ignore]
+#[ignore = "需要 JP_SUDACHI_SOURCE 词典及 LEMMAS 词表文件"]
 fn probe() {
     let a = analyzer().expect("要 JP_SUDACHI_SOURCE");
     let text = std::fs::read_to_string(std::env::var("LEMMAS").expect("要 LEMMAS")).unwrap();

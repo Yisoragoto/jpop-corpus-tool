@@ -149,14 +149,10 @@ pub fn has_keys(value: &Value, what: &str, keys: &[&str]) {
     }
 }
 
-/// 这台机器有没有音频输出设备。没有的话播放类的测试跳过——**并且说一声**：
-/// 跳过也打 ok，不说的话分不清「跑过了」还是「没跑」。
-pub fn audio_or_skip(webview: &tauri::WebviewWindow<MockRuntime>, test: &str) -> bool {
+/// 这些测试已标 ignore，手动运行时缺设备必须失败，不能提前 return 冒充通过。
+pub fn require_audio(webview: &tauri::WebviewWindow<MockRuntime>, test: &str) {
     let ready = ok(webview, "health", json!({}))["audioReady"].as_bool().unwrap_or(false);
-    if !ready {
-        eprintln!("[skip] {test}：没有音频输出设备");
-    }
-    ready
+    assert!(ready, "{test} 需要可打开的音频输出设备");
 }
 
 /// 写一段 440 Hz 的正弦波（16 位、单声道、22050 Hz 的 WAV）。

@@ -1,5 +1,5 @@
 //! 两套集成测试共用的断言：`fixture_corpus.rs`（合成库，哪台机器都跑）和
-//! `real_corpus.rs`（作者本机那个真实的 `corpus.db`，没有就跳过）。
+//! `real_corpus.rs`（作者真实库，整组显式 ignored，需要时单独运行）。
 //!
 //! **为什么共用而不是各写一份**：这些断言验的是不变式——左 + 关键词 + 右能拼回原句、
 //! 聚合出来的曲目数等于实际取到的行数、`%` 不被当成通配符——不依赖库里具体是哪些歌。
@@ -28,11 +28,12 @@ pub struct Lib<'a> {
 impl Lib<'_> {
     /// 这条断言的前提在这个库里不成立。
     ///
-    /// 真库上是正常情况（比如还没刮削过歌手），说一声然后跳过；
-    /// 合成库上**不许跳**——跳过也打 ok，那正是这套测试要解决的问题。
+    /// 不满足就失败；显式运行真库测试也不能再提前 return 冒充通过。
     pub fn skip(&self, why: &str) {
-        assert!(!self.must_have_everything, "合成库里这条断言的前提应当成立：{why}");
-        eprintln!("[skip] {why}");
+        panic!(
+            "{}测试前置条件不满足：{why}",
+            if self.must_have_everything { "合成库" } else { "真实库（显式运行的 ignored 测试）" }
+        );
     }
 }
 
@@ -680,8 +681,10 @@ pub fn quick_search_empty_query_returns_nothing(lib: &Lib) {
 ///
 /// 清单写在这里而不是两个测试文件里：加一条断言只要改这一处，两边都会跑到。
 macro_rules! invariant_tests {
-    ($open:expr) => {
-        invariant_tests!(@each $open;
+    ($open:expr) => { invariant_tests!(@list $open, []); };
+    ($open:expr, $attributes:tt) => { invariant_tests!(@list $open, $attributes); };
+    (@list $open:expr, $attributes:tt) => {
+        invariant_tests!(@each $open, $attributes;
             lists_tracks_with_line_counts,
             track_lookup_round_trips,
             scraped_performers_carry_their_photo_to_the_people_queries,
@@ -719,13 +722,15 @@ macro_rules! invariant_tests {
             quick_search_empty_query_returns_nothing,
         );
     };
-    (@each $open:expr; $($name:ident),* $(,)?) => {
-        $(
-            #[test]
-            fn $name() {
-                let Some((corpus, must_have_everything)) = $open else { return };
-                $crate::invariants::$name(&$crate::invariants::Lib { c: &corpus, must_have_everything });
-            }
-        )*
+    (@each $open:expr, $attributes:tt; $($name:ident),* $(,)?) => {
+        $( invariant_tests!(@one $open, $name, $attributes); )*
+    };
+    (@one $open:expr, $name:ident, [$($attribute:meta),*]) => {
+        #[test]
+        $(#[$attribute])*
+        fn $name() {
+            let (corpus, must_have_everything) = $open.expect("未满足 ignore 中声明的真实库前置条件");
+            $crate::invariants::$name(&$crate::invariants::Lib { c: &corpus, must_have_everything });
+        }
     };
 }

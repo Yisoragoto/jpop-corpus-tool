@@ -22,9 +22,21 @@ use serde_json::{Value, json};
 
 use jp_app_lib::state::AppState;
 use jp_corpus::fixture;
-use support::{Fixture, audio_or_skip, has_keys, invoke, len, ok, refused};
+use support::{Fixture, has_keys, invoke, len, ok, refused, require_audio};
 
 // ────────────────────────────── 曲库 ──────────────────────────────
+
+#[test]
+fn normal_registration_does_not_expose_e2e_commands() {
+    let f = Fixture::new("no-e2e");
+    assert!(std::env::var("JPOP_E2E").as_deref() != Ok("1"));
+    for command in ["e2e_state", "e2e_scan_folder"] {
+        assert!(
+            invoke(f.w(), command, json!({"path":"."})).is_err(),
+            "普通运行注册了 {command}"
+        );
+    }
+}
 
 #[test]
 fn the_library_commands_all_answer_on_a_fresh_fixture_library() {
@@ -822,12 +834,11 @@ fn loading_an_unknown_track_reports_which_one() {
 }
 
 #[test]
+#[ignore = "需要可打开的音频输出设备"]
 fn setting_the_pitch_with_nothing_loaded_only_remembers_it() {
     let f = Fixture::new("pitch");
     let w = f.w();
-    if !audio_or_skip(w, "setting_the_pitch_with_nothing_loaded_only_remembers_it") {
-        return;
-    }
+    require_audio(w, "setting_the_pitch_with_nothing_loaded_only_remembers_it");
     // 没加载歌时只记住半音数，不渲染
     ok(w, "audio_stop", json!({}));
     ok(w, "audio_set_pitch", json!({ "semitones": 9 }));
@@ -840,12 +851,11 @@ fn setting_the_pitch_with_nothing_loaded_only_remembers_it() {
 }
 
 #[test]
+#[ignore = "需要可打开的音频输出设备"]
 fn playback_controls_are_wired() {
     let f = Fixture::new("controls");
     let w = f.w();
-    if !audio_or_skip(w, "playback_controls_are_wired") {
-        return;
-    }
+    require_audio(w, "playback_controls_are_wired");
     // 每个控制都要能调到。没加载音频时调它们不该 panic。
     for cmd in ["audio_play", "audio_pause", "audio_toggle", "audio_stop"] {
         ok(w, cmd, json!({}));
@@ -853,12 +863,11 @@ fn playback_controls_are_wired() {
 }
 
 #[test]
+#[ignore = "需要可打开的音频输出设备"]
 fn rate_and_volume_round_trip_through_ipc() {
     let f = Fixture::new("rate-volume");
     let w = f.w();
-    if !audio_or_skip(w, "rate_and_volume_round_trip_through_ipc") {
-        return;
-    }
+    require_audio(w, "rate_and_volume_round_trip_through_ipc");
     ok(w, "audio_set_rate", json!({ "rate": 0.75 }));
     assert_eq!(ok(w, "audio_state", json!({}))["rate"], json!(0.75));
     // 越界值应当被钳到合法范围，而不是原样接受
@@ -875,12 +884,11 @@ fn rate_and_volume_round_trip_through_ipc() {
 }
 
 #[test]
+#[ignore = "需要可打开的音频输出设备"]
 fn loop_region_round_trips_and_rejects_degenerate_spans() {
     let f = Fixture::new("loop");
     let w = f.w();
-    if !audio_or_skip(w, "loop_region_round_trips_and_rejects_degenerate_spans") {
-        return;
-    }
+    require_audio(w, "loop_region_round_trips_and_rejects_degenerate_spans");
     assert_eq!(ok(w, "audio_set_loop", json!({ "startSec": 10.0, "endSec": 20.0 })), json!(true));
     let region = &ok(w, "audio_state", json!({}))["loopRegion"];
     assert_eq!(region["startSec"], json!(10.0));
@@ -895,12 +903,11 @@ fn loop_region_round_trips_and_rejects_degenerate_spans() {
 }
 
 #[test]
+#[ignore = "需要可打开的音频输出设备"]
 fn stop_at_round_trips_through_the_audio_state() {
     let f = Fixture::new("stop-at");
     let w = f.w();
-    if !audio_or_skip(w, "stop_at_round_trips_through_the_audio_state") {
-        return;
-    }
+    require_audio(w, "stop_at_round_trips_through_the_audio_state");
     ok(w, "audio_set_stop_at", json!({ "positionSec": 12.5 }));
     assert_eq!(ok(w, "audio_state", json!({}))["stopAtSec"], json!(12.5));
     ok(w, "audio_set_stop_at", json!({}));

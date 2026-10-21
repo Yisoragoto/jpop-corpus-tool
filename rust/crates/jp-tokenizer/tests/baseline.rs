@@ -11,8 +11,7 @@
 //! 阈值和基准数据由 `python scripts/export_tokenizer_baseline.py` 生成，
 //! 测试直接读 `benchmark/baseline.json`，不在 Rust 侧抄一遍。
 //!
-//! 基准文件不存在时整个测试跳过——克隆仓库的人不该因为缺 14MB 的
-//! 夹具而看到一片红。
+//! 大型基准和词典是外部前置条件，整组显式 ignored；手动运行缺少前置就失败。
 
 use std::collections::HashMap;
 use std::fs;
@@ -91,7 +90,7 @@ macro_rules! require {
                 "跳过：缺 {}\n  先跑 python scripts/export_tokenizer_baseline.py",
                 $path.display()
             );
-            return;
+            panic!("未满足 ignore 中声明的测试前置条件");
         }
     };
 }
@@ -124,11 +123,12 @@ fn char_spans(surfaces: &[String]) -> Vec<(usize, usize)> {
 // ────────────────────────── 表一致性 ──────────────────────────
 
 #[test]
+#[ignore = "需要 benchmark 导出基准文件及本地 Sudachi 词典"]
 fn pos_map_matches_python() {
     let root = project_root();
     let Some(baseline) = load_baseline(&root) else {
         eprintln!("跳过：缺 benchmark/baseline.json");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
 
     let mut mismatched = Vec::new();
@@ -150,14 +150,15 @@ fn pos_map_matches_python() {
 // ────────────────────────── 第一级验收 ──────────────────────────
 
 #[test]
+#[ignore = "需要 benchmark 导出基准文件及本地 Sudachi 词典"]
 fn tier1_matches_sudachipy_token_for_token() {
     let root = project_root();
     let path = root.join("benchmark/sudachi_reference.jsonl");
     require!(path);
-    let Some(baseline) = load_baseline(&root) else { return };
+    let Some(baseline) = load_baseline(&root) else { panic!("未满足 ignore 中声明的测试前置条件") };
     let Some(analyzer) = analyzer(&root) else {
         eprintln!("跳过：找不到 venv 里的 SudachiPy 资源");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
 
     let reference: Vec<SudachiLine> = read_jsonl(&path);
@@ -219,14 +220,15 @@ fn tier1_matches_sudachipy_token_for_token() {
 // ────────────────────────── 第二级验收 ──────────────────────────
 
 #[test]
+#[ignore = "需要 benchmark 导出基准文件及本地 Sudachi 词典"]
 fn tier2_matches_the_existing_corpus() {
     let root = project_root();
     let path = root.join("benchmark/ginza_reference.jsonl");
     require!(path);
-    let Some(baseline) = load_baseline(&root) else { return };
+    let Some(baseline) = load_baseline(&root) else { panic!("未满足 ignore 中声明的测试前置条件") };
     let Some(analyzer) = analyzer(&root) else {
         eprintln!("跳过：找不到 venv 里的 SudachiPy 资源");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
 
     let reference: Vec<GinzaLine> = read_jsonl(&path);
@@ -310,11 +312,12 @@ fn tier2_matches_the_existing_corpus() {
 // ────────────────────────── 冒烟 ──────────────────────────
 
 #[test]
+#[ignore = "需要 benchmark 导出基准文件及本地 Sudachi 词典"]
 fn smoke_tokenizes_japanese() {
     let root = project_root();
     let Some(analyzer) = analyzer(&root) else {
         eprintln!("跳过：找不到 venv 里的 SudachiPy 资源");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
     let tokens = analyzer.analyze("夜に駆ける").expect("分词失败");
     let surfaces: Vec<&str> = tokens.iter().map(|t| t.surface.as_str()).collect();

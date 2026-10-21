@@ -3,6 +3,15 @@
 执行依据：用户提供的 `agent-task-3-8.md`；D 按用户后续消息改为 stable/debug 双轨，无 beta。
 各项按 A→F 独立提交；本报告随对应提交更新，提交哈希可用 `git log --oneline` 查到。
 
+| 项目 | 提交 | 说明 |
+|---|---|---|
+| A | 30871fb | 四类守卫及真实失败路径 |
+| B | f39a77e | 缺陷档案与编号工具 |
+| C | ae8ff8b | CLI 和共享库目录解析 |
+| D | 32acf8f | stable/debug 发布与安全更新 |
+| E | ae1fed1 | 内容身份、指纹及字段来源 |
+| F | 本报告最后一次更新所属提交 | 交互回归、显式 skip 与重活租约 |
+
 ## 与计划描述的差异
 
 - 当前应用是 0.3.2，结构版本为 20261019；`Corpus::tune()` 没有 `BUSY_TIMEOUT` 常量。
@@ -78,7 +87,7 @@
 
 未执行的远端验收：没有推 main、创建/删除 GitHub Release，因此“线上最终恰好一个 debug 且 sha 对应”的运行结果
 尚未实测。工作流实现了固定 tag 删除重建和两资产约束，待代码进入 main 后由 Actions 实际运行；不把静态检查冒充线上发布成功。
-真实 WebView 的关于页构建编号展示会在 F 的隔离冒烟中一并检查。
+真实 WebView 的关于页构建编号展示已在 F 的隔离冒烟中检查，见下文证据。
 
 ## E：内容身份、指纹及字段来源
 
@@ -99,3 +108,41 @@
 Deezer 实际轨道/专辑详情分属两个实体，因此各请求一次拿齐相关字段；测试用夹具，不把离线通过称为在线 API 验收。
 新增直接依赖仅复用已有 rodio（只解码、不启用设备）和 sha2；多格式解码和标准密码散列不应手写。
 重扫通过显式 `jp fingerprint` 和音频重新链接执行，保持 `jp scan` 的只读契约。
+
+## F：交互回归、显式 skip 与重活租约
+
+文件：`.github/workflows/check.yml`、`scripts/{smoke.mjs,check-skips.ps1,heavy.ps1,tests/heavy.Tests.ps1}`、
+`app/src/{App.tsx,e2e.ts,e2e.test.ts,useHotkeys.ts,pages/ImportPage.tsx}`、
+`jp-app/src/{lib.rs,e2e.rs,fonts.rs}`、`jp-app/tests/{commands.rs,fixture_commands.rs,fixture_flows.rs,support/mod.rs}`、
+`jp-audio/{src/engine.rs,tests/playback.rs,tests/duration.rs}`、`jp-corpus/tests/{real_corpus.rs,invariants/mod.rs}`、
+`jp-tokenizer/tests/{baseline.rs,lemma_forms.rs}`、`docs/{testing.md,BUGS.md,bugs/0001-space-button.md}`、`README.md`。
+Rust 路径均相对 `rust/crates/`；音频文件仅改测试属性及缺前置时的行为，没有改音频算法。
+
+- `./scripts/heavy.ps1 -Command './scripts/check-skips.ps1'`：通过，日志逐项列出 88 个 `[skip]`，包含明确设备、作者曲库、词典、系统字体、联网等前置条件。
+  计划提到的六套与当前代码不完全对应，实际还涵盖 engine 内设备测试、字体、tokenizer 基准等；合成库 51 项继续执行。
+  缺前置的 ignored 测试被手动运行时会失败，不能再 `return` 假绿。随源码发布的字体资源改为必须存在。
+- `cargo test --workspace --no-fail-fast --offline`：48 个结果汇总，962 passed、89 ignored、0 failed（其中一个 ignored 属其他既有套件，故比专门日志多 1）。
+  首轮两个示例编译出现依赖 rlib 不可用；原命令重新执行后通过，没有修改断言或裁掉示例。
+- `cargo clippy --workspace --all-targets --offline -- -D warnings`：通过。
+  `npm run typecheck`、`npm test`：通过，34 文件、233 项。
+- 环境门控：Rust 仅接受精确 `JPOP_E2E=1`；普通注册表测试断言两个命令不可调用，前端单测断言普通环境不挂入口。
+  真实普通窗口同样确认全局入口不存在、两条命令均拒绝。测试命令以 async 注册，不占 UI 主线程。
+- 真实 WebView2 正向：`node scripts/smoke.mjs --exe D:/jp_corpus/rust/target/debug/jp-app.exe --out output/engineering/F-smoke-green`：三个场景全部通过。
+  每个场景全新临时库，scanning=true→计划出现→真实按钮导入 0→1→全文「テスト」命中 2 行；无真实用户库、无词典下载。
+  同时检查关于页非空 buildId，并保存各阶段截图及 JSON；实际查看了检索和关于页截图。
+- 键盘先红后绿：`F-keyboard-red-clean/report.json` 无语言弹窗且 audioReady=true，真实 Tab→Space 后仍为 0 首、退出 1。
+  修正全局热键：尊重 defaultPrevented，可交互元素保留按键；之后相同键盘用例成功导入，播放按钮 paused→playing。
+- 导入事件负例：临时删除导入按钮 onClick，TypeScript 已先报缺属性/unused；仅对变异夹具用 Vite 直接打包后再测。
+  `F-mouse-no-onclick/report.json` 确认已出计划，鼠标按钮后 0→1 断言超时、退出 1；finally 按字节还原源码并正常重建。
+- 租约：同时启动两个 `heavy.ps1 -Command 'cargo test -p jp-corpus --offline'`，观察排队且两者均通过。
+  `scripts/tests/heavy.Tests.ps1` 再验证时间戳不重叠及杀死持有者后接手；两个断言均通过。
+
+默认单命令 `node scripts/smoke.mjs` 最终通过：`output/smoke-1792595836713/report.json` 的 success=true、built=true，mouse/keyboard/normal 均通过，留下 13 张阶段截图。
+默认命令会自动正常构建前端和 custom-protocol 二进制，因为 cargo test 会覆盖同名 debug 可执行文件为 devUrl 模式。
+独立 `--exe` 路径保留给已经打包好的应用；原 `<port> [output.json]` 附着用法继续兼容 release-check.ps1。
+脚本使用条件轮询、DOM 事件与真实 Tab/Space，不用坐标和固定等待；阻断与本例无关的启动更新查询，避免未来线上版本弹窗影响键盘焦点。
+本地受限沙箱首次无法连接 WebView2 调试端口，后续通过允许的本地执行权限完成窗口验收；最初失败日志保留，未当成通过。
+
+新发现但未顺手改：设置页使用启动时的 health 快照，导入后侧栏总览显示 1 首，但设置「语料库」仍可能显示 0 首，直到重新读取 health。
+这是已有刷新策略问题，与本次钩子的计数分开；钩子读取会随导入刷新的 overview，并用后端 health 二次核实。
+Issue #15 的 macOS 原生导入问题仍没有本机 macOS 验收，不能根据 Windows 回归就关闭该 issue。

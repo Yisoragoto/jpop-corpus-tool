@@ -9,8 +9,8 @@
  * | Ctrl/Cmd+K | 全局搜索 |
  * | Ctrl/Cmd+P | 命令面板 |
  *
- * **在输入框里打字时一律不抢键。** 空格是打字、方向键是移动光标，
- * 抢了会让搜索框没法用。判断依据是事件目标，不是焦点状态——
+ * **可交互元素自己处理按键。** BUG-0001：按钮上的空格被全局播放抢走，导入不能激活。
+ * 输入框的空格和方向键也必须留给编辑。判断依据是事件目标，不是焦点状态——
  * 后者在 Tauri 的 webview 里不总是可靠。
  */
 
@@ -34,11 +34,9 @@ export interface HotkeyHandlers {
   volume: number;
 }
 
-function isTyping(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
+function isInteractive(target: EventTarget | null): boolean {
+  return target instanceof Element && (
+    target.closest('button,a[href],input,textarea,select,[role="button"],[role="slider"],[role="radio"],[tabindex]') !== null ||
     (target instanceof HTMLElement && target.isContentEditable)
   );
 }
@@ -73,7 +71,7 @@ export function useHotkeys({
         return;
       }
 
-      if (isTyping(e.target) || mod || e.altKey) return;
+      if (e.defaultPrevented || isInteractive(e.target) || mod || e.altKey) return;
       if (!audioReady) return;
 
       switch (e.code) {

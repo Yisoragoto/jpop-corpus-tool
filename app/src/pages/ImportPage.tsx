@@ -37,6 +37,7 @@ import { tr } from "../i18n";
 /** 「带着这几个文件来复核」：启动横幅上点「查看」时由外壳发过来。`nonce` 让同一批文件能再发一次 */
 export interface ImportRequest {
   paths: string[];
+  folder?: string;
   nonce: number;
 }
 
@@ -147,9 +148,13 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
   );
   useEffect(() => {
     if (request === null) return;
-    reviewFiles(request.paths);
+    if (request.folder !== undefined) {
+      setFiles([]);
+      setPath(request.folder);
+      void scanTargets([], request.folder);
+    } else reviewFiles(request.paths);
     onRequestConsumed?.();
-  }, [request, reviewFiles, onRequestConsumed]);
+  }, [request, reviewFiles, scanTargets, onRequestConsumed]);
 
   // 导入要好几分钟，进度走 `import://progress` 事件
   useEffect(() => {
@@ -202,7 +207,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
   const imported = report?.tracks.filter((t) => t.outcome.kind === "imported") ?? [];
 
   return (
-    <div className="page tools">
+    <div className="page tools" data-scanning={busy === "scanning"} data-import-plan={scan !== null}>
       <p className="page-lead">{tr("选一个装着音频的目录，或者直接选几首歌。扫描只读取，不写库；看过计划再决定导不导。")}</p>
 
       <WatchedFolders
