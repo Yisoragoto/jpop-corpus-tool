@@ -79,3 +79,23 @@
 未执行的远端验收：没有推 main、创建/删除 GitHub Release，因此“线上最终恰好一个 debug 且 sha 对应”的运行结果
 尚未实测。工作流实现了固定 tag 删除重建和两资产约束，待代码进入 main 后由 Actions 实际运行；不把静态检查冒充线上发布成功。
 真实 WebView 的关于页构建编号展示会在 F 的隔离冒烟中一并检查。
+
+## E：内容身份、指纹及字段来源
+
+文件：`jp-corpus/{Cargo.toml,schema.sql,src/{lib.rs,migrations.rs,enrichment.rs,identity.rs,fingerprint.rs,lineage.rs},tests/architecture.rs}`、
+`jp-import/src/{import.rs,maintain.rs}`、`jp-app/src/scrape.rs`、`jp-cli/{src/main.rs,tests/cli.rs}`、
+`jp-scraper/{Cargo.toml,src/{net.rs,resolver.rs,providers/{mod.rs,musicbrainz.rs,deezer.rs}},tests/{content_identity.rs,data/*-identity.json}}`、
+`rust/Cargo.lock`、`app/src/locales/backend.ts`、`docs/{content-identity.md,cli.md}`。
+
+- `cargo test -p jp-corpus schema_parity --offline`：通过；原歌曲表/专辑表升级后逐表列的类型、非空、默认值、主键与空库一致，新增索引存在，原专辑保留。
+- 新增指纹回归：改名不变、不同音频不同、只取前 30 秒、固定重采样结果；导入/重扫的 CLI 回归也断言实际写入 64 位散列。
+- `cargo test -p jp-scraper --test content_identity --offline`：2 项通过，夹具经 provider→详情→核心落库→查询，
+  断言 ISRC、厂牌、曲数和对应来源/置信度；MB 总计一次搜索+一次详情，且不会误取同专辑另一首的 ISRC。
+- 947 MB 真实库经 SQLite backup 建隔离副本，从 20261015 升至 20261020；所有原表行数保持，quick_check=ok。
+  用户原库保持只读，新的外部身份表为空，没有为验收联网刮用户曲库。
+- `cargo test --workspace --no-fail-fast --offline`、全量 clippy `-D warnings`、前端 typecheck、npm test（232 项）：通过。
+
+与计划差异：原仓库没有 schema_parity 测试，已新增；MusicBrainz Search 没有 inc，改用已确认候选的一次发行详情请求。
+Deezer 实际轨道/专辑详情分属两个实体，因此各请求一次拿齐相关字段；测试用夹具，不把离线通过称为在线 API 验收。
+新增直接依赖仅复用已有 rodio（只解码、不启用设备）和 sha2；多格式解码和标准密码散列不应手写。
+重扫通过显式 `jp fingerprint` 和音频重新链接执行，保持 `jp scan` 的只读契约。

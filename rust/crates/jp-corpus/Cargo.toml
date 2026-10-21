@@ -16,3 +16,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # 分词校正恢复时的 NFKC 兜底匹配，要和 Python 的 unicodedata.normalize("NFKC") 一致。
 # 工作区里的 crate，不引入新下载。
 jp-normalize = { path = "../jp-normalize" }
+# 内容身份必须解码 PCM，不能手写多格式解码器；复用已在播放依赖树里的 rodio，仅开现有格式、不启用设备。
+rodio = { version = "0.22", default-features = false, features = ["flac", "mp3", "mp4", "vorbis", "wav"] }
+# 指纹需要标准 SHA-256，手写密码散列难以可靠验证；复用更新器已经使用的同一版本。
+sha2 = "0.10"

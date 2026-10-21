@@ -66,6 +66,11 @@ pub trait MetadataProvider: Send + Sync {
         Ok(None)
     }
 
+    /// 搜索确定候选之后再补身份，避免对每个模糊匹配结果逐字段发请求。
+    fn enrich(&self, candidate: &ScrapeCandidate) -> Result<ScrapeCandidate, ProviderError> {
+        Ok(candidate.clone())
+    }
+
     fn get_artist(
         &self,
         _name: &str,

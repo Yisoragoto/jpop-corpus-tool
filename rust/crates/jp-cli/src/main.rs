@@ -3,11 +3,12 @@ use std::{io::Write, path::{Path, PathBuf}, process::ExitCode};
 use anyhow::{Context, Result, bail, ensure};
 use jp_corpus::{Corpus, library_root};
 
-const USAGE: &str = "用法：jp info | scan <path> [--json] | import <path> [--tokenize] [--json] | tokenize [--missing] | scrape <path...> | export-anki --out <file.tsv>";
+const USAGE: &str = "用法：jp info | scan <path> [--json] | import <path> [--tokenize] [--json] | tokenize [--missing] | fingerprint | scrape <path...> | export-anki --out <file.tsv>";
 
 #[derive(Debug, PartialEq)]
 enum Command {
     Info,
+    Fingerprint,
     Scan { path: PathBuf, json: bool },
     Import { path: PathBuf, tokenize: bool, json: bool },
     Tokenize { missing: bool },
@@ -29,6 +30,7 @@ fn parse(mut args: Vec<String>) -> Result<Command> {
     let name = args.remove(0);
     Ok(match name.as_str() {
         "info" if args.is_empty() => Command::Info,
+        "fingerprint" if args.is_empty() => Command::Fingerprint,
         "scan" => { let json = flag(&mut args, "--json"); Command::Scan { path: path(&args)?, json } }
         "import" => {
             let json = flag(&mut args, "--json");
@@ -67,6 +69,12 @@ fn scanned(path: &Path) -> Result<Vec<jp_import::ScannedTrack>> {
 fn execute(command: Command) -> Result<()> {
     let (root, _) = library_root::locate();
     match command {
+        Command::Fingerprint => {
+            let corpus = open(&root)?;
+            let report = jp_corpus::fingerprint::rescan(&corpus)?;
+            println!("{}",serde_json::to_string(&report)?);
+            ensure!(report.errors.is_empty(), "部分音频指纹未写入，请查看报告");
+        }
         Command::Info => {
             let corpus = open(&root)?;
             let stats = corpus.overview()?;
@@ -141,6 +149,7 @@ fn scrape(root: &Path, paths: &[String]) -> Result<()> {
         store.record(&result, song_id)?;
         if result.ok() && !song_id.is_empty() && let Some(candidate) = &result.candidate {
             jp_corpus::enrichment::fill_missing(corpus.connection(), song_id, &jp_corpus::enrichment::Metadata {
+                extra: &candidate.extra,
                 album: &candidate.album, year: &candidate.year, genre: &candidate.genre,
                 release_date: &candidate.release_date, provider: &candidate.provider,
                 provider_id: &candidate.provider_id, confidence: Some(result.confidence),

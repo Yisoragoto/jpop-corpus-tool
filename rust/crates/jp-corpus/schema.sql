@@ -11,6 +11,11 @@ CREATE TABLE IF NOT EXISTS albums (
     year                    TEXT NOT NULL DEFAULT '',
     artwork_path            TEXT NOT NULL DEFAULT '',
     created_at              TEXT NOT NULL DEFAULT '',
+    release_group_mbid TEXT,
+    label TEXT,
+    barcode TEXT,
+    album_type TEXT,
+    track_count INTEGER,
     -- 同名专辑在不同歌手名下是两张不同的专辑
     UNIQUE (normalized_title, normalized_album_artist)
 );
@@ -139,7 +144,14 @@ CREATE TABLE IF NOT EXISTS songs (
             album      TEXT,
             genre      TEXT,
             audio_path TEXT
-        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT, language TEXT);
+        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT, language TEXT, isrc TEXT, recording_mbid TEXT, audio_fingerprint TEXT);
+
+CREATE TABLE IF NOT EXISTS external_ids (
+    entity_type TEXT, entity_id TEXT, provider TEXT, external_id TEXT, source TEXT, confidence REAL,
+    PRIMARY KEY(entity_type, entity_id, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_songs_audio_fingerprint ON songs(audio_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_external_ids_external_id ON external_ids(external_id);
 
 CREATE TABLE IF NOT EXISTS token_corrections (
             utterance_id INTEGER PRIMARY KEY,

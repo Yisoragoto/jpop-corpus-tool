@@ -182,6 +182,7 @@ fn apply_candidate(
     confidence: Option<f64>,
 ) -> Result<usize> {
     jp_corpus::enrichment::fill_missing(conn, song_id, &jp_corpus::enrichment::Metadata {
+        extra: &candidate.extra,
         album: &candidate.album, year: &candidate.year, genre: &candidate.genre,
         release_date: &candidate.release_date, provider: &candidate.provider,
         provider_id: &candidate.provider_id, confidence,

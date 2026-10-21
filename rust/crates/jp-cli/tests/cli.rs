@@ -83,6 +83,12 @@ fn importing_a_file_and_exporting_cards_reuse_the_same_library() {
     let corpus = jp_corpus::Corpus::open(sandbox.0.join("library/corpus.db")).unwrap();
     assert_eq!(corpus.overview().unwrap().tracks, 1);
     assert_eq!(corpus.overview().unwrap().lyric_lines, 1);
+    let fields = jp_corpus::identity::fields(corpus.connection(),"001").unwrap();
+    assert_eq!(fields["audio_fingerprint"].len(),64);
+    let rescan = sandbox.run(&["fingerprint"]);
+    assert!(rescan.status.success(),"{}",String::from_utf8_lossy(&rescan.stderr));
+    assert_eq!(serde_json::from_slice::<serde_json::Value>(&rescan.stdout).unwrap()["updated"],1);
+    assert_eq!(jp_corpus::identity::fields(corpus.connection(),"001").unwrap()["audio_fingerprint"],fields["audio_fingerprint"]);
     let plan = sandbox.run(&["scan", audio.to_str().unwrap(), "--json"]);
     let json: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
     assert_eq!(json["summary"]["alreadyImported"], 1);

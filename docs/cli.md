@@ -6,6 +6,7 @@
 | 命令 | 行为 |
 |---|---|
 | `jp info` | 打开/新建库，显示路径、结构版本、歌/行/词数 |
+| `jp fingerprint` | 显式重扫全库音频指纹并写库，输出 JSON 报告；有失败时退出 2 |
 | `jp scan <path> --json` | 只读扫描文件或目录，输出计划，不建库、不升级库 |
 | `jp import <path> --tokenize --json` | 执行导入；分词需已安装 Sudachi，不加标志则只导入歌词 |
 | `jp tokenize --missing` | 在事务里补分词；不加标志则重分全库，校正按现有核心规则恢复 |

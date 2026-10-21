@@ -1,8 +1,9 @@
 //! 刮削只补空值，两种壳都不能用网络候选覆盖用户原有的标签。
 use anyhow::{Context, Result};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 pub struct Metadata<'a> {
+    pub extra: &'a std::collections::BTreeMap<String, String>,
     pub album: &'a str,
     pub year: &'a str,
     pub genre: &'a str,
@@ -44,5 +45,24 @@ pub fn fill_missing(conn: &Connection, song_id: &str, candidate: &Metadata<'_>) 
         ).context("写发行日期失败")?;
         if written > 0 { provenance("release_date")?; }
     }
+    crate::identity::apply(conn, song_id, candidate.extra, candidate.provider, candidate.provider_id, candidate.confidence)?;
     Ok(filled)
+}
+
+pub fn link_album(conn: &Connection, song_id: &str, album: &str, artist: &str, year: &str) -> Result<()> {
+    let title = album.trim();
+    if title.is_empty() { return Ok(()) }
+    let album_artist = artist.split(['/', '／']).map(str::trim).find(|s| !s.is_empty()).unwrap_or("");
+    let title_key = jp_normalize::matching_key(title);
+    let artist_key = jp_normalize::matching_key(album_artist);
+    let existing: Option<i64> = conn.query_row("SELECT id FROM albums WHERE normalized_title=?1 AND normalized_album_artist=?2", params![title_key,artist_key], |r| r.get(0)).optional()?;
+    let id = match existing {
+        Some(id) => id,
+        None => {
+            conn.execute("INSERT INTO albums (title,normalized_title,album_artist,normalized_album_artist,year,created_at) VALUES (?1,?2,?3,?4,?5,strftime('%Y-%m-%dT%H:%M:%S+00:00','now'))", params![title,title_key,album_artist,artist_key,year])?;
+            conn.last_insert_rowid()
+        }
+    };
+    conn.execute("UPDATE songs SET album_id=?1 WHERE id=?2", params![id,song_id])?;
+    Ok(())
 }

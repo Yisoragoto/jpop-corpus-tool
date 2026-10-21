@@ -207,9 +207,9 @@ impl MetadataResolver {
         queries_tried: Vec<String>,
         providers_tried: Vec<String>,
     ) -> ResolvedTrack {
-        let best = ranked[0].clone();
+        let mut best = ranked[0].clone();
         let total = ranked.len();
-        let kept: Vec<ScrapeCandidate> = ranked
+        let mut kept: Vec<ScrapeCandidate> = ranked
             .into_iter()
             .take(self.config.keep_candidates)
             .collect();
@@ -234,6 +234,14 @@ impl MetadataResolver {
             )
         };
 
+        if status != ScrapeStatus::Failed && let Some(provider) = self.providers.iter().find(|p| p.name() == best.provider) {
+            match provider.enrich(&best) {
+                Ok(enriched) => best = enriched,
+                // 身份详情失败不推翻已经通过的曲名匹配；警告留在原始候选里，不能伪造缺失的身份。
+                Err(err) => { best.extra.insert("identity_warning".into(),err.to_string()); }
+            }
+            if let Some(first) = kept.first_mut() { *first = best.clone(); }
+        }
         ResolvedTrack {
             file_path: track.path.clone(),
             status,

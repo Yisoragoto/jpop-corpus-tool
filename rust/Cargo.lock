@@ -1970,9 +1970,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "jp-normalize",
+ "rodio",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -2033,6 +2035,7 @@ name = "jp-scraper"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "jp-corpus",
  "jp-normalize",
  "regex",
  "rusqlite",

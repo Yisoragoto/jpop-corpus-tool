@@ -256,6 +256,11 @@ fn import_one(
     )
     .with_context(|| format!("写 songs 失败（id={song_id}）"))?;
 
+    // 缺文件或解码失败不把坏音频散列成统一的空指纹，也不让指纹阻断原有歌词导入。
+    if let Err(err) = jp_corpus::fingerprint::refresh(tx, song_id, std::path::Path::new(&track.path)) {
+        eprintln!("音频指纹未写入 {}: {err:#}", track.path);
+    }
+
     // ── 演唱者 ──
     // 只按斜杠拆，和 Python 的 split_artists(slash_only=True) 一致。
     // 顿号和 × 会误伤乐队名（「Mrs. GREEN APPLE」这类）。
@@ -609,40 +614,7 @@ pub fn add_credit(
 
 /// 找或建专辑，并回填 `songs.album_id`。
 pub(crate) fn link_album(tx: &Connection, song_id: &str, album: &str, artist: &str, year: &str) -> Result<()> {
-    let title = album.trim();
-    if title.is_empty() {
-        return Ok(()); // 没有专辑名就不建，空专辑比没专辑更麻烦
-    }
-    // 同名专辑挂在不同歌手名下是两张不同的专辑
-    let album_artist = split_slash(artist).into_iter().next().unwrap_or_default();
-    let title_key = matching_key(title);
-    let artist_key = matching_key(&album_artist);
-
-    let album_id = match tx
-        .query_row(
-            "SELECT id FROM albums WHERE normalized_title=?1 AND normalized_album_artist=?2",
-            params![title_key, artist_key],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()?
-    {
-        Some(id) => id,
-        None => {
-            tx.execute(
-                &format!(
-                    "INSERT INTO albums (title, normalized_title, album_artist, \
-                     normalized_album_artist, year, created_at) VALUES (?1,?2,?3,?4,?5,{NOW})"
-                ),
-                params![title, title_key, album_artist, artist_key, year],
-            )?;
-            tx.last_insert_rowid()
-        }
-    };
-    tx.execute(
-        "UPDATE songs SET album_id=?1 WHERE id=?2",
-        params![album_id, song_id],
-    )?;
-    Ok(())
+    jp_corpus::enrichment::link_album(tx, song_id, album, artist, year)
 }
 
 /// 按斜杠拆歌手串。拆不出就原样一个。

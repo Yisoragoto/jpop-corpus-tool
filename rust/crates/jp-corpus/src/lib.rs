@@ -25,6 +25,8 @@ pub mod home;
 pub mod library_root;
 pub mod enrichment;
 pub mod update_settings;
+pub mod fingerprint;
+pub mod identity;
 mod library;
 pub mod members;
 mod models;

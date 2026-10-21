@@ -466,6 +466,7 @@ pub fn provenance(conn: &Connection, entity_type: &str, entity_id: &str) -> Resu
 
 /// 删歌时一起删：版本和字段来源挂在歌的 id 上，修订历史留着（它是日志）。
 pub fn forget_song(conn: &Connection, song_id: &str) -> Result<()> {
+    crate::identity::forget(conn,"song",song_id)?;
     conn.execute("DELETE FROM lyric_versions WHERE song_id=?1", params![song_id])?;
     conn.execute("DELETE FROM field_provenance WHERE entity_type='song' AND entity_id=?1", params![song_id])?;
     Ok(())

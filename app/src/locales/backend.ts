@@ -6,6 +6,18 @@
  * 新加的中文没有英文、或者这里有 Rust 里已经删掉的句子，都会报出来。
  */
 export const backendEn: Record<string, string> = {
+  "无法解码音频指纹：{0}": "Cannot decode audio for fingerprinting: {0}",
+  "音频指纹的采样率或声道无效": "Invalid sample rate or channel count for audio fingerprinting",
+  "音频指纹遇到无效 PCM 样本": "Audio fingerprinting encountered an invalid PCM sample",
+  "音频没有可用于指纹的样本": "The audio has no samples for fingerprinting",
+  "指纹对应的歌曲不存在": "The song for this fingerprint does not exist",
+  "专辑曲目数不是整数": "The album track count is not an integer",
+  "专辑曲目数必须大于零": "The album track count must be greater than zero",
+  "歌曲与专辑的外部身份、音频指纹和厂牌来源": "External song and album IDs, audio fingerprints and label provenance",
+  "曲目详情编号无效": "Invalid track detail ID",
+  "曲目详情编号不匹配": "Track detail ID mismatch",
+  "专辑详情编号不匹配": "Album detail ID mismatch",
+  "发行详情编号不匹配": "Release detail ID mismatch",
   "发布不存在，请稍后重试": "Release not found. Try again later",
   "更新轨道已切换，请重新检查更新": "The update channel changed. Check for updates again",
   "debug 安装包大小与 latest.json 不一致，已丢弃，请重新检查更新": "The debug installer size does not match latest.json. It was discarded; check for updates again",
