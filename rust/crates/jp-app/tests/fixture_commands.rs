@@ -446,6 +446,7 @@ fn update_download_ignores_whatever_asset_the_frontend_sends() {
     // 检查到的最新版比正在跑的还旧：不下
     let current = f.w().app_handle().package_info().version.to_string();
     let old = jp_app_lib::update::ReleaseView {
+        build_id: None,
         version: "0.0.1".into(),
         tag: "v0.0.1".into(),
         name: "0.0.1".into(),
@@ -461,6 +462,7 @@ fn update_download_ignores_whatever_asset_the_frontend_sends() {
         }),
     };
     f.w().state::<AppState>().updates().remember_check(&jp_app_lib::update::UpdateStatus {
+        channel: jp_app_lib::update::Channel::Stable, build_id: String::new(), skipped: false, message: String::new(),
         current: current.clone(),
         latest: Some(old),
         update_available: false,

@@ -116,7 +116,7 @@ export default function App() {
         .updateCheck()
         .then((status) => {
           if (!alive || !status.updateAvailable || status.latest === null) return;
-          if (status.latest.version === settings.skippedUpdateVersion) return;
+          if (status.skipped || (status.channel === "stable" && status.latest.version === settings.skippedUpdateVersion)) return;
           setUpdateOffer({ current: status.current, release: status.latest });
         })
         .catch(() => undefined); // 没网、被限流都不该在启动时打扰用户

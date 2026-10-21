@@ -61,3 +61,21 @@
 实现选择：`export-anki` 输出 Anki 可导入的 TSV（使用 jp-anki 的笔记字段和 HTML 卡片构造），
 不连接 AnkiConnect、不导出 apkg 或音频。刮削沿用现有 provider 限流，结果为 JSON Lines，
 已导入歌曲的空元数据和来源使用新抽到核心的共用函数；未导入文件只保存刮削状态，不凭空建歌。
+
+## D：stable/debug 双轨
+
+文件：`.github/workflows/release.yml`、`scripts/check-release-policy.ps1`、`scripts/tests/release-policy.Tests.ps1`、
+`jp-app/{build.rs,src/update.rs,src/update/channels.rs,src/commands.rs,src/lib.rs,tests/fixture_commands.rs}`、
+`jp-corpus/src/{lib.rs,library_root.rs,update_settings.rs}`、`app/src/{api.ts,App.tsx,components/UpdateCard.tsx,components/UpdateDialog.tsx,pages/SettingsPage.tsx,locales/en1.ts,locales/backend.ts}`、`docs/updates.md`。
+
+- 策略自检 10 用例通过：五条规则各有通过/拒绝或阻断用例，main stable、PR 发包、v tag、debug Latest 均拒绝。
+- 更新器 22 个离线单元测试通过，覆盖 stable 版本、debug 构建身份、缺清单/哈希等必要字段、404 回落、
+  两种轨道的降级阻断、缓存 debug 大小不符即删除、后端资产身份及安装前再校验。
+- 核心偏好测试证明跳过记录隔离、切目录保留轨道及未知字段；buildId 已由本地 build.rs 编入二进制，关于页读取同一个常量。
+- `cargo test --workspace --no-fail-fast --offline`、clippy `--workspace --all-targets -- -D warnings`、
+  `npm run typecheck`、`npm test`（33 文件 / 232 测试）全部通过。
+- 既有 main_thread 守卫发现新增设置命令会在 UI 主线程读写文件；已改为线程池命令，未放宽白名单。
+
+未执行的远端验收：没有推 main、创建/删除 GitHub Release，因此“线上最终恰好一个 debug 且 sha 对应”的运行结果
+尚未实测。工作流实现了固定 tag 删除重建和两资产约束，待代码进入 main 后由 Actions 实际运行；不把静态检查冒充线上发布成功。
+真实 WebView 的关于页构建编号展示会在 F 的隔离冒烟中一并检查。

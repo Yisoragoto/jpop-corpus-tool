@@ -9,8 +9,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { confirm } from "@tauri-apps/plugin-dialog";
 
-import { api, type ReleaseInfo, type UpdateStatus } from "../api";
+import { api, type ReleaseInfo, type UpdateStatus, type UpdatePreferences, type UpdateChannel } from "../api";
 import { CommandButton } from "./CommandButton";
 import { SettingCard, SettingNote, Switch } from "./SettingCard";
 import { updateSettings, useAppSettings } from "../settings";
@@ -30,6 +31,7 @@ export function UpdateCard({ icons, onError }: Props) {
   const [changelog, setChangelog] = useState<ReleaseInfo[] | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [dialog, setDialog] = useState(false);
+  const [prefs, setPrefs] = useState<UpdatePreferences | null>(null);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -42,8 +44,8 @@ export function UpdateCard({ icons, onError }: Props) {
   // 进来先显示当前版本（不联网）：检查失败时用户至少知道自己在用哪一版
   useEffect(() => {
     void api
-      .updateCheck()
-      .then((s) => alive.current && setStatus(s))
+      .updatePreferences()
+      .then((s) => alive.current && setPrefs(s))
       .catch(() => undefined);
   }, []);
 
@@ -53,7 +55,7 @@ export function UpdateCard({ icons, onError }: Props) {
     try {
       const next = await api.updateCheck();
       setStatus(next);
-      setNote(next.updateAvailable ? tr("有新版本 {v}", { v: next.latest?.version ?? "" }) : tr("已经是最新版（{current}）", { current: next.current }));
+      setNote(next.message || (next.updateAvailable ? tr("有新版本 {v}", { v: next.latest?.buildId ?? next.latest?.version ?? "" }) : tr("已经是最新版（{current}）", { current: next.current })));
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -71,10 +73,21 @@ export function UpdateCard({ icons, onError }: Props) {
     }
   }, [changelog, onError]);
 
-  const skipped = settings.skippedUpdateVersion;
+  const switchChannel = async (channel: UpdateChannel) => {
+    if (channel === "debug" && !(await confirm(tr("会跟随每次提交更新，可能不稳定；不会自动回到正式版"), { title: tr("切换到 debug"), kind: "warning" }))) return;
+    try { setPrefs(await api.updateSetChannel(channel)); setStatus(null); setNote(""); }
+    catch (err) { onError(err instanceof Error ? err.message : String(err)); }
+  };
+  const skipped = prefs?.channel === "debug" ? prefs.skippedDebug : (prefs?.skippedStable || settings.skippedUpdateVersion);
 
   return (
     <>
+      <SettingCard icon={icons.update} title={tr("更新轨道")} description={tr("正式版手动发布；debug 随 main 每次提交滚动更新")}>
+        <select value={prefs?.channel ?? "stable"} disabled={prefs === null || checking} onChange={(e) => void switchChannel(e.target.value as UpdateChannel)}>
+          <option value="stable">{tr("正式版（stable）")}</option>
+          <option value="debug">{tr("调试版（debug）")}</option>
+        </select>
+      </SettingCard>
       <SettingCard
         icon={icons.update}
         title={tr("检查更新")}
@@ -116,7 +129,11 @@ export function UpdateCard({ icons, onError }: Props) {
 
       {skipped !== "" && (
         <SettingCard icon={icons.install} title={tr("跳过的版本")} description={tr("{skipped} 启动时不再提醒；出了更新的版本照样提醒", { skipped })}>
-          <button className="link-btn" onClick={() => updateSettings({ skippedUpdateVersion: "" })}>{tr("恢复提醒")}</button>
+          <button className="link-btn" onClick={() => {
+            if (!prefs) return;
+            void api.updateSkip(prefs.channel, "").then(setPrefs).catch((err: unknown) => onError(String(err)));
+            if (prefs.channel === "stable") updateSettings({ skippedUpdateVersion: "" });
+          }}>{tr("恢复提醒")}</button>
         </SettingCard>
       )}
 
@@ -147,6 +164,14 @@ export function UpdateCard({ icons, onError }: Props) {
       )}
     </>
   );
+}
+
+export function BuildInfo() {
+  const [prefs, setPrefs] = useState<UpdatePreferences | null>(null);
+  useEffect(() => { let alive = true; void api.updatePreferences().then((p) => { if (alive) setPrefs(p); }).catch(() => undefined); return () => { alive = false; }; }, []);
+  return <SettingCard title={tr("程序构建")} description={tr("版本 {version}", { version: prefs?.current ?? "—" })}>
+    <span className="muted small">{prefs?.buildId ?? "—"}</span>
+  </SettingCard>;
 }
 
 /** 2026-10-01T16:33:42Z → 2026-10-02（本地时区） */

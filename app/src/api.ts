@@ -977,6 +977,9 @@ export const api = {
   /** 词元的正规化写法和读音（词云合并异体写法用）。没装分词词典时是空表 */
   lemmaForms: (lemmas: string[]) => call<LemmaForm[]>("lemma_forms", { lemmas }),
   updateCheck: () => call<UpdateStatus>("update_check"),
+  updatePreferences: () => call<UpdatePreferences>("update_preferences"),
+  updateSetChannel: (channel: UpdateChannel) => call<UpdatePreferences>("update_set_channel", { channel }),
+  updateSkip: (channel: UpdateChannel, id: string) => call<UpdatePreferences>("update_skip", { channel, id }),
   /** 最近几次发布，给「查看更新日志」用。 */
   updateChangelog: (limit?: number) => call<ReleaseInfo[]>("update_changelog", { limit }),
   /**
@@ -1363,6 +1366,7 @@ export interface UpdateAsset {
 
 /** 一次发布。`notes` 是 Markdown 原文。 */
 export interface ReleaseInfo {
+  buildId: string | null;
   version: string;
   tag: string;
   name: string;
@@ -1375,9 +1379,22 @@ export interface ReleaseInfo {
 }
 
 export interface UpdateStatus {
+  channel: UpdateChannel;
+  buildId: string;
+  skipped: boolean;
+  message: string;
   current: string;
   latest: ReleaseInfo | null;
   updateAvailable: boolean;
+}
+
+export type UpdateChannel = "stable" | "debug";
+export interface UpdatePreferences {
+  channel: UpdateChannel;
+  current: string;
+  buildId: string;
+  skippedStable: string;
+  skippedDebug: string;
 }
 
 /** 下载进度事件（`update://progress`）。 */

@@ -1,5 +1,14 @@
 // 英文：api、App 和 components 的 A–L（键是中文原文，见 i18n.ts）
 export const en1: Record<string, string> = {
+  "会跟随每次提交更新，可能不稳定；不会自动回到正式版": "Follow every commit; builds may be unstable. This will not switch back to stable automatically.",
+  "切换到 debug": "Switch to debug",
+  "更新轨道": "Update channel",
+  "正式版手动发布；debug 随 main 每次提交滚动更新": "Stable releases are published manually; debug follows every commit to main",
+  "正式版（stable）": "Stable",
+  "调试版（debug）": "Debug",
+  "程序构建": "Application build",
+  "版本 {version}": "Version {version}",
+  "构建 {buildId}": "Build {buildId}",
   // api.ts
   "原调": "Original key",
   "{v}{semitones} 半音": "{v}{semitones} {semitones|semitone|semitones}",

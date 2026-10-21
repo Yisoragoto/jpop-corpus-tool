@@ -24,6 +24,7 @@ mod corpus;
 pub mod home;
 pub mod library_root;
 pub mod enrichment;
+pub mod update_settings;
 mod library;
 pub mod members;
 mod models;

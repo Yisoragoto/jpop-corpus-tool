@@ -43,6 +43,9 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::health,
+            commands::update_preferences,
+            commands::update_set_channel,
+            commands::update_skip,
             commands::library_root,
             commands::set_library_root,
             // 曲库

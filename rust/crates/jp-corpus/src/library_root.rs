@@ -56,7 +56,7 @@ pub fn default_data_dir() -> PathBuf {
     base.join("JPOP Corpus Tool")
 }
 
-fn settings_path() -> PathBuf {
+pub fn settings_path() -> PathBuf {
     default_data_dir().join("settings.json")
 }
 
@@ -129,14 +129,9 @@ pub fn locate() -> (PathBuf, RootSource) {
 /// 只写设置，不动当前这次运行——换库要重启（数据库连接、asset 放行范围
 /// 都是启动时定下的，半路换等于整个 AppState 重建）。
 pub fn remember(root: Option<&Path>) -> anyhow::Result<()> {
-    let dir = default_data_dir();
-    std::fs::create_dir_all(&dir)?;
-    let settings = Settings {
-        library_root: root.map(|p| p.display().to_string()),
-    };
-    let text = serde_json::to_string_pretty(&settings)?;
-    std::fs::write(settings_path(), text)?;
-    Ok(())
+    crate::update_settings::edit_at(&settings_path(), |settings| {
+        settings["libraryRoot"] = root.map(|p| serde_json::json!(p)).unwrap_or(serde_json::Value::Null);
+    })
 }
 
 /// 用户选的那个目录现在记的是什么（没选过是 None）

@@ -1,66 +1,123 @@
-name: Build Windows release
-
-# 打 v* 标签或手动触发时构建一次 Windows 安装包，产物挂在 workflow artifacts 上。
-# **不自动发 Release**：发版是人工动作（本地跑完检查、确认过安装包能装能跑再发），
-# CI 在这里的职责是「证明这份源码能从零构建出来」。
+name: Windows stable / debug
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
   workflow_dispatch:
-
+    inputs:
+      channel:
+        description: debug 滚动预发布 / stable 手动正式发布
+        type: choice
+        options: [debug, stable]
+        default: debug
+        required: true
 permissions:
   contents: read
-
+concurrency:
+  group: windows-release-${{ inputs.channel || 'debug' }}
+  cancel-in-progress: true
 jobs:
   windows:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      # checkout 后才有本次提交的守卫；它是构建前第一项检查。
+      - name: Release policy
+        id: policy
+        shell: pwsh
+        env:
+          INPUT_CHANNEL: ${{ inputs.channel || 'debug' }}
+        run: ./scripts/check-release-policy.ps1
+      - name: Build identity
+        if: steps.policy.outputs.build == 'true'
+        shell: pwsh
+        run: |
+          $buildId = "$($env:GITHUB_SHA.Substring(0, 12))-$([DateTime]::UtcNow.ToString('yyyyMMddHHmm'))"
+          "JPOP_BUILD_ID=$buildId" >> $env:GITHUB_ENV
+      - uses: actions/setup-node@v4
+        if: steps.policy.outputs.build == 'true'
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: '22'
+          cache: npm
           cache-dependency-path: app/package-lock.json
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.policy.outputs.build == 'true'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.policy.outputs.build == 'true'
         with:
           workspaces: rust -> target
-
-      - name: Install frontend deps
-        working-directory: app
-        run: npm ci
-
-      - name: Typecheck and unit tests (frontend)
+      - name: Frontend checks
+        if: steps.policy.outputs.build == 'true'
         working-directory: app
         run: |
+          npm ci
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm run typecheck
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           npm test
-
-      # 音频相关的测试在没有输出设备的机器上会自己跳过（engine_or_skip!），
-      # 要真实语料库的那些标了 #[ignore]
-      - name: Tests and lints (Rust)
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Rust and release policy checks
+        if: steps.policy.outputs.build == 'true'
         working-directory: rust
         run: |
-          cargo test --workspace
+          ../scripts/tests/release-policy.Tests.ps1
+          cargo test --workspace --no-fail-fast
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo clippy --workspace --all-targets -- -D warnings
-
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Build installer
+        if: steps.policy.outputs.build == 'true'
         working-directory: app
         run: npm run app:build
-
-      - name: Upload bundles
-        uses: actions/upload-artifact@v4
+      - name: Prepare assets
+        if: steps.policy.outputs.publish == 'true'
+        shell: pwsh
+        env:
+          CHANNEL: ${{ steps.policy.outputs.channel }}
+        run: |
+          $version = (Get-Content app/package.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          $installer = @(Get-Item "rust/target/release/bundle/nsis/*_${version}_x64-setup.exe")
+          if ($installer.Count -ne 1) { throw '必须恰好有一份 NSIS 安装包' }
+          $file = if ($env:CHANNEL -eq 'debug') { "JPOP.Corpus.Tool_${version}-debug.exe" } else { "JPOP.Corpus.Tool_${version}_x64-setup.exe" }
+          Copy-Item -LiteralPath $installer[0].FullName -Destination "release-assets/$file"
+          if ($env:CHANNEL -eq 'debug') {
+            @{
+              buildId = $env:JPOP_BUILD_ID; version = $version; file = $file
+              sha256 = (Get-FileHash "release-assets/$file" -Algorithm SHA256).Hash.ToLowerInvariant()
+              size = (Get-Item "release-assets/$file").Length
+            } | ConvertTo-Json | Set-Content release-assets/latest.json -Encoding utf8NoBOM
+          } else {
+            Copy-Item "rust/target/release/bundle/msi/*.msi" release-assets/
+          }
+          "自动构建：$env:GITHUB_SHA / $([DateTime]::UtcNow.ToString('o')) / build $env:JPOP_BUILD_ID" | Set-Content release-notes.md -Encoding utf8NoBOM
+      - name: Publish verified channel
+        if: steps.policy.outputs.publish == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ steps.policy.outputs.channel }}
+          RELEASE_TAG: ${{ steps.policy.outputs.tag }}
+        run: |
+          $assets = @(Get-ChildItem release-assets -File | ForEach-Object FullName)
+          if ($env:CHANNEL -eq 'debug') {
+            if ($assets.Count -ne 2) { throw 'debug 只能包含安装包和 latest.json' }
+            gh release view debug *> $null
+            if ($LASTEXITCODE -eq 0) {
+              gh release delete debug --yes --cleanup-tag
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            }
+            # 删掉重建，避免把上一轮安装包留在滚动 Release 里。
+            gh release create debug --target $env:GITHUB_SHA --prerelease --latest=false --title 'debug build' --notes-file release-notes.md @assets
+          } else {
+            # 已有的正式 Release 从不覆盖，维护者要先手动提升版本。
+            gh release create $env:RELEASE_TAG --target $env:GITHUB_SHA --latest --title $env:RELEASE_TAG --notes-file release-notes.md @assets
+          }
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: steps.policy.outputs.build == 'true'
         with:
-          name: jpop-corpus-tool-windows
-          path: |
-            rust/target/release/bundle/nsis/*.exe
-            rust/target/release/bundle/msi/*.msi
+          name: jpop-corpus-tool-${{ steps.policy.outputs.channel }}
+          path: release-assets/*
           if-no-files-found: error

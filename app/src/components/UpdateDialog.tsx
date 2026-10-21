@@ -16,7 +16,6 @@ import { useCallback, useEffect, useState } from "react";
 import { listen } from "../events";
 
 import { api, type ReleaseInfo, type UpdateProgress } from "../api";
-import { updateSettings } from "../settings";
 import { tr } from "../i18n";
 
 type Phase = "ask" | "downloading" | "installing" | "failed";
@@ -61,7 +60,7 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
     setError("");
     setProgress(null);
     try {
-      await api.updateDownload(release.version);
+      await api.updateDownload(release.buildId ?? release.version);
       setPhase("installing");
       await api.updateInstall();
     } catch (err) {
@@ -71,9 +70,9 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
   }, [release]);
 
   const skip = useCallback(() => {
-    updateSettings({ skippedUpdateVersion: release.version });
-    onClose();
-  }, [release.version, onClose]);
+    void api.updateSkip(release.buildId ? "debug" : "stable", release.buildId ?? release.version)
+      .then(onClose).catch((err: unknown) => { setError(String(err)); setPhase("failed"); });
+  }, [release, onClose]);
 
   const pct = progress && progress.total > 0 ? Math.min(100, Math.round((progress.received / progress.total) * 100)) : null;
   const notes = release.notes.trim();
@@ -97,6 +96,7 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
           </span>
           <div>
             <h2>{tr("有新版本 {version}", { version: release.version })}</h2>
+            {release.buildId && <p>{tr("构建 {buildId}", { buildId: release.buildId })}</p>}
             <p>{tr("当前 {current}", { current })}{release.publishedAt && tr(" · 发布于 {publishedAt}", { publishedAt: new Date(release.publishedAt).toLocaleDateString() })}
               {release.installer && tr(" · 安装包 {size}", { size: formatSize(release.installer.size) })}
             </p>

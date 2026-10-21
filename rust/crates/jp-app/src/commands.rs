@@ -909,6 +909,22 @@ pub async fn lyrics_import_file<R: tauri::Runtime>(
 
 // ──────────────────────────── 检查更新 ────────────────────────────
 
+#[tauri::command(async)]
+pub fn update_preferences() -> crate::update::PreferenceView { crate::update::preferences() }
+
+#[tauri::command(async)]
+pub fn update_set_channel(state: State<'_, AppState>, channel: crate::update::Channel) -> CmdResult<crate::update::PreferenceView> {
+    jp_corpus::update_settings::set_channel(channel)?;
+    state.updates().clear();
+    Ok(crate::update::preferences())
+}
+
+#[tauri::command(async)]
+pub fn update_skip(channel: crate::update::Channel, id: String) -> CmdResult<crate::update::PreferenceView> {
+    jp_corpus::update_settings::skip(channel, &id)?;
+    Ok(crate::update::preferences())
+}
+
 /// 问一次 GitHub Releases：有没有比正在跑的这一版更新的。
 ///
 /// 异步 + `spawn_blocking`：网络那一步几百毫秒到几秒，占着主线程界面会卡。
