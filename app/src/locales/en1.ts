@@ -195,7 +195,7 @@ export const en1: Record<string, string> = {
   "全部": "All",
   "只要含假名或汉字的词（去掉英文、数字）": "Only words with kana or kanji (no English or numbers)",
   "仅日文": "Japanese only",
-  "去掉单个假名的碎片（僕「ら」、一「つ」）、形式名词（こと・もの・まま・よう）和纯符号": "Hide single-kana fragments (僕「ら」, 一「つ」), formal nouns (こと・もの・まま・よう) and symbols",
+  "去掉单个假名的碎片（僕「ら」、一「つ」）、形式名词（こと・もの・まま・よう）和纯符号": "Hide single-kana fragments (the ra in bokura, the tsu in hitotsu), formal nouns (koto, mono, mama, you) and symbols",
   "去虚词": "Hide function words",
   "名词、动词、形容词……各一种颜色，云下面有图例": "One color each for nouns, verbs, adjectives…, with a legend below the cloud",
   "按词性上色": "Color by part of speech",

@@ -298,7 +298,7 @@ export const en3: Record<string, string> = {
   "准备导入…": "Preparing import…",
   "第 {v} / {total} 本：{path}　{doneFiles} / {totalFiles}": "{v} / {total}: {path}  {doneFiles} / {totalFiles}",
   "还没有导入词典。": "No dictionaries imported yet.",
-  "支持 Yomitan 格式的 zip：Jitendex、大辞泉、JPDB 词频、アクセント辞典等。": "Yomitan-format zips work: Jitendex, 大辞泉, JPDB frequency, アクセント辞典 and more.",
+  "支持 Yomitan 格式的 zip：Jitendex、大辞泉、JPDB 词频、アクセント辞典等。": "Yomitan-format zips work: Jitendex, Daijisen, JPDB frequency, accent dictionaries and more.",
   "词典类别": "Dictionary types",
   "按名字筛": "Filter by name",
   "筛选时不能拖动排序，清空筛选再拖。": "You can't reorder while filtering. Clear the filter first.",

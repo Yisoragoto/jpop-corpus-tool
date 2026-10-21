@@ -7,5 +7,7 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
     environment: "node",
+    // token 守卫要读取原始 CSS；默认的空串 mock 会让新增硬编码颜色也假绿。
+    css: true,
   },
 });
