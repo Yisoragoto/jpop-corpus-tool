@@ -200,6 +200,8 @@ J-pop 的副歌会反复唱：真实语料里重复行占了约 23% 的行、20%
 
 ### 原生 macOS 客户端
 
+逐项功能状态、测试覆盖和限制见 [macOS 能力矩阵](docs/macos-status.md)。
+
 `macos/` 是一个原生 SwiftUI 客户端（播放用 AVFoundation），业务逻辑**不另写一套**：检索、分析、行区间、导入、
 分词、查词、库结构和迁移都调同一个 Rust 核心（经 `jp-ffi`：一个入口、JSON 进出，方法名和 Windows 版的命令一致）。
 

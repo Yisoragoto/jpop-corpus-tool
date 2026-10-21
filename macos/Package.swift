@@ -4,11 +4,12 @@
 //
 // 业务逻辑不在这里：检索、分析、行区间、库结构和迁移都在 Rust 的 jp-corpus 里，
 // 经 rust/crates/jp-ffi 编成静态库 libjp_ffi.a 链进来（见 scripts/build-rust.sh）。
-// 这个包只有三层：
+// 客户端分层：
 //
 //   CJPCore     C 头文件的模块映射（头文件就是 jp-ffi 自己那份，不复制）
 //   JPCore      Swift 包装：会话、JSON 编解码、数据模型。不依赖 SwiftUI，可以单测
-//   JPCorpusApp SwiftUI 界面 + AVFoundation 播放
+//   JPCorpusModel 可测试的应用、导入与 AVFoundation 播放状态
+//   JPCorpusApp SwiftUI 界面
 //
 // 先构建 Rust：  ./scripts/build-rust.sh
 // 再：          swift run JPCorpus         （或 ./scripts/bundle.sh 打成 .app）
@@ -39,10 +40,12 @@ let package = Package(
                 .linkedLibrary("jp_ffi"),
             ]
         ),
+        .target(name: "JPCorpusModel", dependencies: ["JPCore"]),
         .executableTarget(
             name: "JPCorpusApp",
-            dependencies: ["JPCore"]
+            dependencies: ["JPCore", "JPCorpusModel"]
         ),
+        .testTarget(name: "JPCorpusModelTests", dependencies: ["JPCorpusModel"]),
         .testTarget(
             name: "JPCoreTests",
             dependencies: ["JPCore"]

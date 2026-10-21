@@ -1,163 +1,23 @@
 import JPCore
-import Observation
+import JPCorpusModel
 import SwiftUI
 import UniformTypeIdentifiers
-
-/// 导入页的状态：分词词典在不在、扫出来的计划、正在跑的导入。
-///
-/// 扫描、计划、写库、分词都在 Rust（jp-import / jp-tokenizer，和 Windows 版同一份代码）；
-/// 这里只选文件、展示计划、隔一会儿问一次进度。
-@MainActor
-@Observable
-final class ImportModel {
-    var tokenizer: TokenizerStatus?
-    var untokenized = 0
-    var dictionaryJob: JobProgress<DictionaryReady>?
-    var dictionaryMessage: String?
-
-    var sources: [URL] = []
-    var scanning = false
-    var plan: ScanResult?
-    var tokenize = true
-
-    var importJob: JobProgress<ImportResult>?
-    var lastResult: ImportResult?
-    var errorMessage: String?
-
-    var importing: Bool { importJob?.running == true }
-    var downloading: Bool { dictionaryJob?.running == true }
-
-    func refresh(_ client: CorpusClient) async {
-        do {
-            tokenizer = try await client.tokenizerStatus()
-            untokenized = try await client.untokenizedCount()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    // MARK: 扫描
-
-    func scan(_ urls: [URL], client: CorpusClient) async {
-        guard !urls.isEmpty else { return }
-        sources = urls
-        scanning = true
-        defer { scanning = false }
-        lastResult = nil
-        let paths = urls.map(\.path)
-        do {
-            let access = urls.map { $0.startAccessingSecurityScopedResource() }
-            defer { for (url, ok) in zip(urls, access) where ok { url.stopAccessingSecurityScopedResource() } }
-            let result = paths.count == 1 ? try await client.scanFolder(paths[0]) : try await client.scanFiles(paths)
-            plan = result
-            tokenize = result.tokenizerReady
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    // MARK: 导入
-
-    func runImport(app: AppModel) async {
-        guard let client = app.client else { return }
-        lastResult = nil
-        do {
-            try await client.runImport(tokenize: tokenize)
-            while true {
-                let progress = try await client.importProgress()
-                importJob = progress
-                if progress.finished { break }
-                try await Task.sleep(for: .milliseconds(250))
-            }
-            if let error = importJob?.error {
-                errorMessage = error
-            }
-            lastResult = importJob?.result
-            plan = nil
-            await app.reloadTracks()
-            await refresh(client)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func cancel(_ client: CorpusClient) {
-        Task { try? await client.cancelImport() }
-    }
-
-    // MARK: 分词词典
-
-    func downloadDictionary(app: AppModel) async {
-        guard let client = app.client else { return }
-        dictionaryMessage = nil
-        do {
-            try await client.tokenizerDownload()
-            while true {
-                let progress = try await client.tokenizerProgress()
-                dictionaryJob = progress
-                if progress.finished { break }
-                try await Task.sleep(for: .milliseconds(300))
-            }
-            if let error = dictionaryJob?.error {
-                errorMessage = error
-            } else if let ready = dictionaryJob?.result {
-                dictionaryMessage = Self.describe(ready)
-            }
-            await refresh(client)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func installDictionary(from url: URL, client: CorpusClient) async {
-        dictionaryMessage = "正在复制词典（约 207 MB）…"
-        let ok = url.startAccessingSecurityScopedResource()
-        defer { if ok { url.stopAccessingSecurityScopedResource() } }
-        do {
-            let ready = try await client.tokenizerInstall(from: url.path)
-            dictionaryMessage = Self.describe(ready)
-        } catch {
-            dictionaryMessage = nil
-            errorMessage = error.localizedDescription
-        }
-        await refresh(client)
-    }
-
-    func tokenizeMissing(_ client: CorpusClient) async {
-        do {
-            let done = try await client.tokenizeMissing()
-            dictionaryMessage = "补上了 \(done.songs) 首歌的分词（\(done.tokens) 个词）"
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        await refresh(client)
-    }
-
-    private static func describe(_ ready: DictionaryReady) -> String {
-        var text = "词典装好了：\(ready.dir)"
-        if ready.tokenized.songs > 0 {
-            text += "；顺手补上了 \(ready.tokenized.songs) 首歌的分词"
-        }
-        if !ready.tokenizeError.isEmpty {
-            text += "；补分词失败：\(ready.tokenizeError)"
-        }
-        return text
-    }
-}
 
 /// 导入页：选音频 / 歌词所在的文件夹 → 看计划 → 导入（带进度、可以停）
 @MainActor
 struct ImportView: View {
     @Environment(AppModel.self) private var app
-    @State private var model = ImportModel()
-    @State private var pickingFolders = false
-    @State private var pickingFiles = false
-    @State private var pickingDictionary = false
+    private var model: ImportModel { app.importer }
+    @State private var pick = FilePickState<ImportPickKind>()
+
+    private var allowedTypes: [UTType] {
+        pick.intent == .files ? [.audio] : [.folder]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                TokenizerCard(model: model, pickingDictionary: $pickingDictionary)
+                TokenizerCard(model: model, onPickDictionary: { pick.present(.dictionary) })
                 sourceBar
                 if let job = model.importJob, job.running {
                     progress(job)
@@ -183,19 +43,13 @@ struct ImportView: View {
         .navigationTitle("导入")
         .navigationSubtitle(app.libraryURL?.path ?? "")
         .task { if let client = app.client { await model.refresh(client) } }
-        .fileImporter(isPresented: $pickingFolders, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result, let client = app.client {
-                Task { await model.scan(urls, client: client) }
-            }
-        }
-        .fileImporter(isPresented: $pickingFiles, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result, let client = app.client {
-                Task { await model.scan(urls, client: client) }
-            }
-        }
-        .fileImporter(isPresented: $pickingDictionary, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result, let client = app.client {
-                Task { await model.installDictionary(from: url, client: client) }
+        .fileImporter(isPresented: $pick.isPresented, allowedContentTypes: allowedTypes, allowsMultipleSelection: pick.intent != .dictionary) { result in
+            let kind = pick.finish()
+            switch result {
+            case .failure(let error):
+                model.errorMessage = error.localizedDescription
+            case .success(let urls):
+                Task { await model.handleSelection(.success(urls), kind: kind, client: app.client) }
             }
         }
         .alert("出错了", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
@@ -207,9 +61,9 @@ struct ImportView: View {
 
     private var sourceBar: some View {
         HStack(spacing: 10) {
-            Button("选择文件夹…") { pickingFolders = true }
+            Button("选择文件夹…") { pick.present(.folders) }
                 .buttonStyle(.borderedProminent)
-            Button("选择文件…") { pickingFiles = true }
+            Button("选择文件…") { pick.present(.files) }
             if model.scanning {
                 ProgressView().controlSize(.small)
                 Text("正在扫描…").foregroundStyle(.secondary)
@@ -251,7 +105,7 @@ struct ImportView: View {
 private struct TokenizerCard: View {
     @Environment(AppModel.self) private var app
     let model: ImportModel
-    @Binding var pickingDictionary: Bool
+    let onPickDictionary: () -> Void
 
     var body: some View {
         GroupBox {
@@ -278,7 +132,7 @@ private struct TokenizerCard: View {
                         HStack {
                             Button("下载词典（43 MB）") { Task { await model.downloadDictionary(app: app) } }
                                 .disabled(model.downloading)
-                            Button("从文件夹复制…") { pickingDictionary = true }
+                            Button("从文件夹复制…", action: onPickDictionary)
                                 .disabled(model.downloading)
                                 .help("已经有一份的话（另一个语料库目录的 sudachi/，或 0.1.x 的项目目录），直接复制，不用下载")
                         }
