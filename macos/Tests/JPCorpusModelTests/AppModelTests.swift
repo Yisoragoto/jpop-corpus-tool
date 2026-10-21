@@ -2,8 +2,8 @@ import Foundation
 import XCTest
 @testable import JPCorpusModel
 
-@MainActor
 final class AppModelTests: XCTestCase {
+    @MainActor
     func testExistingLibraryDoesNotCreateADatabaseAndSelectionRequiresConfirmation() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("model-open-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -38,6 +38,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(model.client)
     }
 
+    @MainActor
     func testExistingDatabaseOpensWithoutCreationPromptAndKeepsAudioRootsKey() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("model-existing-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

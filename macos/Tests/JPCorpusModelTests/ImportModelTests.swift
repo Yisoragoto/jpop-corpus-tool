@@ -2,8 +2,8 @@ import Foundation
 import XCTest
 @testable import JPCorpusModel
 
-@MainActor
 final class ImportModelTests: XCTestCase {
+    @MainActor
     func testSingleFileUsesScanFiles() async {
         let fake = FakeCorpus()
         let model = ImportModel()
@@ -16,6 +16,7 @@ final class ImportModelTests: XCTestCase {
         XCTAssertFalse(model.scanning)
     }
 
+    @MainActor
     func testFoldersMultipleFilesAndMixedSelectionUseScanFiles() async {
         let folder = URL(fileURLWithPath: "/tmp/music", isDirectory: true)
         let files = (1...3).map { URL(fileURLWithPath: "/tmp/song\($0).wav") }
@@ -29,6 +30,7 @@ final class ImportModelTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testScanAndPickerErrorsAreVisibleAndMissingLibraryExplainsNextStep() async {
         let fake = FakeCorpus()
         await fake.failScanning()
@@ -54,6 +56,7 @@ final class ImportModelTests: XCTestCase {
         XCTAssertTrue(model.errorMessage?.contains("新建或选择") == true)
     }
 
+    @MainActor
     func testDismissalKeepsIntentUntilCompletionAndPickerCanBeUsedAgain() async {
         var pick = FilePickState<ImportPickKind>()
         pick.present(.dictionary)

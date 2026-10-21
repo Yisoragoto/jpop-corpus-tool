@@ -94,7 +94,7 @@ public final class ImportModel {
         }
         lastResult = nil
         do {
-            try await client.runImport(tokenize: tokenize)
+            _ = try await client.runImport(tokenize: tokenize)
             while true {
                 let progress = try await client.importProgress()
                 importJob = progress
@@ -182,4 +182,3 @@ public final class ImportModel {
         return text
     }
 }
-
