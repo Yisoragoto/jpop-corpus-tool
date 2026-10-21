@@ -1,3 +1,4 @@
+import JPCorpusModel
 import JPCore
 import SwiftUI
 

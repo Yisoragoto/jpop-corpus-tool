@@ -1,3 +1,4 @@
+import JPCorpusModel
 import JPCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -118,9 +119,23 @@ struct WelcomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .glass(.sidebar)
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result {
-                Task { await app.open(folder: url) }
+            switch result {
+            case .failure(let error):
+                app.errorMessage = error.localizedDescription
+            case .success(let url):
+                Task { await app.selectLibrary(folder: url) }
             }
+        }
+        .alert("新建语料库？", isPresented: Binding(
+            get: { app.pendingCreationURL != nil },
+            set: { if !$0 { app.cancelCreation() } }
+        )) {
+            if let folder = app.pendingCreationURL {
+                Button("新建") { Task { await app.createOrOpen(folder: folder); app.section = .importer } }
+                Button("取消", role: .cancel) { app.cancelCreation() }
+            }
+        } message: {
+            Text("这里没有 corpus.db，要在这里新建语料库吗？\n\(app.pendingCreationURL?.path ?? "")")
         }
     }
 }

@@ -10,23 +10,23 @@ import Observation
 /// 精度只到行：时间戳来自 LRC，没有词级时间。
 @MainActor
 @Observable
-final class PlayerModel {
-    private(set) var track: Track?
-    private(set) var lines: [LyricLine] = []
-    private(set) var spans: [Int64: LineSpan] = [:]
-    private(set) var position: Double = 0
-    private(set) var duration: Double = 0
-    private(set) var isPlaying = false
+public final class PlayerModel {
+    public private(set) var track: Track?
+    public private(set) var lines: [LyricLine] = []
+    public private(set) var spans: [Int64: LineSpan] = [:]
+    public private(set) var position: Double = 0
+    public private(set) var duration: Double = 0
+    public private(set) var isPlaying = false
     /// 正在循环的那一行
-    private(set) var loop: LineSpan?
+    public private(set) var loop: LineSpan?
     /// 试听一句：播到这里自动停
-    private(set) var stopAt: Double?
+    public private(set) var stopAt: Double?
     /// 歌词面板要滚到的那一行（检索结果点进来时）
-    var focusUtterance: Int64?
-    var rate: Float = 1 {
+    public var focusUtterance: Int64?
+    public var rate: Float = 1 {
         didSet { if isPlaying { player.rate = rate } }
     }
-    var lastError: String?
+    public var lastError: String?
 
     weak var app: AppModel?
 
@@ -37,7 +37,7 @@ final class PlayerModel {
     private var lastTick: Double?
     private var source = "library"
 
-    init() {
+    public init() {
         player.automaticallyWaitsToMinimizeStalling = false
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.05, preferredTimescale: 600),
@@ -48,7 +48,7 @@ final class PlayerModel {
     }
 
     /// 当前唱到哪一行：最后一个时间不晚于当前位置的行
-    var currentUtterance: Int64? {
+    public var currentUtterance: Int64? {
         guard track != nil else { return nil }
         var current: Int64?
         for line in lines {
@@ -61,7 +61,7 @@ final class PlayerModel {
     // MARK: - 加载
 
     /// 打开一首歌。`at` 有值就跳过去，`autoplay` 决定放不放
-    func open(_ track: Track, at: Double? = nil, autoplay: Bool = true, focus: Int64? = nil, source: String = "library") async {
+    public func open(_ track: Track, at: Double? = nil, autoplay: Bool = true, focus: Int64? = nil, source: String = "library") async {
         guard let client = app?.client else { return }
         if self.track?.id != track.id {
             flushHistory()
@@ -102,7 +102,7 @@ final class PlayerModel {
     }
 
     /// 检索结果的「试听」：加载那首歌、从窗口起点放、到窗口终点自动停
-    func audition(_ utteranceId: Int64, before: Int = 0, after: Int = 0) async {
+    public func audition(_ utteranceId: Int64, before: Int = 0, after: Int = 0) async {
         guard let client = app?.client else { return }
         do {
             guard let window = try await client.listenWindow(utteranceId, before: before, after: after) else {
@@ -120,7 +120,7 @@ final class PlayerModel {
     }
 
     /// 从某一行接着往下放（不停）。KWIC 里双击 / 回车就是这个
-    func playFrom(songId: String, utteranceId: Int64, timeSec: Double?) async {
+    public func playFrom(songId: String, utteranceId: Int64, timeSec: Double?) async {
         guard let track = try? await app?.track(songId) else { return }
         let start = timeSec.map { max(0, $0 - 0.4) }
         await open(track, at: start, autoplay: timeSec != nil, focus: utteranceId, source: "search")
@@ -129,22 +129,22 @@ final class PlayerModel {
 
     // MARK: - 控制
 
-    func play() {
+    public func play() {
         guard player.currentItem != nil else { return }
         player.playImmediately(atRate: rate)
         isPlaying = true
     }
 
-    func pause() {
+    public func pause() {
         player.pause()
         isPlaying = false
     }
 
-    func toggle() {
+    public func toggle() {
         isPlaying ? pause() : play()
     }
 
-    func seek(to seconds: Double) async {
+    public func seek(to seconds: Double) async {
         let target = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
         await player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
         position = max(0, seconds)
@@ -152,7 +152,7 @@ final class PlayerModel {
     }
 
     /// 点歌词某一行：跳过去接着放
-    func playLine(_ line: LyricLine) async {
+    public func playLine(_ line: LyricLine) async {
         guard let t = line.timeSec else { return }
         stopAt = nil
         await seek(to: max(0, t - 0.2))
@@ -160,7 +160,7 @@ final class PlayerModel {
     }
 
     /// 循环这一行（再点一次取消）。区间用 Rust 算好的行起止：间奏前的那一句不会把整段伴奏循环进去
-    func toggleLoop(_ utteranceId: Int64?) async {
+    public func toggleLoop(_ utteranceId: Int64?) async {
         if loop != nil, utteranceId == nil || loop?.utteranceId == utteranceId {
             loop = nil
             return
@@ -173,7 +173,7 @@ final class PlayerModel {
     }
 
     /// 上一行 / 下一行
-    func step(_ delta: Int) async {
+    public func step(_ delta: Int) async {
         let timed = lines.filter { $0.timeSec != nil }
         guard !timed.isEmpty else { return }
         let index = timed.firstIndex { $0.utteranceId == currentUtterance } ?? -1
