@@ -1,0 +1,16 @@
+{
+  "search": {"recordings": [{
+    "id": "aaaaaaaa-0000-0000-0000-000000000001", "title": "街の灯", "length": 262000,
+    "artist-credit": [{"name": "夜明バンド"}],
+    "releases": [{"id": "aaaaaaaa-0000-0000-0000-000000000002", "title": "夜明けの記録", "date": "2019-01-01", "release-group": {"primary-type": "Album"}}]
+  }]},
+  "release": {
+    "id": "aaaaaaaa-0000-0000-0000-000000000002", "title": "夜明けの記録", "date": "2019-01-01",
+    "release-group": {"id": "aaaaaaaa-0000-0000-0000-000000000003", "primary-type": "Album"},
+    "label-info": [{"label": {"name": "Fixture Records"}}], "barcode": "1234567890123",
+    "media": [{"track-count": 2, "tracks": [
+      {"recording": {"id": "aaaaaaaa-0000-0000-0000-000000000099", "isrcs": ["WRONGISRC"]}},
+      {"recording": {"id": "aaaaaaaa-0000-0000-0000-000000000001", "isrcs": ["JPTEST000001"]}}
+    ]}]
+  }
+}

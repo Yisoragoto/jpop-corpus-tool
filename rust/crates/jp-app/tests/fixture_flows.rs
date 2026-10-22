@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 
 use jp_corpus::fixture;
-use support::{Fixture, audio_or_skip, has_keys, invoke, len, ok, refused, write_tone};
+use support::{Fixture, has_keys, invoke, len, ok, refused, require_audio, write_tone};
 
 /// 这个测试自己的下载目录，建在语料库目录下面（跟着库一起被下一次运行清掉）。
 fn drop_dir(f: &Fixture, name: &str) -> PathBuf {
@@ -724,12 +724,11 @@ fn wait_until(mut done: impl FnMut() -> bool) -> bool {
 }
 
 #[test]
+#[ignore = "需要可打开的音频输出设备"]
 fn the_full_playback_loop_works_through_ipc() {
     let f = Fixture::new("playback");
     let w = f.w();
-    if !audio_or_skip(w, "the_full_playback_loop_works_through_ipc") {
-        return;
-    }
+    require_audio(w, "the_full_playback_loop_works_through_ipc");
     let song_id = import_tone(&f, "playback", 40.0);
 
     ok(w, "audio_set_volume", json!({ "volume": 0.0 })); // 测试不出声
@@ -756,12 +755,11 @@ fn the_full_playback_loop_works_through_ipc() {
 }
 
 #[test]
+#[ignore = "需要可打开的音频输出设备"]
 fn a_brief_touch_does_not_pollute_the_history() {
     let f = Fixture::new("brief-touch");
     let w = f.w();
-    if !audio_or_skip(w, "a_brief_touch_does_not_pollute_the_history") {
-        return;
-    }
+    require_audio(w, "a_brief_touch_does_not_pollute_the_history");
     let song_id = import_tone(&f, "brief-touch", 20.0);
     let history = || len(&ok(w, "recently_played", json!({ "limit": 50 })));
     let before = history();

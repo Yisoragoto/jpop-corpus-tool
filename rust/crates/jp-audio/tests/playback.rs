@@ -6,7 +6,7 @@
 //! 测试期间音量置 0，不会真的出声。tap 挂在 Player 的音量控制**之前**，
 //! 所以静音不影响采样流。
 //!
-//! 没有声卡或找不到音频文件时整体跳过。
+//! 设备与真实音频是外部前置条件，整组显式 ignored；手动运行时缺少前置就失败。
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -56,7 +56,7 @@ fn sample_audio() -> Option<PathBuf> {
     found
 }
 
-/// 静音的引擎 + 一个真实文件。缺任何一样就跳过。
+/// 静音的引擎 + 一个真实文件；调用处把缺失前置条件视为失败。
 fn loaded_engine() -> Option<(AudioEngine, PathBuf)> {
     let path = sample_audio()?;
     let engine = match AudioEngine::new() {
@@ -78,7 +78,7 @@ macro_rules! setup {
     () => {
         match loaded_engine() {
             Some(pair) => pair,
-            None => return,
+            None => panic!("未满足 ignore 中声明的测试前置条件"),
         }
     };
 }
@@ -96,6 +96,7 @@ fn wait_until(timeout: Duration, mut check: impl FnMut() -> bool) -> bool {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn loading_a_real_file_starts_playing() {
     let (engine, path) = setup!();
     let state = engine.state();
@@ -108,6 +109,7 @@ fn loading_a_real_file_starts_playing() {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn position_advances_during_playback() {
     let (engine, _) = setup!();
     assert!(
@@ -118,6 +120,7 @@ fn position_advances_during_playback() {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn pause_stops_the_clock() {
     let (engine, _) = setup!();
     assert!(wait_until(Duration::from_secs(3), || engine
@@ -137,6 +140,7 @@ fn pause_stops_the_clock() {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn seek_moves_the_position() {
     let (engine, _) = setup!();
     assert!(wait_until(Duration::from_secs(3), || engine
@@ -155,6 +159,7 @@ fn seek_moves_the_position() {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn tap_receives_real_samples() {
     let (engine, _) = setup!();
     // 等到攒够一个窗口
@@ -167,6 +172,7 @@ fn tap_receives_real_samples() {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn spectrum_responds_to_real_audio() {
     let (engine, _) = setup!();
     let mut analyzer = SpectrumAnalyzer::new(1024, 48, 44_100);
@@ -180,6 +186,7 @@ fn spectrum_responds_to_real_audio() {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn rate_change_takes_effect_without_reloading() {
     let (engine, _) = setup!();
     assert!(wait_until(Duration::from_secs(3), || engine
@@ -197,6 +204,7 @@ fn rate_change_takes_effect_without_reloading() {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn loop_region_sends_playback_back() {
     let (engine, _) = setup!();
     // 设一个很短的循环区间，然后跳到接近末尾，看它有没有被拉回起点
@@ -214,6 +222,7 @@ fn loop_region_sends_playback_back() {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn changing_track_clears_the_loop() {
     let (engine, path) = setup!();
     assert!(engine.set_loop(Some((5.0, 10.0))));
@@ -225,6 +234,7 @@ fn changing_track_clears_the_loop() {
 }
 
 #[test]
+#[ignore = "需要音频输出设备及 raw/audio 测试音频"]
 fn stop_resets_to_empty() {
     let (engine, _) = setup!();
     engine.stop();

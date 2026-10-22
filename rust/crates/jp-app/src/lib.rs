@@ -34,16 +34,21 @@ pub mod update;
 use state::AppState;
 
 pub mod library_root;
+pub mod e2e;
 
 /// 注册全部 command。
 ///
 /// 抽出来是为了让集成测试用 `tauri::test::mock_builder()` 装配**同一份清单**——
 /// 测试和生产各写一份的话，测试通过也证明不了生产注册对了。
 pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    builder
-        .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![
+    macro_rules! handler {
+        ($builder:expr $(, $extra:path)*) => {
+            $builder.invoke_handler(tauri::generate_handler![
+                $($extra,)*
             commands::health,
+            commands::update_preferences,
+            commands::update_set_channel,
+            commands::update_skip,
             commands::library_root,
             commands::set_library_root,
             // 曲库
@@ -230,7 +235,15 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::anki_mine_check,
             commands::anki_browse_notes,
             commands::anki_model_names,
-        ])
+            ])
+        };
+    }
+    let builder = builder.plugin(tauri_plugin_dialog::init());
+    if e2e::enabled(std::env::var("JPOP_E2E").ok().as_deref()) {
+        handler!(builder, e2e::e2e_state, e2e::e2e_scan_folder)
+    } else {
+        handler!(builder)
+    }
 }
 
 pub fn run() {

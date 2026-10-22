@@ -41,8 +41,7 @@ fn project_root() -> PathBuf {
 
 /// 装配一个跑在 mock runtime 上的真实应用。
 ///
-/// 库不存在或没迁移时返回 None，整组测试跳过——克隆仓库的人不该因为
-/// 缺一个 991MB 的数据库看到一片红。
+/// 显式运行 ignored 测试时检查前置条件；调用处必须报错，不能 return 假装通过。
 fn app() -> Option<tauri::WebviewWindow<MockRuntime>> {
     let root = project_root();
     if !root.join("corpus.db").exists() {
@@ -175,7 +174,7 @@ macro_rules! app_or_skip {
     () => {
         match app() {
             Some(w) => w,
-            None => return,
+            None => panic!("未满足 ignore 中声明的测试前置条件"),
         }
     };
 }
@@ -188,18 +187,19 @@ macro_rules! app_or_skip {
 ///
 /// 这里直接拿 `songs.cover_path` 里存的真实路径去问 scope。
 #[test]
+#[ignore = "需要作者真实 corpus.db、封面、音频及 Sudachi 词典"]
 fn the_asset_scope_actually_matches_the_cover_paths_in_the_database() {
     use tauri::Manager;
 
     let Some(webview) = app() else {
         eprintln!("[skip] 没有可用的 corpus.db");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
     let handle = webview.app_handle();
     let covers_dir = project_root().join("raw").join("covers");
     if !covers_dir.exists() {
         eprintln!("[skip] 还没刮削过，raw/covers 不存在");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
 
     // 走和 setup 同一个函数，而不是在测试里自己授权——测的是程序真正做的事
@@ -228,7 +228,7 @@ fn the_asset_scope_actually_matches_the_cover_paths_in_the_database() {
     };
     if paths.is_empty() {
         eprintln!("[skip] 库里还没有封面");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
 
     for path in &paths {
@@ -247,12 +247,13 @@ fn the_asset_scope_actually_matches_the_cover_paths_in_the_database() {
 /// 歌手照片在 `raw/artists`，和封面不是一个目录。只放行封面目录的时候，
 /// 人物页照样一张照片都出不来，而且和封面一样不报错。
 #[test]
+#[ignore = "需要作者真实 corpus.db、封面、音频及 Sudachi 词典"]
 fn the_asset_scope_also_covers_artist_photos() {
     use tauri::Manager;
 
     let Some(webview) = app() else {
         eprintln!("[skip] 没有可用的 corpus.db");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
     let handle = webview.app_handle();
     jp_app_lib::allow_media_dirs(handle, &jp_app_lib::media_dirs(&handle.state::<AppState>()));
@@ -272,7 +273,7 @@ fn the_asset_scope_also_covers_artist_photos() {
         .expect("查询失败");
     if !has_table {
         eprintln!("[skip] 还没刮削过歌手");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
     let paths: Vec<String> = {
         let mut stmt = conn
@@ -285,7 +286,7 @@ fn the_asset_scope_also_covers_artist_photos() {
     };
     if paths.is_empty() {
         eprintln!("[skip] 库里还没有歌手照片");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
 
     for path in &paths {
@@ -304,6 +305,7 @@ fn the_asset_scope_also_covers_artist_photos() {
 }
 
 #[test]
+#[ignore = "需要作者真实 corpus.db、封面、音频及 Sudachi 词典"]
 fn health_reports_the_real_state() {
     let w = app_or_skip!();
     let health = ok(&w, "health", json!({}));
@@ -319,10 +321,11 @@ fn health_reports_the_real_state() {
 
 /// 振假名要真的分词才出得来，所以要 Sudachi 词典；合成库的目录里没有。
 #[test]
+#[ignore = "需要作者真实 corpus.db、封面、音频及 Sudachi 词典"]
 fn furigana_offsets_line_up_with_the_lyric_text() {
     let w = app_or_skip!();
     if ok(&w, "health", json!({}))["tokenizerReady"] != json!(true) {
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
     let tracks = ok(&w, "list_tracks", json!({ "limit": 5 }));
     let song_id = tracks[0]["id"].as_str().unwrap().to_string();
@@ -376,12 +379,13 @@ fn furigana_offsets_line_up_with_the_lyric_text() {
 // 这里要的是量：两百多个真实文件、带日文的路径，重扫一遍一条新的都不该有。
 
 #[test]
+#[ignore = "需要作者真实 corpus.db、封面、音频及 Sudachi 词典"]
 fn scanning_an_already_imported_library_plans_nothing() {
     let w = app_or_skip!();
     let audio = project_root().join("raw/audio");
     if !audio.is_dir() {
         eprintln!("[skip] 找不到 {}", audio.display());
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
     let result = ok(
         &w,
@@ -420,7 +424,7 @@ fn scanning_an_already_imported_library_plans_nothing() {
 fn scraping_one_track_end_to_end() {
     let root = project_root();
     if !root.join("corpus.db").exists() {
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
     let scratch = std::env::temp_dir().join(format!("jp-scrape-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&scratch);
@@ -487,7 +491,7 @@ fn scraping_one_track_end_to_end() {
 fn a_batch_job_runs_in_the_background_and_reports_progress() {
     let root = project_root();
     if !root.join("corpus.db").exists() {
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
     let scratch = std::env::temp_dir().join(format!("jp-batch-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&scratch);
@@ -611,7 +615,7 @@ fn a_batch_job_runs_in_the_background_and_reports_progress() {
 fn scraping_an_artist_end_to_end() {
     let root = project_root();
     if !root.join("corpus.db").exists() {
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
     let scratch = std::env::temp_dir().join(format!("jp-artist-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&scratch);
@@ -668,10 +672,11 @@ fn scraping_an_artist_end_to_end() {
 /// 编辑 → 清单跟着改；换音频 → 时长读出来；弄丢一首的音频 → 扫目录能找回；删歌 → 库里、检索、清单里都没了，
 /// 真项目里的封面文件不受影响。
 #[test]
+#[ignore = "需要作者真实 corpus.db、封面、音频及 Sudachi 词典"]
 fn library_maintenance_round_trips_through_ipc_on_a_scratch_copy() {
     let Some(scratch) = scratch_app("library-maintenance") else {
         eprintln!("[skip] 没有可用的 corpus.db");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
     let w = scratch.w();
     let real_csv = project_root().join("metadata/songs.csv");
@@ -838,16 +843,17 @@ fn library_maintenance_round_trips_through_ipc_on_a_scratch_copy() {
 /// 副本目录里没有 venv，一开始就是「没词典」；然后从项目目录复制一份装上。
 /// 只该写 `tokens`：歌词原文一个字都不能变。
 #[test]
+#[ignore = "需要作者真实 corpus.db、封面、音频及 Sudachi 词典"]
 fn installing_the_dictionary_tokenizes_the_songs_left_without_tokens() {
     use tauri::Manager;
     let Some(scratch) = scratch_app("dict-backlog") else {
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
     let w = scratch.w();
     let count = |value: &Value| value.as_array().map_or(0, Vec::len);
     if jp_tokenizer::locate_sudachipy(&project_root()).is_none() {
         eprintln!("[skip] 项目目录里没有 Sudachi 词典，装不了");
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     }
     assert_eq!(
         ok(w, "health", json!({}))["tokenizerReady"],

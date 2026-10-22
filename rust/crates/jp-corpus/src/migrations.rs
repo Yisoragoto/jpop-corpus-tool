@@ -47,7 +47,6 @@ enum Change {
         ddl: &'static str,
     },
     /// 其他**只加不减**的 DDL（建表、建索引）。自己写成 `IF NOT EXISTS`。
-    #[allow(dead_code)] // 现在还没有用到，但枚举要留着——下一次加表就是它
     Exec(&'static str),
 }
 
@@ -141,6 +140,23 @@ const STEPS: &[Step] = &[
         what: "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
         // 新表由 schema.sql 建，老表不用补列
         changes: &[],
+    },
+    Step {
+        version: 20_261_020,
+        what: "歌曲与专辑的外部身份、音频指纹和厂牌来源",
+        changes: &[
+            Change::AddColumn { table: "songs", column: "isrc", ddl: "TEXT" },
+            Change::AddColumn { table: "songs", column: "recording_mbid", ddl: "TEXT" },
+            Change::AddColumn { table: "songs", column: "audio_fingerprint", ddl: "TEXT" },
+            Change::AddColumn { table: "albums", column: "release_group_mbid", ddl: "TEXT" },
+            Change::AddColumn { table: "albums", column: "label", ddl: "TEXT" },
+            Change::AddColumn { table: "albums", column: "barcode", ddl: "TEXT" },
+            Change::AddColumn { table: "albums", column: "album_type", ddl: "TEXT" },
+            Change::AddColumn { table: "albums", column: "track_count", ddl: "INTEGER" },
+            Change::Exec("CREATE TABLE IF NOT EXISTS external_ids (entity_type TEXT, entity_id TEXT, provider TEXT, external_id TEXT, source TEXT, confidence REAL, PRIMARY KEY(entity_type, entity_id, provider))"),
+            Change::Exec("CREATE INDEX IF NOT EXISTS idx_songs_audio_fingerprint ON songs(audio_fingerprint)"),
+            Change::Exec("CREATE INDEX IF NOT EXISTS idx_external_ids_external_id ON external_ids(external_id)"),
+        ],
     },
     Step {
         version: 20_261_022,
@@ -342,6 +358,7 @@ mod tests {
                 "artists.image_manual（照片是你换的：刮削不再覆盖）",
                 "歌词版本、分词器、修订历史、字段来源、分析记录（语料质量与来源追踪）",
                 "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
+                "歌曲与专辑的外部身份、音频指纹和厂牌来源",
                 "歌词原始格式、同步粒度、时间来源和验证报告",
             ]
         );
@@ -358,6 +375,32 @@ mod tests {
             .query_row("SELECT title FROM songs WHERE id='001'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(title, "夜に駆ける");
+    }
+
+    #[test]
+    fn schema_parity_old_songs_and_albums_match_a_fresh_database() {
+        let old = old_database();
+        old.execute_batch("CREATE TABLE albums (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL,normalized_title TEXT NOT NULL,
+          album_artist TEXT NOT NULL DEFAULT '',normalized_album_artist TEXT NOT NULL DEFAULT '',
+          year TEXT NOT NULL DEFAULT '',artwork_path TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL DEFAULT '',
+          UNIQUE(normalized_title,normalized_album_artist));
+          INSERT INTO albums (title,normalized_title) VALUES ('Fixture','fixture');").unwrap();
+        apply(&old).unwrap();
+        let fresh = Connection::open_in_memory().unwrap(); apply(&fresh).unwrap();
+        type Column = (String,String,i64,Option<String>,i64);
+        fn structure(conn: &Connection) -> Vec<(String,Vec<Column>)> {
+            let names: Vec<String> = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").unwrap().query_map([],|r|r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+            names.into_iter().map(|name| {
+                let mut cols = conn.prepare(&format!("PRAGMA table_info({name})")).unwrap().query_map([],|r| Ok((r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap();
+                cols.sort(); (name,cols)
+            }).collect()
+        }
+        assert_eq!(structure(&old),structure(&fresh));
+        for index in ["idx_songs_audio_fingerprint","idx_external_ids_external_id"] {
+            assert_eq!(old.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",[index],|r|r.get::<_,i64>(0)).unwrap(),1);
+        }
+        assert_eq!(old.query_row("SELECT title FROM albums",[],|r|r.get::<_,String>(0)).unwrap(),"Fixture");
     }
 
     /// Python 迁移过的真库就是这个状态：戳着 20260908，结构已经齐了。
@@ -399,6 +442,7 @@ mod tests {
                 "artists.image_manual（照片是你换的：刮削不再覆盖）",
                 "歌词版本、分词器、修订历史、字段来源、分析记录（语料质量与来源追踪）",
                 "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
+                "歌曲与专辑的外部身份、音频指纹和厂牌来源",
                 "歌词原始格式、同步粒度、时间来源和验证报告"
             ],
             "没戳过就得把每一步都重跑一遍"

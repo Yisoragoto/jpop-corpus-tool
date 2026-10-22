@@ -22,7 +22,7 @@ import { CommandButton } from "../components/CommandButton";
 import { SettingCard, SettingGroup, SettingNote, SettingSelect, SettingSlider, Switch } from "../components/SettingCard";
 import { setDictionariesCollapsed, useCollapsedDictionaries } from "../dict/collapse";
 import { DictionaryManager } from "../dict/DictionaryManager";
-import { UpdateCard } from "../components/UpdateCard";
+import { BuildInfo, UpdateCard } from "../components/UpdateCard";
 import { MigrateCard } from "../components/MigrateCard";
 import { SudachiCard } from "../components/SudachiCard";
 import { TokenizeCard } from "../components/TokenizeCard";
@@ -749,6 +749,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
 
           {section === "about" && (
             <Group title={tr("语料库")}>
+            <BuildInfo />
             <SettingCard
               icon={Icons.db}
               title={tr("语料库")}

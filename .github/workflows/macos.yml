@@ -69,7 +69,28 @@ jobs:
 
       - name: Swift tests
         working-directory: macos
-        run: swift test
+        run: |
+          set -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/swift-tests.log"
+
+      - name: Report skipped Swift tests
+        if: always()
+        run: |
+          python3 - "$RUNNER_TEMP/swift-tests.log" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          if not path.exists():
+              print("Swift tests did not run; no skip report is available.")
+          else:
+              skipped = [line for line in path.read_text().splitlines() if "skipped" in line.lower() or "XCTSkip" in line]
+              print("Skipped Swift tests:")
+              print("\n".join(skipped) if skipped else "None (all test cases executed).")
+          PY
+
+      - name: Prove model tests and source guards catch regressions
+        working-directory: macos
+        run: python3 scripts/check-regressions.py --output "$RUNNER_TEMP/macos-regression-probes"
 
       - name: App bundle
         working-directory: macos
@@ -103,16 +124,31 @@ jobs:
           open(sys.argv[1], "wb").write(png)
           PY
           sips -s format jpeg "$audio/covers/004.png" --out "$audio/covers/004.jpg" >/dev/null
+          # Import-only fixtures have unique names and same-name LRCs, separate from playback fixtures.
+          mkdir -p "$audio/import"
+          python3 - "$audio/import" <<'PY'
+          from pathlib import Path
+          import sys, wave
+          root = Path(sys.argv[1])
+          for name in ["Smoke Artist - New One", "Smoke Artist - New Two"]:
+              with wave.open(str(root / (name + ".wav")), "wb") as w:
+                  w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000)
+                  w.writeframes(bytes(16000))
+              (root / (name + ".lrc")).write_text("[00:00.00]合成のテスト\n", encoding="utf-8")
+          PY
           app="$PWD/build/JPOP Corpus.app"
           set +e
           # 先直接跑可执行文件（stderr 里有 [smoke] 生命周期日志）
-          JPCORPUS_SMOKE="$out" JPCORPUS_SMOKE_AUDIO="$audio" perl -e 'alarm shift; exec @ARGV' 120 "$app/Contents/MacOS/JPCorpus"
+          JPCORPUS_SMOKE="$out" JPCORPUS_SMOKE_AUDIO="$audio" perl -e 'alarm shift; exec @ARGV' 180 "$app/Contents/MacOS/JPCorpus"
           echo "direct exit=$?"
           # 没出截图就经 LaunchServices 再开一次：GUI 应用通常要这样才拿得到窗口服务器的会话
-          if [ ! -f "$out/02-kwic.png" ]; then
+          if [ ! -f "$out/smoke.txt" ] || ! grep -q '^\[step\] complete status=' "$out/smoke.txt"; then
             open -W -n --env JPCORPUS_SMOKE="$out" --env JPCORPUS_SMOKE_AUDIO="$audio" \
               --stdout "$out/stdout.txt" --stderr "$out/stderr.txt" "$app" &
-            pid=$!; ( sleep 120; kill $pid 2>/dev/null; pkill -f "JPOP Corpus.app" ) & wait $pid
+            pid=$!
+            ( sleep 180; kill "$pid" 2>/dev/null; pkill -f "JPOP Corpus.app" ) & watchdog=$!
+            wait "$pid"
+            kill "$watchdog" 2>/dev/null || true
             echo "open exit=$?"
             cat "$out/stderr.txt" 2>/dev/null
           fi
@@ -121,6 +157,28 @@ jobs:
           cat "$out/smoke.txt" 2>/dev/null || true
           ls -la "$out"
           test -f "$out/02-kwic.png"
+          test -f "$out/07-single-file-plan.png"
+          test -f "$out/09-imported-library.png"
+          grep -Eq '^\[step\] single-file plan.total=1 status=pass$' "$out/smoke.txt"
+          grep -Eq '^\[step\] folder plan.new=[1-9][0-9]* status=pass$' "$out/smoke.txt"
+          grep -Eq '^\[step\] import tracks.before=[0-9]+ tracks.after=[0-9]+ added=[1-9][0-9]* status=pass$' "$out/smoke.txt"
+          grep -q '^\[step\] complete status=pass$' "$out/smoke.txt"
+
+      - name: Print smoke diagnostics (including failures)
+        if: always()
+        run: |
+          for file in smoke.txt stderr.txt stdout.txt; do
+            if [ -f "$RUNNER_TEMP/smoke/$file" ]; then cat "$RUNNER_TEMP/smoke/$file"; fi
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macOS-test-evidence
+          path: |
+            ${{ runner.temp }}/swift-tests.log
+            ${{ runner.temp }}/macos-regression-probes
+          retention-days: 14
 
       - uses: actions/upload-artifact@v4
         if: always()

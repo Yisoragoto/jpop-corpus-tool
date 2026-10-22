@@ -41,6 +41,7 @@ import { toggleFullscreen } from "./fullscreen";
 import { useHotkeys } from "./useHotkeys";
 import { usePlaybackState } from "./usePlayback";
 import { tr } from "./i18n";
+import { installHooks } from "./e2e";
 
 /** 和 styles.css「窗口宽窄」那一节的断点一致 */
 const NARROW_WINDOW = "(max-width: 1100px)";
@@ -116,7 +117,7 @@ export default function App() {
         .updateCheck()
         .then((status) => {
           if (!alive || !status.updateAvailable || status.latest === null) return;
-          if (status.latest.version === settings.skippedUpdateVersion) return;
+          if (status.skipped || (status.channel === "stable" && status.latest.version === settings.skippedUpdateVersion)) return;
           setUpdateOffer({ current: status.current, release: status.latest });
         })
         .catch(() => undefined); // 没网、被限流都不该在启动时打扰用户
@@ -157,6 +158,7 @@ export default function App() {
   // 横幅上点「查看」：带着那几个文件去导入页，导入页用掉后清空
   const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
   const consumeImportRequest = useCallback(() => setImportRequest(null), []);
+  useEffect(() => installHooks((path) => { setRoute("import"); setImportRequest({ paths: [], folder: path, nonce: Date.now() }); }), []);
 
   // 字体探测很贵（本机 401 个名字冷着跑 1.8 秒），空闲时先备好，
   // 免得用户点开「显示」面板或设置页时卡在那里。结果会存进 localStorage。
@@ -344,7 +346,7 @@ export default function App() {
   const current = [...ROUTES, SETTINGS_ROUTE].find((r) => r.key === route) ?? { key: route, label: "", hint: "" };
 
   return (
-    <div className="app">
+    <div className="app" data-route={route} data-track-count={overview?.tracks ?? 0} data-library-path={health?.dbPath ?? ""}>
       <aside className={`sidebar ${navOpen ? "" : "collapsed"}`}>
         <div className="sidebar-head">
           <button

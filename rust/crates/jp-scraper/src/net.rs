@@ -146,7 +146,7 @@ fn classify(err: &ureq::Error) -> ProviderError {
 /// 顺序有意义：resolver 按顺序问，先问到的先进候选池。
 pub fn default_providers() -> Vec<Box<dyn crate::providers::MetadataProvider>> {
     use crate::http::HttpClient;
-    use crate::providers::{itunes::ITunesProvider, musicbrainz::MusicBrainzProvider};
+    use crate::providers::{itunes::ITunesProvider, musicbrainz::MusicBrainzProvider, deezer::DeezerProvider};
     vec![
         Box::new(ITunesProvider::production(HttpClient::new(Box::new(
             UreqTransport,
@@ -154,6 +154,7 @@ pub fn default_providers() -> Vec<Box<dyn crate::providers::MetadataProvider>> {
         Box::new(MusicBrainzProvider::production(HttpClient::new(Box::new(
             UreqTransport,
         )))),
+        Box::new(DeezerProvider::new(HttpClient::new(Box::new(UreqTransport)))),
     ]
 }
 

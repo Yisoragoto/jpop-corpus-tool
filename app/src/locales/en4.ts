@@ -7,7 +7,7 @@ export const en4: Record<string, string> = {
   "在曲库里点词，查词结果上的「＋ 制卡」就放进这里": "Cards made with “+ Add card” in lookup results go here",
   "Anki 没连上，列不出牌组；连上之后这里会是真实的牌组列表": "Anki isn't connected, so decks can't be listed. Once it is, your real decks appear here",
   "按歌手放进子牌组": "Subdeck per artist",
-  "放进「{deck}::歌手」，例如「{deck}::ヨルシカ」；子牌组没有就新建，合作曲放进第一位歌手的。不是从歌里查的词还放在上面那个牌组": "Cards go into “{deck}::Artist”, e.g. “{deck}::ヨルシカ”. Missing subdecks are created; collaborations go under the first artist. Words not looked up from a song stay in the deck above",
+  "放进「{deck}::歌手」，例如「{deck}::ヨルシカ」；子牌组没有就新建，合作曲放进第一位歌手的。不是从歌里查的词还放在上面那个牌组": "Cards go into “{deck}::Artist”, e.g. “{deck}::Yorushika”. Missing subdecks are created; collaborations go under the first artist. Words not looked up from a song stay in the deck above",
   "开了以后制卡放进「牌组::歌手」的子牌组，没有就新建": "When on, cards go into a “Deck::Artist” subdeck, created if needed",
   "笔记类型": "Note type",
   "默认「Lyrics」：照 Lapis 做的，背面右侧是封面，封面右边竖排歌名、歌手、专辑": "Default “Lyrics”: based on Lapis, with the cover on the right of the back and the title, artist and album beside it",
@@ -144,7 +144,7 @@ export const en4: Record<string, string> = {
 
   // AnkiPage.tsx
   "先勾几个词": "Select some words first",
-  "把语料里的词做成卡片。例句取自你自己听的歌——「夜」的例句是《夜に駆ける》里的那一句，不是教科书造的。": "Turn words from your corpus into flashcards. Examples come from songs you actually listen to: the example for 「夜」 is the line from 「夜に駆ける」, not a made-up textbook sentence.",
+  "把语料里的词做成卡片。例句取自你自己听的歌——「夜」的例句是《夜に駆ける》里的那一句，不是教科书造的。": "Turn words from your corpus into flashcards. Examples come from songs you actually listen to: the example for yoru (night) is the line from Yoru ni Kakeru, not a made-up textbook sentence.",
   "连接": "Connected",
   "未连接": "Not connected",
   "已进 Anki 的词": "Words in Anki",

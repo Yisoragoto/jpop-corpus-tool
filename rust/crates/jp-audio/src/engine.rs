@@ -682,12 +682,13 @@ mod tests {
         () => {
             match engine() {
                 Some(e) => e,
-                None => return,
+                None => panic!("未满足 ignore 中声明的测试前置条件"),
             }
         };
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn fresh_engine_reports_empty() {
         let e = engine_or_skip!();
         let state = e.state();
@@ -707,6 +708,7 @@ mod tests {
     /// 用 `Arc` 的强引用数来验：线程退出时会放掉它那一份，
     /// drop 之后还剩 2 份就说明没等。
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn dropping_the_engine_waits_for_the_loop_watcher() {
         let e = engine_or_skip!();
         let flag = Arc::clone(&e.watcher_stop);
@@ -719,6 +721,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn rate_is_clamped_and_reported() {
         let e = engine_or_skip!();
         e.set_rate(0.75);
@@ -728,6 +731,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn volume_round_trips() {
         let e = engine_or_skip!();
         e.set_volume(0.4);
@@ -735,6 +739,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn loop_region_is_accepted_and_cleared() {
         let e = engine_or_skip!();
         assert!(e.set_loop(Some((10.0, 20.0))));
@@ -747,6 +752,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn stop_at_is_accepted_cleared_and_rejects_nonsense() {
         let e = engine_or_skip!();
         e.set_stop_at(Some(12.5));
@@ -759,6 +765,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn degenerate_loop_is_rejected_not_silently_ignored() {
         let e = engine_or_skip!();
         assert!(!e.set_loop(Some((10.0, 10.01))), "过短的区间应当被拒绝");
@@ -766,6 +773,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn loading_a_missing_file_errors_instead_of_panicking() {
         let e = engine_or_skip!();
         assert!(e.load(Path::new("不存在的文件.flac"), "x").is_err());
@@ -996,6 +1004,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn load_at_resumes_position_and_pause_state_and_keeps_the_loop_for_the_same_song() {
         let e = engine_or_skip!();
         let file = silent_wav(6);
@@ -1022,6 +1031,7 @@ mod tests {
     /// 进度条顶在最右边，歌词跟随把整屏歌词滚到最后一行
     /// （用户报的「播完一首切另一首，歌词总跑到最下面」）。
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn switching_songs_restarts_the_position_at_zero() {
         let e = engine_or_skip!();
         // 时长各不相同：silent_wav 的文件名只带秒数，和别的测试撞名字时
@@ -1061,6 +1071,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn a_finished_song_can_be_dragged_back_and_replayed() {
         let e = engine_or_skip!();
         let file = silent_wav(1);
@@ -1089,6 +1100,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "需要可打开的音频输出设备"]
     fn tap_starts_silent() {
         let e = engine_or_skip!();
         assert!(e.samples(256).iter().all(|&s| s == 0.0));

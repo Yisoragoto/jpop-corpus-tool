@@ -239,12 +239,21 @@ impl MetadataResolver {
         queries_tried: Vec<String>,
         providers_tried: Vec<String>,
     ) -> ResolvedTrack {
-        let best = ranked[0].clone();
+        let mut best = ranked[0].clone();
         let total = ranked.len();
-        let kept: Vec<ScrapeCandidate> = ranked
+        let mut kept: Vec<ScrapeCandidate> = ranked
             .into_iter()
             .take(self.config.keep_candidates)
             .collect();
+
+        if best.score() >= self.config.review_threshold && let Some(provider) = self.providers.iter().find(|p| p.name() == best.provider) {
+            match provider.enrich(&best) {
+                Ok(enriched) => best = enriched,
+                // 身份详情失败不推翻已经通过的曲名匹配；警告留在原始候选里，不能伪造缺失的身份。
+                Err(err) => { best.extra.insert("identity_warning".into(),err.to_string()); }
+            }
+            if let Some(first) = kept.first_mut() { *first = best.clone(); }
+        }
 
         let want = NormalizedTrack::from_file(track);
         let got = NormalizedTrack::from_candidate(&best);
@@ -427,6 +436,25 @@ mod tests {
             assert_ne!(result.status,ScrapeStatus::Success,"{conflict}");
             assert!(result.error_message.contains("版本标记冲突"));
         }
+    }
+
+    #[test]
+    fn an_isrc_found_by_identity_enrichment_is_checked_before_acceptance() {
+        struct Enriched;
+        impl MetadataProvider for Enriched {
+            fn name(&self) -> &'static str { "fake" }
+            fn search_tracks(&self, _: &SearchQuery, _: usize) -> Result<Vec<ScrapeCandidate>, ProviderError> { Ok(vec![perfect()]) }
+            fn enrich(&self, candidate: &ScrapeCandidate) -> Result<ScrapeCandidate, ProviderError> {
+                let mut candidate = candidate.clone();
+                candidate.extra.insert("isrc".into(), "JPTEST000002".into());
+                Ok(candidate)
+            }
+        }
+        let mut local = track();
+        local.isrc = "JPTEST000001".into();
+        let result = resolver(vec![Box::new(Enriched)]).resolve(&local);
+        assert_eq!(result.status, ScrapeStatus::LowConfidence);
+        assert!(result.error_message.contains("版本标记冲突"));
     }
 
     #[test]

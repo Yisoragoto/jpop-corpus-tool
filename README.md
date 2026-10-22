@@ -200,6 +200,8 @@ J-pop 的副歌会反复唱：真实语料里重复行占了约 23% 的行、20%
 
 ### 原生 macOS 客户端
 
+逐项功能状态、测试覆盖和限制见 [macOS 能力矩阵](docs/macos-status.md)。
+
 `macos/` 是一个原生 SwiftUI 客户端（播放用 AVFoundation），业务逻辑**不另写一套**：检索、分析、行区间、导入、
 分词、查词、库结构和迁移都调同一个 Rust 核心（经 `jp-ffi`：一个入口、JSON 进出，方法名和 Windows 版的命令一致）。
 
@@ -340,6 +342,11 @@ raw/           本地音频和歌词目录，Git 默认忽略内容
 
 | 文档 | 内容 |
 |---|---|
+| [BUGS.md](docs/BUGS.md) | Bug 复现、根因、回归测试与修复索引 |
+| [cli.md](docs/cli.md) | 共享库目录解析、命令行批量导入/分词/刮削和 Anki TSV 导出 |
+| [updates.md](docs/updates.md) | stable/debug 发布轨道、构建编号、清单与更新校验 |
+| [content-identity.md](docs/content-identity.md) | ISRC、MBID、厂牌来源和音频指纹 |
+| [testing.md](docs/testing.md) | 本地重活租约、隔离窗口冒烟、键盘回归与 skip 原因 |
 | [clients.md](docs/clients.md) | 一个 Rust 核心、两个客户端；数据怎么关联到音频；分析的计数口径 |
 | [provenance.md](docs/provenance.md) | 歌词版本、校验、修订历史、字段来源、可复现的分析存档 |
 | [import.md](docs/import.md) | 扫描、计划、写库，歌词匹配 |

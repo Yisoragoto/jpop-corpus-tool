@@ -466,10 +466,7 @@ mod tests {
     #[test]
     fn bundled_fonts_are_read() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../assets/fonts");
-        if !dir.is_dir() {
-            eprintln!("跳过：没有 assets/fonts");
-            return;
-        }
+        assert!(dir.is_dir(), "发布资源 assets/fonts 必须随源码存在");
         let (files, problems) = font_files(&dir, &["不存在的字体.ttf".to_owned()]);
         let families: Vec<&str> = files.iter().map(|f| f.family.as_str()).collect();
         assert!(families.contains(&"Klee One"), "{families:?}");
@@ -521,11 +518,11 @@ mod tests {
     /// `same_names_are_listed_once_and_localized_names_are_used_when_there_is_no_english`
     /// 已经覆盖了。
     #[test]
+    #[ignore = "需要可枚举的系统字体（Windows DirectWrite）"]
     fn installed_fonts_are_listed_once_each_and_sorted() {
         let fonts = installed_fonts().unwrap();
         if fonts.is_empty() {
-            eprintln!("[skip] 这台机器列不出任何系统字体");
-            return;
+            panic!("需要可枚举的系统字体");
         }
         let names: Vec<&str> = fonts.iter().map(|f| f.name.as_str()).collect();
 

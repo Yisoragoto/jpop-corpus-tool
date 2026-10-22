@@ -1912,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "jp-app"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "encoding_rs",
@@ -1952,14 +1952,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "jp-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-anki",
+ "jp-corpus",
+ "jp-import",
+ "jp-scraper",
+ "jp-tokenizer",
+ "serde_json",
+]
+
+[[package]]
 name = "jp-corpus"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "jp-normalize",
+ "rodio",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -2022,6 +2037,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "flate2",
+ "jp-corpus",
  "jp-normalize",
  "regex",
  "roxmltree",

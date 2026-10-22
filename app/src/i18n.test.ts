@@ -86,7 +86,27 @@ function scan() {
 
 const { keys, bare } = scan();
 
+const LOCALES = import.meta.glob<string>("./locales/en*.ts", { query: "?raw", import: "default", eager: true });
+
 describe("界面文字都有英文", () => {
+  it("六个源文件里也没有被对象字面量提前覆盖的重复键", () => {
+    const seen = new Map<string, string>();
+    const duplicates: string[] = [];
+    for (const [path, text] of Object.entries(LOCALES)) {
+      const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+      const visit = (node: ts.Node) => {
+        if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.name)) {
+          const key = node.name.text;
+          if (seen.has(key)) duplicates.push(`${key}: ${seen.get(key)} / ${path}`);
+          seen.set(key, path);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+    }
+    expect(Object.keys(LOCALES)).toHaveLength(6);
+    expect(duplicates).toEqual([]);
+  });
   it("每一处 tr() 的键都有英文", () => {
     const missing = [...new Set(keys.filter((k) => !(k.text in en)).map((k) => `${k.file}:${k.line} ${JSON.stringify(k.text)}`))];
     expect(missing).toEqual([]);
@@ -101,22 +121,27 @@ describe("界面文字都有英文", () => {
     const bad = Object.entries(en).flatMap(([zh, e]) => {
       if (typeof e !== "string") return [];
       const have = names(zh);
-      return [...names(e)].filter((n) => !have.has(n)).map((n) => `${JSON.stringify(zh)} → {${n}}`);
+      const translated = names(e);
+      return [...new Set([...have, ...translated])].filter((n) => have.has(n) !== translated.has(n)).map((n) => `${JSON.stringify(zh)} → {${n}}`);
     });
     expect(bad).toEqual([]);
   });
 
-  it("几个分表之间同一个键不会给出不同的英文", () => {
+  it("几个分表之间不能重复键，即使英文相同也会静默覆盖", () => {
     const seen = new Map<string, string>();
     const conflicts: string[] = [];
     for (const part of [en1, en2, en3, en4, en5]) {
       for (const [k, v] of Object.entries(part)) {
         const prev = seen.get(k);
-        if (prev !== undefined && prev !== v) conflicts.push(`${k}: ${prev} / ${v}`);
+        if (prev !== undefined) conflicts.push(`${k}: ${prev} / ${v}`);
         seen.set(k, v);
       }
     }
     expect(conflicts).toEqual([]);
+  });
+
+  it("英文不能复制中日文充数", () => {
+    expect(Object.entries(en).filter(([, v]) => typeof v === "string" && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(v))).toEqual([]);
   });
 
   it("没有用不上的英文（源码里已经删掉的键）", () => {
