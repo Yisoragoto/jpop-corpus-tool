@@ -1,6 +1,60 @@
 import { describe, expect, it } from "vitest";
 
-import { advanceClock } from "./useKaraoke";
+import { advanceClock, paintKaraoke } from "./useKaraoke";
+import { charTimeline } from "./wordTiming";
+
+function character(index: string) {
+  const classes = new Set<string>();
+  const properties = new Map<string, string>();
+  const element = {
+    dataset: { c: index },
+    classList: { toggle: (name: string, enabled: boolean) => { if (enabled) classes.add(name); else classes.delete(name); } },
+    style: { setProperty: (name: string, value: string) => { properties.set(name, value); }, removeProperty: (name: string) => { properties.delete(name); } },
+  } as unknown as HTMLElement;
+  return { element, classes, properties };
+}
+
+describe("paintKaraoke", () => {
+  const timeline = charTimeline("𠮷野家", 0, 4, [
+    { utteranceId: 1, charStart: 0, charEnd: 2, startSec: 0, endSec: 2, source: "lrc" },
+    { utteranceId: 1, charStart: 2, charEnd: 3, startSec: 3, endSec: 4, source: "lrc" },
+  ])!;
+  it("paints the entire multi-character source unit with identical progress", () => {
+    const nodes = [character("0"), character("1"), character("2")];
+    paintKaraoke(timeline, 1, nodes.map((node) => node.element));
+    for (const node of nodes.slice(0, 2)) {
+      expect(node.classes.has("kc-now")).toBe(true);
+      expect(node.properties.get("--p")).toBe("50.0%");
+    }
+    expect(nodes[2]!.classes.size).toBe(0);
+  });
+  it("does not fill gaps between real source units", () => {
+    const nodes = [character("0"), character("1"), character("2")];
+    paintKaraoke(timeline, 2.5, nodes.map((node) => node.element));
+    expect(nodes.map((node) => node.classes.has("kc-on"))).toEqual([true, true, false]);
+    expect(nodes.some((node) => node.classes.has("kc-now"))).toBe(false);
+  });
+  it("line-synced/plain fallback removes previous karaoke styles instead of animating", () => {
+    const node = character("0");
+    paintKaraoke(timeline, 1, [node.element]);
+    paintKaraoke(null, 99, [node.element]);
+    expect(node.classes.size).toBe(0);
+    expect(node.properties.size).toBe(0);
+  });
+  it("seeking backwards, including a repeated line, does not retain the old progress", () => {
+    const node = character("0");
+    paintKaraoke(timeline, 10, [node.element]);
+    expect(node.classes.has("kc-on")).toBe(true);
+    paintKaraoke(timeline, -1, [node.element]);
+    expect(node.classes.size).toBe(0);
+    expect(node.properties.size).toBe(0);
+  });
+  it("ignores malformed or out-of-range DOM character offsets", () => {
+    const nodes = [character("NaN"), character("-1"), character("9"), character("0.5")];
+    paintKaraoke(timeline, 1, nodes.map((node) => node.element));
+    expect(nodes.every((node) => node.classes.size === 0)).toBe(true);
+  });
+});
 
 describe("advanceClock", () => {
   it("在播：两次轮询之间按倍速自己往前走", () => {

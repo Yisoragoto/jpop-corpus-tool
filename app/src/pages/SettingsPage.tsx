@@ -487,7 +487,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             <SettingCard
               icon={Icons.lyrics}
               title={tr("逐字点亮当前行")}
-              description={tr("像卡拉 OK 歌词那样，唱到哪个字亮到哪个字。有逐字歌词（增强型 LRC）或手动校准时用真实时间；没有时按字数估。关掉就是原来的整行高亮。")}
+              description={tr("仅在该行有完整有效的真实逐字或逐词起止时间时点亮；同一词段内的字同时变化。缺失或异常时整行高亮，纯文本不高亮，不按字数估算。")}
             >
               <Switch
                 checked={settings.karaokeLyrics}

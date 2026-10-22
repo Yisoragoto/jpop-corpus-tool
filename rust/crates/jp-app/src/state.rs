@@ -69,6 +69,8 @@ pub struct AppState {
     dict_job: std::sync::Arc<crate::dict::ImportJob>,
     /// 补齐歌词作业。同上，各自独立：补歌词排的是网易云的队，和别的互不相干。
     lyrics_job: std::sync::Arc<crate::lyrics::LyricsJob>,
+    /// Timed lyric candidates and session-only Apple credentials.
+    pub timed_lyrics: Mutex<crate::timed_lyrics::Session>,
     /// 导入作业。只用它的取消标志——导入跑在 `spawn_blocking` 里、
     /// 一首歌一个事务，中途停下来是安全的（见 `jp_import::execute_cancellable`）。
     import_job: std::sync::Arc<crate::job::Job>,
@@ -159,6 +161,7 @@ impl AppState {
             translator: jp_dict::translator::Translator::new(),
             dict_job: std::sync::Arc::new(crate::dict::ImportJob::default()),
             lyrics_job: std::sync::Arc::new(crate::lyrics::LyricsJob::default()),
+            timed_lyrics: Mutex::new(crate::timed_lyrics::Session::load(project_root)),
             import_job: std::sync::Arc::new(crate::job::Job::default()),
             updates: Default::default(),
         })

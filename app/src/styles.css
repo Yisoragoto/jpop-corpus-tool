@@ -737,6 +737,7 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 .stage-line .karaoke-line { --k-dim: rgba(255, 255, 255, .5); --k-lit: #fff; }
 /* 字的颜色不做过渡：正在唱的字是透明字 + 渐变底，换成「唱过」时要是从 transparent 渐变过去，每个字都会闪一下 */
 .karaoke-line .kc { color: var(--k-dim); }
+.lyric-unit[role="button"], .karaoke-line .kc[role="button"] { cursor: pointer; }
 .karaoke-line .kc.kc-on { color: var(--k-lit); }
 .karaoke-line .kc-now {
   color: transparent;
@@ -849,14 +850,14 @@ button.primary:disabled { background: rgba(255, 255, 255, .159); color: rgba(255
 .segmented button.on { background: var(--accent); color: rgba(0, 0, 0, .9); }
 
 /* 输入框：底边一条亮线，聚焦时变成两像素的强调色（WinUI 的 TextBox） */
-input[type="text"], input[type="search"], input[type="number"] {
+input[type="text"], input[type="search"], input[type="number"], input[type="password"] {
   height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-radius);
   font: inherit; font-size: 13px; color: var(--fg); background: var(--btn-fill);
   border: 1px solid var(--btn-stroke); border-bottom-color: rgba(255, 255, 255, .45);
   transition: background 120ms, box-shadow 120ms;
 }
-input[type="text"]:hover, input[type="search"]:hover, input[type="number"]:hover { background: var(--btn-fill-hover); }
-input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus {
+input[type="text"]:hover, input[type="search"]:hover, input[type="number"]:hover, input[type="password"]:hover { background: var(--btn-fill-hover); }
+input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus, input[type="password"]:focus {
   outline: none; background: rgba(30, 30, 30, .7); border-bottom-color: var(--accent);
   box-shadow: inset 0 -1px 0 var(--accent);
 }
@@ -1587,6 +1588,38 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 .lyrics-fill .muted { flex: 1 1 100%; text-align: left; }
 .empty-state .lyrics-fill { justify-content: center; margin-top: 4px; }
 .empty-state .lyrics-fill .muted { text-align: center; }
+
+/* 逐字歌词：候选与来源设置都在当前位置展开，沿用 WinUI 控件。 */
+.timed-lyrics { min-width: 0; margin: 16px 0 22px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; text-align: left; }
+.timed-lyrics h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.timed-lyrics .timed-hint { margin: 8px 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.timed-toolbar, .timed-source-checks { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.timed-song-picker { display: grid; gap: 6px; flex: 1; min-width: 140px; font-size: 12px; }
+.timed-song-picker select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+.timed-toolbar { align-items: end; }
+.timed-sources { margin: 12px 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--ctl-radius); }
+.timed-sources summary, .lyrics-timed-entry > summary { cursor: pointer; font-size: 12px; border-radius: var(--ctl-radius); }
+.timed-sources summary:focus-visible, .lyrics-timed-entry > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.timed-sources form { margin-top: 12px; }
+.timed-sources fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.timed-source-checks .check { white-space: normal; line-height: 1.4; }
+.timed-field { display: grid; gap: 6px; margin: 12px 0 6px; font-size: 12px; }
+.timed-field input { min-width: 0; width: 100%; box-sizing: border-box; }
+.timed-warnings { margin: 10px 0; padding-left: 20px; color: var(--warn); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.timed-candidates { display: grid; gap: 10px; margin-top: 10px; }
+.timed-candidate { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--btn-fill); }
+.timed-candidate header { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; font-size: 12px; overflow-wrap: anywhere; }
+.timed-candidate header span { color: var(--muted); }
+.timed-candidate header button { margin-left: auto; }
+.timed-preview { margin: 8px 0 0; font: inherit; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lyrics-timed-entry { flex: 1 1 100%; min-width: 0; text-align: left; }
+.lyrics-timed-entry > summary { padding: 6px 0; color: var(--accent); }
+.lyrics-timed-entry .timed-lyrics { margin: 8px 0 0; }
+.menu-panel:has(.lyrics-timed-entry[open]) { width: min(560px, calc(100vw - 56px)); max-height: min(70vh, 720px); overflow-y: auto; }
+.menu-panel .timed-lyrics button { width: auto; text-align: center; padding: 0 10px; }
+.menu-panel .timed-lyrics button:disabled { color: var(--text-disabled); background: var(--btn-fill-disabled); cursor: default; }
+.menu-panel .timed-lyrics button:disabled:hover { background: var(--btn-fill-disabled); }
+.menu-panel .lyrics-timed-entry > summary { padding: 6px 10px; }
 
 /* 单曲导入：选中的文件列表。只显示文件名，完整路径一行塞不下 */
 .chosen-files { padding: 10px 2px 2px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
@@ -2756,7 +2789,7 @@ table.data tr.current td { background: var(--accent-soft); }
   display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 9.5px; line-height: 15px;
   vertical-align: 1px; border: 1px solid currentColor; opacity: .8;
 }
-.wc-timing.estimate { color: var(--muted); border-style: dashed; }
+.wc-timing.line { color: var(--muted); }
 .wc-timing.lrc { color: #9be3a6; }
 .wc-timing.manual { color: var(--accent); }
 .wc-song.calibrating { background: rgba(255, 255, 255, .06); }

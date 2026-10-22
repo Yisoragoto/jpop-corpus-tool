@@ -41,6 +41,7 @@ pub mod media;
 pub mod segments;
 pub mod subcorpus;
 pub mod word_timing;
+pub mod display_timeline;
 
 use std::path::Path;
 
@@ -228,6 +229,11 @@ impl Corpus {
     /// 这几行歌词的词级时间（逐字歌词和手动校准，见 [`word_timing`]）。
     pub fn word_timings(&self, utterance_ids: &[i64]) -> Result<Vec<word_timing::WordTiming>> {
         word_timing::for_utterances(&self.conn, utterance_ids)
+    }
+
+    /// Reliable units for native lyric display; incomplete lines fall back.
+    pub fn lyric_timeline(&self, song_id: &str) -> Result<Vec<display_timeline::LineTimeline>> {
+        display_timeline::for_song(&self.conn, song_id)
     }
 
     /// 记一处手动校准：这一行第 `char_start..char_end` 个字从 `start_sec` 开始。

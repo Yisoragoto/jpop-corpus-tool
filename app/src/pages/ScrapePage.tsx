@@ -36,6 +36,7 @@ import {
 } from "../api";
 import { Avatar } from "../components/Avatar";
 import { CommandButton } from "../components/CommandButton";
+import { TimedLyricsPanel } from "../components/TimedLyricsPanel";
 import { tr } from "../i18n";
 
 interface Props {
@@ -458,6 +459,8 @@ export function ScrapePage({ onError, onChanged }: Props) {
           <CommandButton icon="cancel" label={tr("中断")} onClick={jobLine.stop} />
         </div>
       )}
+
+      <TimedLyricsPanel onChanged={() => { void refresh(); onChanged(); }} onError={onError} />
 
       <section className="section scrape-review">
         <header className="section-head">

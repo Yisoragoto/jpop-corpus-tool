@@ -239,6 +239,11 @@ CREATE TABLE IF NOT EXISTS lyric_versions (
     completeness     REAL,
     -- 校验结果：问题清单、重复行比例、语言判断
     validation_json  TEXT    NOT NULL DEFAULT '{}',
+    raw_format TEXT NOT NULL DEFAULT '',
+    source_raw TEXT,
+    sync_granularity TEXT NOT NULL DEFAULT 'unknown',
+    timing_origin TEXT NOT NULL DEFAULT 'unknown',
+    timing_validation_json TEXT NOT NULL DEFAULT '{}',
     validated_at     TEXT    NOT NULL DEFAULT '',
     is_current       INTEGER NOT NULL DEFAULT 0,
     note             TEXT    NOT NULL DEFAULT '',

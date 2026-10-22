@@ -211,6 +211,7 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         "tracks" => serde_json::to_value(corpus.tracks(arg_or(&args, "limit", 100_000)?)?)?,
         "track" => serde_json::to_value(corpus.track(&arg::<String>(&args, "songId")?)?)?,
         "lyrics" => serde_json::to_value(corpus.lyrics(&arg::<String>(&args, "songId")?)?)?,
+        "lyricTimeline" => serde_json::to_value(corpus.lyric_timeline(&arg::<String>(&args, "songId")?)?)?,
         "tokenizeMissingList" => serde_json::to_value(jp_import::maintain::untokenized_songs(corpus.connection())?)?,
         "trackCredits" => serde_json::to_value(corpus.credits_for_track(&arg::<String>(&args, "songId")?)?)?,
         "performers" => serde_json::to_value(corpus.people_by_role("performer", arg_or(&args, "limit", 500)?)?)?,
@@ -694,6 +695,32 @@ mod tests {
         let w = s.call("listenWindow", json!({ "utteranceId": utterance, "before": 1, "after": 1 })).unwrap();
         assert_eq!(w["songId"].as_str(), Some(song));
         assert!(w["startSec"].as_f64().unwrap() <= w["focusStartSec"].as_f64().unwrap());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn lyric_timeline_exports_only_valid_units_and_explicit_fallback_modes() {
+        let (session, dir) = session();
+        {
+            let corpus = session.corpus.lock().unwrap();
+            corpus.connection().execute_batch("INSERT INTO songs(id,title,artist,duration_sec) VALUES('timing','試験','架空',30);\
+                INSERT INTO utterances(id,song_id,line_idx,time_sec,text) VALUES\
+                (9901,'timing',0,1,'𠮷😀が光'),(9902,'timing',1,10,'空へ'),(9903,'timing',2,NULL,'文字');\
+                INSERT INTO word_timings VALUES(9901,0,2,1,1.4,'lrc'),(9901,2,5,2,2.4,'lrc'),(9902,0,1,10,11,'lrc');").unwrap();
+        }
+        let json = session.call("lyricTimeline", json!({"songId":"timing"})).unwrap();
+        let rows: Vec<jp_corpus::display_timeline::LineTimeline> = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(json[0]["utteranceId"], 9901);
+        assert_eq!(json[0]["mode"], "karaoke");
+        assert_eq!(json[0]["units"].as_array().unwrap().len(), 2);
+        assert_eq!(json[0]["units"][0]["charEnd"], 2);
+        assert_eq!(json[0]["units"][0]["endSec"], 1.4);
+        assert_eq!(json[1]["mode"], "lineSynced");
+        assert_eq!(json[2]["mode"], "plain");
+        assert_eq!(json[1]["units"], json!([]));
+        assert_eq!(session.call("lyricTimeline", json!({"songId":"missing"})).unwrap(), json!([]));
+        drop(session);
         std::fs::remove_dir_all(dir).ok();
     }
 

@@ -45,7 +45,8 @@ let package = Package(
         ),
         .testTarget(
             name: "JPCoreTests",
-            dependencies: ["JPCore"]
+            dependencies: ["JPCore"],
+            resources: [.copy("Fixtures")]
         ),
     ]
 )

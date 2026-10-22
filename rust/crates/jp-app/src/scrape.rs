@@ -74,14 +74,19 @@ pub fn track_file_for(conn: &rusqlite::Connection, song_id: &str) -> Result<Opti
             },
         )
         .optional()?;
-    let Some(track) = row else { return Ok(None) };
+    let Some(mut track) = row else { return Ok(None) };
 
     // 有原始元数据就用原始的
     let store = ScrapeStore::new(conn);
     if !track.path.is_empty()
         && let Ok(Some(original)) = store.original_metadata(&track.path)
     {
-        return Ok(Some(original));
+        track = original;
+    }
+    if !track.path.is_empty() && (track.isrc.is_empty() || track.recording_mbid.is_empty()) {
+        let tags = jp_import::scan::scan_file(std::path::Path::new(&track.path));
+        if track.isrc.is_empty() { track.isrc=tags.isrc; }
+        if track.recording_mbid.is_empty() { track.recording_mbid=tags.recording_mbid; }
     }
     Ok(Some(track))
 }
@@ -200,7 +205,9 @@ fn apply_candidate(
     .filter(|(empty, value)| *empty && !value.is_empty())
     .count();
     let provenance = |field: &str| {
-        jp_corpus::lineage::set_provenance(conn, "song", song_id, field, &candidate.provider, &candidate.provider_id, confidence)
+        let origin=candidate.extra.get(&format!("field_source:{field}")).and_then(|v|v.split_once(':'));
+        let (provider, reference)=origin.unwrap_or((&candidate.provider,&candidate.provider_id));
+        jp_corpus::lineage::set_provenance(conn, "song", song_id, field, provider, reference, confidence)
     };
     for (field, empty, value) in [
         ("album", album.is_empty(), &candidate.album),
@@ -477,6 +484,7 @@ pub fn spawn_batch<R: Runtime>(
     db_path: std::path::PathBuf,
     covers_dir: std::path::PathBuf,
     song_ids: Vec<String>,
+    sources: jp_scraper::timed_sources::SourceOptions,
 ) -> Result<()> {
     // 线程崩了也要让界面收一条终态（见 `crate::job`）
     let crashed = app.clone();
@@ -500,7 +508,8 @@ pub fn spawn_batch<R: Runtime>(
             // 自己开一条连接：占着 UI 那条十几分钟的话，期间所有查询都会卡住
             let conn = rusqlite::Connection::open(&db_path)?;
             conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
-            let resolver = jp_scraper::default_resolver(false)?;
+            let apple = (sources.apple && !sources.apple_developer_token.is_empty()).then_some((sources.apple_storefront.as_str(), sources.apple_developer_token.as_str()));
+            let resolver = jp_scraper::net::resolver_with_apple(false, apple)?;
 
             // 两级并发。都是量出来的，不是猜的：
             //

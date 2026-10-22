@@ -31,6 +31,12 @@ use crate::status::{ErrorType, ScrapeStatus};
 pub struct TrackFile {
     pub path: String,
     #[serde(default)]
+    pub isrc: String,
+    #[serde(default)]
+    pub recording_mbid: String,
+    #[serde(default)]
+    pub provider_ids: BTreeMap<String,String>,
+    #[serde(default)]
     pub filename: String,
     #[serde(default)]
     pub embedded_title: String,
@@ -106,6 +112,12 @@ impl TrackFile {
 #[serde(rename_all = "camelCase")]
 pub struct SearchQuery {
     pub title: String,
+    #[serde(default)]
+    pub isrc: String,
+    #[serde(default)]
+    pub recording_mbid: String,
+    #[serde(default)]
+    pub provider_ids: BTreeMap<String,String>,
     #[serde(default)]
     pub artist: String,
     #[serde(default)]

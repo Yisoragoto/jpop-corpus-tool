@@ -940,6 +940,15 @@ export const api = {
   /** 用自己的一份歌词文件覆盖这首歌的歌词。 */
   lyricsImportFile: (songId: string, path: string) =>
     call<AttachedLyrics>("lyrics_import_file", { songId, path }),
+  /** 只列已有逐行歌词、仍缺真实逐字时间的歌，不触发在线搜索。 */
+  lyricsTimedTargets: () => call<TimedTarget[]>("lyrics_timed_targets"),
+  lyricsTimedSearch: (songId: string) => call<TimedSearch>("lyrics_timed_search", { songId }),
+  lyricsTimedApply: (songId: string, candidateId: string) =>
+    call<AttachedLyrics>("lyrics_timed_apply", { songId, candidateId }),
+  lyricsSourcesGet: () => call<TimedSourceSettings>("lyrics_sources_get"),
+  /** secret 缺省保留，空字符串清除；只发送给后端，不在前端持久化。 */
+  lyricsSourcesSet: (config: TimedSourceConfig) =>
+    call<TimedSourceSettings>("lyrics_sources_set", { config }),
 
   // 数据迁移
   /** 预览：把那个目录的数据搬过来会发生什么。只读。 */
@@ -1210,7 +1219,59 @@ export interface MissingLyrics {
 }
 
 /** 歌词是哪来的。 */
-export type LyricsSource = "embedded" | "sibling" | "netease" | "manual";
+export type LyricsSource = "embedded" | "sibling" | "netease" | "manual" | "qq" | "kugou" | "amll" | "apple" | "lrclib";
+
+export interface TimedTarget {
+  songId: string;
+  title: string;
+  artist: string;
+  lyricLines: number;
+  /** 仅计来源提供的真实逐字时间，不含按字数估算。 */
+  timedLines: number;
+}
+
+export interface TimedCandidate {
+  id: string;
+  source: string;
+  format: string;
+  title: string;
+  artist: string;
+  lineCount: number;
+  timedLineCount: number;
+  /** 增量可选字段；缺省时只按实际逐字数量和明确的格式展示精度。 */
+  mode?: "karaoke" | "lineSynced" | "plain";
+  preview: string[];
+  matchNote: string;
+}
+
+export interface SourceWarning {
+  source: string;
+  message: string;
+}
+
+export interface TimedSearch {
+  songId: string;
+  title: string;
+  currentLines: number;
+  currentTimedLines: number;
+  candidates: TimedCandidate[];
+  warnings: SourceWarning[];
+}
+
+export interface TimedSourceConfig {
+  netease: boolean;
+  qq: boolean;
+  kugou: boolean;
+  amll: boolean;
+  lrclib: boolean;
+  apple: boolean;
+  appleStorefront: string;
+  appleDeveloperToken?: string;
+}
+
+export interface TimedSourceSettings extends Omit<TimedSourceConfig, "appleDeveloperToken"> {
+  appleDeveloperTokenSet: boolean;
+}
 
 /** 挂上歌词之后的结果。 */
 export interface AttachedLyrics {
@@ -1394,6 +1455,11 @@ export const LYRICS_SOURCE_LABELS: Record<LyricsSource, string> = {
   sibling: tr("音频旁边的 .lrc"),
   netease: tr("在线搜到"),
   manual: tr("手动导入"),
+  qq: tr("QQ 音乐"),
+  kugou: tr("酷狗音乐"),
+  amll: "AMLL",
+  apple: tr("Apple Music（元数据）"),
+  lrclib: "LRCLIB",
 };
 
 export type ImportOutcome =

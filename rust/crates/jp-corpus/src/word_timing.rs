@@ -9,7 +9,7 @@
 //!
 //! 位置用这一行 `text` 里的**字符下标**（Unicode 标量，不是字节，也不是 UTF-16），
 //! `[char_start, char_end)`。歌词行被删（换歌词、删歌）时这一行的词级时间跟着删。
-//! 都没有的地方由界面按字数估（`app/src/wordTiming.ts`），估出来的不入库。
+//! 没有完整可信时间单位时，界面回退逐行/纯文本，不估计字符时间。
 
 use anyhow::Result;
 use rusqlite::{Connection, params};
@@ -39,6 +39,7 @@ pub struct Segment {
     pub start: usize,
     pub end: usize,
     pub time_sec: f64,
+    pub end_sec: Option<f64>,
 }
 
 /// 这几行的词级时间，按行、按位置排好。
@@ -98,7 +99,7 @@ pub fn set_manual(conn: &Connection, utterance_id: i64, char_start: i64, char_en
     Ok(())
 }
 
-/// 撤掉一处手动校准（回到逐字时间或者估算）。
+/// 撤掉一处手动校准（回到来源时间或者整行定位）。
 pub fn clear_manual(conn: &Connection, utterance_id: i64, char_start: i64) -> Result<()> {
     conn.execute(
         "DELETE FROM word_timings WHERE utterance_id = ?1 AND char_start = ?2 AND source = ?3",
@@ -107,14 +108,14 @@ pub fn clear_manual(conn: &Connection, utterance_id: i64, char_start: i64) -> Re
     Ok(())
 }
 
-/// 导入时写一行的逐字时间（来源 `lrc`）。`end_sec` 取下一段的开始，最后一段没有。
+/// 导入时写一行的逐字时间（来源 `lrc`）。优先保留显式结束时间；没有才取下一段开始。
 pub fn insert_lrc(conn: &Connection, utterance_id: i64, segments: &[Segment]) -> Result<usize> {
     let mut written = 0;
     for (i, seg) in segments.iter().enumerate() {
         if seg.end <= seg.start {
             continue;
         }
-        let end_sec = segments.get(i + 1).map(|next| next.time_sec);
+        let end_sec = seg.end_sec.or_else(|| segments.get(i + 1).map(|next| next.time_sec));
         conn.execute(
             "INSERT OR REPLACE INTO word_timings (utterance_id, char_start, char_end, start_sec, end_sec, source) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -159,7 +160,7 @@ mod tests {
     #[test]
     fn manual_calibration_overrides_and_can_be_cleared() {
         let conn = db();
-        insert_lrc(&conn, 1, &[Segment { start: 0, end: 2, time_sec: 10.1 }, Segment { start: 4, end: 6, time_sec: 11.2 }]).unwrap();
+        insert_lrc(&conn, 1, &[Segment { start: 0, end: 2, time_sec: 10.1, end_sec: None }, Segment { start: 4, end: 6, time_sec: 11.2, end_sec: None }]).unwrap();
         set_manual(&conn, 1, 4, 5, 11.45).unwrap();
         let rows = for_song(&conn, "001").unwrap();
         let at4: Vec<_> = rows.iter().filter(|r| r.char_start == 4).map(|r| (r.source.as_str(), r.start_sec)).collect();

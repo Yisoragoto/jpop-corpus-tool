@@ -153,9 +153,12 @@ export interface TimedLine {
 
 /** 挑出有时间轴的行。按 `lines` 记忆化，不要每拍重建。 */
 export function timedLines(lines: LyricLine[]): TimedLine[] {
-  return lines
-    .map((line, idx) => ({ idx, time: line.timeSec ?? Number.NaN }))
-    .filter((entry) => Number.isFinite(entry.time));
+  const timed: TimedLine[] = [];
+  lines.forEach((line, idx) => {
+    const time = line.timeSec;
+    if (time !== null && Number.isFinite(time) && time >= 0 && time >= (timed.at(-1)?.time ?? 0)) timed.push({ idx, time });
+  });
+  return timed;
 }
 
 /**
@@ -168,7 +171,7 @@ export function timedLines(lines: LyricLine[]): TimedLine[] {
  * 「播完一首切下一首，歌词总是跑到最底下」的来源。
  */
 export function pickLine(timed: TimedLine[], positionSec: number | null): number {
-  if (positionSec === null || timed.length === 0) return -1;
+  if (positionSec === null || !Number.isFinite(positionSec) || positionSec < 0 || timed.length === 0) return -1;
 
   // 二分找最后一个 time <= position。歌词行数上千时线性扫描会在
   // 10Hz 轮询下变成可观的开销。

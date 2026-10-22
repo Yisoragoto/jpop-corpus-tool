@@ -32,7 +32,7 @@ use rusqlite::Connection;
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///
 /// 格式是 `YYYYMMDD`：单调递增，一眼看得出先后。
-pub const CURRENT: i64 = 20_261_019;
+pub const CURRENT: i64 = 20_261_022;
 
 /// 一步迁移里的一个改动。
 enum Change {
@@ -141,6 +141,17 @@ const STEPS: &[Step] = &[
         what: "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
         // 新表由 schema.sql 建，老表不用补列
         changes: &[],
+    },
+    Step {
+        version: 20_261_022,
+        what: "歌词原始格式、同步粒度、时间来源和验证报告",
+        changes: &[
+            Change::AddColumn { table: "lyric_versions", column: "raw_format", ddl: "TEXT NOT NULL DEFAULT ''" },
+            Change::AddColumn { table: "lyric_versions", column: "source_raw", ddl: "TEXT" },
+            Change::AddColumn { table: "lyric_versions", column: "sync_granularity", ddl: "TEXT NOT NULL DEFAULT 'unknown'" },
+            Change::AddColumn { table: "lyric_versions", column: "timing_origin", ddl: "TEXT NOT NULL DEFAULT 'unknown'" },
+            Change::AddColumn { table: "lyric_versions", column: "timing_validation_json", ddl: "TEXT NOT NULL DEFAULT '{}'" },
+        ],
     },
 ];
 
@@ -331,6 +342,7 @@ mod tests {
                 "artists.image_manual（照片是你换的：刮削不再覆盖）",
                 "歌词版本、分词器、修订历史、字段来源、分析记录（语料质量与来源追踪）",
                 "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
+                "歌词原始格式、同步粒度、时间来源和验证报告",
             ]
         );
 
@@ -386,7 +398,8 @@ mod tests {
                 "歌手的 MusicBrainz 编号和解散时间、songs.release_date（乐队成员、时间轴）",
                 "artists.image_manual（照片是你换的：刮削不再覆盖）",
                 "歌词版本、分词器、修订历史、字段来源、分析记录（语料质量与来源追踪）",
-                "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）"
+                "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
+                "歌词原始格式、同步粒度、时间来源和验证报告"
             ],
             "没戳过就得把每一步都重跑一遍"
         );

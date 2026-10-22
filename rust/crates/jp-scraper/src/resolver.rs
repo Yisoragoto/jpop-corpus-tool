@@ -18,6 +18,32 @@ use crate::providers::MetadataProvider;
 use crate::query::QueryBuilder;
 use crate::status::{ErrorType, ScrapeStatus};
 
+/// Only combine metadata when both identity and recording evidence agree.
+/// Each filled field carries its own provider; conflicting versions stay separate.
+fn insert_candidate(pool: &mut BTreeMap<(String,String,String), ScrapeCandidate>, mut incoming: ScrapeCandidate) {
+    let source=format!("{}:{}",incoming.provider,incoming.provider_id);
+    for field in ["album","year","genre","release_date","artwork_url"] {
+        incoming.extra.entry(format!("field_source:{field}")).or_insert_with(||source.clone());
+    }
+    let mut key=incoming.identity_key();
+    let Some(current)=pool.get_mut(&key) else {pool.insert(key,incoming);return;};
+    let conflict=current.extra.get("isrc").zip(incoming.extra.get("isrc")).is_some_and(|(a,b)|!a.eq_ignore_ascii_case(b))
+        || current.duration_sec.zip(incoming.duration_sec).is_some_and(|(a,b)|(a-b).abs()>2.0);
+    if conflict {
+        key.2.push_str(&format!("#{}:{}",incoming.provider,incoming.provider_id));
+        pool.entry(key).or_insert(incoming);return;
+    }
+    macro_rules! fill { ($field:ident) => {
+        if current.$field.is_empty() && !incoming.$field.is_empty() {
+            current.$field=incoming.$field.clone();
+            current.extra.insert(concat!("field_source:",stringify!($field)).into(),source.clone());
+        }
+    }; }
+    fill!(album);fill!(year);fill!(genre);fill!(release_date);fill!(artwork_url);fill!(thumb_url);
+    current.extra.insert(format!("corroborated:{}",incoming.provider),incoming.provider_id.clone());
+    if let Some(id)=incoming.extra.get("isrc") {current.extra.entry("isrc".into()).or_insert_with(||id.clone());}
+}
+
 /// 判定阈值。
 ///
 /// `accept` 之上自动采纳，`review` 到 `accept` 之间交给用户确认，
@@ -125,10 +151,16 @@ impl MetadataResolver {
         // 已经明确在限流的 provider 不再问第二遍：查询阶梯有 5 级，
         // 继续问只会把限流拖得更久，而且每一级还各带 3 次重试。
         let mut throttled: BTreeSet<&str> = BTreeSet::new();
+        let mut providers: Vec<_> = self.providers.iter().collect();
+        providers.sort_by_key(|p| {
+            if track.provider_ids.contains_key(p.name()) || (!track.recording_mbid.is_empty() && p.name()=="musicbrainz") {0}
+            else if !track.isrc.is_empty() && matches!(p.name(),"apple"|"musicbrainz") {1}
+            else {2}
+        });
 
         for query in &queries {
             queries_tried.push(format!("{}:{}", query.kind, query.term()));
-            for provider in &self.providers {
+            for provider in &providers {
                 if throttled.contains(provider.name()) {
                     continue;
                 }
@@ -139,7 +171,7 @@ impl MetadataResolver {
                     Ok(found) => {
                         for candidate in found {
                             // 跨 provider 去重：同一首歌两边都有时只留先到的那条
-                            pool.entry(candidate.identity_key()).or_insert(candidate);
+                            insert_candidate(&mut pool, candidate);
                         }
                     }
                     Err(err) => {
@@ -214,7 +246,19 @@ impl MetadataResolver {
             .take(self.config.keep_candidates)
             .collect();
 
-        let (status, error_type, message) = if best.score() >= self.config.accept_threshold {
+        let want = NormalizedTrack::from_file(track);
+        let got = NormalizedTrack::from_candidate(&best);
+        let want_tags = want.title.variant_tags();
+        let mut got_tags = got.title.variant_tags();
+        got_tags.extend(got.album.variant_tags());
+        // Similar duration cannot prove studio/live/remix identity. Explicit
+        // recording conflicts always require review, even with a high score.
+        let recording_conflict = want_tags != got_tags
+            || (!track.isrc.is_empty() && best.extra.get("isrc").is_some_and(|v|!v.eq_ignore_ascii_case(&track.isrc)))
+            || (!track.recording_mbid.is_empty() && best.provider=="musicbrainz" && best.provider_id!=track.recording_mbid);
+        let (status, error_type, message) = if recording_conflict && best.score() >= self.config.review_threshold {
+            (ScrapeStatus::LowConfidence, ErrorType::None, format!("录音版本标记冲突（本地 {want_tags:?} / 来源 {got_tags:?}），需要人工确认"))
+        } else if best.score() >= self.config.accept_threshold {
             (ScrapeStatus::Success, ErrorType::None, String::new())
         } else if best.score() >= self.config.review_threshold {
             (
@@ -370,6 +414,35 @@ mod tests {
         assert_eq!(out.provider(), "fake");
         // 判定要能解释
         assert!(out.breakdown().is_some());
+    }
+
+    #[test]
+    fn duration_cannot_override_recording_variant_or_isrc_conflict() {
+        for conflict in ["live","isrc"] {
+            let mut c=perfect();
+            let mut local=track();
+            if conflict=="live" {c.title.push_str(" (Live)");} else {local.isrc="JPTEST000001".into();c.extra.insert("isrc".into(),"JPTEST000002".into());}
+            let r=resolver(vec![Box::new(FakeProvider::new("fake",vec![Ok(vec![c])]))]);
+            let result=r.resolve(&local);
+            assert_ne!(result.status,ScrapeStatus::Success,"{conflict}");
+            assert!(result.error_message.contains("版本标记冲突"));
+        }
+    }
+
+    #[test]
+    fn aggregation_preserves_field_sources_and_separates_conflicting_recordings() {
+        let mut pool=BTreeMap::new();
+        let mut first=perfect();first.year.clear();
+        insert_candidate(&mut pool,first);
+        let mut other=perfect();other.provider="musicbrainz".into();other.provider_id="recording".into();other.year="2020".into();
+        insert_candidate(&mut pool,other.clone());
+        assert_eq!(pool.len(),1);
+        let merged=pool.values().next().unwrap();
+        assert_eq!(merged.year,"2020");
+        assert_eq!(merged.extra["field_source:year"],"musicbrainz:recording");
+        other.duration_sec=Some(290.0);
+        insert_candidate(&mut pool,other);
+        assert_eq!(pool.len(),2);
     }
 
     #[test]

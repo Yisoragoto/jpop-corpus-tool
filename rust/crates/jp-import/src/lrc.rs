@@ -31,6 +31,8 @@ pub struct WordTime {
     pub start: usize,
     pub end: usize,
     pub time_sec: f64,
+    /// Explicit closing timestamp, including a rest before the next word.
+    pub end_sec: Option<f64>,
 }
 
 impl LyricLine {
@@ -222,7 +224,7 @@ pub fn parse(text: &str) -> ParsedLrc {
                     text: body.to_string(),
                     words: words
                         .iter()
-                        .map(|w| WordTime { time_sec: (w.time_sec + shift).max(0.0), ..*w })
+                        .map(|w| WordTime { time_sec: (w.time_sec + shift).max(0.0), end_sec: w.end_sec.map(|t| (t + shift).max(0.0)), ..*w })
                         .collect(),
                 });
             }
@@ -401,7 +403,8 @@ fn trim_with_words(body: &str, marks: &[(usize, f64)]) -> (String, Vec<WordTime>
         // 段首的空白不算这个词（「<00:12>　夜」）
         let skip = trimmed.chars().skip(start).take(end.saturating_sub(start)).take_while(|c| c.is_whitespace()).count();
         if start + skip < end {
-            words.push(WordTime { start: start + skip, end, time_sec });
+            let end_sec = marks.get(i + 1).map(|&(_, next)| next).filter(|next| next.is_finite() && *next >= time_sec);
+            words.push(WordTime { start: start + skip, end, time_sec, end_sec });
         }
     }
     (trimmed, words)
@@ -992,12 +995,12 @@ mod tests {
         assert_eq!(first.text, "夜が明ける");
         assert_eq!(
             first.words,
-            vec![WordTime { start: 0, end: 2, time_sec: 10.0 }, WordTime { start: 2, end: 5, time_sec: 10.4 }],
+            vec![WordTime { start: 0, end: 2, time_sec: 10.0, end_sec: Some(10.4) }, WordTime { start: 2, end: 5, time_sec: 10.4, end_sec: Some(11.2) }],
             "收尾那个时间后面没字，不成段"
         );
         let second = &parsed.lines[1];
         assert_eq!(second.text, "ただ  君に");
-        assert_eq!(second.words, vec![WordTime { start: 4, end: 6, time_sec: 20.5 }]);
+        assert_eq!(second.words, vec![WordTime { start: 4, end: 6, time_sec: 20.5, end_sec: None }]);
     }
 
     #[test]
@@ -1006,6 +1009,16 @@ mod tests {
         assert_eq!(parsed.lines.len(), 2);
         assert_eq!(parsed.lines[0].words[1].time_sec, 10.6);
         assert!((parsed.lines[1].words[0].time_sec - 70.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_rest_between_words_and_a_final_end_survive_offsets_and_repeated_lines() {
+        let parsed = parse("[offset:100]\n[00:10.000][00:20.000]<00:10.000>あの<00:10.500><00:10.700>空<00:11.400>\n");
+        assert_eq!(parsed.lines[0].text, "あの空");
+        assert_eq!(parsed.lines[0].words.len(), 2);
+        assert!((parsed.lines[0].words[0].end_sec.unwrap() - 10.4).abs() < 1e-9);
+        assert!((parsed.lines[0].words[1].time_sec - 10.6).abs() < 1e-9);
+        assert!((parsed.lines[1].words[1].end_sec.unwrap() - 21.3).abs() < 1e-9);
     }
 
     #[test]

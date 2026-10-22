@@ -39,7 +39,7 @@ export interface AppSettings {
   wordCloudHidden: string[];
   /** 词云按词性上色（名词、动词、形容词……各一种颜色）；关着时按名次、前几名染照片的颜色 */
   wordCloudColorByPos: boolean;
-  /** 当前行逐字点亮（卡拉 OK）：有逐字时间用真实时间，没有按字数估。关掉就是原来的整行高亮 */
+  /** 只对完整有效的真实单位时间启用卡拉 OK；其余逐行显示，纯文本不高亮。 */
   karaokeLyrics: boolean;
 }
 

@@ -176,6 +176,9 @@ impl MetadataProvider for ITunesProvider {
         query: &SearchQuery,
         limit: usize,
     ) -> Result<Vec<ScrapeCandidate>, ProviderError> {
+        if let Some(id)=query.provider_ids.get("itunes").filter(|id|id.bytes().all(|b|b.is_ascii_digit())) {
+            return Ok(self.get_track(id)?.into_iter().collect());
+        }
         let term = query.term();
         if term.is_empty() {
             return Ok(Vec::new());

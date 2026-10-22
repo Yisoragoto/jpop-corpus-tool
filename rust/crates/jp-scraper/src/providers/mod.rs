@@ -8,11 +8,41 @@
 //! 「没搜到」和「网断了」对上层是完全不同的两件事。
 
 pub mod deezer;
+pub mod apple;
 pub mod itunes;
 pub mod musicbrainz;
 
 use crate::error::ProviderError;
 use crate::models::{ScrapeCandidate, SearchQuery};
+
+/// Artwork is a separate capability: providers without it return no URLs.
+pub trait ArtworkProvider: Send + Sync {
+    fn artwork_urls(&self, candidate: &ScrapeCandidate, size:u32) -> Vec<String>;
+}
+
+impl<T: MetadataProvider + ?Sized> ArtworkProvider for T {
+    fn artwork_urls(&self, candidate:&ScrapeCandidate, size:u32)->Vec<String> {
+        let url=self.get_artwork(candidate,size);
+        if url.is_empty() {Vec::new()} else {vec![url]}
+    }
+}
+
+/// Existing HTTP uses blocking transports; Tauri runs this on its blocking
+/// worker, without holding the corpus lock. Implementations need not provide metadata.
+#[cfg(feature="network")]
+pub trait LyricsProvider: Send + Sync {
+    fn search_lyrics(&self, query:&SearchQuery)->crate::timed_sources::SearchOutput;
+}
+
+#[cfg(feature="network")]
+pub struct ConfiguredLyricsProvider(pub crate::timed_sources::SourceOptions);
+
+#[cfg(feature="network")]
+impl LyricsProvider for ConfiguredLyricsProvider {
+    fn search_lyrics(&self, query:&SearchQuery)->crate::timed_sources::SearchOutput {
+        crate::timed_sources::search(&query.title,&query.artist,query.duration_sec,&self.0)
+    }
+}
 
 /// 一条艺人信息。曲目之外的另一条主线：人物页要用。
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]

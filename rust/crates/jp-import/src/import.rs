@@ -477,6 +477,13 @@ fn attach_parsed(
         (Some(a), Some(_)) => Some(tokenizer_run_id(tx, a)?),
         _ => None,
     };
+    if let Some(v) = &version {
+        let units: usize = parsed.lines.iter().map(|l|l.words.len()).sum();
+        let synced = parsed.lines.iter().filter(|l|l.time_sec.is_some()).count();
+        let mode = if units>0 { "unit" } else if synced>0 { "line" } else { "plain" };
+        let report = serde_json::json!({"status":"parsed", "algorithmGenerated":false, "unitCount":units, "timedLines":synced});
+        tx.execute("UPDATE lyric_versions SET raw_format=?2,source_raw=?3,sync_granularity=?4,timing_origin='source',timing_validation_json=?5 WHERE id=?1",params![v.id,if units>0 {"enhanced_lrc"}else if synced>0 {"lrc"}else{"text"},raw_text,mode,report.to_string()])?;
+    }
 
     for (line_idx, line) in parsed.lines.iter().enumerate() {
         let confidence = version
@@ -502,7 +509,7 @@ fn attach_parsed(
             let segments: Vec<_> = line
                 .words
                 .iter()
-                .map(|w| jp_corpus::word_timing::Segment { start: w.start, end: w.end, time_sec: w.time_sec })
+                .map(|w| jp_corpus::word_timing::Segment { start: w.start, end: w.end, time_sec: w.time_sec, end_sec: w.end_sec })
                 .collect();
             jp_corpus::word_timing::insert_lrc(tx, utterance_id, &segments)?;
         }

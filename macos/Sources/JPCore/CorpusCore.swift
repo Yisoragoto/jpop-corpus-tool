@@ -84,6 +84,10 @@ public final class CorpusCore: @unchecked Sendable {
         let argsData = try JSONEncoder().encode(args)
         _ = try callJSON(method, argsJSON: String(decoding: argsData, as: UTF8.self))
     }
+
+    public func lyricTimeline(_ songId: String) throws -> [LineTimeline] {
+        try call("lyricTimeline", ["songId": AnyEncodable(songId)])
+    }
 }
 
 /// 把不同类型的参数装进同一个字典
@@ -141,6 +145,10 @@ public final class CorpusClient: @unchecked Sendable {
 
     public func lyrics(_ songId: String) async throws -> [LyricLine] {
         try await perform { try $0.call("lyrics", ["songId": AnyEncodable(songId)]) }
+    }
+
+    public func lyricTimeline(_ songId: String) async throws -> [LineTimeline] {
+        try await perform { try $0.lyricTimeline(songId) }
     }
 
     public func lineSpans(_ songId: String) async throws -> [LineSpan] {

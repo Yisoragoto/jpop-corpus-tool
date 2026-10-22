@@ -24,6 +24,26 @@ use jp_app_lib::state::AppState;
 use jp_corpus::fixture;
 use support::{Fixture, audio_or_skip, has_keys, invoke, len, ok, refused};
 
+#[test]
+fn timed_lyrics_commands_include_existing_lyrics_and_hide_credentials() {
+    let f = Fixture::new("timed-sources");
+    let w = f.w();
+    let settings = ok(w, "lyrics_sources_get", json!({}));
+    assert_eq!(settings["apple"], json!(false));
+    assert_eq!(settings["appleDeveloperTokenSet"], json!(false));
+    assert!(settings.get("appleDeveloperToken").is_none());
+    let rows = ok(w, "lyrics_timed_targets", json!({}));
+    assert!(rows.as_array().unwrap().iter().any(|r| r["lyricLines"].as_u64().unwrap() > 0), "已有逐行歌词也能升级");
+    has_keys(&rows[0], "TimedTarget", &["songId", "title", "artist", "lyricLines", "timedLines"]);
+    let message = refused(w, "lyrics_timed_apply", json!({"songId":"001", "candidateId":"not-a-search-result"}));
+    assert!(message.contains("失效"));
+    let message = refused(w, "lyrics_sources_set", json!({"config": {
+        "netease": true, "qq": true, "kugou": true, "amll": true, "apple": false,
+        "appleStorefront": "jp", "appleDeveloperToken": "secret\r\ninjected"
+    }}));
+    assert!(!message.contains("secret"), "不应把失败输入的令牌写进错误");
+}
+
 // ────────────────────────────── 曲库 ──────────────────────────────
 
 #[test]
