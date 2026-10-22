@@ -74,8 +74,13 @@ export function UpdateCard({ icons, onError }: Props) {
   }, [changelog, onError]);
 
   const switchChannel = async (channel: UpdateChannel) => {
-    if (channel === "debug" && !(await confirm(tr("会跟随每次提交更新，可能不稳定；不会自动回到正式版"), { title: tr("切换到 debug"), kind: "warning" }))) return;
-    try { setPrefs(await api.updateSetChannel(channel)); setStatus(null); setNote(""); }
+    try {
+      // BUG-0002：确认框也可能被原生权限拒绝；和设置写入一起捕获，不能留下未处理的 Promise。
+      if (channel === "debug" && !(await confirm(tr("会跟随每次提交更新，可能不稳定；不会自动回到正式版"), { title: tr("切换到 debug"), kind: "warning" }))) return;
+      setPrefs(await api.updateSetChannel(channel));
+      setStatus(null);
+      setNote("");
+    }
     catch (err) { onError(err instanceof Error ? err.message : String(err)); }
   };
   const skipped = prefs?.channel === "debug" ? prefs.skippedDebug : (prefs?.skippedStable || settings.skippedUpdateVersion);
