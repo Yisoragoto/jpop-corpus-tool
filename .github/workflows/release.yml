@@ -10,6 +10,10 @@ on:
         options: [debug, stable]
         default: debug
         required: true
+      replace_existing:
+        description: 明确替换已有正式版（仅手动 stable，默认不覆盖）
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -104,6 +108,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ steps.policy.outputs.channel }}
           RELEASE_TAG: ${{ steps.policy.outputs.tag }}
+          REPLACE_EXISTING: ${{ inputs.replace_existing || false }}
         run: |
           $assets = @(Get-ChildItem release-assets -File | ForEach-Object FullName)
           if ($env:CHANNEL -eq 'debug') {
@@ -116,7 +121,14 @@ jobs:
             # 删掉重建，避免把上一轮安装包留在滚动 Release 里。
             gh release create debug --target $env:GITHUB_SHA --prerelease --latest=false --title 'debug build' --notes-file release-notes.md @assets
           } else {
-            # 已有的正式 Release 从不覆盖，维护者要先手动提升版本。
+            # 2026-10-22 维护者明确要求替换 0.3.3：仅在手动选择覆盖时，包构建完再删旧版重建。
+            if ($env:REPLACE_EXISTING -eq 'true') {
+              gh release view $env:RELEASE_TAG *> $null
+              if ($LASTEXITCODE -eq 0) {
+                gh release delete $env:RELEASE_TAG --yes --cleanup-tag
+                if ($LASTEXITCODE) { exit $LASTEXITCODE }
+              }
+            }
             gh release create $env:RELEASE_TAG --target $env:GITHUB_SHA --latest --title $env:RELEASE_TAG --notes-file release-notes.md @assets
           }
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

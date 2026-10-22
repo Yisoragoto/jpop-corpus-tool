@@ -19,3 +19,5 @@ foreach ($case in $cases) {
     if ($LASTEXITCODE -ne $case.Exit) { throw "$($case.Name): 期望 $($case.Exit) 实际 $LASTEXITCODE`n$result" }
     Write-Output "[ok] $($case.Name)：exit=$LASTEXITCODE"
 }
+# 最后一项是预期拒绝；不能把子进程的 1 泄漏成整个测试脚本的失败退出码。
+exit 0
