@@ -10,9 +10,9 @@
   /* 窗口背后是系统亚克力（tauri.conf.json 的 windowEffects），这几层只是压一点暗保证字看得清。
      原来整个窗口先铺 72% 再在顶栏、播放条上叠 55%，叠起来接近不透明，毛玻璃完全透不上来。
      用户要的是苹果那种「有毛玻璃、只透一点」：后面的颜色和明暗看得出，内容看不清。
-     40% 太透，62% 是现在的取值；嫌太透 / 太暗只改这两个数 */
-  --app-tint: rgba(16, 16, 20, .62);
-  --shell: rgba(24, 24, 28, .4);
+     40%、62% 都还嫌透，现在取 76%；嫌太透 / 太暗只改这两个数 */
+  --app-tint: rgba(16, 16, 20, .76);
+  --shell: rgba(24, 24, 28, .48);
   --content: rgba(18, 18, 22, .72);
   --bg: transparent;
 
@@ -1848,7 +1848,10 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 }
 .wc-song:hover .wc-song-go, .wc-song.now .wc-song-go, .wc-song-go:focus-visible { opacity: 1; }
 .wc-song-go:hover { background: var(--hl, var(--accent)); color: #111; transform: scale(1.08); }
-.wc-pop-foot { display: flex; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--line); }
+/* 每块钉在自己那一行：「按歌手分」只在不止一位歌手时才有，少了它歌单会落进 auto 行无限长高，把底下的按钮挤出面板 */
+.wc-pop-by { grid-row: 2; }
+.wc-pop-list { grid-row: 3; }
+.wc-pop-foot { grid-row: 4; display: flex; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--line); }
 .wc-pop-foot button { flex: 1; }
 
 /* 正在放的那一句：字幕，摆在玻璃下沿 */
@@ -2792,7 +2795,6 @@ table.data tr.current td { background: var(--accent-soft); }
   display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 9.5px; line-height: 15px;
   vertical-align: 1px; border: 1px solid currentColor; opacity: .8;
 }
-.wc-timing.lrc { color: #9be3a6; }
 .wc-timing.manual { color: var(--accent); }
 .wc-song.calibrating { background: rgba(255, 255, 255, .06); }
 .wc-calib-done { height: 26px; padding: 0 10px; border-radius: 13px; font-size: 11.5px; color: var(--muted); }
