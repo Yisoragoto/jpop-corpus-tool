@@ -161,6 +161,8 @@ if (/^\d+$/.test(args[0] ?? '')) {
           assert.equal(scanning.scanning, true, '提交扫描后必须报告 scanning'); result.scanning = scanning;
           await until('可导入计划', () => c.run("document.querySelector('[data-import-plan]')?.dataset.importPlan==='true' && [...document.querySelectorAll('button')].some(b=>b.title==='写库就在这一步'&&!b.disabled)"));
           await screenshot('plan');
+          // Synthetic identities must not query real lyric services.
+          await c.run("document.querySelector('.import-lyrics-option input:checked')?.click()");
           if (name === 'keyboard') {
             result.audioReady = health.audioReady;
             await c.tabTo("document.activeElement?.title==='写库就在这一步'");

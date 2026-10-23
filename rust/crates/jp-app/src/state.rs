@@ -71,6 +71,7 @@ pub struct AppState {
     lyrics_job: std::sync::Arc<crate::lyrics::LyricsJob>,
     /// Timed lyric candidates and session-only Apple credentials.
     pub timed_lyrics: Mutex<crate::timed_lyrics::Session>,
+    pub lyric_upgrades: std::sync::Arc<crate::lyric_upgrade::Batch>,
     /// 导入作业。只用它的取消标志——导入跑在 `spawn_blocking` 里、
     /// 一首歌一个事务，中途停下来是安全的（见 `jp_import::execute_cancellable`）。
     import_job: std::sync::Arc<crate::job::Job>,
@@ -162,6 +163,7 @@ impl AppState {
             dict_job: std::sync::Arc::new(crate::dict::ImportJob::default()),
             lyrics_job: std::sync::Arc::new(crate::lyrics::LyricsJob::default()),
             timed_lyrics: Mutex::new(crate::timed_lyrics::Session::load(project_root)),
+            lyric_upgrades: Default::default(),
             import_job: std::sync::Arc::new(crate::job::Job::default()),
             updates: Default::default(),
         })

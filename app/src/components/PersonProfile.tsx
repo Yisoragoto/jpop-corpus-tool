@@ -18,7 +18,7 @@ import { prefersReducedMotion } from "../motion";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import { MembersEditor } from "./MembersEditor";
-import { RelationGraph } from "./RelationGraph";
+import { CompactRelations } from "./CompactRelations";
 import { buildGraph } from "../graph";
 import { buildAxisColumns } from "../releaseAxis";
 import { ROLE_COLORS, type DirectoryData } from "./LibraryBrowser";
@@ -513,13 +513,7 @@ export function PersonSide({
             <h3 className="side-head">{tr("关系网")}</h3>
             <button className="link-btn" onClick={onOpenGraph}>{tr("全局 ↗")}</button>
           </div>
-          <RelationGraph
-            className="local-graph"
-            graph={local}
-            focusId={personId}
-            compact
-            onSelect={(id) => id !== personId && onOpenPerson(id)}
-          />
+          <CompactRelations graph={local} focusId={personId} onOpen={onOpenPerson} onShowAll={onOpenGraph} />
         </>
       )}
       <h3 className="side-head">{tr("合作者")}</h3>

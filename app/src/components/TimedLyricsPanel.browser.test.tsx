@@ -56,6 +56,7 @@ browser.__TAURI_INTERNALS__ = { invoke };
 function reset() {
   calls = []; errors = []; changed = 0; applied = 0; attached = 0;
   handlers = {
+    lyrics_upgrade_status: () => ({running:false,total:0,done:0,results:[]}),
     lyrics_timed_targets: () => targets,
     lyrics_sources_get: () => ({ ...settings }),
     lyrics_sources_set: () => ({ ...settings }),

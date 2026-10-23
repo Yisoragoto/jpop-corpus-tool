@@ -32,7 +32,7 @@ export function Cover({
   const style = { width: size, height: size, borderRadius: rounded };
 
   if (!path || broken) {
-    return <span className="cover cover-empty" style={style} aria-hidden="true" />;
+    return <span className="cover cover-empty" style={style} aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="16" /><circle cx="24" cy="24" r="11" /><circle cx="24" cy="24" r="3" /></svg></span>;
   }
 
   return (
