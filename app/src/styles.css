@@ -493,6 +493,7 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 /* ── 语料面板 ── */
 .lemma { margin: 0 0 12px; font-size: 22px; }
 .numbers { display: flex; gap: 20px; margin-bottom: 6px; }
+.word-scope { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 6px; }
 .numbers .stat { align-items: flex-start; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
 .chip {

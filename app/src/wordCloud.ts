@@ -8,6 +8,18 @@
 
 import type { FrequencyRow, KwicHit } from "./api";
 
+/** 从词云跳去检索页 / 例句时带上的范围：和词云当前的筛选一样，免得点进去变成整个库 */
+export interface WordJump {
+  performerIds: number[];
+  yearFrom: number | null;
+  yearTo: number | null;
+  pos: string;
+  /** 几种写法合并成一个词时的每种写法 */
+  variants: string[];
+  /** 给人看的范围，比如「ヨルシカ · 2019–2023」；整个库时为空 */
+  label: string;
+}
+
 export interface CloudWord {
   /** 显示的写法：几种写法合并时取次数最多的那种 */
   lemma: string;

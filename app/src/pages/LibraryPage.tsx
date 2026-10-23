@@ -43,7 +43,8 @@ import { segmentLine, type Piece } from "../lyricSegments";
 import { albumOwner, sameView, type LibraryView } from "../libraryIndex";
 import { morph } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
-import type { LibraryActions, LibraryState } from "../useLibrary";
+import { WORD_EXAMPLE_LIMIT, type LibraryActions, type LibraryState } from "../useLibrary";
+import type { WordJump } from "../wordCloud";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
 import { useAppSettings } from "../settings";
 import { useKaraoke } from "../useKaraoke";
@@ -140,8 +141,8 @@ interface Props {
   /** 从命令面板跳过来时要看的人。消费掉就清空 */
   focusPersonId: number | null;
   onFocusConsumed: () => void;
-  /** 词云里点「在检索页看」 */
-  onSearchWord: (lemma: string) => void;
+  /** 词云里点「在检索页看」：带着词云的范围 */
+  onSearchWord: (lemma: string, jump?: WordJump) => void;
   /** 外面（分析页）请求打开词云 */
   cloudWanted?: boolean;
   onCloudConsumed?: () => void;
@@ -167,7 +168,7 @@ export function LibraryPage({
   stageWanted = false,
   onStageConsumed,
 }: Props) {
-  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordLoading, activeLemma } =
+  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordJump, wordLoading, activeLemma } =
     library;
   const lyricsRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLParagraphElement>(null);
@@ -792,6 +793,9 @@ export function LibraryPage({
         </div>
       ))}
       {word.examples.length === 0 && <p className="muted">{tr("没有例句")}</p>}
+      {word.examples.length >= WORD_EXAMPLE_LIMIT && (
+        <p className="muted small">{tr("只列了前 {n} 句，全部在检索页看", { n: WORD_EXAMPLE_LIMIT })}</p>
+      )}
     </div>
   );
 
@@ -837,7 +841,13 @@ export function LibraryPage({
             <Stat label={tr("歌曲")} value={word.songCount} align="start" />
             <Stat label={tr("歌手")} value={word.artistCount} align="start" />
           </div>
-          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma)} />
+          {wordJump !== null && wordJump.label !== "" && (
+            <p className="muted small word-scope">
+              {tr("只看 {label}", { label: wordJump.label })}
+              <button className="link-btn" onClick={() => void actions.openWord(word.lemma)}>{tr("看整个库")}</button>
+            </p>
+          )}
+          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma, wordJump)} />
           {word.firstYear && (
             <p className="muted small">
               {word.firstYear} — {word.lastYear}
@@ -943,9 +953,11 @@ export function LibraryPage({
             coverOf={coverOf}
             covered={stageOpen}
             onSearchWord={onSearchWord}
-            onShowExamples={(lemma) => {
+            onShowExamples={(lemma, jump) => {
               go({ kind: "song" });
-              void actions.openWord(lemma);
+              // 释义：原来只有点歌词里的词才查词典，从词云过来右栏只剩例句
+              lookUp(lemma);
+              void actions.openWord(lemma, jump);
             }}
             onError={onAudioError}
           />

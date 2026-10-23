@@ -12,7 +12,11 @@
 import { useCallback, useState } from "react";
 
 import { api, type Credit, type LyricLine, type Track, type WordInCorpus } from "./api";
-import { getActiveScope } from "./subcorpusScope";
+import { getActiveScope, mergeSubcorpus } from "./subcorpusScope";
+import type { WordJump } from "./wordCloud";
+
+/** 右栏例句最多列这么多句（原来是 24，常用词一下就截断了） */
+export const WORD_EXAMPLE_LIMIT = 1000;
 import { tr } from "./i18n";
 
 export interface LibraryState {
@@ -22,6 +26,8 @@ export interface LibraryState {
   credits: Credit[];
   lyricsLoading: boolean;
   word: WordInCorpus | null;
+  /** 例句限定在哪（从词云带过来的歌手、年份）；null 是整个库（或当前子语料） */
+  wordJump: WordJump | null;
   wordLoading: boolean;
   activeLemma: string | null;
   /** 打开曲目后要滚到的那一行。消费掉就清空，避免下次渲染又滚一遍。 */
@@ -42,7 +48,8 @@ export interface LibraryActions {
     songId: string,
     opts?: { scrollTo?: number; seekTo?: number | null; autoPlay?: boolean },
   ) => Promise<boolean>;
-  openWord: (lemma: string) => Promise<void>;
+  /** 查一个词的例句。`jump` 是从词云来时带的范围；不给就是整个库 */
+  openWord: (lemma: string, jump?: WordJump | null) => Promise<void>;
   /** 把曲库列表限定到某张专辑。传 null 清除。 */
   setAlbumFilter: (album: { albumId: number; title: string } | null) => Promise<void>;
   clearWord: () => void;
@@ -64,6 +71,7 @@ export function useLibrary(
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [word, setWord] = useState<WordInCorpus | null>(null);
   const [wordLoading, setWordLoading] = useState(false);
+  const [wordJump, setWordJump] = useState<WordJump | null>(null);
   const [activeLemma, setActiveLemma] = useState<string | null>(null);
   const [pendingScrollUtterance, setPendingScroll] = useState<number | null>(null);
   const [albumFilter, setAlbumFilterState] =
@@ -115,11 +123,15 @@ export function useLibrary(
   );
 
   const openWord = useCallback(
-    async (lemma: string) => {
+    async (lemma: string, jump: WordJump | null = null) => {
       setActiveLemma(lemma);
+      setWordJump(jump);
       setWordLoading(true);
       try {
-        setWord(await api.wordInCorpus(lemma, selected?.id, 24, getActiveScope()?.filter));
+        const scope = jump
+          ? mergeSubcorpus({ performerIds: jump.performerIds, yearFrom: jump.yearFrom, yearTo: jump.yearTo }, getActiveScope())
+          : getActiveScope()?.filter;
+        setWord(await api.wordInCorpus(lemma, selected?.id, WORD_EXAMPLE_LIMIT, scope));
       } catch (err) {
         onError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -131,6 +143,7 @@ export function useLibrary(
 
   const clearWord = useCallback(() => {
     setWord(null);
+    setWordJump(null);
     setActiveLemma(null);
   }, []);
 
@@ -202,6 +215,7 @@ export function useLibrary(
       credits,
       lyricsLoading,
       word,
+      wordJump,
       wordLoading,
       activeLemma,
       pendingScrollUtterance,

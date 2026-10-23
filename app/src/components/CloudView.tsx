@@ -18,7 +18,7 @@ import { updateSettings, useAppSettings } from "../settings";
 import { PerformerPicker } from "./PerformerPicker";
 import { SubcorpusPicker } from "./SubcorpusPicker";
 import { useActiveScope, withScope } from "../subcorpusScope";
-import { WordCloud, type NowLine } from "./WordCloud";
+import { WordCloud, type NowLine, type WordJump } from "./WordCloud";
 import { tr } from "../i18n";
 
 /** 可选的词性。「全部」= 不限 */
@@ -57,8 +57,8 @@ interface Props {
   covered: boolean;
   /** 一首歌的封面路径（列表里显示） */
   coverOf: (songId: string) => string;
-  onSearchWord: (lemma: string) => void;
-  onShowExamples: (lemma: string) => void;
+  onSearchWord: (lemma: string, jump: WordJump) => void;
+  onShowExamples: (lemma: string, jump: WordJump) => void;
   onError: (message: string) => void;
 }
 
