@@ -4,9 +4,8 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
-import { lyricFontStack, useFontOptions, type FontOption } from "../fonts";
+import { lyricFontStack, pickFontFiles, useFontOptions, type FontOption } from "../fonts";
 import {
   DISPLAY_LIMITS,
   FURIGANA_MODE_LABELS,
@@ -63,12 +62,7 @@ export function LyricsTools({ display, onError, onExpand }: Props) {
 
   const importFonts = async () => {
     try {
-      const picked = await openDialog({
-        multiple: true,
-        title: tr("导入字体"),
-        filters: [{ name: tr("字体文件"), extensions: ["ttf", "otf", "ttc"] }],
-      });
-      const paths = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
+      const paths = await pickFontFiles();
       if (paths.length === 0) return;
       setJustImported(paths);
       fonts.addImported(paths);
@@ -118,7 +112,7 @@ export function LyricsTools({ display, onError, onExpand }: Props) {
           />
           <div className="display-row">
             <span className="display-label" />
-            <button className="link-btn" onClick={() => void importFonts()} title={tr("ttf / otf / ttc。只记住文件位置，不复制")}>{tr("导入字体…")}</button>
+            <button className="link-btn" onClick={() => void importFonts()} title={tr("ttf / otf / ttc，或装着字体的 zip（解压到语料库的 fonts 文件夹）")}>{tr("导入字体…")}</button>
             {brokenImports.length > 0 && (
               <button
                 className="link-btn warn"

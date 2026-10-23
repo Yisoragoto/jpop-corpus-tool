@@ -235,6 +235,24 @@ pub fn fonts_catalog<R: tauri::Runtime>(
     })
 }
 
+/// 导入字体压缩包：把里面的字体解到语料库目录的 `fonts/<包名>/`，返回解出来的文件，界面再当普通导入字体记住
+#[tauri::command]
+pub async fn fonts_import_archive<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    path: String,
+) -> CmdResult<Vec<String>> {
+    blocking(app, move |state| {
+        let root = state
+            .db_path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        let files = crate::fonts::extract_font_archive(std::path::Path::new(&path), &root.join("fonts"))?;
+        Ok(files.into_iter().map(|p| p.display().to_string()).collect())
+    })
+    .await
+}
+
 /// 一行歌词的振假名：要注音的那几段在 `text` 里的位置（按字符数）
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

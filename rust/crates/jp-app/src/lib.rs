@@ -107,6 +107,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::word_time_set,
             commands::word_time_clear,
             commands::fonts_catalog,
+            commands::fonts_import_archive,
             commands::library_edit_song,
             commands::library_delete_song,
             commands::library_missing_audio,

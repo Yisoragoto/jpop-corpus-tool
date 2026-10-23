@@ -29,7 +29,7 @@ import { TokenizeCard } from "../components/TokenizeCard";
 import { PitchCacheCard } from "../components/PitchCacheCard";
 import { DiagnosticsCard } from "../components/DiagnosticsCard";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
-import { lyricFontStack, useFontOptions, useLyricFontFiles } from "../fonts";
+import { lyricFontStack, pickFontFiles, useFontOptions, useLyricFontFiles } from "../fonts";
 import {
   DISPLAY_LIMITS,
   FURIGANA_MODE_LABELS,
@@ -312,12 +312,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
 
   const importFonts = useCallback(async () => {
     try {
-      const picked = await openDialog({
-        multiple: true,
-        title: tr("导入字体"),
-        filters: [{ name: tr("字体文件"), extensions: ["ttf", "otf", "ttc"] }],
-      });
-      const paths = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
+      const paths = await pickFontFiles();
       if (paths.length > 0) fonts.addImported(paths);
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
@@ -511,7 +506,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
                 onChange={(v) => updateLyricsDisplay({ fallbackFamily: v })}
               />
             </SettingCard>
-            <SettingCard icon={Icons.font} title={tr("导入字体")} description={tr("ttf / otf / ttc。只记住文件位置，不复制文件")}>
+            <SettingCard icon={Icons.font} title={tr("导入字体")} description={tr("ttf / otf / ttc，或装着字体的 zip（解压到语料库的 fonts 文件夹）")}>
               <CommandButton icon="import" label={tr("导入字体…")} onClick={() => void importFonts()} />
             </SettingCard>
             <SettingCard icon={Icons.size} title={tr("字号")}>
