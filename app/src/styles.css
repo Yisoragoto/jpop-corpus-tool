@@ -54,6 +54,9 @@
   --hero-text-shadow: 0 2px 22px rgba(0, 0, 0, .55);
   --hero-scrim: rgba(12, 12, 16, .6);
   --hero-scrim-side: rgba(12, 12, 16, .45);
+  /* 歌手顶栏照片左边的渐隐：按 ease-in-out 取的几档 */
+  --hero-photo-fade: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, .04) 8%, rgba(0, 0, 0, .14) 16%, rgba(0, 0, 0, .3) 24%,
+    rgba(0, 0, 0, .5) 32%, rgba(0, 0, 0, .7) 40%, rgba(0, 0, 0, .86) 48%, rgba(0, 0, 0, .96) 56%, black 64%);
   /* 带一点回弹的缓动：按钮、卡片、弹出层共用，动起来是一个手感 */
   --spring: cubic-bezier(.2, .9, .25, 1.15);
   --ease-out: cubic-bezier(.2, .8, .3, 1);
@@ -2880,8 +2883,9 @@ table.data tr.current td { background: var(--accent-soft); }
 .profile-pane:has(> .profile.artist) { padding-top: 0; }
 .profile-pane:has(> .profile.artist) > .nav-back { display: flex; margin: 14px 0 -46px; }
 .profile.artist { max-width: none; gap: 0; container-type: inline-size; }
+/* 高度跟着宽度长一点：27 寸全屏时还是 300px 高，照片只能是右边细细一条 */
 .artist-hero {
-  position: relative; z-index: 2; isolation: isolate; margin: 0 -28px; min-height: 300px;
+  position: relative; z-index: 2; isolation: isolate; margin: 0 -28px; min-height: clamp(300px, 20cqi, 440px);
   padding: 72px 40px 26px; display: flex; align-items: flex-end;
 }
 /* 照片两层（虚化的底色 + 右边渐隐的原图）单独裁在这一层里，「⋯」菜单才不会被裁掉 */
@@ -2891,13 +2895,15 @@ table.data tr.current td { background: var(--accent-soft); }
   filter: blur(70px) saturate(1.3); opacity: .32; animation: hero-bg-in 900ms var(--ease-out) backwards;
 }
 /* 照片靠右，左边渐变进底色。取景点在竖直 34%：28% 时正方形的 logo（ヨルシカ）偏下，40% 又会把竖图的头顶（Vaundy）切到边上。
+   宽度跟着顶栏一起按容器宽度长，宽高比保持在 2:1 上下，宽屏上不会只剩右边一条。
    左边只用一层横向渐隐：横竖两层靠 mask-composite 取交集，在 WebView2 里实际按并集叠，
-   上半截的左边就成了硬边。底边交给 ::after 的渐暗 */
+   上半截的左边就成了硬边。渐隐用缓动的几档而不是一条直线——直线渐变在起点和终点各有一道看得见的折痕，
+   宽屏上拉长了更明显。底边交给 ::after 的渐暗 */
 .artist-hero-photo {
-  position: absolute; top: 0; right: 0; bottom: 0; width: min(62%, 820px); z-index: -1;
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(64%, max(820px, 46cqi)); z-index: -1;
   background: center 34% / cover no-repeat;
-  -webkit-mask-image: linear-gradient(90deg, transparent, black 50%);
-  mask-image: linear-gradient(90deg, transparent, black 50%);
+  -webkit-mask-image: var(--hero-photo-fade);
+  mask-image: var(--hero-photo-fade);
   animation: fade-in 700ms ease backwards;
 }
 /* 名字和按钮在左下角压在照片上：左下角暗一点，字才看得清 */
@@ -2912,7 +2918,9 @@ table.data tr.current td { background: var(--accent-soft); }
 .artist-hero-text h1 {
   margin: 0; font-size: clamp(34px, 6.5cqi, 72px); line-height: 1.05; letter-spacing: -.5px; font-weight: 700;
   overflow-wrap: anywhere; text-shadow: var(--hero-text-shadow);
+  text-wrap: balance; word-break: auto-phrase;
 }
+.artist-hero-text h1.long { font-size: clamp(30px, 4.6cqi, 56px); }
 .artist-hero-years { font-size: 12px; color: var(--muted); padding: 1px 4px; align-self: center; }
 .artist-hero-bands { display: flex; flex-wrap: wrap; gap: 6px; }
 .artist-hero .profile-stats { margin-top: 2px; }
