@@ -22,9 +22,9 @@ import {
 import { Stat } from "../components/Stat";
 import { useArtistPhotos } from "../components/PerformerPicker";
 import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
-import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
+import { AlbumView, PersonProfile } from "../components/PersonProfile";
 import { GraphView } from "../components/GraphView";
-import { TimelineView } from "../components/TimelineView";
+import { focusTimelineOn, TimelineView } from "../components/TimelineView";
 import { CloudView, focusCloudOn } from "../components/CloudView";
 import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
@@ -870,8 +870,8 @@ export function LibraryPage({
     </button>
   );
   const songView = view?.kind === "song" || view === null;
-  /** 关系网、时间轴占中栏加右栏 */
-  const wide = view?.kind === "graph" || view?.kind === "timeline" || view?.kind === "cloud";
+  /** 关系网、时间轴、词云、档案占中栏加右栏 */
+  const wide = view !== null && view.kind !== "song";
 
   return (
     <div
@@ -981,6 +981,11 @@ export function LibraryPage({
               onOpenCloud={() => {
                 focusCloudOn(view.id);
                 go({ kind: "cloud" });
+              }}
+              onOpenGraph={() => go({ kind: "graph", focus: view.id })}
+              onOpenTimeline={() => {
+                focusTimelineOn(view.id);
+                go({ kind: "timeline" });
               }}
               onError={onAudioError}
             />
@@ -1224,19 +1229,7 @@ export function LibraryPage({
         onReset={columns.reset}
       />
 
-      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>
-        {view?.kind === "person" ? (
-          <PersonSide
-            personId={view.id}
-            data={data}
-            onOpenPerson={openPerson}
-            onOpenGraph={() => go({ kind: "graph", focus: view.id })}
-            onError={onAudioError}
-          />
-        ) : (
-          corpusContent
-        )}
-      </aside>
+      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>{corpusContent}</aside>
 
       {stageOpen && selected && (
         <LyricsStage

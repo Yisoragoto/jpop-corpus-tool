@@ -1,5 +1,6 @@
 /**
- * 资料库里的词云：占中栏和右栏。筛选（歌手、词性、仅日文）、字体、词数都在卡片头上。
+ * 资料库里的词云：占中栏和右栏。卡片头上一行是常用的筛选（歌手、子语料、词性、年份），
+ * 字体、词数、配色、仅日文、去虚词收在「设置」弹层里。
  *
  * **状态记在模块里**（`memory`），不跟着组件走：点一首歌去看歌词、再点返回，
  * 或者切到别的页面再回来，看到的还是刚才那一片云、刚才选中的那个词。
@@ -145,6 +146,28 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
     }
   }, [fonts, onError]);
 
+  const count = COUNTS.includes(settings.wordCloudCount as (typeof COUNTS)[number]) ? settings.wordCloudCount : 120;
+  // 「设置」弹层：点外面或按 Esc 关
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!optionsOpen) return;
+    const close = (e: PointerEvent) => {
+      if (!optionsRef.current?.contains(e.target as Node)) setOptionsOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      setOptionsOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", esc, true);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", esc, true);
+    };
+  }, [optionsOpen]);
+
   const toolbar = (
     <div className="wc-filters">
       <PerformerPicker selected={performerIds} onChange={setPerformerIds} onError={onError} />
@@ -157,23 +180,6 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
           </button>
         ))}
       </div>
-      <label className="check wc-check" title={tr("只要含假名或汉字的词（去掉英文、数字）")}>
-        <input type="checkbox" checked={jpOnly} onChange={(e) => setJpOnly(e.target.checked)} />{tr("仅日文")}</label>
-      <label
-        className="check wc-check"
-        title={tr("去掉单个假名的碎片（僕「ら」、一「つ」）、形式名词（こと・もの・まま・よう）和纯符号")}
-      >
-        <input
-          type="checkbox"
-          checked={settings.wordCloudHideFunctionWords}
-          onChange={(e) => updateSettings({ wordCloudHideFunctionWords: e.target.checked })}
-        />{tr("去虚词")}</label>
-      <label className="check wc-check" title={tr("名词、动词、形容词……各一种颜色，云下面有图例")}>
-        <input
-          type="checkbox"
-          checked={settings.wordCloudColorByPos}
-          onChange={(e) => updateSettings({ wordCloudColorByPos: e.target.checked })}
-        />{tr("按词性上色")}</label>
       {years.length > 1 && (
         <span className="wc-years" title={tr("只看这几年发行的歌")}>
           <select
@@ -232,29 +238,66 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
           title={tr("拿掉的词：{wordCloudHidden}。点一下全部放回来", { wordCloudHidden: settings.wordCloudHidden.join(tr("、")) })}
         >{tr("已隐藏 {length} 个 · 恢复", { length: settings.wordCloudHidden.length })}</button>
       )}
-      <select
-        className="wc-select"
-        value={COUNTS.includes(settings.wordCloudCount as (typeof COUNTS)[number]) ? settings.wordCloudCount : 120}
-        onChange={(e) => updateSettings({ wordCloudCount: Number(e.target.value) })}
-        title={tr("云里放多少个词")}
-      >
-        {COUNTS.map((n) => (
-          <option key={n} value={n}>{tr("{n} 个词", { n })}</option>
-        ))}
-      </select>
-      <select
-        className="wc-select font"
-        value={settings.wordCloudFont}
-        onChange={(e) => updateSettings({ wordCloudFont: e.target.value })}
-        title={tr("词云字体（自带、导入或本机的）")}
-      >
-        {fontChoices.map((o) => (
-          <option key={o.value} value={o.value} style={{ fontFamily: o.value ? `"${o.value}"` : undefined }}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <button className="btn wc-btn" onClick={() => void importFont()} title={tr("导入 ttf / otf / ttc，只记住位置，不复制文件")}>{tr("导入字体…")}</button>
+      <div className="wc-options" ref={optionsRef}>
+        <button
+          className={`btn wc-btn wc-options-btn ${optionsOpen ? "on" : ""}`}
+          onClick={() => setOptionsOpen((v) => !v)}
+          aria-expanded={optionsOpen}
+          title={tr("字体、词数、配色和筛选")}
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+            <circle cx="16" cy="7" r="2" />
+            <circle cx="10" cy="17" r="2" />
+          </svg>
+          {tr("设置")}
+        </button>
+        {optionsOpen && (
+          <div className="wc-options-panel" role="dialog" aria-label={tr("词云设置")}>
+            <div className="wc-field">
+              <label htmlFor="wc-font">{tr("字体")}</label>
+              <select
+                id="wc-font"
+                value={settings.wordCloudFont}
+                onChange={(e) => updateSettings({ wordCloudFont: e.target.value })}
+                title={tr("词云字体（自带、导入或本机的）")}
+              >
+                {fontChoices.map((o) => (
+                  <option key={o.value} value={o.value} style={{ fontFamily: o.value ? `"${o.value}"` : undefined }}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <button className="link-btn" onClick={() => void importFont()} title={tr("导入 ttf / otf / ttc，只记住位置，不复制文件")}>{tr("导入字体…")}</button>
+            </div>
+            <div className="wc-field">
+              <span className="wc-field-label">{tr("云里放多少个词")}</span>
+              <div className="segmented" role="group" aria-label={tr("云里放多少个词")}>
+                {COUNTS.map((n) => (
+                  <button key={n} className={count === n ? "on" : ""} onClick={() => updateSettings({ wordCloudCount: n })}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="check" title={tr("名词、动词、形容词……各一种颜色，云下面有图例")}>
+              <input
+                type="checkbox"
+                checked={settings.wordCloudColorByPos}
+                onChange={(e) => updateSettings({ wordCloudColorByPos: e.target.checked })}
+              />{tr("按词性上色")}</label>
+            <hr />
+            <label className="check" title={tr("只要含假名或汉字的词（去掉英文、数字）")}>
+              <input type="checkbox" checked={jpOnly} onChange={(e) => setJpOnly(e.target.checked)} />{tr("仅日文")}</label>
+            <label className="check" title={tr("去掉单个假名的碎片（僕「ら」、一「つ」）、形式名词（こと・もの・まま・よう）和纯符号")}>
+              <input
+                type="checkbox"
+                checked={settings.wordCloudHideFunctionWords}
+                onChange={(e) => updateSettings({ wordCloudHideFunctionWords: e.target.checked })}
+              />{tr("去虚词")}</label>
+          </div>
+        )}
+      </div>
     </div>
   );
 

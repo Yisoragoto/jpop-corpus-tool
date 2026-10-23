@@ -62,8 +62,9 @@ The old PyQt6 Python code is kept under `legacy/` for reference; `corpus.db` wor
   - Memberships come from scraping (MusicBrainz), from suggestions based on credits that you confirm, or from
     manual edits; whatever you change or reject is never overwritten by a scrape.
   - The sidebar collapses to give the content the full width.
-- A profile for every person: a header over their blurred photo, the roles they had, the bands they were in, a
-  release axis, their works by album, collaborators, and where the details came from. Artist photos can be
+- A profile for every person, laid out like an artist page in a music app: a large photo and name, the roles they
+  had and the bands they were in, then four tabs — overview, works (track lists by album), members & collaborators,
+  and a release axis. Artist photos can be
   replaced by hand (scraping won't overwrite them, and the scraped one can be restored).
 - Songs have a breadcrumb (artist › album › title) and clickable credits; edit, replace lyrics, line-by-line
   lyric editing, source & validation, and delete live in the "⋯" menu.
