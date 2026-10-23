@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Track } from "../api";
-import { releaseKind, releaseTitle, splitReleases, type AlbumGroup } from "./PersonProfile";
+import { allSongs, releaseKind, releaseTitle, splitReleases, type AlbumGroup } from "./PersonProfile";
 
 const track = (id: string, title: string, year = "2024"): Track => ({ id, title, year, coverPath: "" }) as unknown as Track;
 const group = (key: string, title: string, tracks: Track[], year = "2024"): AlbumGroup => ({
@@ -47,5 +47,17 @@ describe("概览：单曲和 EP / 专辑", () => {
     expect(releaseTitle("修羅 - Single")).toBe("修羅");
     expect(releaseTitle("創作 – EP")).toBe("創作");
     expect(releaseTitle("Single")).toBe("Single");
+  });
+});
+
+describe("概览：单曲列出每一首歌", () => {
+  it("专辑里的歌也算，最新在前，同一年保持专辑里的顺序，不重复", () => {
+    const shared = track("b", "2", "");
+    const songs = allSongs([
+      group("id:1", "二人称", [track("a", "1", ""), shared], "2024"),
+      group("single", "单曲", [track("e", "修羅", "2025"), shared]),
+      group("id:3", "あぶく", [track("f", "あぶく", "")], "2026"),
+    ]);
+    expect(songs.map((t) => t.id)).toEqual(["f", "e", "a", "b"]);
   });
 });
