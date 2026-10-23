@@ -35,6 +35,7 @@ import {
   type LemmaForm,
   type Placed,
   type SongHits,
+  type WordJump,
 } from "../wordCloud";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
@@ -73,10 +74,10 @@ interface Props {
   nowLine: NowLine | null;
   /** 从这一句开始放。`fullscreen` = 同时进全屏歌词（退出来还是词云）；否则只在词云里放 */
   onPlayLine: (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => void;
-  /** 去检索页按词元查 */
-  onSearchWord: (lemma: string) => void;
-  /** 去看这个词的例句 */
-  onShowExamples: (lemma: string) => void;
+  /** 去检索页按词元查，范围和词云一样 */
+  onSearchWord: (lemma: string, jump: WordJump) => void;
+  /** 去看这个词的释义和例句，范围和词云一样 */
+  onShowExamples: (lemma: string, jump: WordJump) => void;
   /** 全屏：窗口全屏显示词云 */
   present: boolean;
   /** 上面盖着全屏歌词：词云这边不响应 Esc，也退到播放条底下 */
@@ -247,6 +248,8 @@ class CloudMotion {
 }
 
 /* ── 主组件 ── */
+export type { WordJump };
+
 export function WordCloud({
   rows,
   performerIds,
@@ -733,8 +736,8 @@ function SongPanel({
   coverOf: (songId: string) => string;
   onClose: () => void;
   onPlayLine: (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => void;
-  onSearchWord: (lemma: string) => void;
-  onShowExamples: (lemma: string) => void;
+  onSearchWord: (lemma: string, jump: WordJump) => void;
+  onShowExamples: (lemma: string, jump: WordJump) => void;
   onError: (message: string) => void;
 }) {
   const settings = useAppSettings();
@@ -742,6 +745,18 @@ function SongPanel({
   const [truncated, setTruncated] = useState(false);
   // 词云的词频按当前子语料算，点词列出来的歌也得是这块语料里的
   const scope = useActiveScope();
+  const jump = useMemo<WordJump>(() => {
+    const names = performerIds.map((id) => people.find((p) => p.id === id)?.name).filter(Boolean);
+    const span = years.from !== null || years.to !== null ? `${years.from ?? ""}–${years.to ?? ""}` : "";
+    return {
+      performerIds,
+      yearFrom: years.from,
+      yearTo: years.to,
+      pos: word.pos ?? "",
+      variants: word.variants,
+      label: [names.join("、"), span].filter(Boolean).join(" · "),
+    };
+  }, [performerIds, people, years.from, years.to, word]);
 
   useEffect(() => {
     let alive = true;
@@ -984,8 +999,8 @@ function SongPanel({
       </div>
       {!compact && (
         <div className="wc-pop-foot">
-          <button onClick={() => onSearchWord(word.lemma)}>{tr("在检索页看 KWIC")}</button>
-          <button onClick={() => onShowExamples(word.lemma)}>{tr("看例句和释义")}</button>
+          <button onClick={() => onSearchWord(word.lemma, jump)}>{tr("在检索页看 KWIC")}</button>
+          <button onClick={() => onShowExamples(word.lemma, jump)}>{tr("看例句和释义")}</button>
         </div>
       )}
     </aside>

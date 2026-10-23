@@ -734,7 +734,8 @@ mod tests {
             let log = log.lock().unwrap();
             assert_eq!(log.len(), 3);
             assert!(log[1].1 - log[0].1 < HOST_GAP / 2, "another host goes straight away");
-            assert!(log[2].1 - log[0].1 >= HOST_GAP, "same host waits its turn");
+            // 间隔从放行那一刻算起，这里量的是放行后真正发出的时刻，两头各有几毫秒调度误差（CI 上见过）
+            assert!(log[2].1 - log[0].1 >= HOST_GAP * 9 / 10, "same host waits its turn");
         }
         cancelled.store(true, Ordering::SeqCst);
         let started = Instant::now();

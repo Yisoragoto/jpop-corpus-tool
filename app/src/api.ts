@@ -41,6 +41,10 @@ export interface Album {
   artworkPath: string;
   trackCount: number;
   totalDurationSec: number;
+  /** 发行类型，刮削来源原样（Single / EP / Album，Deezer 是小写）。还没补到是空串 */
+  releaseType: string;
+  /** 整张碟的曲目数；trackCount 是库里收了几首 */
+  releaseTrackCount: number | null;
 }
 
 export interface PersonSummary {
@@ -1020,6 +1024,8 @@ export const api = {
   /** 批量刮削，后台跑。返回这次要刮几首，进度走 scrape://progress 事件。 */
   scrapeStart: (onlyMissing?: boolean, limit?: number) =>
     call<number>("scrape_start", { onlyMissing, limit }),
+  /** 给已识别的歌补专辑信息（发行类型、曲目数）。返回要查的歌数，0 表示都齐了 */
+  scrapeAlbumFillStart: () => call<number>("scrape_album_fill_start"),
   scrapeCancel: () => call<void>("scrape_cancel"),
   scrapeIsRunning: () => call<boolean>("scrape_is_running"),
   /** 用户在复核界面选定一条候选。真的会写 songs、信用和封面。 */
@@ -1695,6 +1701,8 @@ export interface Completeness {
   skipped: number;
   trackCovers: CompletenessCount;
   albumCovers: CompletenessCount;
+  /** 发行类型和整张碟曲目数都有了的专辑 */
+  albumInfo: CompletenessCount;
   lyrics: CompletenessCount;
   durations: CompletenessCount;
 }

@@ -22,9 +22,9 @@ import {
 import { Stat } from "../components/Stat";
 import { useArtistPhotos } from "../components/PerformerPicker";
 import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
-import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
+import { AlbumView, PersonProfile } from "../components/PersonProfile";
 import { GraphView } from "../components/GraphView";
-import { TimelineView } from "../components/TimelineView";
+import { focusTimelineOn, TimelineView } from "../components/TimelineView";
 import { CloudView, focusCloudOn } from "../components/CloudView";
 import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
@@ -43,7 +43,8 @@ import { segmentLine, type Piece } from "../lyricSegments";
 import { albumOwner, sameView, type LibraryView } from "../libraryIndex";
 import { morph } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
-import type { LibraryActions, LibraryState } from "../useLibrary";
+import { WORD_EXAMPLE_LIMIT, type LibraryActions, type LibraryState } from "../useLibrary";
+import type { WordJump } from "../wordCloud";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
 import { useAppSettings } from "../settings";
 import { useKaraoke } from "../useKaraoke";
@@ -140,8 +141,8 @@ interface Props {
   /** 从命令面板跳过来时要看的人。消费掉就清空 */
   focusPersonId: number | null;
   onFocusConsumed: () => void;
-  /** 词云里点「在检索页看」 */
-  onSearchWord: (lemma: string) => void;
+  /** 词云里点「在检索页看」：带着词云的范围 */
+  onSearchWord: (lemma: string, jump?: WordJump) => void;
   /** 外面（分析页）请求打开词云 */
   cloudWanted?: boolean;
   onCloudConsumed?: () => void;
@@ -167,7 +168,7 @@ export function LibraryPage({
   stageWanted = false,
   onStageConsumed,
 }: Props) {
-  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordLoading, activeLemma } =
+  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordJump, wordLoading, activeLemma } =
     library;
   const lyricsRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLParagraphElement>(null);
@@ -792,6 +793,9 @@ export function LibraryPage({
         </div>
       ))}
       {word.examples.length === 0 && <p className="muted">{tr("没有例句")}</p>}
+      {word.examples.length >= WORD_EXAMPLE_LIMIT && (
+        <p className="muted small">{tr("只列了前 {n} 句，全部在检索页看", { n: WORD_EXAMPLE_LIMIT })}</p>
+      )}
     </div>
   );
 
@@ -837,7 +841,13 @@ export function LibraryPage({
             <Stat label={tr("歌曲")} value={word.songCount} align="start" />
             <Stat label={tr("歌手")} value={word.artistCount} align="start" />
           </div>
-          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma)} />
+          {wordJump !== null && wordJump.label !== "" && (
+            <p className="muted small word-scope">
+              {tr("只看 {label}", { label: wordJump.label })}
+              <button className="link-btn" onClick={() => void actions.openWord(word.lemma)}>{tr("看整个库")}</button>
+            </p>
+          )}
+          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma, wordJump)} />
           {word.firstYear && (
             <p className="muted small">
               {word.firstYear} — {word.lastYear}
@@ -876,8 +886,8 @@ export function LibraryPage({
     </button>
   );
   const songView = view?.kind === "song" || view === null;
-  /** 关系网、时间轴占中栏加右栏 */
-  const wide = view?.kind === "graph" || view?.kind === "timeline" || view?.kind === "cloud";
+  /** 关系网、时间轴、词云、档案占中栏加右栏 */
+  const wide = view !== null && view.kind !== "song";
 
   return (
     <div
@@ -943,9 +953,11 @@ export function LibraryPage({
             coverOf={coverOf}
             covered={stageOpen}
             onSearchWord={onSearchWord}
-            onShowExamples={(lemma) => {
+            onShowExamples={(lemma, jump) => {
               go({ kind: "song" });
-              void actions.openWord(lemma);
+              // 释义：原来只有点歌词里的词才查词典，从词云过来右栏只剩例句
+              lookUp(lemma);
+              void actions.openWord(lemma, jump);
             }}
             onError={onAudioError}
           />
@@ -987,6 +999,11 @@ export function LibraryPage({
               onOpenCloud={() => {
                 focusCloudOn(view.id);
                 go({ kind: "cloud" });
+              }}
+              onOpenGraph={() => go({ kind: "graph", focus: view.id })}
+              onOpenTimeline={() => {
+                focusTimelineOn(view.id);
+                go({ kind: "timeline" });
               }}
               onError={onAudioError}
             />
@@ -1231,19 +1248,7 @@ export function LibraryPage({
         onReset={columns.reset}
       />
 
-      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>
-        {view?.kind === "person" ? (
-          <PersonSide
-            personId={view.id}
-            data={data}
-            onOpenPerson={openPerson}
-            onOpenGraph={() => go({ kind: "graph", focus: view.id })}
-            onError={onAudioError}
-          />
-        ) : (
-          corpusContent
-        )}
-      </aside>
+      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>{corpusContent}</aside>
 
       {stageOpen && selected && (
         <LyricsStage

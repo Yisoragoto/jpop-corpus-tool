@@ -54,6 +54,20 @@ pub fn strip_release_suffix(album: &str) -> String {
     album.to_string()
 }
 
+/// iTunes 的发行类型写在 collectionName 的后缀里；没后缀但只有 1–3 首的也是单曲
+/// （「僕と花」三首、没写 Single）——Apple 自己就按 1–3 首算单曲。
+pub fn release_type(collection: &str, track_count: Option<i64>) -> &'static str {
+    if collection.ends_with(" - Single") {
+        "Single"
+    } else if collection.ends_with(" - EP") {
+        "EP"
+    } else if track_count.is_some_and(|n| (1..=3).contains(&n)) {
+        "Single"
+    } else {
+        "Album"
+    }
+}
+
 pub struct ITunesProvider {
     pub country: String,
     pub artwork_size: u32,
@@ -133,6 +147,17 @@ impl ITunesProvider {
             }
             if let Some(v) = item.get("artistId") {
                 extra.insert("artist_id".to_string(), v.to_string());
+            }
+            // 专辑层面的身份：iTunes 不给发行类型字段，但单曲和 EP 的 collectionName 一定带
+            // 「 - Single」「 - EP」后缀，其余就是专辑；trackCount 是整张碟的曲目数。
+            let collection = as_str(item.get("collectionName"));
+            let track_count = as_i64(item.get("trackCount")).filter(|n| *n > 0);
+            if !collection.is_empty() {
+                extra.insert("album_title".to_string(), collection.clone());
+                extra.insert("album_type".to_string(), release_type(&collection, track_count).to_string());
+            }
+            if let Some(n) = track_count {
+                extra.insert("track_count".to_string(), n.to_string());
             }
             out.push(ScrapeCandidate {
                 provider: "itunes".into(),
@@ -264,6 +289,25 @@ mod tests {
         "trackTimeMillis": 261000, "trackNumber": 1, "discNumber": 1,
         "artworkUrl100": "https://is1.mzstatic.com/image/thumb/x/100x100bb.jpg",
         "collectionId": 1500000000, "artistId": 1400000000 }]}"#;
+
+    #[test]
+    fn album_identity_comes_from_the_collection_suffix_and_track_count() {
+        let body = r#"{"resultCount":2,"results":[
+            {"trackId":1,"trackName":"修羅","artistName":"ヨルシカ","collectionName":"修羅 - Single","trackCount":1},
+            {"trackId":2,"trackName":"春泥棒","artistName":"ヨルシカ","collectionName":"盗作","trackCount":14}]}"#;
+        let got = provider(body)
+            .search_tracks(&SearchQuery { title: "x".into(), ..Default::default() }, 25)
+            .unwrap();
+        assert_eq!(got[0].album, "修羅");
+        assert_eq!(got[0].extra["album_title"], "修羅 - Single");
+        assert_eq!(got[0].extra["album_type"], "Single");
+        assert_eq!(got[0].extra["track_count"], "1");
+        assert_eq!(got[1].extra["album_type"], "Album");
+        assert_eq!(got[1].extra["track_count"], "14");
+        assert_eq!(release_type("創作 - EP", Some(2)), "EP");
+        assert_eq!(release_type("僕と花", Some(3)), "Single", "没后缀的三首也是单曲");
+        assert_eq!(release_type("盗作", None), "Album");
+    }
 
     #[test]
     fn a_track_is_parsed_with_every_field() {
