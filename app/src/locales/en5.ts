@@ -2,12 +2,9 @@
 export const en5: Record<string, string> = {
   "歌词后台任务": "Background lyrics task",
   "逐首预览与更换": "Preview and replace individual songs",
-  "所属乐队": "Band membership",
   "{missingLyrics} 首还没有歌词，将优先获取真实逐字歌词，找不到时回退逐行": "{missingLyrics} songs lack lyrics. Prefer real word timing, with line fallback if unavailable.",
   "使用已启用的歌词来源，优先逐字，找不到时回退逐行；不确定的保留待复核": "Use enabled sources, preferring word timing with line fallback. Keep uncertain matches for review.",
   "单首更换可先预览；批量任务仅自动采用身份和正文验证通过的结果。逐字行数不含估算。": "Preview individual replacements first. Bulk jobs only adopt verified identities and matching text. Word-timed counts exclude estimates.",
-  " · 共 {n} 首": " \u00b7 {n} shared",
-  "查看全部 {n} 位关联人物": "View all {n} related people",
   "已补逐字": "Word timing added",
   "逐行回退": "Line fallback",
   "保留人工修改": "Manual edits kept",
