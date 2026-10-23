@@ -417,14 +417,90 @@ fn matched(mut values: Vec<Meta>, title: &str, artist: &str, duration: Option<f6
     out
 }
 
+/// QQ and Kugou start the timed body with a 「曲名 - 歌手」 line. It is not
+/// lyrics: kept, it goes into the corpus as a sung line, and it alone pulls the
+/// automatic body comparison under its threshold. Only the first two lines are
+/// looked at, and only an exact title+artist match is dropped.
+fn drop_title_line(lyrics: &mut TimedLyrics, title: &str, artist: &str) {
+    let key = jp_normalize::matching_key;
+    let (t, a) = (key(title), key(artist));
+    if t.is_empty() || a.is_empty() {
+        return;
+    }
+    // 「& - きのこ帝国 (蘑菇帝国)」：歌手后面常带一个中文别名。
+    let no_alias = |s: &str| {
+        let s = s.trim_end();
+        match s.strip_suffix([')', '）']).and_then(|r| r.rfind(['(', '（']).map(|i| &s[..i])) {
+            Some(head) if !head.trim().is_empty() => head.trim_end().to_string(),
+            _ => s.to_string(),
+        }
+    };
+    let header = |text: &str| {
+        let whole = key(&no_alias(text));
+        if whole == format!("{t}{a}") || whole == format!("{a}{t}") {
+            return true;
+        }
+        // 「エンドレス - sakanaction」：歌手常换成罗马字或别名写法，库里是「サカナクション」。
+        // 曲名完全对上、又在开头两行，右边写的是谁就不再要求一致。
+        text.split_once(" - ").is_some_and(|(l, r)| {
+            (key(l) == t && !r.trim().is_empty()) || (key(l) == a && key(&no_alias(r)) == t)
+        })
+    };
+    if let Some(i) = lyrics.lines.iter().take(2).position(|l| header(&l.text))
+        && lyrics.lines.len() > 1
+    {
+        lyrics.lines.remove(i);
+    }
+}
+
+/// 「E. Guitar：若井滉斗」「Strings & Horn Arranged by：兼松 衆」 — QQ appends or
+/// prepends a block of musician credits. The parser's credit table only knows
+/// the common labels, and this list is open-ended, so match the shape instead:
+/// a colon whose label has no kana or kanji at all. Only a run touching the
+/// start or the end is dropped; a sung line in the middle is never touched.
+fn drop_credit_block(lyrics: &mut TimedLyrics) {
+    let credit = |text: &str| {
+        let Some((label, names)) = text.split_once(['：', ':']) else {
+            return false;
+        };
+        let label = label.trim();
+        // 中日文的常见署名标签也算，否则开头的「词：」「曲：」会把后面整段英文署名
+        // 挡在「连成一段」之外。
+        if jp_normalize::is_cjk_credit_label(label) && !names.trim().is_empty() {
+            return true;
+        }
+        !label.is_empty()
+            && !names.trim().is_empty()
+            && label.chars().count() <= 40
+            && label.chars().any(|c| c.is_ascii_alphabetic())
+            && label
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || " .,&/()-'".contains(c))
+    };
+    let head = lyrics.lines.iter().take_while(|l| credit(&l.text)).count();
+    let tail = lyrics.lines[head..]
+        .iter()
+        .rev()
+        .take_while(|l| credit(&l.text))
+        .count();
+    if head + tail < lyrics.lines.len() {
+        lyrics.lines.truncate(lyrics.lines.len() - tail);
+        lyrics.lines.drain(..head);
+    }
+}
+
 fn found(
     source: &str,
     format: &str,
     reference: String,
     meta: &Meta,
     raw_text: &str,
-    lyrics: TimedLyrics,
+    mut lyrics: TimedLyrics,
 ) -> Result<TimedFound> {
+    // 标题行可能在署名段前面，也可能在后面：前后各认一次。
+    drop_title_line(&mut lyrics, &meta.hit.title, &meta.hit.artist);
+    drop_credit_block(&mut lyrics);
+    drop_title_line(&mut lyrics, &meta.hit.title, &meta.hit.artist);
     ensure!(
         lyrics.lines.iter().any(|l| !l.text.trim().is_empty()),
         "未取得非空带时间歌词"
@@ -1675,6 +1751,63 @@ mod tests {
 
     const QRC_HEX: &str = "ee7befb746f93831d42dcdf2e21f0d5d833c044042289012e0c11abf870c7dfb9c809065c5235ff1cf6f94cef240c69add963e0164dd48ddbfc31abddb1b167277d92192f367e70a22f0ba7ac5e81564dd377778fc4103ff";
     const QRC_TEXT: &str = "<QrcInfos><Lyric_1 LyricType=\"1\" LyricContent=\"[1000,600]hi(1000,200)!(1200,400)\"/></QrcInfos>";
+
+    #[test]
+    fn the_title_artist_header_line_is_not_kept_as_lyrics() {
+        use crate::timed_lyrics::TimedLine;
+        let line = |text: &str| TimedLine { start_ms: 0, end_ms: None, text: text.into(), words: vec![] };
+        let mut lyrics = TimedLyrics { lines: vec![line("怪獣の花唄 - Vaundy"), line("思い出すのは君の歌")] };
+        drop_title_line(&mut lyrics, "怪獣の花唄", "Vaundy");
+        assert_eq!(lyrics.lines.len(), 1);
+        assert_eq!(lyrics.lines[0].text, "思い出すのは君の歌");
+        // A sung line that merely contains the title stays; so does a lone line.
+        let mut lyrics = TimedLyrics { lines: vec![line("怪獣の花唄を歌う"), line("Vaundy")] };
+        drop_title_line(&mut lyrics, "怪獣の花唄", "Vaundy");
+        assert_eq!(lyrics.lines.len(), 2);
+        let mut lyrics = TimedLyrics { lines: vec![line("怪獣の花唄 - Vaundy")] };
+        drop_title_line(&mut lyrics, "怪獣の花唄", "Vaundy");
+        assert_eq!(lyrics.lines.len(), 1);
+        // 歌手带中文别名；歌名本身全是标点。
+        let mut lyrics = TimedLyrics { lines: vec![line("& - きのこ帝国 (蘑菇帝国)"), line("あの日亡くした心臓")] };
+        drop_title_line(&mut lyrics, "&", "きのこ帝国");
+        assert_eq!(lyrics.lines[0].text, "あの日亡くした心臓");
+        let mut lyrics = TimedLyrics { lines: vec![line("Girl meets NUMBER GIRL - きのこ帝国 (蘑菇帝国)"), line("閉ざす窓を開けて")] };
+        drop_title_line(&mut lyrics, "Girl meets NUMBER GIRL", "きのこ帝国");
+        assert_eq!(lyrics.lines[0].text, "閉ざす窓を開けて");
+        let mut lyrics = TimedLyrics { lines: vec![line("エンドレス - sakanaction"), line("誰かを笑う人の後ろにも")] };
+        drop_title_line(&mut lyrics, "エンドレス", "サカナクション");
+        assert_eq!(lyrics.lines[0].text, "誰かを笑う人の後ろにも");
+    }
+
+    #[test]
+    fn a_musician_credit_block_at_either_end_is_dropped_but_sung_lines_stay() {
+        use crate::timed_lyrics::TimedLine;
+        let line = |text: &str| TimedLine { start_ms: 0, end_ms: None, text: text.into(), words: vec![] };
+        let mut lyrics = TimedLyrics {
+            lines: vec![
+                line("词：大森元貴"),
+                line("编曲：兼松 衆/大森元貴"),
+                line("Strings & Horn Arranged by：兼松 衆"),
+                line("Vocal, E. Guitar, A. Guitar & Chorus：大森元貴"),
+                line("1st Violin：室屋光一郎/徳永友美"),
+                line("終わりが来たら"),
+                line("Tell me why：君の心"),
+                line("なんて言おう"),
+                line("Mixed by：誰か"),
+            ],
+        };
+        drop_credit_block(&mut lyrics);
+        let texts: Vec<_> = lyrics.lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, ["終わりが来たら", "Tell me why：君の心", "なんて言おう"]);
+        // 冒号前有假名汉字的不是这类署名；全是署名时什么都不删。
+        let mut lyrics = TimedLyrics { lines: vec![line("君の名は：まだ知らない"), line("E. Guitar：若井滉斗")] };
+        drop_credit_block(&mut lyrics);
+        assert_eq!(lyrics.lines.len(), 1);
+        assert_eq!(lyrics.lines[0].text, "君の名は：まだ知らない");
+        let mut lyrics = TimedLyrics { lines: vec![line("Drums：河村吉宏")] };
+        drop_credit_block(&mut lyrics);
+        assert_eq!(lyrics.lines.len(), 1);
+    }
 
     #[test]
     fn http_errors_are_classified_by_status_not_by_digits_in_the_message() {

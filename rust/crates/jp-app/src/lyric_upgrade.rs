@@ -1,10 +1,11 @@
 //! One serial, cancellable queue for imported songs and library-wide upgrades.
 //! Network calls never hold the UI database lock. All writes still use the
 //! fingerprint-checked, transactional timed-lyrics replacement path.
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use jp_scraper::timed_sources::{SearchOutput, SourceOptions, TimedFound};
@@ -16,9 +17,45 @@ use crate::{lyrics::Attached, timed_lyrics as timed};
 
 /// Existing requests retain the source timeout; after Stop, no additional
 /// provider, fallback, guest-session or download requests can be issued.
+///
+/// It also spaces requests to the same host by [`HOST_GAP`]: a whole-library run
+/// asks several unofficial endpoints per song back to back, and the old NetEase-only
+/// fill was throttled the same way. Queueing is better than getting blocked.
 struct CancellableTransport {
     inner: Box<dyn jp_scraper::Transport>,
     cancelled: Arc<AtomicBool>,
+    last: Arc<Mutex<HashMap<String, Instant>>>,
+}
+
+const HOST_GAP: Duration = Duration::from_millis(600);
+
+fn host(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    rest.split(['/', '?', '#']).next().unwrap_or(rest)
+}
+
+impl CancellableTransport {
+    /// Waits until this host may be asked again; false when Stop was pressed meanwhile.
+    fn wait_turn(&self, url: &str) -> bool {
+        let key = host(url).to_ascii_lowercase();
+        loop {
+            if self.cancelled.load(Ordering::SeqCst) {
+                return false;
+            }
+            let wait = {
+                let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
+                let now = Instant::now();
+                match last.get(&key).map(|t| HOST_GAP.saturating_sub(now - *t)) {
+                    Some(left) if !left.is_zero() => left,
+                    _ => {
+                        last.insert(key, now);
+                        return true;
+                    }
+                }
+            };
+            std::thread::sleep(wait.min(Duration::from_millis(100)));
+        }
+    }
 }
 impl jp_scraper::Transport for CancellableTransport {
     fn get(
@@ -27,7 +64,7 @@ impl jp_scraper::Transport for CancellableTransport {
         headers: &[(String, String)],
         timeouts: jp_scraper::http::Timeouts,
     ) -> std::result::Result<jp_scraper::http::HttpResponse, jp_scraper::ProviderError> {
-        if self.cancelled.load(Ordering::SeqCst) {
+        if !self.wait_turn(url) {
             return Err(jp_scraper::ProviderError::unavailable("cancelled"));
         }
         self.inner.get(url, headers, timeouts)
@@ -39,7 +76,7 @@ impl jp_scraper::Transport for CancellableTransport {
         headers: &[(String, String)],
         timeouts: jp_scraper::http::Timeouts,
     ) -> std::result::Result<jp_scraper::http::HttpResponse, jp_scraper::ProviderError> {
-        if self.cancelled.load(Ordering::SeqCst) {
+        if !self.wait_turn(url) {
             return Err(jp_scraper::ProviderError::unavailable("cancelled"));
         }
         self.inner.post(url, body, headers, timeouts)
@@ -152,9 +189,20 @@ fn precision(before: &timed::Snapshot, found: &TimedFound) -> (usize, usize) {
                 time_sec: l.time_sec,
                 tokens: vec![],
             };
-            let marks: Vec<_> = l
+            // 入库时会先 normalize（空格标点并进相邻单位），这里按入库后的样子数，
+            // 否则带空格的候选（英文词、全角空格）会被低估、落选。
+            let segments: Vec<_> = l
                 .words
                 .iter()
+                .map(|w| jp_corpus::word_timing::Segment {
+                    start: w.start,
+                    end: w.end,
+                    time_sec: w.time_sec,
+                    end_sec: w.end_sec,
+                })
+                .collect();
+            let marks: Vec<_> = jp_corpus::word_timing::normalize(&l.text, &segments)
+                .into_iter()
                 .map(|w| jp_corpus::word_timing::WordTiming {
                     utterance_id: 0,
                     char_start: w.start as i64,
@@ -220,6 +268,33 @@ fn choose(before: &timed::Snapshot, found: &SearchOutput) -> Option<(TimedFound,
         })
         .max_by_key(|c| c.format.eq_ignore_ascii_case("LRC"))
         .map(|c| (c, false))
+}
+
+/// Why nothing was adopted although candidates came back: the check that the
+/// closest candidate failed. Shown next to 「待逐首复核」 so the user knows what
+/// to look at before adopting one by hand.
+fn review_reason(before: &timed::Snapshot, found: &SearchOutput) -> &'static str {
+    if before.artist.trim().is_empty() || !before.duration.is_some_and(|d| d.is_finite() && d > 0.0) {
+        return "这首歌缺少歌手或时长，无法自动确认是同一首";
+    }
+    let stage = |c: &TimedFound| {
+        if !same_identity(before, c) {
+            0
+        } else if !timed::compatible(before, c) {
+            1
+        } else if !timed::agrees_for_automatic(before, c) {
+            2
+        } else {
+            3
+        }
+    };
+    match found.candidates.iter().map(stage).max() {
+        Some(3) => "候选能逐字点亮的行不比现在多，或不到一半",
+        Some(2) => "候选正文和现有歌词不完全一致（写法、标点或段落不同），自动换会改动原文",
+        Some(1) => "候选的时长或正文和现有歌词差别太大",
+        Some(_) => "候选的歌名或歌手和这首歌对不上",
+        None => "只找到逐行歌词；已有歌词不会被逐行版本替换",
+    }
 }
 
 pub fn apply_best(
@@ -398,6 +473,9 @@ pub fn enqueue<R: Runtime>(
             let root = db_path.parent().unwrap_or(Path::new("."));
             let analyzer = jp_tokenizer::locate_sudachipy(root)
                 .and_then(|(res, dict)| jp_tokenizer::Analyzer::from_sudachipy(&res, &dict).ok());
+            // Shared across songs, so the gap also holds between one song's last
+            // request and the next song's first one.
+            let hosts = Arc::new(Mutex::new(HashMap::new()));
             loop {
                 let id = {
                     let mut q = batch.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -442,6 +520,7 @@ pub fn enqueue<R: Runtime>(
                         Box::new(CancellableTransport {
                             inner: Box::new(jp_scraper::UreqTransport),
                             cancelled: batch.gate.cancel_flag(),
+                            last: Arc::clone(&hosts),
                         }),
                     );
                     // Cancellation during a request discards its result before writing.
@@ -464,22 +543,36 @@ pub fn enqueue<R: Runtime>(
                                     String::new(),
                                 ));
                             }
-                            let status =
-                                if !found.candidates.is_empty() || !found.fallback.is_empty() {
-                                    "review"
-                                } else if !found.warnings.is_empty() {
-                                    "failed"
-                                } else {
-                                    "notFound"
-                                };
-                            let message = found
-                                .warnings
-                                .iter()
-                                .map(|w| {
-                                    format!("{}: {}", w.source, timed::redact(&w.message, &opts))
-                                })
-                                .collect::<Vec<_>>()
-                                .join(" · ");
+                            // 已经是逐字、只是没找到覆盖更多行的候选：不是要人复核的事。
+                            let kept = before.timed_lines() > 0
+                                && found.candidates.iter().any(|c| {
+                                    same_identity(&before, c)
+                                        && timed::compatible(&before, c)
+                                        && timed::agrees_for_automatic(&before, c)
+                                });
+                            let status = if kept {
+                                "kept"
+                            } else if !found.candidates.is_empty() || !found.fallback.is_empty() {
+                                "review"
+                            } else if !found.warnings.is_empty() {
+                                "failed"
+                            } else {
+                                "notFound"
+                            };
+                            let message = if status == "kept" {
+                                String::new()
+                            } else if status == "review" {
+                                review_reason(&before, &found).to_string()
+                            } else {
+                                found
+                                    .warnings
+                                    .iter()
+                                    .map(|w| {
+                                        format!("{}: {}", w.source, timed::redact(&w.message, &opts))
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(" · ")
+                            };
                             Ok((status, String::new(), message))
                         }
                     }
@@ -601,6 +694,73 @@ mod tests {
             ..Default::default()
         }
     }
+    struct Clock(Arc<Mutex<Vec<(String, Instant)>>>);
+    impl jp_scraper::Transport for Clock {
+        fn get(
+            &self,
+            url: &str,
+            _: &[(String, String)],
+            _: jp_scraper::http::Timeouts,
+        ) -> std::result::Result<jp_scraper::http::HttpResponse, jp_scraper::ProviderError> {
+            self.0.lock().unwrap().push((url.into(), Instant::now()));
+            Err(jp_scraper::ProviderError::unavailable("offline"))
+        }
+        fn post(
+            &self,
+            url: &str,
+            _: &[u8],
+            h: &[(String, String)],
+            t: jp_scraper::http::Timeouts,
+        ) -> std::result::Result<jp_scraper::http::HttpResponse, jp_scraper::ProviderError> {
+            self.get(url, h, t)
+        }
+    }
+
+    #[test]
+    fn requests_to_one_host_are_spaced_but_other_hosts_are_not_held_up() {
+        use jp_scraper::Transport;
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let transport = CancellableTransport {
+            inner: Box::new(Clock(log.clone())),
+            cancelled: cancelled.clone(),
+            last: Arc::default(),
+        };
+        let t = jp_scraper::http::Timeouts::new(Duration::from_secs(1), Duration::from_secs(1));
+        let _ = transport.get("https://a.example/x?q=1", &[], t);
+        let _ = transport.get("https://b.example/y", &[], t);
+        let _ = transport.get("https://A.example/z", &[], t);
+        {
+            let log = log.lock().unwrap();
+            assert_eq!(log.len(), 3);
+            assert!(log[1].1 - log[0].1 < HOST_GAP / 2, "another host goes straight away");
+            assert!(log[2].1 - log[0].1 >= HOST_GAP, "same host waits its turn");
+        }
+        cancelled.store(true, Ordering::SeqCst);
+        let started = Instant::now();
+        assert!(transport.get("https://a.example/again", &[], t).is_err());
+        assert!(started.elapsed() < HOST_GAP / 2, "Stop does not wait out the gap");
+        assert_eq!(log.lock().unwrap().len(), 3, "nothing is sent after Stop");
+    }
+
+    #[test]
+    fn precision_counts_lines_as_they_will_be_stored() {
+        // 「夜が　明ける」：全角空格没有时间，入库时并进相邻单位，这一行应该算能逐字点亮。
+        let corpus = database(None);
+        let before = timed::snapshot(corpus.connection(), "batch").unwrap();
+        let mut found = candidate();
+        found.lyrics.lines[0] = TimedLine {
+            text: "夜が\u{3000}明ける".into(),
+            start_ms: 10_000,
+            end_ms: Some(12_000),
+            words: vec![
+                TimedWord { start: 0, end: 2, start_ms: 10_000, end_ms: Some(10_800) },
+                TimedWord { start: 3, end: 6, start_ms: 10_900, end_ms: Some(12_000) },
+            ],
+        };
+        assert_eq!(precision(&before, &found), (1, 1));
+    }
+
     #[test]
     fn empty_and_line_only_songs_are_both_upgrade_targets() {
         let empty = database(None);
@@ -688,6 +848,21 @@ mod tests {
         wrong.lyrics.lines[0].text = "あの海".into();
         assert!(choose(&before, &output(wrong)).is_none());
     }
+    #[test]
+    fn a_review_says_which_check_the_closest_candidate_failed() {
+        let corpus = database(Some("[00:10]あの空"));
+        let before = timed::snapshot(corpus.connection(), "batch").unwrap();
+        let mut other_text = candidate();
+        other_text.lyrics.lines[0].text = "あの海".into();
+        let mut wrong_artist = candidate();
+        wrong_artist.artist = "別の歌手".into();
+        let found = SearchOutput { candidates: vec![wrong_artist.clone(), other_text], ..Default::default() };
+        assert_eq!(review_reason(&before, &found), "候选的时长或正文和现有歌词差别太大");
+        let found = SearchOutput { candidates: vec![wrong_artist], ..Default::default() };
+        assert_eq!(review_reason(&before, &found), "候选的歌名或歌手和这首歌对不上");
+        assert_eq!(review_reason(&before, &SearchOutput::default()), "只找到逐行歌词；已有歌词不会被逐行版本替换");
+    }
+
     #[test]
     fn manual_edits_after_search_are_rechecked_inside_the_write_transaction() {
         let mut corpus = database(Some("[00:10]あの空"));

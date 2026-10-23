@@ -457,7 +457,8 @@ fn prefix_line(body: &str, line: Clock, format: PrefixFormat) -> Result<TimedLin
     let mut rest = body;
     let mut active = None;
     while let Some((at, end, mark)) = next_marker(rest, open, close)? {
-        ensure!(active.is_none() || at > 0, "word timestamp without text");
+        // 两个时间标记挨着（或行尾多一个）就是一个没有字的单位。酷狗的 KRC 里实测有
+        // （「パラノイドパレード」第 19 行），以前整首报错。没字的单位不产生词，丢掉即可。
         builder.raw(&rest[..at], active);
         let [start, duration, _flags] = fields(mark)?;
         let start = match format {
@@ -466,8 +467,6 @@ fn prefix_line(body: &str, line: Clock, format: PrefixFormat) -> Result<TimedLin
         };
         active = Some(builder.clock(duration_clock(start, duration)?));
         rest = &rest[end..];
-        // A marker must own text, not just masquerade as an enhanced LRC end.
-        ensure!(!rest.is_empty(), "word timestamp without text");
     }
     builder.raw(rest, active);
     let (text, words) = builder.finish(false)?;
@@ -592,10 +591,66 @@ fn safe_xml(text: &str) -> Result<Document<'_>> {
     .context("invalid lyric XML")
 }
 
+/// QQ puts the lyric body into an XML attribute without escaping `&`
+/// (「lulu.」 has one in its lyrics), so the whole song failed to parse.
+/// Escape only the ampersands that do not already start an entity.
+fn escape_bare_ampersands(text: &str) -> std::borrow::Cow<'_, str> {
+    let entity = |rest: &str| {
+        let Some(end) = rest[1..].find(';').map(|i| i + 1) else {
+            return false;
+        };
+        let name = &rest[1..end];
+        if let Some(num) = name.strip_prefix('#') {
+            if let Some(hex) = num.strip_prefix(['x', 'X']) {
+                !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit())
+            } else {
+                !num.is_empty() && num.chars().all(|c| c.is_ascii_digit())
+            }
+        } else {
+            matches!(name, "amp" | "lt" | "gt" | "quot" | "apos")
+        }
+    };
+    if text.match_indices('&').all(|(i, _)| entity(&text[i..])) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 16);
+    for (i, c) in text.char_indices() {
+        if c == '&' && !entity(&text[i..]) {
+            out.push_str("&amp;");
+        } else {
+            out.push(c);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+/// QQ also leaves `"` and `<` unescaped inside `LyricContent="…"`
+/// (「東京フラッシュ」), which ends the attribute early. The value runs up to the
+/// element's closing `"/>`, so escape everything XML-significant in between.
+fn repair_lyric_content(text: &str) -> std::borrow::Cow<'_, str> {
+    const OPEN: &str = "LyricContent=\"";
+    let Some(at) = text.find(OPEN).map(|i| i + OPEN.len()) else {
+        return escape_bare_ampersands(text);
+    };
+    let Some(len) = text[at..].find("\"/>").or_else(|| text[at..].find("\" />")) else {
+        return escape_bare_ampersands(text);
+    };
+    let value = &text[at..at + len];
+    if !value.contains(['"', '<']) {
+        return escape_bare_ampersands(text);
+    }
+    let mut out = String::with_capacity(text.len() + 32);
+    out.push_str(&text[..at]);
+    out.push_str(&escape_bare_ampersands(value).replace('"', "&quot;").replace('<', "&lt;"));
+    out.push_str(&escape_bare_ampersands(&text[at + len..]));
+    std::borrow::Cow::Owned(out)
+}
+
 /// Input is decoded QRC XML. Only the primary LyricContent stream is accepted;
 /// multiple different streams are ambiguous and must be selected by the caller.
 pub fn parse_qrc(text: &str) -> Result<TimedLyrics> {
-    let doc = safe_xml(text)?;
+    let text = repair_lyric_content(text);
+    let doc = safe_xml(&text)?;
     let mut content = None;
     for node in doc.descendants().filter(|n| n.is_element()) {
         if let Some(value) = node.attribute("LyricContent") {
@@ -972,6 +1027,23 @@ mod tests {
     }
 
     #[test]
+    fn qrc_with_a_bare_ampersand_in_the_lyrics_still_parses() {
+        let xml = qrc("[1000,2000]A(1000,500)&(1500,500)B(2000,1000)\n[4000,1000]&amp;(4000,1000)");
+        let lyrics = parse_qrc(&xml).unwrap();
+        assert_eq!(lyrics.lines[0].text, "A&B");
+        assert_eq!(lyrics.lines[1].text, "&", "an escaped entity is decoded once, not twice");
+        assert_eq!(escape_bare_ampersands("a &amp; b &#38; &#x26; c"), "a &amp; b &#38; &#x26; c");
+        assert_eq!(escape_bare_ampersands("A & B &foo;"), "A &amp; B &amp;foo;");
+    }
+
+    #[test]
+    fn qrc_with_a_bare_quote_or_angle_bracket_in_the_lyrics_still_parses() {
+        let xml = qrc("[1000,2000]\"Stay\"(1000,1000)<3(2000,1000)");
+        let lyrics = parse_qrc(&xml).unwrap();
+        assert_eq!(lyrics.lines[0].text, "\"Stay\"<3");
+    }
+
+    #[test]
     fn yrc_absolute_clocks_unicode_multiline_and_metadata() {
         let lyrics = parse_yrc(concat!(
             "\u{feff}[ar:架空の歌い手]\n",
@@ -1229,6 +1301,16 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_krc_or_yrc_unit_is_dropped_instead_of_failing_the_song() {
+        let lyrics = parse_krc("[1000,2000]<0,300,0>夜<300,200,0><500,500,0>が<1000,0,0>").unwrap();
+        assert_eq!(lyrics.lines[0].text, "夜が");
+        assert_eq!(lyrics.lines[0].words, [word(0, 1, 1000, Some(1300)), word(1, 2, 1500, Some(2000))]);
+        let lyrics = parse_yrc("[1000,2000](1000,300,0)夜(1300,200,0)(1500,500,0)が").unwrap();
+        assert_eq!(lyrics.lines[0].text, "夜が");
+        validate(&lyrics).unwrap();
+    }
+
+    #[test]
     fn all_formats_reject_line_only_or_partially_untimed_main_text() {
         for body in ["[0,1000]朝だ", "[0,1000]朝(500,100,0)だ"] {
             assert!(parse_yrc(body).is_err(), "{body}");
@@ -1317,7 +1399,8 @@ mod tests {
             "[0,1000](500,100,0)あ(200,100,0)い",
             "[1000,1000](900,100,0)あ",
             "[0,1000](900,200,0)あ",
-            "[0,1000](0,100,0)(200,100,0)あ",
+            // 「(0,100,0)(200,100,0)あ」这种空单位现在丢掉而不报错，见
+            // an_empty_krc_or_yrc_unit_is_dropped_instead_of_failing_the_song；整行没字仍然报错。
             "[0,1000](0,100,0)",
             "[18446744073709551615,1](0,1,0)あ",
             "[0,1000](18446744073709551616,1,0)あ",

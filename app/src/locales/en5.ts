@@ -12,6 +12,7 @@ export const en5: Record<string, string> = {
   "逐行回退": "Line fallback",
   "保留人工修改": "Manual edits kept",
   "逐字已完整": "Word timing complete",
+  "保留现有逐字": "Kept current word timing",
   "待逐首复核": "Needs individual review",
   "未找到": "Not found",
   "获取失败": "Fetch failed",
