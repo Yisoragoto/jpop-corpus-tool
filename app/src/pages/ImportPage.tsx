@@ -14,6 +14,7 @@
  * 也可能真有两个版本——猜错会把库弄脏，这种事交给人判断。
  */
 
+import { LyricsUpgradePanel } from "../components/LyricsUpgradePanel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "../events";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -166,11 +167,12 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
     };
   }, []);
 
+  const [fetchLyrics, setFetchLyrics] = useState(true);
   const doImport = useCallback(async () => {
     setBusy("importing");
     setProgress(null);
     try {
-      const result = await api.runImport(tokenize);
+      const result = await api.runImport(tokenize, fetchLyrics);
       setReport(result);
       const csv = result.csv;
       if (csv !== undefined && !["updated", "noFile", "unchanged"].includes(csv)) onError(csv);
@@ -184,7 +186,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
       setBusy("");
       setProgress(null);
     }
-  }, [tokenize, onError, onImported]);
+  }, [tokenize, fetchLyrics, onError, onImported]);
 
   /** 丢弃还没导的那批；导入进行中则是「停止」——后端每导完一首看一次标志。 */
   const doCancel = useCallback(async () => {
@@ -210,6 +212,8 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
     <div className="page tools" data-scanning={busy === "scanning"} data-import-plan={scan !== null}>
       <p className="page-lead">{tr("选一个装着音频的目录，或者直接选几首歌。扫描只读取，不写库；看过计划再决定导不导。")}</p>
 
+      <label className="check import-lyrics-option"><input type="checkbox" checked={fetchLyrics} disabled={busy !== ""} onChange={event => setFetchLyrics(event.target.checked)} />{tr("导入后自动补歌词，优先逐字")}</label>
+      <LyricsUpgradePanel allowStart={false} onChanged={onImported} onError={onError} />
       <WatchedFolders
         onReview={reviewFiles}
         onError={onError}

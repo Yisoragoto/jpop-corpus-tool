@@ -97,11 +97,11 @@ function TimedLyricsWorkspace(props: Props) {
 
   return (
     <section className="timed-lyrics" aria-label={tr("逐字歌词")}>
-      <h3>{tr("逐字歌词")}</h3>
-      <p className="timed-hint">{tr("先搜索并预览，点击「采用」才会替换现有歌词。逐字行数仅统计来源提供的真实时间，不含按字数估算。")}</p>
+      <h3>{props.songId === undefined ? tr("逐首预览与更换") : tr("逐字歌词")}</h3>
+      <p className="timed-hint">{tr("单首更换可先预览；批量任务仅自动采用身份和正文验证通过的结果。逐字行数不含估算。")}</p>
       {props.songId === undefined && (
         <>
-          <p className="timed-hint">{tr("这里只列出已有歌词、仍缺完整有效真实逐字时间的歌曲；已齐全的歌可在逐首歌词入口搜索更换。")}</p>
+          <p className="timed-hint">{tr("此处包含缺歌词或逐字时间不完整的歌曲；可一键批量补全，也可逐首预览更换。")}</p>
           <div className="timed-toolbar">
             <label className="timed-song-picker">
               <span>{tr("选择歌曲")}</span>

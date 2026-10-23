@@ -663,10 +663,10 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
               title={tr("补齐缺失歌词")}
               description={
                 missingLyrics === null
-                  ? tr("先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空")
+                  ? tr("使用已启用的歌词来源，优先逐字，找不到时回退逐行；不确定的保留待复核")
                   : missingLyrics === 0
                     ? tr("每一首都有歌词了")
-                    : tr("{missingLyrics} 首还没有歌词。先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）", { missingLyrics })
+                    : tr("{missingLyrics} 首还没有歌词，将优先获取真实逐字歌词，找不到时回退逐行", { missingLyrics })
               }
             >
               {lyricsRunning ? (

@@ -269,6 +269,7 @@ impl Session {
                     song_id: snapshot.song_id.clone(),
                     fingerprint: snapshot.fingerprint(),
                     candidate,
+                    automatic: false,
                 },
             );
         }
@@ -312,12 +313,17 @@ pub struct Pending {
     song_id: String,
     fingerprint: String,
     candidate: TimedFound,
+    automatic: bool,
+}
+
+pub(crate) fn automatic_pending(before: &Snapshot, candidate: TimedFound) -> Pending {
+    Pending { created: Instant::now(), song_id: before.song_id.clone(), fingerprint: before.fingerprint(), candidate, automatic: true }
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Target {
-    song_id: String,
+    pub song_id: String,
     title: String,
     artist: String,
     lyric_lines: usize,
@@ -454,7 +460,7 @@ pub fn targets(conn: &Connection) -> Result<Vec<Target>> {
     for id in ids {
         let s = snapshot(conn, &id)?;
         let timed_lines = s.timed_lines();
-        if !s.lines.is_empty() && timed_lines < s.lines.len() {
+        if s.lines.is_empty() || timed_lines < s.lines.len() {
             out.push(Target {
                 song_id: id,
                 title: s.title,
@@ -510,7 +516,7 @@ pub fn from_basic(basic: jp_scraper::timed_sources::BasicFound) -> Option<TimedF
     })
 }
 
-fn canonical(found: &TimedFound) -> String {
+pub(crate) fn canonical(found: &TimedFound) -> String {
     if candidate_mode(found) == "karaoke" {
         found.lyrics.to_enhanced_lrc()
     } else {
@@ -544,7 +550,11 @@ pub fn compatible(snapshot: &Snapshot, found: &TimedFound) -> bool {
     if text.trim().is_empty() || (high && !found.lyrics.lines.iter().any(|l| !l.words.is_empty())) {
         return false;
     }
-    if let Some(duration) = snapshot.duration.filter(|d| d.is_finite() && *d > 0.0) {
+    // Preserve adjacent/embedded line lyrics as local file content, matching
+    // ordinary import. The player still bounds their display by the audio.
+    // Remote candidates and all native unit clocks keep strict duration checks.
+    let local_lines = !high && matches!(found.source.as_str(), "embedded" | "sibling");
+    if let Some(duration) = snapshot.duration.filter(|d| !local_lines && d.is_finite() && *d > 0.0) {
         let limit = (duration + 2.0) * 1000.0;
         if found.lyrics.lines.iter().any(|l| {
             l.start_ms as f64 > limit
@@ -557,6 +567,11 @@ pub fn compatible(snapshot: &Snapshot, found: &TimedFound) -> bool {
     }
     let current = body_key(&snapshot.text());
     current.is_empty() || jp_scraper::similarity::difflib_ratio(&current, &body_key(&text)) >= 0.80
+}
+
+pub(crate) fn agrees_for_automatic(before: &Snapshot, found: &TimedFound) -> bool {
+    let text = jp_import::lrc::parse(&canonical(found)).lines.into_iter().map(|l| l.text).collect::<String>();
+    before.lines.is_empty() || jp_scraper::similarity::difflib_ratio(&body_key(&before.text()), &body_key(&text)) >= 0.97
 }
 
 fn stamp(sec: f64) -> String {
@@ -703,6 +718,7 @@ pub fn apply(
     // An IMMEDIATE transaction closes the check/use race with a second app instance.
     let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let before = snapshot(&tx, &pending.song_id)?;
+    ensure!(!pending.automatic || !crate::lyric_upgrade::protected(&tx, &pending.song_id)?, "人工修改的歌词或校准已保留，请逐首预览后更换");
     ensure!(
         before.fingerprint() == pending.fingerprint,
         "搜索之后歌词或校准已改变，请重新搜索再采用"
@@ -745,7 +761,7 @@ pub fn apply(
         &tx,
         &pending.song_id,
         &raw,
-        &jp_import::LyricSource::new("online", &found.source, &found.reference, "user"),
+        &source.lineage(&found.reference),
         analyzer,
         &before.artist,
         &before.title,
@@ -844,6 +860,8 @@ pub(crate) fn commit_with_file(
 
 fn source(name: &str) -> Result<LyricsSource> {
     Ok(match name {
+        "embedded" => LyricsSource::Embedded,
+        "sibling" => LyricsSource::Sibling,
         "netease" => LyricsSource::Netease,
         "qq" => LyricsSource::Qq,
         "kugou" => LyricsSource::Kugou,

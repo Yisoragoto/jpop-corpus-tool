@@ -1,0 +1,878 @@
+//! One serial, cancellable queue for imported songs and library-wide upgrades.
+//! Network calls never hold the UI database lock. All writes still use the
+//! fingerprint-checked, transactional timed-lyrics replacement path.
+use std::collections::{HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+use anyhow::Result;
+use jp_scraper::timed_sources::{SearchOutput, SourceOptions, TimedFound};
+use rusqlite::Connection;
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Runtime};
+
+use crate::{lyrics::Attached, timed_lyrics as timed};
+
+/// Existing requests retain the source timeout; after Stop, no additional
+/// provider, fallback, guest-session or download requests can be issued.
+struct CancellableTransport {
+    inner: Box<dyn jp_scraper::Transport>,
+    cancelled: Arc<AtomicBool>,
+}
+impl jp_scraper::Transport for CancellableTransport {
+    fn get(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+        timeouts: jp_scraper::http::Timeouts,
+    ) -> std::result::Result<jp_scraper::http::HttpResponse, jp_scraper::ProviderError> {
+        if self.cancelled.load(Ordering::SeqCst) {
+            return Err(jp_scraper::ProviderError::unavailable("cancelled"));
+        }
+        self.inner.get(url, headers, timeouts)
+    }
+    fn post(
+        &self,
+        url: &str,
+        body: &[u8],
+        headers: &[(String, String)],
+        timeouts: jp_scraper::http::Timeouts,
+    ) -> std::result::Result<jp_scraper::http::HttpResponse, jp_scraper::ProviderError> {
+        if self.cancelled.load(Ordering::SeqCst) {
+            return Err(jp_scraper::ProviderError::unavailable("cancelled"));
+        }
+        self.inner.post(url, body, headers, timeouts)
+    }
+}
+
+#[derive(Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub running: bool,
+    pub cancelled: bool,
+    pub total: usize,
+    pub done: usize,
+    pub upgraded: usize,
+    pub line_filled: usize,
+    pub skipped: usize,
+    pub not_found: usize,
+    pub failed: usize,
+    pub title: String,
+    pub error: String,
+    pub results: Vec<Item>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Item {
+    pub song_id: String,
+    pub title: String,
+    pub status: String,
+    pub source: String,
+    pub message: String,
+}
+
+#[derive(Default)]
+struct Queue {
+    pending: VecDeque<String>,
+    seen: HashSet<String>,
+    progress: Progress,
+}
+
+#[derive(Default)]
+pub struct Batch {
+    gate: Arc<crate::job::Job>,
+    queue: Mutex<Queue>,
+}
+
+impl Batch {
+    pub fn status(&self) -> Progress {
+        self.queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .progress
+            .clone()
+    }
+    pub fn cancel(&self) {
+        self.gate.request_cancel();
+        self.queue
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .progress
+            .cancelled = true;
+    }
+}
+
+fn notify<R: Runtime>(app: &AppHandle<R>, p: &Progress) {
+    let _ = app.emit("lyrics-upgrade://progress", p);
+    // Keep existing Settings/Scrape progress consumers on the same queue.
+    let _ = app.emit(
+        "lyrics://progress",
+        crate::lyrics::LyricsProgress {
+            done: p.done,
+            total: p.total,
+            title: p.title.clone(),
+            filled: p.upgraded + p.line_filled,
+            not_found: p.not_found,
+            failed: p.failed,
+            finished: !p.running,
+            cancelled: p.cancelled,
+            error: p.error.clone(),
+            message: p.error.clone(),
+            ..Default::default()
+        },
+    );
+}
+
+pub fn protected(conn: &Connection, song_id: &str) -> Result<bool> {
+    Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM lyric_versions WHERE song_id=?1 AND is_current=1 AND source_type IN ('manual_file','manual_edit','restored')) OR EXISTS(SELECT 1 FROM word_timings w JOIN utterances u ON u.id=w.utterance_id WHERE u.song_id=?1 AND w.source='manual')", [song_id], |r| r.get(0))?)
+}
+
+fn same_identity(before: &timed::Snapshot, found: &TimedFound) -> bool {
+    !before.artist.trim().is_empty()
+        && before.duration.is_some_and(|d| d.is_finite() && d > 0.0)
+        && jp_normalize::matching_key(&before.title) == jp_normalize::matching_key(&found.title)
+        && jp_normalize::matching_key(&before.artist) == jp_normalize::matching_key(&found.artist)
+}
+
+/// Count the units the player will actually accept after canonical import,
+/// rather than treating a filename or a provider's word count as proof.
+fn precision(before: &timed::Snapshot, found: &TimedFound) -> (usize, usize) {
+    let parsed = jp_import::lrc::parse(&timed::canonical(found));
+    let lines = parsed
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let row = jp_corpus::LyricLine {
+                utterance_id: 0,
+                line_idx: i as i64,
+                text: l.text.clone(),
+                time_sec: l.time_sec,
+                tokens: vec![],
+            };
+            let marks: Vec<_> = l
+                .words
+                .iter()
+                .map(|w| jp_corpus::word_timing::WordTiming {
+                    utterance_id: 0,
+                    char_start: w.start as i64,
+                    char_end: w.end as i64,
+                    start_sec: w.time_sec,
+                    end_sec: w.end_sec,
+                    source: "lrc".into(),
+                })
+                .collect();
+            let next = parsed.lines[i + 1..]
+                .iter()
+                .filter_map(|l| l.time_sec)
+                .find(|t| l.time_sec.is_none_or(|s| *t > s));
+            let end = match (next, before.duration) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+            jp_corpus::display_timeline::for_line(&row, &marks, end).mode
+                == jp_corpus::display_timeline::DisplayMode::Karaoke
+        })
+        .filter(|v| *v)
+        .count();
+    (lines, parsed.lines.len())
+}
+
+/// High precision wins regardless of provider ordering. An upgrade must improve
+/// actual coverage and not discard already useful native timing.
+fn choose(before: &timed::Snapshot, found: &SearchOutput) -> Option<(TimedFound, bool)> {
+    let mut candidates: Vec<_> = found
+        .candidates
+        .iter()
+        .filter(|c| {
+            same_identity(before, c)
+                && timed::compatible(before, c)
+                && timed::agrees_for_automatic(before, c)
+        })
+        .map(|c| (c, precision(before, c)))
+        .filter(|(_, (valid, total))| {
+            *valid > before.timed_lines() && *total > 0 && *valid * 2 >= *total
+        })
+        .collect();
+    candidates.sort_by(|a, b| {
+        (b.1.0 * a.1.1)
+            .cmp(&(a.1.0 * b.1.1))
+            .then_with(|| b.1.0.cmp(&a.1.0))
+    });
+    if let Some((candidate, _)) = candidates.first() {
+        return Some(((*candidate).clone(), true));
+    }
+    // Existing lyrics are never replaced with a lower precision fallback.
+    if before.line_count() > 0 {
+        return None;
+    }
+    found
+        .fallback
+        .iter()
+        .cloned()
+        .filter_map(timed::from_basic)
+        .filter(|c| {
+            same_identity(before, c)
+                && timed::compatible(before, c)
+                && timed::agrees_for_automatic(before, c)
+        })
+        .max_by_key(|c| c.format.eq_ignore_ascii_case("LRC"))
+        .map(|c| (c, false))
+}
+
+pub fn apply_best(
+    conn: &mut Connection,
+    dir: &Path,
+    before: &timed::Snapshot,
+    found: &SearchOutput,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+) -> Result<Option<(Attached, bool)>> {
+    if protected(conn, &before.song_id)? {
+        return Ok(None);
+    }
+    let Some((candidate, high)) = choose(before, found) else {
+        return Ok(None);
+    };
+    let pending = timed::automatic_pending(before, candidate);
+    Ok(Some((timed::apply(conn, dir, &pending, analyzer)?, high)))
+}
+
+fn local_fallback(
+    conn: &mut Connection,
+    dir: &Path,
+    before: &timed::Snapshot,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+) -> Result<Option<(Attached, bool)>> {
+    if before.line_count() > 0 {
+        return Ok(None);
+    }
+    let audio: String = conn.query_row(
+        "SELECT COALESCE(audio_path,'') FROM songs WHERE id=?1",
+        [&before.song_id],
+        |r| r.get(0),
+    )?;
+    if audio.is_empty() {
+        return Ok(None);
+    }
+    let sibling = crate::lyrics::sibling_lrc(&audio);
+    let embedded = jp_import::embedded::read_lyrics(Path::new(&audio))
+        .filter(|e| e.synced || sibling.is_none());
+    let (text, source, reference) = if let Some(e) = embedded {
+        (e.text, "embedded", audio)
+    } else if let Some(path) = sibling {
+        (
+            crate::lyrics::read_text(&path)?,
+            "sibling",
+            path.display().to_string(),
+        )
+    } else {
+        return Ok(None);
+    };
+    let parsed = jp_import::lrc::parse(&text);
+    let native = parsed.lines.iter().any(|l| !l.words.is_empty());
+    let synced = parsed.lines.iter().any(|l| l.time_sec.is_some());
+    let lyrics = jp_scraper::timed_lyrics::TimedLyrics {
+        lines: parsed
+            .lines
+            .into_iter()
+            .map(|l| jp_scraper::timed_lyrics::TimedLine {
+                start_ms: (l.time_sec.unwrap_or(0.0) * 1000.0).round() as u64,
+                end_ms: None,
+                text: l.text,
+                words: l
+                    .words
+                    .into_iter()
+                    .map(|w| jp_scraper::timed_lyrics::TimedWord {
+                        start: w.start,
+                        end: w.end,
+                        start_ms: (w.time_sec * 1000.0).round() as u64,
+                        end_ms: w.end_sec.map(|s| (s * 1000.0).round() as u64),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    };
+    let candidate = TimedFound {
+        source: source.into(),
+        format: if native {
+            "ELRC"
+        } else if synced {
+            "LRC"
+        } else {
+            "TEXT"
+        }
+        .into(),
+        reference,
+        title: before.title.clone(),
+        artist: before.artist.clone(),
+        raw_text: text,
+        lyrics,
+    };
+    let high = precision(before, &candidate).0 > 0;
+    let pending = timed::automatic_pending(before, candidate);
+    Ok(Some((timed::apply(conn, dir, &pending, analyzer)?, high)))
+}
+
+/// Used by the single-song fill action as well as the shared queue. Recheck
+/// after network I/O; manual edits or another instance cannot be overwritten.
+pub fn fetch_one(
+    conn: &mut Connection,
+    dir: &Path,
+    song_id: &str,
+    options: &SourceOptions,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+) -> Result<Option<(Attached, bool)>> {
+    let before = timed::snapshot(conn, song_id)?;
+    if protected(conn, song_id)?
+        || (before.line_count() > 0 && before.timed_lines() == before.line_count())
+    {
+        return Ok(None);
+    }
+    let mut options = options.clone();
+    options.apple = false;
+    let found =
+        jp_scraper::timed_sources::search(&before.title, &before.artist, before.duration, &options);
+    match apply_best(conn, dir, &before, &found, analyzer)? {
+        some @ Some(_) => Ok(some),
+        None => local_fallback(conn, dir, &before, analyzer),
+    }
+}
+
+pub fn enqueue<R: Runtime>(
+    app: AppHandle<R>,
+    batch: Arc<Batch>,
+    db_path: PathBuf,
+    lyrics_dir: PathBuf,
+    ids: Vec<String>,
+    options: SourceOptions,
+) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let mut queue = batch.queue.lock().unwrap_or_else(|e| e.into_inner());
+    if queue.progress.running {
+        // Importing more songs joins the current queue instead of silently
+        // dropping them while a whole-library job is in flight.
+        for id in ids {
+            if queue.seen.insert(id.clone()) {
+                queue.pending.push_back(id);
+                queue.progress.total += 1;
+            }
+        }
+        return Ok(());
+    }
+    let crashed_app = app.clone();
+    let crashed_batch = Arc::downgrade(&batch);
+    let guard = batch
+        .gate
+        .start_with(move || {
+            if let Some(batch) = crashed_batch.upgrade() {
+                let mut q = batch.queue.lock().unwrap_or_else(|e| e.into_inner());
+                q.progress.running = false;
+                q.progress.error = "歌词批量任务意外中断，请重试".into();
+                notify(&crashed_app, &q.progress);
+            }
+        })
+        .ok_or_else(|| anyhow::anyhow!("歌词批量任务正在结束，请稍后重试"))?;
+    *queue = Queue::default();
+    for id in ids {
+        if queue.seen.insert(id.clone()) {
+            queue.pending.push_back(id);
+        }
+    }
+    queue.progress = Progress {
+        running: true,
+        total: queue.pending.len(),
+        ..Default::default()
+    };
+    notify(&app, &queue.progress);
+    drop(queue);
+    std::thread::spawn(move || {
+        let mut guard = Some(guard);
+        let outcome = (|| -> Result<()> {
+            let mut conn = Connection::open(&db_path)?;
+            conn.busy_timeout(std::time::Duration::from_secs(10))?;
+            conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;")?;
+            let root = db_path.parent().unwrap_or(Path::new("."));
+            let analyzer = jp_tokenizer::locate_sudachipy(root)
+                .and_then(|(res, dict)| jp_tokenizer::Analyzer::from_sudachipy(&res, &dict).ok());
+            loop {
+                let id = {
+                    let mut q = batch.queue.lock().unwrap_or_else(|e| e.into_inner());
+                    if batch.gate.cancelled() || q.pending.is_empty() {
+                        q.progress.cancelled = batch.gate.cancelled();
+                        q.progress.running = false;
+                        q.pending.clear();
+                        drop(guard.take());
+                        notify(&app, &q.progress);
+                        return Ok(());
+                    }
+                    q.pending.pop_front()
+                };
+                let Some(id) = id else {
+                    continue;
+                };
+                let before = timed::snapshot(&conn, &id);
+                let title = before
+                    .as_ref()
+                    .map(|s| s.title.clone())
+                    .unwrap_or_else(|_| id.clone());
+                {
+                    let mut q = batch.queue.lock().unwrap_or_else(|e| e.into_inner());
+                    q.progress.title = title.clone();
+                    notify(&app, &q.progress);
+                }
+                let result = (|| -> Result<(&str, String, String)> {
+                    let before = before?;
+                    if protected(&conn, &id)? {
+                        return Ok(("protected", String::new(), String::new()));
+                    }
+                    if before.line_count() > 0 && before.timed_lines() == before.line_count() {
+                        return Ok(("complete", String::new(), String::new()));
+                    }
+                    let mut opts = options.clone();
+                    opts.apple = false;
+                    let found = jp_scraper::timed_sources::search_with_transport(
+                        &before.title,
+                        &before.artist,
+                        before.duration,
+                        &opts,
+                        Box::new(CancellableTransport {
+                            inner: Box::new(jp_scraper::UreqTransport),
+                            cancelled: batch.gate.cancel_flag(),
+                        }),
+                    );
+                    // Cancellation during a request discards its result before writing.
+                    if batch.gate.cancelled() {
+                        return Ok(("cancelled", String::new(), String::new()));
+                    }
+                    match apply_best(&mut conn, &lyrics_dir, &before, &found, analyzer.as_ref())? {
+                        Some((attached, high)) => Ok((
+                            if high { "upgraded" } else { "lineFilled" },
+                            attached.source.as_str().into(),
+                            String::new(),
+                        )),
+                        None => {
+                            if let Some((attached, high)) =
+                                local_fallback(&mut conn, &lyrics_dir, &before, analyzer.as_ref())?
+                            {
+                                return Ok((
+                                    if high { "upgraded" } else { "lineFilled" },
+                                    attached.source.as_str().into(),
+                                    String::new(),
+                                ));
+                            }
+                            let status =
+                                if !found.candidates.is_empty() || !found.fallback.is_empty() {
+                                    "review"
+                                } else if !found.warnings.is_empty() {
+                                    "failed"
+                                } else {
+                                    "notFound"
+                                };
+                            let message = found
+                                .warnings
+                                .iter()
+                                .map(|w| {
+                                    format!("{}: {}", w.source, timed::redact(&w.message, &opts))
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" · ");
+                            Ok((status, String::new(), message))
+                        }
+                    }
+                })();
+                let (status, source, message) = result.unwrap_or_else(|e| {
+                    (
+                        "failed",
+                        String::new(),
+                        timed::redact(&format!("{e:#}"), &options),
+                    )
+                });
+                let mut q = batch.queue.lock().unwrap_or_else(|e| e.into_inner());
+                if status != "cancelled" {
+                    q.progress.done += 1;
+                }
+                match status {
+                    "upgraded" => q.progress.upgraded += 1,
+                    "lineFilled" => q.progress.line_filled += 1,
+                    "failed" => q.progress.failed += 1,
+                    "notFound" => q.progress.not_found += 1,
+                    "cancelled" => {}
+                    _ => q.progress.skipped += 1,
+                }
+                q.progress.results.push(Item {
+                    song_id: id,
+                    title,
+                    status: status.into(),
+                    source,
+                    message,
+                });
+                notify(&app, &q.progress);
+            }
+        })();
+        if outcome.is_ok() {
+            return;
+        }
+        let mut q = batch.queue.lock().unwrap_or_else(|e| e.into_inner());
+        q.progress.cancelled = batch.gate.cancelled();
+        q.progress.running = false;
+        if let Err(e) = outcome {
+            q.progress.error = timed::redact(&format!("{e:#}"), &options);
+        }
+        q.pending.clear();
+        drop(guard.take());
+        notify(&app, &q.progress);
+    });
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jp_scraper::timed_lyrics::{TimedLine, TimedLyrics, TimedWord};
+
+    fn app_handle() -> tauri::AppHandle<tauri::test::MockRuntime> {
+        static APP: std::sync::OnceLock<tauri::AppHandle<tauri::test::MockRuntime>> =
+            std::sync::OnceLock::new();
+        APP.get_or_init(|| {
+            let app = tauri::test::mock_app();
+            let handle = app.handle().clone();
+            std::mem::forget(app);
+            handle
+        })
+        .clone()
+    }
+
+    fn database(raw: Option<&str>) -> jp_corpus::Corpus {
+        let corpus = jp_corpus::Corpus::open_in_memory().unwrap();
+        corpus.ensure_schema().unwrap();
+        corpus.connection().execute("INSERT INTO songs(id,title,artist,duration_sec) VALUES('batch','試験曲','テスト歌手',60)",[]).unwrap();
+        if let Some(raw) = raw {
+            jp_import::attach_lyrics_text(
+                corpus.connection(),
+                "batch",
+                raw,
+                &jp_import::LyricSource::new("online", "netease", "old", "user"),
+                None,
+                "テスト歌手",
+                "試験曲",
+            )
+            .unwrap();
+        }
+        corpus
+    }
+    fn candidate() -> TimedFound {
+        TimedFound {
+            source: "qq".into(),
+            format: "QRC".into(),
+            reference: "synthetic".into(),
+            title: "試験曲".into(),
+            artist: "テスト歌手".into(),
+            raw_text: "synthetic-original".into(),
+            lyrics: TimedLyrics {
+                lines: vec![TimedLine {
+                    text: "あの空".into(),
+                    start_ms: 10_000,
+                    end_ms: Some(12_000),
+                    words: vec![
+                        TimedWord {
+                            start: 0,
+                            end: 1,
+                            start_ms: 10_000,
+                            end_ms: Some(10_500),
+                        },
+                        TimedWord {
+                            start: 1,
+                            end: 3,
+                            start_ms: 10_700,
+                            end_ms: Some(12_000),
+                        },
+                    ],
+                }],
+            },
+        }
+    }
+    fn output(c: TimedFound) -> SearchOutput {
+        SearchOutput {
+            candidates: vec![c],
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn empty_and_line_only_songs_are_both_upgrade_targets() {
+        let empty = database(None);
+        assert_eq!(timed::targets(empty.connection()).unwrap().len(), 1);
+        let lines = database(Some("[00:10]あの空"));
+        assert_eq!(timed::targets(lines.connection()).unwrap().len(), 1);
+        let snapshot = timed::snapshot(lines.connection(), "batch").unwrap();
+        assert!(choose(&snapshot, &output(candidate())).unwrap().1);
+    }
+    #[test]
+    fn automatic_replacement_uses_the_players_validated_word_coverage() {
+        let mut corpus = database(Some("[00:10]あの空"));
+        let before = timed::snapshot(corpus.connection(), "batch").unwrap();
+        let dir = std::env::temp_dir().join(format!("jpop-batch-{}", std::process::id()));
+        let (attached, high) = apply_best(
+            corpus.connection_mut(),
+            &dir,
+            &before,
+            &output(candidate()),
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(high);
+        assert_eq!(attached.source, crate::lyrics::LyricsSource::Qq);
+        assert_eq!(
+            timed::snapshot(corpus.connection(), "batch")
+                .unwrap()
+                .timed_lines(),
+            1
+        );
+        let origin: String = corpus
+            .connection()
+            .query_row(
+                "SELECT timing_origin FROM lyric_versions WHERE song_id='batch' AND is_current=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(origin, "native");
+        let _ = std::fs::remove_file(dir.join("batch.lrc"));
+        let _ = std::fs::remove_dir(dir);
+    }
+    #[test]
+    fn a_line_fallback_only_fills_an_empty_song() {
+        let fallback = jp_scraper::timed_sources::BasicFound {
+            format: "LRC".into(),
+            mode: "lineSynced".into(),
+            source: "lrclib".into(),
+            reference: "synthetic".into(),
+            title: "試験曲".into(),
+            artist: "テスト歌手".into(),
+            raw_text: "[00:10]あの空".into(),
+        };
+        let found = SearchOutput {
+            fallback: vec![fallback],
+            ..Default::default()
+        };
+        let empty = database(None);
+        assert!(
+            !choose(
+                &timed::snapshot(empty.connection(), "batch").unwrap(),
+                &found
+            )
+            .unwrap()
+            .1
+        );
+        let existing = database(Some("[00:10]あの空"));
+        assert!(
+            choose(
+                &timed::snapshot(existing.connection(), "batch").unwrap(),
+                &found
+            )
+            .is_none()
+        );
+    }
+    #[test]
+    fn same_title_wrong_artist_or_different_body_requires_review() {
+        let corpus = database(Some("[00:10]あの空"));
+        let before = timed::snapshot(corpus.connection(), "batch").unwrap();
+        let mut wrong = candidate();
+        wrong.artist = "別の歌手".into();
+        assert!(choose(&before, &output(wrong)).is_none());
+        let mut wrong = candidate();
+        wrong.lyrics.lines[0].text = "あの海".into();
+        assert!(choose(&before, &output(wrong)).is_none());
+    }
+    #[test]
+    fn manual_edits_after_search_are_rechecked_inside_the_write_transaction() {
+        let mut corpus = database(Some("[00:10]あの空"));
+        let before = timed::snapshot(corpus.connection(), "batch").unwrap();
+        let pending = timed::automatic_pending(&before, candidate());
+        corpus.connection().execute("UPDATE lyric_versions SET source_type='manual_edit' WHERE song_id='batch' AND is_current=1",[]).unwrap();
+        let dir = std::env::temp_dir().join("unused-jpop-protected");
+        assert!(timed::apply(corpus.connection_mut(), &dir, &pending, None).is_err());
+        assert_eq!(
+            timed::snapshot(corpus.connection(), "batch")
+                .unwrap()
+                .timed_lines(),
+            0
+        );
+    }
+    #[test]
+    fn importing_during_a_batch_appends_without_duplicates_or_losing_cancel() {
+        let app = app_handle();
+        let batch = Arc::new(Batch::default());
+        let _guard = batch.gate.start().unwrap();
+        {
+            let mut q = batch.queue.lock().unwrap();
+            q.progress.running = true;
+            q.progress.total = 1;
+            q.seen.insert("one".into());
+        }
+        batch.cancel();
+        enqueue(
+            app.clone(),
+            batch.clone(),
+            PathBuf::new(),
+            PathBuf::new(),
+            vec!["one".into(), "two".into(), "two".into()],
+            SourceOptions::default(),
+        )
+        .unwrap();
+        assert!(batch.gate.cancelled());
+        assert_eq!(batch.status().total, 2);
+        assert_eq!(batch.queue.lock().unwrap().pending.len(), 1);
+    }
+
+    #[test]
+    fn the_background_worker_finishes_a_real_isolated_queue_without_network() {
+        let root = std::env::temp_dir().join(format!("jpop-offline-queue-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("corpus.db");
+        {
+            let corpus = jp_corpus::Corpus::open_writable(&db).unwrap();
+            corpus.ensure_schema().unwrap();
+            corpus.connection().execute("INSERT OR REPLACE INTO songs(id,title,artist,duration_sec) VALUES('queued','試験曲','テスト歌手',60)",[]).unwrap();
+        }
+        let app = app_handle();
+        let batch = Arc::new(Batch::default());
+        let options = SourceOptions {
+            netease: false,
+            qq: false,
+            kugou: false,
+            amll: false,
+            lrclib: false,
+            apple: false,
+            ..Default::default()
+        };
+        enqueue(
+            app.clone(),
+            batch.clone(),
+            db,
+            root.join("lyrics"),
+            vec!["queued".into(), "queued".into()],
+            options,
+        )
+        .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while batch.status().running && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let result = batch.status();
+        assert!(!result.running);
+        assert_eq!(result.total, 1);
+        assert_eq!(result.done, 1);
+        assert_eq!(result.not_found, 1);
+        assert_eq!(result.failed, 0);
+        assert_eq!(result.results.len(), 1);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_fallback_is_still_available_and_does_not_forge_word_timing() {
+        let root = std::env::temp_dir().join(format!("jpop-local-batch-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let audio = root.join("fixture.flac");
+        std::fs::write(audio.with_extension("lrc"), "[00:10]あの空").unwrap();
+        let mut corpus = database(None);
+        corpus
+            .connection()
+            .execute(
+                "UPDATE songs SET audio_path=?1 WHERE id='batch'",
+                [audio.display().to_string()],
+            )
+            .unwrap();
+        let before = timed::snapshot(corpus.connection(), "batch").unwrap();
+        let (attached, high) =
+            local_fallback(corpus.connection_mut(), &root.join("lyrics"), &before, None)
+                .unwrap()
+                .unwrap();
+        assert!(!high);
+        assert_eq!(attached.source, crate::lyrics::LyricsSource::Sibling);
+        assert_eq!(
+            timed::snapshot(corpus.connection(), "batch")
+                .unwrap()
+                .timed_lines(),
+            0
+        );
+        let kind: String = corpus
+            .connection()
+            .query_row(
+                "SELECT source_type FROM lyric_versions WHERE song_id='batch' AND is_current=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(kind, "sibling");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[ignore = "需要公开 QQ 歌词服务；仅在独立临时库测试真实批量获取"]
+    fn public_qq_batch_upgrades_an_isolated_song_end_to_end() {
+        let root = std::env::temp_dir().join(format!("jpop-live-batch-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let db = root.join("corpus.db");
+        {
+            let corpus = jp_corpus::Corpus::open_writable(&db).unwrap();
+            corpus.ensure_schema().unwrap();
+            corpus.connection().execute("INSERT INTO songs(id,title,artist,duration_sec) VALUES('live','夜に駆ける','YOASOBI',261)",[]).unwrap();
+        }
+        let app = app_handle();
+        let batch = Arc::new(Batch::default());
+        let options = SourceOptions {
+            netease: false,
+            qq: true,
+            kugou: false,
+            amll: false,
+            lrclib: false,
+            apple: false,
+            ..Default::default()
+        };
+        enqueue(
+            app.clone(),
+            batch.clone(),
+            db.clone(),
+            root.join("lyrics"),
+            vec!["live".into()],
+            options,
+        )
+        .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+        while batch.status().running && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let progress = batch.status();
+        assert!(!progress.running, "queue timed out");
+        let conn = Connection::open(&db).unwrap();
+        let view = timed::snapshot(&conn, "live").unwrap();
+        println!(
+            "QQ batch: done={} upgraded={} failed={} lines={} valid_native={}",
+            progress.done,
+            progress.upgraded,
+            progress.failed,
+            view.line_count(),
+            view.timed_lines()
+        );
+        // Real lyrics stay in this disposable directory, never in fixtures or the user library.
+        drop(conn);
+        let _ = std::fs::remove_dir_all(root);
+        assert_eq!(
+            progress.upgraded,
+            1,
+            "{}",
+            progress
+                .results
+                .iter()
+                .map(|r| r.message.as_str())
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        assert!(view.timed_lines() > 0);
+    }
+}

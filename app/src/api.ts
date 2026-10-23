@@ -920,7 +920,7 @@ export const api = {
   scanFiles: (paths: string[], maxDepth?: number) =>
     call<ScanResult>("scan_files", { paths, maxDepth }),
   /** 执行上一次扫描的结果。写库就在这一步。 */
-  runImport: (tokenize?: boolean) => call<ImportReport>("run_import", { tokenize }),
+  runImport: (tokenize?: boolean, fetchLyrics = true) => call<ImportReport>("run_import", { tokenize, fetchLyrics }),
   /**
    * 语料库的文件夹里有没有还没导入的音频。只读，**不记成待导入的一批**——
    * 要导的话拿结果里的路径再调 `scanFiles`。两个参数是用户说过「别再看 / 别再提」的（见 `newSongs.ts`）。
@@ -941,6 +941,9 @@ export const api = {
   lyricsImportFile: (songId: string, path: string) =>
     call<AttachedLyrics>("lyrics_import_file", { songId, path }),
   /** 只列已有逐行歌词、仍缺真实逐字时间的歌，不触发在线搜索。 */
+  lyricsUpgradeStart: () => call<void>("lyrics_upgrade_start"),
+  lyricsUpgradeCancel: () => call<void>("lyrics_upgrade_cancel"),
+  lyricsUpgradeStatus: () => call<LyricsUpgradeProgress>("lyrics_upgrade_status"),
   lyricsTimedTargets: () => call<TimedTarget[]>("lyrics_timed_targets"),
   lyricsTimedSearch: (songId: string) => call<TimedSearch>("lyrics_timed_search", { songId }),
   lyricsTimedApply: (songId: string, candidateId: string) =>
@@ -1223,6 +1226,11 @@ export interface MissingLyrics {
 
 /** 歌词是哪来的。 */
 export type LyricsSource = "embedded" | "sibling" | "netease" | "manual" | "qq" | "kugou" | "amll" | "apple" | "lrclib";
+
+export interface LyricsUpgradeProgress {
+  running: boolean; cancelled: boolean; total: number; done: number; upgraded: number; lineFilled: number; skipped: number; notFound: number; failed: number; title: string; error: string;
+  results: { songId: string; title: string; status: string; source: string; message: string }[];
+}
 
 export interface TimedTarget {
   songId: string;

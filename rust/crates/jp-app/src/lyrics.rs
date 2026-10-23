@@ -88,7 +88,7 @@ impl LyricsSource {
     }
 
     /// 记进 `lyric_versions` 的来源。`matched` 是界面上显示的那个名字（文件名、在线条目）
-    fn lineage(self, matched: &str) -> jp_import::LyricSource {
+    pub(crate) fn lineage(self, matched: &str) -> jp_import::LyricSource {
         let (kind, name, reference) = match self {
             Self::Embedded => ("embedded", matched, ""),
             Self::Sibling => ("sibling", matched, ""),

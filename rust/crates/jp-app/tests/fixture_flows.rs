@@ -603,7 +603,7 @@ fn embedded_lyrics_and_cover_come_along_on_import() {
 
 /// 0.2.9 及以前导入的歌：当时不认内嵌数据，库里没歌词。「补齐歌词」要先从文件里取，不上网
 #[test]
-fn filling_lyrics_uses_the_embedded_lyrics_first() {
+fn filling_lyrics_preserves_embedded_fallback_when_online_sources_are_disabled() {
     let f = Fixture::new("embedded-fill");
     let w = f.w();
     let dir = drop_dir(&f, "embedded-fill");
@@ -617,7 +617,15 @@ fn filling_lyrics_uses_the_embedded_lyrics_first() {
     f.sql(&format!("UPDATE songs SET cover_path=NULL, source_file=NULL WHERE id='{song_id}'"));
     assert_eq!(len(&ok(w, "lyrics", json!({ "songId": song_id }))), 0);
 
-    let attached = ok(w, "lyrics_fill_one", json!({ "songId": song_id }));
+    // A synthetic identity must not contact real lyric providers. Import now
+    // prefers verified word timing online, while retaining this local fallback.
+    let previous = ok(w, "lyrics_sources_get", json!({}));
+    let mut offline = previous.clone();
+    for source in ["netease","qq","kugou","amll","lrclib","apple"] { offline[source] = json!(false); }
+    ok(w, "lyrics_sources_set", json!({"config":offline}));
+    let result = invoke(w, "lyrics_fill_one", json!({ "songId": song_id }));
+    ok(w, "lyrics_sources_set", json!({"config":previous}));
+    let attached = result.expect("内嵌歌词回退失败");
     assert_eq!(attached["source"], "embedded", "文件里就有歌词却跑去上网：{attached}");
     assert_eq!(attached["lyricLines"].as_i64(), Some(2));
     // 和别的来源一样落一份 .lrc，库坏了还能从它重建

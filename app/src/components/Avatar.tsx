@@ -1,11 +1,6 @@
-/**
- * 人的头像。有照片就是照片，没有就画名字的第一个字。
- *
- * 为什么不直接用空的占位圆：一列人下来全是一样的灰圆，看着像坏了；
- * 而且作词作曲这些角色**本来就没有照片**（刮削只查演唱者），
- * 那不是故障，是数据范围。写个首字出来，至少每个人长得不一样。
- */
+/** Artist portraits use stable, centered identity marks when no image is available. */
 
+import { avatarTone, monogram } from "../avatarIdentity";
 import { useEffect, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -32,8 +27,8 @@ export function Avatar({
   const style = { width: size, height: size, borderRadius: "50%" } as const;
   if (!path || broken) {
     return (
-      <span className="avatar avatar-text" style={{ ...style, fontSize: Math.round(size * 0.42) }} aria-hidden="true">
-        {initial(name)}
+      <span className={`avatar avatar-text avatar-tone-${avatarTone(name)}`} style={{ ...style, fontSize: Math.round(size * (monogram(name).length > 2 ? 0.27 : 0.34)) }} aria-hidden="true">
+        <span className="avatar-monogram">{monogram(name)}</span>
       </span>
     );
   }

@@ -58,7 +58,7 @@ function mainRole(e: DirectoryEntry): string {
 }
 
 export function radiusFor(songs: number): number {
-  return Math.min(22, 4 + Math.sqrt(Math.max(0, songs)) * 1.7);
+  return Math.min(23, 15 + Math.log2(1 + Math.max(0, songs)) * 1.1);
 }
 
 export interface BuildOptions {
@@ -268,8 +268,8 @@ export class Simulation {
               dy = ((j * 104729) % 13) - 6 || 1;
               d2 = dx * dx + dy * dy;
             }
-            const minD = n.r + m.r + 4;
-            const f = (repel * a) / Math.max(d2, minD * minD * 0.25);
+            const minD = n.r + m.r + 18;
+            const f = (repel * a) / Math.max(d2, minD * minD * 0.25) + Math.max(0, minD - Math.sqrt(d2)) * 0.9;
             const d = Math.sqrt(d2);
             const fx = (dx / d) * f;
             const fy = (dy / d) * f;
@@ -307,12 +307,12 @@ export class Simulation {
 }
 
 /** 图坐标里离 (x, y) 最近、并且点在圆里（放宽 slop）的节点 */
-export function nodeAt(nodes: GraphNode[], x: number, y: number, slop = 4): number {
+export function nodeAt(nodes: GraphNode[], x: number, y: number, slop = 4, maxRadius = Infinity): number {
   let best = -1;
   let bestD = Infinity;
   nodes.forEach((n, i) => {
     const d = Math.hypot(n.x - x, n.y - y);
-    if (d <= n.r + slop && d < bestD) {
+    if (d <= Math.min(n.r, maxRadius) + slop && d < bestD) {
       best = i;
       bestD = d;
     }
