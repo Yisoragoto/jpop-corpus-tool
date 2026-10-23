@@ -941,10 +941,10 @@ function SongPanel({
               <button className="wc-song-meta" onClick={() => playFromWord(s, false)} title={tr("从真实单位起点播放；没有词级时间则从行首播放")}>
                 <strong>{s.title}</strong>
                 <small>{tr("{artist} · {count} 次", { artist: s.artist, count: s.count })}{at !== null ? ` · ${formatTime(at.sec)}` : ""}
-                  {/* 只标有真实词级时间的；从行首放的不标，免得每一行都挂一个标签 */}
-                  {at !== null && at.kind !== "line" && (
-                    <span className={`wc-timing ${at.kind}`} title={tr("{TIMING_HINT}。右键这一行可以校准", { TIMING_HINT: TIMING_HINT[at.kind] })}>
-                      {TIMING_LABEL[at.kind]}
+                  {/* 只标你校准过的：逐字歌词的时间用户说不用标，每行挂一个「逐字」反而乱 */}
+                  {at !== null && at.kind === "manual" && (
+                    <span className="wc-timing manual" title={tr("从你校准过的位置放。右键这一行可以重新校准")}>
+                      {tr("已校准")}
                     </span>
                   )}
                 </small>
@@ -1006,12 +1006,6 @@ function SongPanel({
     </aside>
   );
 }
-
-const TIMING_LABEL: Record<string, string> = { manual: tr("已校准"), lrc: tr("逐字") };
-const TIMING_HINT: Record<string, string> = {
-  manual: tr("从你校准过的位置放"),
-  lrc: tr("从逐字歌词里这个词的时间放"),
-};
 
 function formatTime(sec: number): string {
   const s = Math.max(0, Math.floor(sec));
