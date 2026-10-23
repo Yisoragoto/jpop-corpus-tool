@@ -6,6 +6,8 @@
  * 新加的中文没有英文、或者这里有 Rust 里已经删掉的句子，都会报出来。
  */
 export const backendEn: Record<string, string> = {
+  "补专辑信息的后台线程崩了，详情见日志": "The album details job crashed. See the log for details.",
+  "匹配线程崩了": "A matching thread crashed",
   "歌词批量任务意外中断，请重试": "The lyrics batch stopped unexpectedly. Please retry.",
   "歌词批量任务正在结束，请稍后重试": "The lyrics batch is finishing. Please retry shortly.",
   "人工修改的歌词或校准已保留，请逐首预览后更换": "Manual lyrics or timing were preserved. Preview this song before replacing them.",

@@ -2286,6 +2286,17 @@ pub fn scrape_start<R: tauri::Runtime>(
     Ok(total)
 }
 
+/// 给已经识别过的歌补专辑信息（发行类型、曲目数）。返回要查的歌数，0 表示都齐了。
+#[tauri::command(async)]
+pub fn scrape_album_fill_start<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, AppState>) -> CmdResult<usize> {
+    let targets = crate::scrape::album_fill_targets(state.corpus().connection())?;
+    let total = targets.len();
+    if total > 0 {
+        crate::scrape::spawn_album_fill(app, state.scrape_job(), state.db_path.clone(), targets)?;
+    }
+    Ok(total)
+}
+
 #[tauri::command]
 pub fn scrape_cancel(state: State<'_, AppState>) -> CmdResult<()> {
     state.scrape_job().request_cancel();

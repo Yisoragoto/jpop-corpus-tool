@@ -2889,16 +2889,14 @@ table.data tr.current td { background: var(--accent-soft); }
   position: absolute; inset: -90px; z-index: -2; background: center / cover no-repeat;
   filter: blur(70px) saturate(1.3); opacity: .32; animation: hero-bg-in 900ms var(--ease-out) backwards;
 }
-/* 照片按自己的宽高比放在顶栏正中：正方形的 logo、竖的人像、横的合照都完整、居中，四边柔和地化进底色。
-   比例由组件量出来写进 --photo-aspect；太宽的照片封顶占满整条，再按「铺满」裁。 */
+/* 照片靠右，左边渐变进底色。取景点在竖直 34%：28% 时正方形的 logo（ヨルシカ）偏下，40% 又会把竖图的头顶（Vaundy）切到边上。
+   左边只用一层横向渐隐：横竖两层靠 mask-composite 取交集，在 WebView2 里实际按并集叠，
+   上半截的左边就成了硬边。底边交给 ::after 的渐暗 */
 .artist-hero-photo {
-  position: absolute; top: 0; left: 50%; height: 100%; translate: -50% 0; z-index: -1;
-  aspect-ratio: var(--photo-aspect, 1); max-width: 100%;
-  background: center 30% / cover no-repeat;
-  /* 只用一层横向渐隐：两层靠 mask-composite 取交集，在 WebView2 里实际按并集叠，上半截左右边就硬了。
-     底边交给下面 ::after 的渐暗 */
-  -webkit-mask-image: linear-gradient(90deg, transparent, black 22%, black 78%, transparent);
-  mask-image: linear-gradient(90deg, transparent, black 22%, black 78%, transparent);
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(62%, 820px); z-index: -1;
+  background: center 34% / cover no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 50%);
+  mask-image: linear-gradient(90deg, transparent, black 50%);
   animation: fade-in 700ms ease backwards;
 }
 /* 名字和按钮在左下角压在照片上：左下角暗一点，字才看得清 */
@@ -2936,6 +2934,19 @@ table.data tr.current td { background: var(--accent-soft); }
 /* 概览：左边专辑封面，右边成员、常一起署名、词云 */
 .profile-overview { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(250px, 1fr); gap: 32px; align-items: start; }
 .overview-main { display: grid; gap: 36px; min-width: 0; }
+/* 单曲区默认横条：小封面 + 名字 + 年份·类型，自动分几列 */
+.release-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2px 18px; }
+.release-row { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 8px; border-radius: var(--radius); text-align: left; animation: rise-in 360ms var(--ease-out) backwards; animation-delay: calc(var(--n, 0) * 24ms); }
+.release-row:hover { background: var(--control-hover); }
+.release-row > span { display: grid; gap: 4px; min-width: 0; }
+.release-row b { font-size: 14px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.release-row small { font-size: 12px; color: var(--muted); }
+.view-switch { display: inline-flex; gap: 2px; margin-left: auto; align-self: center; }
+.overview-head .view-switch + .link-btn { margin-left: 8px; }
+.view-switch button { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--ctl-radius); color: var(--muted); }
+.view-switch button:hover { background: var(--control-hover); color: var(--fg); }
+.view-switch button.on { color: var(--fg); background: var(--control-hover); }
+.view-switch svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
 .overview-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .overview-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
 .overview-head .link-btn { margin-left: auto; font-size: 12px; }
@@ -3004,7 +3015,7 @@ table.data tr.current td { background: var(--accent-soft); }
 @container (max-width: 760px) {
   .profile-overview, .people-around { grid-template-columns: minmax(0, 1fr); }
   .artist-hero-text { max-width: 100%; }
-  .artist-hero-photo { opacity: .45; }
+  .artist-hero-photo { width: 100%; opacity: .45; }
 }
 
 /* 词云「设置」：字体、词数、配色、仅日文、去虚词收在这个弹层里，工具栏只留常用筛选 */

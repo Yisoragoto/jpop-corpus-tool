@@ -196,6 +196,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::scrape_attempts,
             commands::scrape_track,
             commands::scrape_start,
+            commands::scrape_album_fill_start,
             commands::scrape_cancel,
             commands::scrape_is_running,
             commands::scrape_accept,
