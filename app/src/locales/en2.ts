@@ -28,7 +28,6 @@ export const en2: Record<string, string> = {
   "备用字体": "Fallback font",
   "不设": "None",
   "主字体里没有的字用这个显示": "Used for characters the main font doesn't have",
-  "ttf / otf / ttc。只记住文件位置，不复制": "ttf / otf / ttc. Only the file location is remembered; nothing is copied",
   "清除 {length} 个读不到的": "Remove {length} unreadable",
   "字号": "Size",
   "振假名字号": "Furigana size",

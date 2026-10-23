@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { call } from "./api";
 import { tr } from "./i18n";
@@ -125,6 +126,25 @@ export function buildFontOptions(catalog: FontCatalog, usable: (family: string) 
   }
   const preferred = PREFERRED_FONTS.flatMap((name) => installed.filter((o) => o.value === name));
   return [...options, ...preferred, ...installed.filter((o) => !preferred.includes(o))];
+}
+
+/**
+ * 选字体文件来导入。字体文件只记住位置；**zip**（下载的字体大多是压缩包）交给后端解到语料库的
+ * `fonts/<包名>/`，返回解出来的文件，之后和普通导入的一样。没选就是空数组。
+ */
+export async function pickFontFiles(): Promise<string[]> {
+  const picked = await openDialog({
+    multiple: true,
+    title: tr("导入字体"),
+    filters: [{ name: tr("字体文件"), extensions: ["ttf", "otf", "ttc", "zip"] }],
+  });
+  const paths = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
+  const files: string[] = [];
+  for (const path of paths) {
+    if (/\.zip$/i.test(path)) files.push(...(await call<string[]>("fonts_import_archive", { path })));
+    else files.push(path);
+  }
+  return files;
 }
 
 const IMPORTED_KEY = "jp.lyrics.importedFonts";

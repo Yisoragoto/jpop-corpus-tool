@@ -9,11 +9,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { api, POS_LABELS, type FrequencyRow } from "../api";
 import { messageOf } from "../errors";
-import { useFontOptions, useLyricFontFiles } from "../fonts";
+import { pickFontFiles, useFontOptions, useLyricFontFiles } from "../fonts";
 import { updateSettings, useAppSettings } from "../settings";
 import { PerformerPicker } from "./PerformerPicker";
 import { SubcorpusPicker } from "./SubcorpusPicker";
@@ -134,12 +133,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
   }
   const importFont = useCallback(async () => {
     try {
-      const chosen = await openDialog({
-        multiple: true,
-        title: tr("导入字体"),
-        filters: [{ name: tr("字体文件"), extensions: ["ttf", "otf", "ttc"] }],
-      });
-      const paths = chosen === null ? [] : Array.isArray(chosen) ? chosen : [chosen];
+      const paths = await pickFontFiles();
       if (paths.length > 0) fonts.addImported(paths);
     } catch (err) {
       onError(messageOf(err));
@@ -268,7 +262,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
                   </option>
                 ))}
               </select>
-              <button className="link-btn" onClick={() => void importFont()} title={tr("导入 ttf / otf / ttc，只记住位置，不复制文件")}>{tr("导入字体…")}</button>
+              <button className="link-btn" onClick={() => void importFont()} title={tr("ttf / otf / ttc，或装着字体的 zip（解压到语料库的 fonts 文件夹）")}>{tr("导入字体…")}</button>
             </div>
             <div className="wc-field">
               <span className="wc-field-label">{tr("云里放多少个词")}</span>

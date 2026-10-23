@@ -356,7 +356,6 @@ export const en5: Record<string, string> = {
   "歌词字体": "Lyrics font",
   "正在读取本机字体…": "Reading installed fonts…",
   "本机 {length} 种": "{length} installed",
-  "ttf / otf / ttc。只记住文件位置，不复制文件": "ttf / otf / ttc. Only the file location is remembered; the file isn't copied",
   "哪些词进词云": "Which words appear",
   "去掉虚词": "Hide function words",
   "单个假名的碎片（僕「ら」、一「つ」、「お」）、形式名词（こと・もの・まま・よう・とき）、纯符号。词频表和检索不受影响": "Single-kana fragments (the ra in bokura, the tsu in hitotsu, honorific o), formal nouns (koto, mono, mama, you, toki) and symbols. The frequency table and search aren't affected",

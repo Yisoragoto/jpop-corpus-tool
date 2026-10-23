@@ -220,7 +220,7 @@ export const en1: Record<string, string> = {
   "字体、词数、配色和筛选": "Font, word count, colors and filters",
   "词云设置": "Word cloud settings",
   "词云字体（自带、导入或本机的）": "Word cloud font (bundled, imported or installed)",
-  "导入 ttf / otf / ttc，只记住位置，不复制文件": "Import a ttf / otf / ttc. Only its location is remembered; the file isn't copied",
+  "ttf / otf / ttc，或装着字体的 zip（解压到语料库的 fonts 文件夹）": "ttf / otf / ttc, or a zip of fonts (extracted into the library's fonts folder)",
   "导入字体…": "Import font…",
 
   // ColumnSplitter.tsx
