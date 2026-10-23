@@ -32,3 +32,8 @@ CI 注入 `JPOP_BUILD_ID=<sha12>-<UTC yyyyMMddHHmm>`；本地由 build.rs 读取
 
 更新器的 HTTP 可注入 `update::Transport`，测试不访问 GitHub。发布操作只在推入 main 或手动运行 workflow 时发生；
 本地验证不会为测试创建或删除远端 Release。
+
+同一轨道的发布排队执行，不互相取消：发布步骤先删旧 Release 再建新的，中途取消会留下空档。
+
+`debug` 是会移动的 tag。本地克隆里已有旧的 `debug` 时，`git fetch` 会报 would clobber existing tag；
+用 `git fetch --tags --force` 或先 `git tag -d debug` 再拉。不要基于 `debug` tag 开分支。

@@ -34,3 +34,7 @@
 
 `node scripts/smoke.mjs <port> [output.json]` 保留给 release-check.ps1 的附着自检模式。
 `scripts/check-skips.ps1` 列出显式 ignored 的外部前置条件；需要真实设备、词典或作者曲库的测试应显式 `--ignored` 另跑。
+
+本机有声卡、真实曲库和词典时，用 `./scripts/test-local.ps1` 把这些 ignored 的测试一起跑（`-Package jp-audio` 只跑某个包）。
+联网的四个测试仍然跳过；某项前置条件缺了，那一项会失败并说明缺什么。改动音频、导入、分词之后在本机跑一遍，
+光看 `cargo test` 全绿不够——那里面不包括这些。

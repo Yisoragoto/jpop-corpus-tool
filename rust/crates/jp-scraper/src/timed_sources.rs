@@ -375,15 +375,17 @@ impl<'a> SourceIo<'a> {
 }
 
 fn safe_http_error(e: crate::ProviderError) -> anyhow::Error {
-    // Inspect only status markers, and NEVER include the raw message in output.
-    if e.message.contains("401") {
+    // Inspect only the status classification made by HttpClient::classify_status,
+    // and NEVER include the raw message in output. Transport errors can carry a
+    // URL whose numeric song id happens to contain "401"/"404".
+    if e.error_type == crate::status::ErrorType::NotFound {
+        return anyhow!("HTTP 404：该曲目或歌词文件不存在");
+    }
+    if e.error_type == crate::status::ErrorType::InvalidResponse && e.message.ends_with("(401)") {
         return anyhow!("HTTP 401：令牌缺失、无效或已过期");
     }
-    if e.message.contains("403") {
+    if e.error_type == crate::status::ErrorType::RateLimit && e.message.contains("(403)") {
         return anyhow!("HTTP 403：来源拒绝请求（不尝试绕过鉴权或限制）");
-    }
-    if e.message.contains("404") {
-        return anyhow!("HTTP 404：该曲目或歌词文件不存在");
     }
     anyhow!("来源网络请求失败（{:?}）", e.error_type)
 }
@@ -1673,6 +1675,17 @@ mod tests {
 
     const QRC_HEX: &str = "ee7befb746f93831d42dcdf2e21f0d5d833c044042289012e0c11abf870c7dfb9c809065c5235ff1cf6f94cef240c69add963e0164dd48ddbfc31abddb1b167277d92192f367e70a22f0ba7ac5e81564dd377778fc4103ff";
     const QRC_TEXT: &str = "<QrcInfos><Lyric_1 LyricType=\"1\" LyricContent=\"[1000,600]hi(1000,200)!(1200,400)\"/></QrcInfos>";
+
+    #[test]
+    fn http_errors_are_classified_by_status_not_by_digits_in_the_message() {
+        use crate::status::ErrorType;
+        let network = crate::ProviderError::new(ErrorType::Network, "连不上 https://example.com/song?id=1401404");
+        assert!(safe_http_error(network).to_string().starts_with("来源网络请求失败"));
+        let not_found = crate::ProviderError::new(ErrorType::NotFound, "404");
+        assert!(safe_http_error(not_found).to_string().starts_with("HTTP 404"));
+        let unauthorized = crate::ProviderError::new(ErrorType::InvalidResponse, format!("{} (401)", "rejected"));
+        assert!(safe_http_error(unauthorized).to_string().starts_with("HTTP 401"));
+    }
 
     #[test]
     fn qrc_matches_pinned_lddc_reference_vector() {

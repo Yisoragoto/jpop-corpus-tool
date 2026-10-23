@@ -737,7 +737,6 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 .stage-line .karaoke-line { --k-dim: rgba(255, 255, 255, .5); --k-lit: #fff; }
 /* 字的颜色不做过渡：正在唱的字是透明字 + 渐变底，换成「唱过」时要是从 transparent 渐变过去，每个字都会闪一下 */
 .karaoke-line .kc { color: var(--k-dim); }
-.lyric-unit[role="button"], .karaoke-line .kc[role="button"] { cursor: pointer; }
 .karaoke-line .kc.kc-on { color: var(--k-lit); }
 .karaoke-line .kc-now {
   color: transparent;
@@ -2789,7 +2788,6 @@ table.data tr.current td { background: var(--accent-soft); }
   display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 9.5px; line-height: 15px;
   vertical-align: 1px; border: 1px solid currentColor; opacity: .8;
 }
-.wc-timing.line { color: var(--muted); }
 .wc-timing.lrc { color: #9be3a6; }
 .wc-timing.manual { color: var(--accent); }
 .wc-song.calibrating { background: rgba(255, 255, 255, .06); }

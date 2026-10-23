@@ -926,7 +926,8 @@ function SongPanel({
               <button className="wc-song-meta" onClick={() => playFromWord(s, false)} title={tr("从真实单位起点播放；没有词级时间则从行首播放")}>
                 <strong>{s.title}</strong>
                 <small>{tr("{artist} · {count} 次", { artist: s.artist, count: s.count })}{at !== null ? ` · ${formatTime(at.sec)}` : ""}
-                  {at !== null && (
+                  {/* 只标有真实词级时间的；从行首放的不标，免得每一行都挂一个标签 */}
+                  {at !== null && at.kind !== "line" && (
                     <span className={`wc-timing ${at.kind}`} title={tr("{TIMING_HINT}。右键这一行可以校准", { TIMING_HINT: TIMING_HINT[at.kind] })}>
                       {TIMING_LABEL[at.kind]}
                     </span>
@@ -991,11 +992,10 @@ function SongPanel({
   );
 }
 
-const TIMING_LABEL: Record<string, string> = { manual: tr("已校准"), lrc: tr("来源单位"), line: tr("逐行") };
+const TIMING_LABEL: Record<string, string> = { manual: tr("已校准"), lrc: tr("逐字") };
 const TIMING_HINT: Record<string, string> = {
   manual: tr("从你校准过的位置放"),
-  lrc: tr("从真实歌词单位的原始起点播放，不在单位内插值"),
-  line: tr("没有可信的词级起点，从行首播放"),
+  lrc: tr("从逐字歌词里这个词的时间放"),
 };
 
 function formatTime(sec: number): string {

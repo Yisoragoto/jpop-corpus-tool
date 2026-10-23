@@ -36,7 +36,6 @@ import { SongLineagePanel } from "../components/SongLineagePanel";
 import { SubcorpusPicker } from "../components/SubcorpusPicker";
 import { LyricsTools } from "../components/LyricsTools";
 import { LyricsFill } from "../components/LyricsFill";
-import { LyricUnit } from "../components/LyricUnit";
 import { lyricFontStack, useLyricFontFiles } from "../fonts";
 import { retryFurigana, useLyricsDisplay, useSongFurigana } from "../lyricsDisplay";
 import { csvProblem, describeDelete, describeEdit, libraryApi, type MissingAudio } from "../libraryAdmin";
@@ -48,7 +47,7 @@ import type { LibraryActions, LibraryState } from "../useLibrary";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
 import { useAppSettings } from "../settings";
 import { useKaraoke } from "../useKaraoke";
-import { charTimeline, lyricEndBound, validLyricTime, wordStart, type WordTiming } from "../wordTiming";
+import { charTimeline, lyricEndBound, validLyricTime, type WordTiming } from "../wordTiming";
 import { audition } from "../listen";
 import { SongProfile } from "../components/SongProfile";
 import { dictApi, type FindTermsResult } from "../dict/api";
@@ -447,22 +446,20 @@ export function LibraryPage({
     const songId = selected.id;
     // 逐字点亮的那一行：每个字包一层 span（`data-c` 是字符下标），按渲染顺序数下去
     const karaokeLine = karaoke !== null && idx === currentLine;
-    const unitTimeline = timelines[idx] ?? null;
-    const seekUnit = (sec: number) => {
-      if (audioReady && lyricsArePlaying) void api.audioSeek(sec).catch((error: unknown) => onAudioError(String(error)));
-    };
+    // 只有当前行拆成一个个字：其余行原样输出，播放轮询每秒重渲染 10 次，整首都拆开太重
     let c = 0;
-    const chars = (text: string, onLookup?: () => void): ReactNode => {
-      const start = c;
-      const scalars = [...text];
-      c += scalars.length;
-      return unitTimeline === null ? text : scalars.map((ch, offset) => (
-        <LyricUnit key={start + offset} charIndex={start + offset} className={karaokeLine ? "kc" : "lyric-unit"}
-          startSec={unitTimeline.starts[start + offset] ?? null} canSeek={audioReady && lyricsArePlaying}
-          onSeek={seekUnit} onLookup={onLookup}>{ch}</LyricUnit>
-      ));
+    const chars = (text: string): ReactNode => {
+      if (!karaokeLine) return text;
+      return [...text].map((ch) => {
+        const at = c++;
+        return (
+          <span key={at} className="kc" data-c={at}>
+            {ch}
+          </span>
+        );
+      });
     };
-    const pieces = (list: Piece[], onLookup?: () => void): ReactNode => renderPieces(list, (text) => chars(text, onLookup));
+    const pieces = (list: Piece[]): ReactNode => renderPieces(list, chars);
     return (
       <span className={karaokeLine ? "text karaoke-line" : "text"} lang="ja"
         data-lyrics-mode={karaokeLine ? "karaoke" : validLyricTime(syncedLyrics[idx]?.timeSec ?? null) ? "lineSynced" : "plain"}>
@@ -474,7 +471,6 @@ export function LibraryPage({
               const token = line.tokens[i];
               if (token === undefined) return null;
               // 分词对不齐原文时（拆分结果是 null）退回只显示词
-              const tokenStart = c;
               // 从这个词起到行尾，交给词典做最长匹配
               const rest = () => line.tokens.slice(i).map((t) => t.surface).join("");
               const context = { songId, utteranceId: line.utteranceId, tokenIndex: i };
@@ -483,25 +479,14 @@ export function LibraryPage({
                 lookUp(rest(), context);
                 setStageSide(true);
               };
-              const seekToken = () => {
-                const next = lyrics.slice(idx + 1).find((other) => validLyricTime(other.timeSec)
-                  && (!validLyricTime(line.timeSec) || other.timeSec > line.timeSec))?.timeSec ?? null;
-                const start = wordStart({
-                  utteranceId: line.utteranceId, text: line.text,
-                  left: [...line.text].slice(0, tokenStart).join(""), keyword: token.surface,
-                  timeSec: line.timeSec, endSec: lyricEndBound(next, selected.durationSec), endKind: "trackEnd",
-                }, lineSegments[idx] === null ? NO_TIMINGS : wordTimings);
-                if (start) seekUnit(start.sec);
-              };
-              const content = segment.pieces.length > 0 ? pieces(segment.pieces, lookupToken) : chars(token.surface, lookupToken);
+              const content = segment.pieces.length > 0 ? pieces(segment.pieces) : chars(token.surface);
               return CONTENT_POS.has(token.pos) ? (
                 <button
                   key={i}
                   className={`token ${activeLemma === token.lemma ? "on" : ""}`}
                   onClick={(e) => {
-                    // 全屏里点行是跳转，点词不跳
+                    // 点词只查词、不动播放进度（全屏里点行才是跳转）
                     e.stopPropagation();
-                    seekToken();
                     lookupToken();
                   }}
                   title={`${token.lemma} · ${POS_LABELS[token.pos] ?? token.pos}`}
@@ -514,7 +499,6 @@ export function LibraryPage({
                   className="token-lookup"
                   onClick={(e) => {
                     e.stopPropagation();
-                    seekToken();
                     lookupToken();
                   }}
                   title={tr("查词典")}

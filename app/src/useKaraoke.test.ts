@@ -19,14 +19,16 @@ describe("paintKaraoke", () => {
     { utteranceId: 1, charStart: 0, charEnd: 2, startSec: 0, endSec: 2, source: "lrc" },
     { utteranceId: 1, charStart: 2, charEnd: 3, startSec: 3, endSec: 4, source: "lrc" },
   ])!;
-  it("paints the entire multi-character source unit with identical progress", () => {
+  it("一个多字单位连成一道扫过去：唱到一半时第一个字填满、第二个字还没开始", () => {
     const nodes = [character("0"), character("1"), character("2")];
     paintKaraoke(timeline, 1, nodes.map((node) => node.element));
-    for (const node of nodes.slice(0, 2)) {
-      expect(node.classes.has("kc-now")).toBe(true);
-      expect(node.properties.get("--p")).toBe("50.0%");
-    }
+    expect(nodes[0]!.classes.has("kc-now")).toBe(true);
+    expect(nodes[0]!.properties.get("--p")).toBe("100.0%");
+    expect(nodes[1]!.classes.size).toBe(0);
     expect(nodes[2]!.classes.size).toBe(0);
+    paintKaraoke(timeline, 1.5, nodes.map((node) => node.element));
+    expect(nodes[0]!.properties.get("--p")).toBe("100.0%");
+    expect(nodes[1]!.properties.get("--p")).toBe("50.0%");
   });
   it("does not fill gaps between real source units", () => {
     const nodes = [character("0"), character("1"), character("2")];

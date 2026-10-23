@@ -4,7 +4,7 @@
  * 播放位置是 10Hz 轮询来的（`usePlayback.ts`），拿它直接点字一卡一卡的。这里用
  * requestAnimationFrame 自己走一个时钟（`advanceClock`），每帧**直接改 DOM**：给当前行里
  * 已经唱过的单位加 `kc-on`、正在唱的单位加 `kc-now` 并设 `--p`（亮了几成）。
- * 一个真实单位内的多个字符同步变化，不拆出虚构的字符起止时间。
+ * 一个真实单位内的几个字按顺序扫过去（只是画法），不拆出虚构的字符起止时间。
  * 不走 React 状态——每帧 setState 会把整首歌词重渲染一遍。
  *
  * 字是曲库页 `renderLineText` 渲染出来的 `.karaoke-line .kc`（`data-c` 是字符下标）。
@@ -63,8 +63,11 @@ export function paintKaraoke(timeline: CharTimeline | null, sec: number, element
     const index = Number(element.dataset.c);
     const valid = timeline !== null && Number.isInteger(index) && index >= 0 && index < timeline.starts.length;
     const on = valid && index < done;
-    const now = valid && index >= done && index < activeEnd && frac > 0;
-    if (now) element.style.setProperty("--p", `${(frac * 100).toFixed(1)}%`);
+    // 一个单位里的几个字连成一道从左到右扫过去：这只是画法，单位的起止时间仍是来源给的那一对
+    const width = activeEnd - done;
+    const local = width > 0 ? Math.min(1, Math.max(0, frac * width - (index - done))) : 0;
+    const now = valid && index >= done && index < activeEnd && local > 0;
+    if (now) element.style.setProperty("--p", `${(local * 100).toFixed(1)}%`);
     else element.style.removeProperty("--p");
     element.classList.toggle("kc-on", on);
     element.classList.toggle("kc-now", now);
