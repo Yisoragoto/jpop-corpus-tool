@@ -68,6 +68,25 @@ export function releaseTitle(title: string): string {
   return title.replace(RELEASE_SUFFIX, "") || title;
 }
 
+/** 图片的宽高比（宽 / 高）。没加载出来是 null */
+function useImageRatio(src: string): number | null {
+  const [ratio, setRatio] = useState<number | null>(null);
+  useEffect(() => {
+    setRatio(null);
+    if (!src) return;
+    let alive = true;
+    const img = new Image();
+    img.onload = () => {
+      if (alive && img.naturalHeight > 0) setRatio(img.naturalWidth / img.naturalHeight);
+    };
+    img.src = convertFileSrc(src);
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+  return ratio;
+}
+
 export type ReleaseKind = "single" | "ep" | "album";
 
 /**
@@ -333,6 +352,8 @@ export function PersonProfile({
 
   const name = entry?.name ?? fallback?.name ?? "";
   const image = entry?.imagePath || fallback?.imagePath || "";
+  // 照片框按图片长宽比来定，人物整个放得下；宽屏上不再被拉成一条横幅、只剩一双眼睛
+  const photoRatio = useImageRatio(image);
   const roles = entry ? rolesOf(entry) : [];
   const isBand = members.length > 0 || entry?.artistType === "Group";
   const years = yearSpan(entry);
@@ -356,7 +377,10 @@ export function PersonProfile({
           {image ? (
             <>
               <div className="artist-hero-glow" style={{ backgroundImage: `url("${cssUrl(image)}")` }} />
-              <div className="artist-hero-photo" style={{ backgroundImage: `url("${cssUrl(image)}")` }} />
+              <div
+                className="artist-hero-photo"
+                style={{ backgroundImage: `url("${cssUrl(image)}")`, ["--photo-ar" as string]: photoRatio ?? undefined }}
+              />
             </>
           ) : (
             <span className="artist-hero-initial">
