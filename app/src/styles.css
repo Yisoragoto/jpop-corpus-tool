@@ -52,6 +52,8 @@
   --shadow: 0 8px 24px rgba(0, 0, 0, .45);
   /* 歌手档案顶上的大名字压在照片边上，垫一层影子保证看得清 */
   --hero-text-shadow: 0 2px 22px rgba(0, 0, 0, .55);
+  --hero-scrim: rgba(12, 12, 16, .6);
+  --hero-scrim-side: rgba(12, 12, 16, .45);
   /* 带一点回弹的缓动：按钮、卡片、弹出层共用，动起来是一个手感 */
   --spring: cubic-bezier(.2, .9, .25, 1.15);
   --ease-out: cubic-bezier(.2, .8, .3, 1);
@@ -2887,15 +2889,24 @@ table.data tr.current td { background: var(--accent-soft); }
   position: absolute; inset: -90px; z-index: -2; background: center / cover no-repeat;
   filter: blur(70px) saturate(1.3); opacity: .32; animation: hero-bg-in 900ms var(--ease-out) backwards;
 }
+/* 照片按自己的宽高比放在顶栏正中：正方形的 logo、竖的人像、横的合照都完整、居中，四边柔和地化进底色。
+   比例由组件量出来写进 --photo-aspect；太宽的照片封顶占满整条，再按「铺满」裁。 */
 .artist-hero-photo {
-  position: absolute; top: 0; right: 0; bottom: 0; width: min(62%, 820px); z-index: -1;
-  background: center 28% / cover no-repeat;
-  -webkit-mask-image: linear-gradient(90deg, transparent, black 48%), linear-gradient(180deg, black 50%, transparent);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(90deg, transparent, black 48%), linear-gradient(180deg, black 50%, transparent);
-  mask-composite: intersect;
+  position: absolute; top: 0; left: 50%; height: 100%; translate: -50% 0; z-index: -1;
+  aspect-ratio: var(--photo-aspect, 1); max-width: 100%;
+  background: center 30% / cover no-repeat;
+  /* 只用一层横向渐隐：两层靠 mask-composite 取交集，在 WebView2 里实际按并集叠，上半截左右边就硬了。
+     底边交给下面 ::after 的渐暗 */
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 22%, black 78%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 22%, black 78%, transparent);
   animation: fade-in 700ms ease backwards;
 }
+/* 名字和按钮在左下角压在照片上：左下角暗一点，字才看得清 */
+.artist-hero-art::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(0deg, var(--hero-scrim), transparent 60%), linear-gradient(90deg, var(--hero-scrim-side), transparent 50%);
+}
+.artist-hero.no-photo .artist-hero-art::after { display: none; }
 .artist-hero-initial { position: absolute; right: 56px; top: 50%; transform: translateY(-50%); opacity: .85; }
 .artist-hero-initial .avatar-text { font-size: 56px !important; }
 .artist-hero-text { position: relative; display: grid; gap: 10px; justify-items: start; max-width: min(680px, 72%); animation: rise-in 520ms var(--ease-out) backwards; }
@@ -2924,6 +2935,7 @@ table.data tr.current td { background: var(--accent-soft); }
 
 /* 概览：左边专辑封面，右边成员、常一起署名、词云 */
 .profile-overview { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(250px, 1fr); gap: 32px; align-items: start; }
+.overview-main { display: grid; gap: 36px; min-width: 0; }
 .overview-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .overview-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
 .overview-head .link-btn { margin-left: auto; font-size: 12px; }
@@ -2992,7 +3004,7 @@ table.data tr.current td { background: var(--accent-soft); }
 @container (max-width: 760px) {
   .profile-overview, .people-around { grid-template-columns: minmax(0, 1fr); }
   .artist-hero-text { max-width: 100%; }
-  .artist-hero-photo { width: 100%; opacity: .45; }
+  .artist-hero-photo { opacity: .45; }
 }
 
 /* 词云「设置」：字体、词数、配色、仅日文、去虚词收在这个弹层里，工具栏只留常用筛选 */

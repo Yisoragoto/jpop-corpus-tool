@@ -151,7 +151,7 @@ export const en2: Record<string, string> = {
   "概览": "Overview",
   "成员与合作": "Members & collaborators",
   "档案分页": "Profile sections",
-  "专辑与单曲": "Albums & singles",
+  "单曲和 EP": "Singles & EPs",
   "最新在前": "Newest first",
   "全部 {n} 张": "All {n}",
   "所属乐队": "Bands",

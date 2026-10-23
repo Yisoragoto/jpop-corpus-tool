@@ -60,6 +60,35 @@ export function groupByAlbum(tracks: Track[]): AlbumGroup[] {
   return [...groups.values()].sort((a, b) => (a.year || "9999").localeCompare(b.year || "9999") || a.title.localeCompare(b.title, "ja"));
 }
 
+const RELEASE_SUFFIX = /\s*[-–—]\s*(single|ep)\s*$/i;
+const titleKey = (s: string) => s.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+
+/** 「修羅 - Single」→「修羅」：单曲区里不再重复写「Single」 */
+export function releaseTitle(title: string): string {
+  return title.replace(RELEASE_SUFFIX, "") || title;
+}
+
+/**
+ * 概览页：单曲和 EP 一栏、专辑一栏。库里没有发行类型，按这几条认单曲：
+ * 没有专辑的歌（每首单独一张）；标题以「- Single」「- EP」结尾；不超过 3 首、且和其中一首歌同名
+ * （「あぶく」「茜」这种单曲发行）。其余算专辑。两栏都是最新在前。
+ */
+export function splitReleases(groups: AlbumGroup[]): { singles: AlbumGroup[]; albums: AlbumGroup[] } {
+  const singles: AlbumGroup[] = [];
+  const albums: AlbumGroup[] = [];
+  for (const g of groups) {
+    if (g.key === "single") {
+      for (const t of g.tracks) singles.push({ ...g, title: t.title, year: t.year || g.year, coverPath: t.coverPath || g.coverPath, tracks: [t] });
+      continue;
+    }
+    const bare = titleKey(releaseTitle(g.title));
+    const single = RELEASE_SUFFIX.test(g.title) || (g.tracks.length <= 3 && g.tracks.some((t) => titleKey(t.title) === bare));
+    (single ? singles : albums).push(g);
+  }
+  const newest = (a: AlbumGroup, b: AlbumGroup) => (b.year || "").localeCompare(a.year || "");
+  return { singles: singles.sort(newest), albums: albums.sort(newest) };
+}
+
 /** 档案下面的几页 */
 type ProfileTab = "overview" | "works" | "people" | "timeline";
 
@@ -218,6 +247,7 @@ export function PersonProfile({
 
   const sections = useMemo(() => sectionWorks(personId, works ?? [], bands), [personId, works, bands]);
   const mainGroups = useMemo(() => groupByAlbum(sections.find((x) => !x.collapsed)?.works ?? []), [sections]);
+  const releases = useMemo(() => splitReleases(mainGroups), [mainGroups]);
   // 哪些区是展开的（收起的那些点了才展开）。换人时重置
   const flashed = useRef("");
   const [opened, setOpened] = useState<Set<string>>(new Set());
@@ -269,6 +299,20 @@ export function PersonProfile({
   const canEditMembers = isBand || (entry !== undefined && entry.performer > 0 && entry.artistType !== "Person" && bands.length === 0);
   const canCloud = entry !== undefined && entry.performer > 0;
 
+  // 顶栏照片按自己的宽高比居中摆，先量一下
+  const [photoAspect, setPhotoAspect] = useState<number | null>(null);
+  useEffect(() => {
+    setPhotoAspect(null);
+    if (!image) return;
+    let alive = true;
+    const img = new Image();
+    img.onload = () => alive && img.naturalHeight > 0 && setPhotoAspect(img.naturalWidth / img.naturalHeight);
+    img.src = convertFileSrc(image);
+    return () => {
+      alive = false;
+    };
+  }, [image]);
+
   if (name === "") return <p className="muted pad">{tr("加载中…")}</p>;
 
   const TABS: { key: ProfileTab; label: string }[] = [
@@ -285,7 +329,10 @@ export function PersonProfile({
           {image ? (
             <>
               <div className="artist-hero-glow" style={{ backgroundImage: `url("${cssUrl(image)}")` }} />
-              <div className="artist-hero-photo" style={{ backgroundImage: `url("${cssUrl(image)}")` }} />
+              <div
+                className="artist-hero-photo"
+                style={{ backgroundImage: `url("${cssUrl(image)}")`, ["--photo-aspect" as string]: photoAspect ?? 1 }}
+              />
             </>
           ) : (
             <span className="artist-hero-initial">
@@ -369,29 +416,43 @@ export function PersonProfile({
       {tab === "overview" && (
         <div className="profile-overview" role="tabpanel">
           <section className="overview-main">
-            <div className="overview-head">
-              <h2>{tr("专辑与单曲")}</h2>
-              <span className="muted small">{tr("最新在前")}</span>
-              {mainGroups.length > 8 && (
-                <button className="link-btn" onClick={() => setTab("works")}>{tr("全部 {n} 张", { n: mainGroups.length })}</button>
-              )}
-            </div>
             {works === null && <p className="muted">{tr("加载作品…")}</p>}
             {works !== null && mainGroups.length === 0 && <p className="muted">{tr("没有作品记录")}</p>}
-            <div className="cover-grid">
-              {[...mainGroups]
-                .sort((a, b) => (b.year || "").localeCompare(a.year || ""))
-                .slice(0, 8)
-                .map((g, i) => (
-                  <button key={g.key} className="cover-card" style={{ ["--n" as string]: i }} onClick={() => showAlbum(g.key)} title={g.title}>
-                    <Cover path={g.coverPath} size={160} rounded={8} />
-                    <b>{g.title}</b>
-                    <small>
-                      {[g.year.slice(0, 4), g.albumId === null ? tr("单曲") : tr("{length} 首", { length: g.tracks.length })].filter(Boolean).join(" · ")}
-                    </small>
-                  </button>
-                ))}
-            </div>
+            {[
+              { key: "singles", title: tr("单曲和 EP"), list: releases.singles },
+              { key: "albums", title: tr("专辑"), list: releases.albums },
+            ]
+              .filter((part) => part.list.length > 0)
+              .map((part) => (
+                <div key={part.key} className="overview-releases">
+                  <div className="overview-head">
+                    <h2>{part.title}</h2>
+                    <span className="muted small">{tr("最新在前")}</span>
+                    {part.list.length > 8 && (
+                      <button className="link-btn" onClick={() => setTab("works")}>{tr("全部 {n} 张", { n: part.list.length })}</button>
+                    )}
+                  </div>
+                  <div className="cover-grid">
+                    {part.list.slice(0, 8).map((g, i) => (
+                      <button
+                        key={`${g.key}:${g.tracks[0]?.id ?? ""}`}
+                        className="cover-card"
+                        style={{ ["--n" as string]: i }}
+                        onClick={() => showAlbum(g.key)}
+                        title={g.title}
+                      >
+                        <Cover path={g.coverPath} size={160} rounded={8} />
+                        <b>{part.key === "singles" ? releaseTitle(g.title) : g.title}</b>
+                        <small>
+                          {[g.year.slice(0, 4), part.key === "singles" ? (RELEASE_SUFFIX.exec(g.title)?.[1]?.toUpperCase() === "EP" ? "EP" : tr("单曲")) : tr("{length} 首", { length: g.tracks.length })]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
           </section>
 
           <aside className="overview-side">
