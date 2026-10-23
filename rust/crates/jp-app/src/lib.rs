@@ -282,6 +282,15 @@ pub fn run() {
     let app = register(tauri::Builder::default())
         .setup(move |app| {
             allow_media_dirs(app.handle(), &media);
+            #[cfg(all(windows, target_pointer_width = "64"))]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main")
+                    && let Ok(hwnd) = window.hwnd()
+                {
+                    backdrop::keep_active(hwnd);
+                }
+            }
             Ok(())
         })
         .manage(state)
@@ -295,6 +304,56 @@ pub fn run() {
             handle.state::<AppState>().flush_session();
         }
     });
+}
+
+/// 窗口失焦时也保持系统亚克力背景。
+///
+/// Windows 11 只在窗口激活时画亚克力，失焦（点了别的窗口、弹出系统对话框）
+/// 就换成一块灰色纯色，界面底色跟着一亮一暗，看着就是背景在闪。
+/// `windowEffects.state` 只管 macOS。系统按非客户区的激活状态决定画哪种，
+/// 所以把 `WM_NCACTIVATE` 的参数一律改成「激活」：背景不再切换，
+/// 键盘焦点照常转移（那走 WM_ACTIVATE / WM_SETFOCUS）。代价是标题栏失焦时不变灰。
+#[cfg(all(windows, target_pointer_width = "64"))]
+mod backdrop {
+    use std::sync::atomic::{AtomicIsize, Ordering};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallWindowProcW, GWLP_WNDPROC, SetWindowLongPtrW, WM_NCACTIVATE, WNDPROC,
+    };
+
+    /// 原来的窗口过程。只有一个主窗口，存一个就够
+    static PREVIOUS: AtomicIsize = AtomicIsize::new(0);
+
+    unsafe extern "system" fn window_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        let wparam = if msg == WM_NCACTIVATE {
+            WPARAM(1)
+        } else {
+            wparam
+        };
+        // SAFETY: PREVIOUS 在换上本函数之前就存好了，是 SetWindowLongPtrW 返回的原窗口过程
+        unsafe {
+            let previous: WNDPROC = std::mem::transmute(PREVIOUS.load(Ordering::Acquire));
+            CallWindowProcW(previous, hwnd, msg, wparam, lparam)
+        }
+    }
+
+    pub fn keep_active(hwnd: HWND) {
+        // SAFETY: hwnd 是本进程刚建好的主窗口；先存原过程再换，换上之后的消息都能转回去
+        unsafe {
+            let previous =
+                windows::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWLP_WNDPROC);
+            if previous == 0 {
+                return;
+            }
+            PREVIOUS.store(previous, Ordering::Release);
+            SetWindowLongPtrW(hwnd, GWLP_WNDPROC, window_proc as *const () as isize);
+        }
+    }
 }
 
 /// 启动失败时弹一个系统对话框。

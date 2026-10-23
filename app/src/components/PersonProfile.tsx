@@ -127,6 +127,20 @@ export function splitReleases(groups: AlbumGroup[], types: ReadonlyMap<number, s
   return { singles: singles.sort(newest), albums: albums.sort(newest) };
 }
 
+/** 概览「单曲」：这个人的每一首歌，最新在前；同一年按专辑里的原顺序 */
+export function allSongs(groups: AlbumGroup[]): Track[] {
+  const seen = new Set<string>();
+  const songs: { t: Track; year: string; order: number }[] = [];
+  for (const g of groups) {
+    for (const t of g.tracks) {
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      songs.push({ t, year: t.year || g.year || "", order: songs.length });
+    }
+  }
+  return songs.sort((a, b) => b.year.localeCompare(a.year) || a.order - b.order).map((x) => x.t);
+}
+
 /** 单曲区默认横条，可以换成大封面；记在本机 */
 type SinglesView = "rows" | "covers";
 const SINGLES_VIEW_KEY = "jp.profile.singlesView";
@@ -298,6 +312,12 @@ export function PersonProfile({
   const mainGroups = useMemo(() => groupByAlbum(sections.find((x) => !x.collapsed)?.works ?? []), [sections]);
   const releaseTypes = useMemo(() => new Map((data?.albums ?? []).map((a) => [a.id, a.releaseType])), [data]);
   const releases = useMemo(() => splitReleases(mainGroups, releaseTypes), [mainGroups, releaseTypes]);
+  const songs = useMemo(() => allSongs(mainGroups), [mainGroups]);
+  // 单曲区已经列出每一首歌，下面只放专辑和 EP（单曲发行不再重复一遍）
+  const records = useMemo(
+    () => [...releases.albums, ...releases.singles.filter((g) => g.kind === "ep")].sort((a, b) => (b.year || "").localeCompare(a.year || "")),
+    [releases],
+  );
   const [singlesView, setSinglesViewState] = useState<SinglesView>(loadSinglesView);
   const setSinglesView = (v: SinglesView) => {
     setSinglesViewState(v);
@@ -469,76 +489,87 @@ export function PersonProfile({
           <section className="overview-main">
             {works === null && <p className="muted">{tr("加载作品…")}</p>}
             {works !== null && mainGroups.length === 0 && <p className="muted">{tr("没有作品记录")}</p>}
-            {[
-              { key: "singles", title: tr("单曲和 EP"), list: releases.singles },
-              { key: "albums", title: tr("专辑"), list: releases.albums },
-            ]
-              .filter((part) => part.list.length > 0)
-              .map((part) => {
-                const rows = part.key === "singles" && singlesView === "rows";
-                // 单曲区全列出来（横条很省地方）；专辑是大封面，概览只放前 8 张
-                const shown = part.key === "singles" ? part.list : part.list.slice(0, 8);
-                const meta = (g: Release) =>
-                  [g.year.slice(0, 4), g.kind === "ep" ? "EP" : g.kind === "single" ? tr("单曲") : tr("{length} 首", { length: g.tracks.length })]
-                    .filter(Boolean)
-                    .join(" · ");
-                return (
-                  <div key={part.key} className="overview-releases">
-                    <div className="overview-head">
-                      <h2>{part.title}</h2>
-                      <span className="muted small">{tr("最新在前")}</span>
-                      {part.key === "singles" && (
-                        <span className="view-switch" role="group" aria-label={tr("显示方式")}>
-                          <button className={rows ? "on" : ""} aria-pressed={rows} title={tr("横条")} aria-label={tr("横条")} onClick={() => setSinglesView("rows")}>
-                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12" /></svg>
-                          </button>
-                          <button className={rows ? "" : "on"} aria-pressed={!rows} title={tr("大封面")} aria-label={tr("大封面")} onClick={() => setSinglesView("covers")}>
-                            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></svg>
-                          </button>
+            {songs.length > 0 && (
+              <div className="overview-releases">
+                <div className="overview-head">
+                  <h2>{tr("单曲")}</h2>
+                  <span className="muted small">{tr("{n} 首 · 最新在前 · 点一下就播放", { n: songs.length })}</span>
+                  <span className="view-switch" role="group" aria-label={tr("显示方式")}>
+                    <button className={singlesView === "rows" ? "on" : ""} aria-pressed={singlesView === "rows"} title={tr("横条")} aria-label={tr("横条")} onClick={() => setSinglesView("rows")}>
+                      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12" /></svg>
+                    </button>
+                    <button className={singlesView === "rows" ? "" : "on"} aria-pressed={singlesView !== "rows"} title={tr("大封面")} aria-label={tr("大封面")} onClick={() => setSinglesView("covers")}>
+                      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></svg>
+                    </button>
+                  </span>
+                </div>
+                <div className={singlesView === "rows" ? "release-rows" : "cover-grid"}>
+                  {songs.map((t, i) => {
+                    const now = playingSongId === t.id;
+                    const meta = [t.year.slice(0, 4), titleKey(releaseTitle(t.album)) === titleKey(t.title) ? "" : t.album, t.durationSec ? formatDuration(t.durationSec) : ""].filter(Boolean).join(" · ");
+                    return singlesView === "rows" ? (
+                      <button
+                        key={t.id}
+                        className={`release-row song-row ${now ? "now" : ""}`}
+                        style={{ ["--n" as string]: Math.min(i, 12) }}
+                        onClick={() => onPlayAll([t])}
+                        title={tr("播放「{title}」", { title: t.title })}
+                      >
+                        <span className="song-cover">
+                          <Cover path={t.coverPath} size={52} rounded={6} />
+                          <span className="song-play" aria-hidden="true">{now ? "♪" : "▶"}</span>
                         </span>
-                      )}
-                      {shown.length < part.list.length && (
-                        <button className="link-btn" onClick={() => setTab("works")}>{tr("全部 {n} 张", { n: part.list.length })}</button>
-                      )}
-                    </div>
-                    {rows ? (
-                      <div className="release-rows">
-                        {shown.map((g, i) => (
-                          <button
-                            key={`${g.key}:${g.tracks[0]?.id ?? ""}`}
-                            className="release-row"
-                            style={{ ["--n" as string]: Math.min(i, 12) }}
-                            onClick={() => showAlbum(g.key)}
-                            title={g.title}
-                          >
-                            <Cover path={g.coverPath} size={52} rounded={6} />
-                            <span>
-                              <b>{releaseTitle(g.title)}</b>
-                              <small>{meta(g)}</small>
-                            </span>
-                          </button>
-                        ))}
-                      </div>
+                        <span>
+                          <b>{t.title}</b>
+                          <small>{meta}</small>
+                        </span>
+                      </button>
                     ) : (
-                      <div className="cover-grid">
-                        {shown.map((g, i) => (
-                          <button
-                            key={`${g.key}:${g.tracks[0]?.id ?? ""}`}
-                            className="cover-card"
-                            style={{ ["--n" as string]: Math.min(i, 12) }}
-                            onClick={() => showAlbum(g.key)}
-                            title={g.title}
-                          >
-                            <Cover path={g.coverPath} size={160} rounded={8} />
-                            <b>{part.key === "singles" ? releaseTitle(g.title) : g.title}</b>
-                            <small>{meta(g)}</small>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                      <button
+                        key={t.id}
+                        className={`cover-card song-row ${now ? "now" : ""}`}
+                        style={{ ["--n" as string]: Math.min(i, 12) }}
+                        onClick={() => onPlayAll([t])}
+                        title={tr("播放「{title}」", { title: t.title })}
+                      >
+                        <span className="song-cover">
+                          <Cover path={t.coverPath} size={160} rounded={8} />
+                          <span className="song-play" aria-hidden="true">{now ? "♪" : "▶"}</span>
+                        </span>
+                        <b>{t.title}</b>
+                        <small>{meta}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {records.length > 0 && (
+              <div className="overview-releases">
+                <div className="overview-head">
+                  <h2>{tr("专辑和 EP")}</h2>
+                  <span className="muted small">{tr("最新在前")}</span>
+                  {records.length > 8 && (
+                    <button className="link-btn" onClick={() => setTab("works")}>{tr("全部 {n} 张", { n: records.length })}</button>
+                  )}
+                </div>
+                <div className="cover-grid">
+                  {records.slice(0, 8).map((g, i) => (
+                    <button
+                      key={`${g.key}:${g.tracks[0]?.id ?? ""}`}
+                      className="cover-card"
+                      style={{ ["--n" as string]: Math.min(i, 12) }}
+                      onClick={() => showAlbum(g.key)}
+                      title={g.title}
+                    >
+                      <Cover path={g.coverPath} size={160} rounded={8} />
+                      <b>{g.kind === "ep" ? releaseTitle(g.title) : g.title}</b>
+                      <small>{[g.year.slice(0, 4), g.kind === "ep" ? "EP" : tr("{length} 首", { length: g.tracks.length })].filter(Boolean).join(" · ")}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           <aside className="overview-side">

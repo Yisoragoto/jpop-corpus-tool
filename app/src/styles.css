@@ -3,6 +3,7 @@
 :root {
   /* Windows 深色主题的强调色档位（浅蓝）。深底上用 Light 2，按下时用深一档 */
   --accent: #4cc2ff;
+  --song-scrim: rgba(0, 0, 0, .45);
   --accent-deep: #0078d4;
   --accent-ink: #001a29;
   --accent-soft: rgba(76, 194, 255, .16);
@@ -2963,7 +2964,17 @@ table.data tr.current td { background: var(--accent-soft); }
 .release-row:hover { background: var(--control-hover); }
 .release-row > span { display: grid; gap: 4px; min-width: 0; }
 .release-row b { font-size: 14px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.release-row small { font-size: 12px; color: var(--muted); }
+.release-row small { font-size: 12px; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* 概览的歌：封面上叠一个播放键，悬停或正在放时出现；点了直接放 */
+.song-row .song-cover { position: relative; display: block; flex: none; }
+.release-row > .song-cover { display: block; }
+.song-play {
+  position: absolute; inset: 0; display: grid; place-items: center; border-radius: 6px;
+  color: var(--fg); font-size: 18px; background: var(--song-scrim); opacity: 0; transition: opacity 140ms;
+}
+.cover-card .song-play { bottom: 8px; border-radius: 8px; font-size: 30px; }
+.song-row:hover .song-play, .song-row:focus-visible .song-play, .song-row.now .song-play { opacity: 1; }
+.song-row.now b { color: var(--accent); }
 .view-switch { display: inline-flex; gap: 2px; margin-left: auto; align-self: center; }
 .overview-head .view-switch + .link-btn { margin-left: 8px; }
 .view-switch button { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--ctl-radius); color: var(--muted); }
