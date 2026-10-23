@@ -293,7 +293,7 @@ JLPT 只查本地的 `jlpt_cache`（10,090 个词元）；Python 查不到的会
 
 2026-09-20 按用户要求整体向 Spotify + Apple Music 的版面、Windows 11 的质感靠拢。
 
-**窗口是真的云母（Mica），不是 CSS 模拟。** `tauri.conf.json` 的窗口加了
+**窗口背景是系统原生效果，不是 CSS 模拟。** 2026-10-23 起从云母（Mica）换成亚克力（acrylic）：用户要「毛玻璃半透明」，云母只取壁纸的颜色、看着是一块灰；亚克力透出窗口后面模糊的内容。Windows 11 22H2 以上走 `DWMSBT_TRANSIENTWINDOW`（type 3），拖动缩放不卡。整窗口压一层 `--app-tint`（62%），顶栏、播放条再叠 `--shell`（40%）。先试过 40% / 32%，用户说太透，要苹果那样「有毛玻璃、透一点」；原来是 72% + 55%，叠起来接近不透明。以下是当初云母的记录： `tauri.conf.json` 的窗口加了
 `"transparent": true` 和 `"windowEffects": { "effects": ["mica"], "state": "active" }`。
 验证方式是查窗口属性而不是看截图——CDP 截图只拍网页内容，拍不到系统的背景：
 

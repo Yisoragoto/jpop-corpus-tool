@@ -374,7 +374,10 @@ export function PersonProfile({
             ))}
             {years && <span className="artist-hero-years">{entry?.ended ? tr("{years} · 已结束活动", { years }) : years}</span>}
           </div>
-          <h1>{name}</h1>
+          {/* 日文名按词组断行（auto-phrase 要 lang=ja），不再把「に。」单独甩到第二行；长名字字号小一档 */}
+          <h1 lang={/[぀-ヿ]/.test(name) ? "ja" : undefined} className={[...name].length > 9 ? "long" : undefined}>
+            {name}
+          </h1>
           {bands.length > 0 && (
             <div className="artist-hero-bands">
               {bands.map((b) => (
@@ -449,6 +452,8 @@ export function PersonProfile({
               .filter((part) => part.list.length > 0)
               .map((part) => {
                 const rows = part.key === "singles" && singlesView === "rows";
+                // 单曲区全列出来（横条很省地方）；专辑是大封面，概览只放前 8 张
+                const shown = part.key === "singles" ? part.list : part.list.slice(0, 8);
                 const meta = (g: Release) =>
                   [g.year.slice(0, 4), g.kind === "ep" ? "EP" : g.kind === "single" ? tr("单曲") : tr("{length} 首", { length: g.tracks.length })]
                     .filter(Boolean)
@@ -468,17 +473,17 @@ export function PersonProfile({
                           </button>
                         </span>
                       )}
-                      {part.list.length > 8 && (
+                      {shown.length < part.list.length && (
                         <button className="link-btn" onClick={() => setTab("works")}>{tr("全部 {n} 张", { n: part.list.length })}</button>
                       )}
                     </div>
                     {rows ? (
                       <div className="release-rows">
-                        {part.list.slice(0, 8).map((g, i) => (
+                        {shown.map((g, i) => (
                           <button
                             key={`${g.key}:${g.tracks[0]?.id ?? ""}`}
                             className="release-row"
-                            style={{ ["--n" as string]: i }}
+                            style={{ ["--n" as string]: Math.min(i, 12) }}
                             onClick={() => showAlbum(g.key)}
                             title={g.title}
                           >
@@ -492,11 +497,11 @@ export function PersonProfile({
                       </div>
                     ) : (
                       <div className="cover-grid">
-                        {part.list.slice(0, 8).map((g, i) => (
+                        {shown.map((g, i) => (
                           <button
                             key={`${g.key}:${g.tracks[0]?.id ?? ""}`}
                             className="cover-card"
-                            style={{ ["--n" as string]: i }}
+                            style={{ ["--n" as string]: Math.min(i, 12) }}
                             onClick={() => showAlbum(g.key)}
                             title={g.title}
                           >
