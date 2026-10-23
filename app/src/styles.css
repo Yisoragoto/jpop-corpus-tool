@@ -1,5 +1,5 @@
 /* 深色为默认（要求书第十三条）。质感照 Windows 11：半透明填充 + 细描边 + 悬停变亮，
-   窗口本身开了 Mica（云母），所以外壳留了透明度，桌面的颜色会透上来。 */
+   窗口本身开了系统亚克力（毛玻璃），所以外壳留了透明度，窗口后面的东西模糊着透上来。 */
 :root {
   /* Windows 深色主题的强调色档位（浅蓝）。深底上用 Light 2，按下时用深一档 */
   --accent: #4cc2ff;
@@ -7,8 +7,11 @@
   --accent-ink: #001a29;
   --accent-soft: rgba(76, 194, 255, .16);
 
-  /* 外壳：透出云母。内容区更实一点，保证文字可读 */
-  --shell: rgba(24, 24, 28, .55);
+  /* 窗口背后是系统亚克力（tauri.conf.json 的 windowEffects），这几层只是压一点暗保证字看得清。
+     原来整个窗口先铺 72% 再在顶栏、播放条上叠 55%，叠起来接近不透明，毛玻璃完全透不上来。
+     用户要的是「看得出透」：往透的方向取，嫌太透 / 太暗只改这两个数 */
+  --app-tint: rgba(16, 16, 20, .4);
+  --shell: rgba(24, 24, 28, .32);
   --content: rgba(18, 18, 22, .72);
   --bg: transparent;
 
@@ -82,7 +85,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 }
 code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
-.app { display: flex; flex-direction: column; height: 100vh; background: var(--content); }
+.app { display: flex; flex-direction: column; height: 100vh; background: var(--app-tint); }
 .center { display: grid; place-items: center; height: 100vh; padding: 24px; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
@@ -99,7 +102,7 @@ code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-si
   grid-template-columns: auto 1fr;
   grid-template-rows: 1fr auto;
   height: 100vh;
-  background: var(--content);
+  background: var(--app-tint);
 }
 .sidebar {
   grid-row: 1; grid-column: 1;
