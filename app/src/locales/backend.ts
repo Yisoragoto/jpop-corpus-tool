@@ -6,9 +6,17 @@
  * 新加的中文没有英文、或者这里有 Rust 里已经删掉的句子，都会报出来。
  */
 export const backendEn: Record<string, string> = {
+  "补专辑信息的后台线程崩了，详情见日志": "The album details job crashed. See the log for details.",
+  "匹配线程崩了": "A matching thread crashed",
   "歌词批量任务意外中断，请重试": "The lyrics batch stopped unexpectedly. Please retry.",
   "歌词批量任务正在结束，请稍后重试": "The lyrics batch is finishing. Please retry shortly.",
   "人工修改的歌词或校准已保留，请逐首预览后更换": "Manual lyrics or timing were preserved. Preview this song before replacing them.",
+  "这首歌缺少歌手或时长，无法自动确认是同一首": "This song has no artist or duration, so a match cannot be confirmed automatically",
+  "候选能逐字点亮的行不比现在多，或不到一半": "The candidates add no word-timed lines, or fewer than half of their lines are word-timed",
+  "候选正文和现有歌词不完全一致（写法、标点或段落不同），自动换会改动原文": "The candidate text is not identical to the current lyrics (spelling, punctuation or sections differ); replacing it automatically would change the text",
+  "候选的时长或正文和现有歌词差别太大": "The candidates' timing or text differs too much from the current lyrics",
+  "候选的歌名或歌手和这首歌对不上": "The candidates' title or artist does not match this song",
+  "只找到逐行歌词；已有歌词不会被逐行版本替换": "Only line-synced lyrics were found; existing lyrics are not replaced by a line-synced version",
 
   // Timed lyrics sources
   "搜索已失效：来源设置已保存、同一首歌已重新搜索或搜索已结束，请重新搜索": "This search has expired because source settings changed, the song was searched again, or the search ended. Please search again",

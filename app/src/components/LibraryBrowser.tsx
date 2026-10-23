@@ -185,28 +185,6 @@ export function LibraryBrowser({
           </svg>
         </button>
         <input className="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
-        <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "graph" ? "on" : ""}`} onClick={onOpenGraph} title={tr("关系网：所有人和他们的合作")} aria-label={tr("关系网")}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-            <circle cx="6" cy="7" r="2.4" />
-            <circle cx="18" cy="6" r="2" />
-            <circle cx="12" cy="17" r="2.8" />
-            <path d="m8 8.4 2.6 6.4M16.4 7.5 13.6 14.6M8.3 6.7 16 6.1" />
-          </svg>
-        </button>
-        <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "cloud" ? "on" : ""}`} onClick={onOpenCloud} title={tr("词云：歌词里最常出现的词")} aria-label={tr("词云")}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-            <text x="1" y="12" fontSize="10" fontWeight="700">あ</text>
-            <text x="11" y="10" fontSize="7">夢</text>
-            <text x="9" y="21" fontSize="9" fontWeight="700">君</text>
-            <text x="2" y="20" fontSize="5.5" opacity=".6">空</text>
-          </svg>
-        </button>
-        {onOpenTimeline && <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "timeline" ? "on" : ""}`} onClick={onOpenTimeline} title={tr("时间轴：谁在哪年发了什么")} aria-label={tr("时间轴")}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-            <path d="M3 6h18M3 12h18M3 18h18" opacity=".35" />
-            <path d="M5 6h7M9 12h10M4 18h5" strokeWidth="3" />
-          </svg>
-        </button>}
       </div>
       <div className="segmented seg-slide browse-modes" style={{ ["--seg-i" as string]: modeIndex, ["--seg-n" as string]: MODES.length }}>
         <span className="seg-thumb" aria-hidden="true" />
@@ -250,6 +228,36 @@ export function LibraryBrowser({
           <SongItems tracks={tracks} query={query} selectedSongId={view.kind === "song" ? selectedSongId : null} missingIds={missingIds} onOpen={onOpenTrack} />
         )}
       </div>
+
+      <nav className="browser-views" aria-label={tr("整个资料库")}>
+        <button className={view.kind === "graph" ? "on" : ""} onClick={onOpenGraph} title={tr("关系网：所有人和他们的合作")}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+            <circle cx="6" cy="7" r="2.4" />
+            <circle cx="18" cy="6" r="2" />
+            <circle cx="12" cy="17" r="2.8" />
+            <path d="m8 8.4 2.6 6.4M16.4 7.5 13.6 14.6M8.3 6.7 16 6.1" />
+          </svg>
+          {tr("关系网")}
+        </button>
+        {onOpenTimeline && (
+          <button className={view.kind === "timeline" ? "on" : ""} onClick={onOpenTimeline} title={tr("时间轴：谁在哪年发了什么")}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+              <path d="M3 6h18M3 12h18M3 18h18" opacity=".35" />
+              <path d="M5 6h7M9 12h10M4 18h5" strokeWidth="3" />
+            </svg>
+            {tr("时间轴")}
+          </button>
+        )}
+        <button className={view.kind === "cloud" ? "on" : ""} onClick={onOpenCloud} title={tr("词云：歌词里最常出现的词")}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+            <text x="1" y="12" fontSize="10" fontWeight="700">あ</text>
+            <text x="11" y="10" fontSize="7">夢</text>
+            <text x="9" y="21" fontSize="9" fontWeight="700">君</text>
+            <text x="2" y="20" fontSize="5.5" opacity=".6">空</text>
+          </svg>
+          {tr("词云")}
+        </button>
+      </nav>
     </aside>
   );
 }

@@ -47,7 +47,7 @@ interface Props {
   onChanged: () => void;
 }
 
-type RowKey = "identified" | "trackCovers" | "albumCovers" | "photos" | "lyrics" | "durations";
+type RowKey = "identified" | "trackCovers" | "albumCovers" | "albumInfo" | "photos" | "lyrics" | "durations";
 
 const errorText = (e: unknown) => String((e as { message?: string })?.message ?? e);
 
@@ -115,7 +115,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
         const p = event.payload;
         // 整批断了要说出来：这是真错误，走横幅
         if (p.error) errorRef.current(tr("刮削中断：{error}", { error: p.error }));
-        note(p.kind === "artist" ? "photos" : "identified", tr("{v}：处理 {done}/{total}", { v: p.cancelled ? tr("已中断") : tr("跑完了"), done: p.done, total: p.total }));
+        note(p.kind === "artist" ? "photos" : p.kind === "album" ? "albumInfo" : "identified", tr("{v}：处理 {done}/{total}", { v: p.cancelled ? tr("已中断") : tr("跑完了"), done: p.done, total: p.total }));
         void refresh();
         onChanged();
       }
@@ -158,7 +158,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
   }, [refresh, onChanged]);
 
   const startJob = useCallback(
-    async (kind: "track" | "artist", row: RowKey, begin: () => Promise<number>, nothing: string) => {
+    async (kind: "track" | "artist" | "album", row: RowKey, begin: () => Promise<number>, nothing: string) => {
       setMenuOpen(false);
       try {
         const total = await begin();
@@ -260,7 +260,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
   const jobLine =
     running && progress !== null
       ? {
-          label: progress.kind === "artist" ? tr("歌手照片") : tr("识别曲目"),
+          label: progress.kind === "artist" ? tr("歌手照片") : progress.kind === "album" ? tr("专辑信息") : tr("识别曲目"),
           done: progress.done,
           total: progress.total,
           detail: `${progress.title}${progress.matched ? ` → ${progress.matched}` : ""}`,
@@ -376,6 +376,21 @@ export function ScrapePage({ onError, onChanged }: Props) {
                       return n === 0 ? tr("填不上：这些专辑的曲目也还没有封面，先补曲目封面") : tr("填了 {n} 张", { n });
                     }),
                   title: tr("同一张专辑的曲目封面就是专辑封面，直接拿来用，不额外发请求"),
+                }
+              : undefined
+          }
+        />
+        <CompletenessRow
+          label={tr("专辑信息")}
+          count={complete.albumInfo}
+          note={notes.albumInfo}
+          action={
+            gap(complete.albumInfo) > 0
+              ? {
+                  label: tr("补 {n} 张", { n: gap(complete.albumInfo) }),
+                  disabled: blocked,
+                  run: () => void startJob("album", "albumInfo", () => api.scrapeAlbumFillStart(), tr("每张专辑的发行类型和曲目数都齐了")),
+                  title: tr("发行类型（单曲 / EP / 专辑）、整张碟的曲目数、厂牌。对已经识别的歌重新匹配一次，只补空着的字段，不改动已有的信息和识别状态"),
                 }
               : undefined
           }

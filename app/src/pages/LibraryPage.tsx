@@ -22,9 +22,9 @@ import {
 import { Stat } from "../components/Stat";
 import { useArtistPhotos } from "../components/PerformerPicker";
 import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
-import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
+import { AlbumView, PersonProfile } from "../components/PersonProfile";
 import { GraphView } from "../components/GraphView";
-import { TimelineView } from "../components/TimelineView";
+import { focusTimelineOn, TimelineView } from "../components/TimelineView";
 import { CloudView, focusCloudOn } from "../components/CloudView";
 import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
@@ -36,7 +36,6 @@ import { SongLineagePanel } from "../components/SongLineagePanel";
 import { SubcorpusPicker } from "../components/SubcorpusPicker";
 import { LyricsTools } from "../components/LyricsTools";
 import { LyricsFill } from "../components/LyricsFill";
-import { LyricUnit } from "../components/LyricUnit";
 import { lyricFontStack, useLyricFontFiles } from "../fonts";
 import { retryFurigana, useLyricsDisplay, useSongFurigana } from "../lyricsDisplay";
 import { csvProblem, describeDelete, describeEdit, libraryApi, type MissingAudio } from "../libraryAdmin";
@@ -44,11 +43,12 @@ import { segmentLine, type Piece } from "../lyricSegments";
 import { albumOwner, sameView, type LibraryView } from "../libraryIndex";
 import { morph } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
-import type { LibraryActions, LibraryState } from "../useLibrary";
+import { WORD_EXAMPLE_LIMIT, type LibraryActions, type LibraryState } from "../useLibrary";
+import type { WordJump } from "../wordCloud";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
 import { useAppSettings } from "../settings";
 import { useKaraoke } from "../useKaraoke";
-import { charTimeline, lyricEndBound, validLyricTime, wordStart, type WordTiming } from "../wordTiming";
+import { charTimeline, lyricEndBound, validLyricTime, type WordTiming } from "../wordTiming";
 import { audition } from "../listen";
 import { SongProfile } from "../components/SongProfile";
 import { dictApi, type FindTermsResult } from "../dict/api";
@@ -141,8 +141,8 @@ interface Props {
   /** 从命令面板跳过来时要看的人。消费掉就清空 */
   focusPersonId: number | null;
   onFocusConsumed: () => void;
-  /** 词云里点「在检索页看」 */
-  onSearchWord: (lemma: string) => void;
+  /** 词云里点「在检索页看」：带着词云的范围 */
+  onSearchWord: (lemma: string, jump?: WordJump) => void;
   /** 外面（分析页）请求打开词云 */
   cloudWanted?: boolean;
   onCloudConsumed?: () => void;
@@ -168,7 +168,7 @@ export function LibraryPage({
   stageWanted = false,
   onStageConsumed,
 }: Props) {
-  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordLoading, activeLemma } =
+  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordJump, wordLoading, activeLemma } =
     library;
   const lyricsRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLParagraphElement>(null);
@@ -447,22 +447,20 @@ export function LibraryPage({
     const songId = selected.id;
     // 逐字点亮的那一行：每个字包一层 span（`data-c` 是字符下标），按渲染顺序数下去
     const karaokeLine = karaoke !== null && idx === currentLine;
-    const unitTimeline = timelines[idx] ?? null;
-    const seekUnit = (sec: number) => {
-      if (audioReady && lyricsArePlaying) void api.audioSeek(sec).catch((error: unknown) => onAudioError(String(error)));
-    };
+    // 只有当前行拆成一个个字：其余行原样输出，播放轮询每秒重渲染 10 次，整首都拆开太重
     let c = 0;
-    const chars = (text: string, onLookup?: () => void): ReactNode => {
-      const start = c;
-      const scalars = [...text];
-      c += scalars.length;
-      return unitTimeline === null ? text : scalars.map((ch, offset) => (
-        <LyricUnit key={start + offset} charIndex={start + offset} className={karaokeLine ? "kc" : "lyric-unit"}
-          startSec={unitTimeline.starts[start + offset] ?? null} canSeek={audioReady && lyricsArePlaying}
-          onSeek={seekUnit} onLookup={onLookup}>{ch}</LyricUnit>
-      ));
+    const chars = (text: string): ReactNode => {
+      if (!karaokeLine) return text;
+      return [...text].map((ch) => {
+        const at = c++;
+        return (
+          <span key={at} className="kc" data-c={at}>
+            {ch}
+          </span>
+        );
+      });
     };
-    const pieces = (list: Piece[], onLookup?: () => void): ReactNode => renderPieces(list, (text) => chars(text, onLookup));
+    const pieces = (list: Piece[]): ReactNode => renderPieces(list, chars);
     return (
       <span className={karaokeLine ? "text karaoke-line" : "text"} lang="ja"
         data-lyrics-mode={karaokeLine ? "karaoke" : validLyricTime(syncedLyrics[idx]?.timeSec ?? null) ? "lineSynced" : "plain"}>
@@ -474,7 +472,6 @@ export function LibraryPage({
               const token = line.tokens[i];
               if (token === undefined) return null;
               // 分词对不齐原文时（拆分结果是 null）退回只显示词
-              const tokenStart = c;
               // 从这个词起到行尾，交给词典做最长匹配
               const rest = () => line.tokens.slice(i).map((t) => t.surface).join("");
               const context = { songId, utteranceId: line.utteranceId, tokenIndex: i };
@@ -483,25 +480,14 @@ export function LibraryPage({
                 lookUp(rest(), context);
                 setStageSide(true);
               };
-              const seekToken = () => {
-                const next = lyrics.slice(idx + 1).find((other) => validLyricTime(other.timeSec)
-                  && (!validLyricTime(line.timeSec) || other.timeSec > line.timeSec))?.timeSec ?? null;
-                const start = wordStart({
-                  utteranceId: line.utteranceId, text: line.text,
-                  left: [...line.text].slice(0, tokenStart).join(""), keyword: token.surface,
-                  timeSec: line.timeSec, endSec: lyricEndBound(next, selected.durationSec), endKind: "trackEnd",
-                }, lineSegments[idx] === null ? NO_TIMINGS : wordTimings);
-                if (start) seekUnit(start.sec);
-              };
-              const content = segment.pieces.length > 0 ? pieces(segment.pieces, lookupToken) : chars(token.surface, lookupToken);
+              const content = segment.pieces.length > 0 ? pieces(segment.pieces) : chars(token.surface);
               return CONTENT_POS.has(token.pos) ? (
                 <button
                   key={i}
                   className={`token ${activeLemma === token.lemma ? "on" : ""}`}
                   onClick={(e) => {
-                    // 全屏里点行是跳转，点词不跳
+                    // 点词只查词、不动播放进度（全屏里点行才是跳转）
                     e.stopPropagation();
-                    seekToken();
                     lookupToken();
                   }}
                   title={`${token.lemma} · ${POS_LABELS[token.pos] ?? token.pos}`}
@@ -514,7 +500,6 @@ export function LibraryPage({
                   className="token-lookup"
                   onClick={(e) => {
                     e.stopPropagation();
-                    seekToken();
                     lookupToken();
                   }}
                   title={tr("查词典")}
@@ -808,6 +793,9 @@ export function LibraryPage({
         </div>
       ))}
       {word.examples.length === 0 && <p className="muted">{tr("没有例句")}</p>}
+      {word.examples.length >= WORD_EXAMPLE_LIMIT && (
+        <p className="muted small">{tr("只列了前 {n} 句，全部在检索页看", { n: WORD_EXAMPLE_LIMIT })}</p>
+      )}
     </div>
   );
 
@@ -853,7 +841,13 @@ export function LibraryPage({
             <Stat label={tr("歌曲")} value={word.songCount} align="start" />
             <Stat label={tr("歌手")} value={word.artistCount} align="start" />
           </div>
-          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma)} />
+          {wordJump !== null && wordJump.label !== "" && (
+            <p className="muted small word-scope">
+              {tr("只看 {label}", { label: wordJump.label })}
+              <button className="link-btn" onClick={() => void actions.openWord(word.lemma)}>{tr("看整个库")}</button>
+            </p>
+          )}
+          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma, wordJump)} />
           {word.firstYear && (
             <p className="muted small">
               {word.firstYear} — {word.lastYear}
@@ -892,8 +886,8 @@ export function LibraryPage({
     </button>
   );
   const songView = view?.kind === "song" || view === null;
-  /** 关系网、时间轴占中栏加右栏 */
-  const wide = view?.kind === "graph" || view?.kind === "timeline" || view?.kind === "cloud";
+  /** 关系网、时间轴、词云、档案占中栏加右栏 */
+  const wide = view !== null && view.kind !== "song";
 
   return (
     <div
@@ -959,9 +953,11 @@ export function LibraryPage({
             coverOf={coverOf}
             covered={stageOpen}
             onSearchWord={onSearchWord}
-            onShowExamples={(lemma) => {
+            onShowExamples={(lemma, jump) => {
               go({ kind: "song" });
-              void actions.openWord(lemma);
+              // 释义：原来只有点歌词里的词才查词典，从词云过来右栏只剩例句
+              lookUp(lemma);
+              void actions.openWord(lemma, jump);
             }}
             onError={onAudioError}
           />
@@ -1003,6 +999,11 @@ export function LibraryPage({
               onOpenCloud={() => {
                 focusCloudOn(view.id);
                 go({ kind: "cloud" });
+              }}
+              onOpenGraph={() => go({ kind: "graph", focus: view.id })}
+              onOpenTimeline={() => {
+                focusTimelineOn(view.id);
+                go({ kind: "timeline" });
               }}
               onError={onAudioError}
             />
@@ -1247,19 +1248,7 @@ export function LibraryPage({
         onReset={columns.reset}
       />
 
-      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>
-        {view?.kind === "person" ? (
-          <PersonSide
-            personId={view.id}
-            data={data}
-            onOpenPerson={openPerson}
-            onOpenGraph={() => go({ kind: "graph", focus: view.id })}
-            onError={onAudioError}
-          />
-        ) : (
-          corpusContent
-        )}
-      </aside>
+      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>{corpusContent}</aside>
 
       {stageOpen && selected && (
         <LyricsStage

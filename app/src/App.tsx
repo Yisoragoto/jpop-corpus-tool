@@ -34,6 +34,7 @@ import { AnkiPage } from "./pages/AnkiPage";
 import { DictionaryPage } from "./pages/DictionaryPage";
 import { ScrapePage } from "./pages/ScrapePage";
 import { KwicPage, type KwicRequest } from "./pages/KwicPage";
+import type { WordJump } from "./wordCloud";
 import { LibraryPage } from "./pages/LibraryPage";
 import { openSettingsSection, SettingsPage } from "./pages/SettingsPage";
 import { useLibrary } from "./useLibrary";
@@ -216,8 +217,10 @@ export default function App() {
   const goLibrary = useCallback(() => setRoute("library"), []);
   // 分析页点「检索」：带着词跳到检索页，检索页用掉后清空
   const [kwicRequest, setKwicRequest] = useState<KwicRequest | null>(null);
-  const searchWord = useCallback((lemma: string) => {
-    setKwicRequest({ keyword: lemma, field: "lemma", nonce: Date.now() });
+  const searchWord = useCallback((lemma: string, jump?: WordJump) => {
+    // 词云里合并了几种写法（想い出・思い出）时每种都查，和词云弹出的歌一致
+    const keyword = jump && jump.variants.length > 1 ? jump.variants.join(" ") : lemma;
+    setKwicRequest(jump ? { keyword, field: "lemma", nonce: Date.now(), jump } : { keyword, field: "lemma", nonce: Date.now() });
     setRoute("kwic");
   }, []);
   const consumeKwicRequest = useCallback(() => setKwicRequest(null), []);

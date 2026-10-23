@@ -5,7 +5,7 @@ import { tr, trBackend } from "../i18n";
 
 const LABELS: Record<string, string> = {
   upgraded: tr("已补逐字"), lineFilled: tr("逐行回退"), protected: tr("保留人工修改"),
-  complete: tr("逐字已完整"), review: tr("待逐首复核"), notFound: tr("未找到"),
+  complete: tr("逐字已完整"), kept: tr("保留现有逐字"), review: tr("待逐首复核"), notFound: tr("未找到"),
   failed: tr("获取失败"), cancelled: tr("已停止"),
 };
 

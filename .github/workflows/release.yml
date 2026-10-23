@@ -16,9 +16,11 @@ on:
         default: false
 permissions:
   contents: read
+# 排队而不是取消：发布那一步是「删旧 Release → 建新 Release」，在中间被取消，
+# debug 轨道会暂时没有 Release，手动重发正式版时更会把旧版删掉却没建出新版。
 concurrency:
   group: windows-release-${{ inputs.channel || 'debug' }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   windows:
     runs-on: windows-latest
