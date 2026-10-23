@@ -121,6 +121,9 @@ impl QueryBuilder {
             }
             out.push(SearchQuery {
                 title: q_title,
+                isrc: track.isrc.clone(),
+                recording_mbid: track.recording_mbid.clone(),
+                provider_ids: track.provider_ids.clone(),
                 artist: q_artist,
                 album: q_album,
                 duration_sec: track.duration_sec,

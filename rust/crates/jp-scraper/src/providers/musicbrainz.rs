@@ -158,6 +158,10 @@ impl MusicBrainzProvider {
             .and_then(|a| a.iter().find(|t| t.is_object()));
 
         let mut extra = std::collections::BTreeMap::new();
+        if let Some(values)=item.get("isrcs").and_then(|v|v.as_array())
+            && let Some(isrc)=values.iter().find_map(|v|v.as_str()) {
+            extra.insert("isrc".into(),isrc.into());
+        }
         recording_identity(original, &mut extra);
         let release_id = release.map(|r| as_str(r.get("id"))).unwrap_or_default();
         if let Some(r) = release {
@@ -236,10 +240,16 @@ impl MetadataProvider for MusicBrainzProvider {
         query: &SearchQuery,
         limit: usize,
     ) -> Result<Vec<ScrapeCandidate>, ProviderError> {
+        if !query.recording_mbid.is_empty() && is_mbid(&query.recording_mbid) {
+            return Ok(self.get_track(&query.recording_mbid)?.into_iter().collect());
+        }
+        if let Some(id)=query.provider_ids.get("musicbrainz").filter(|id| is_mbid(id)) {
+            return Ok(self.get_track(id)?.into_iter().collect());
+        }
         if query.title.trim().is_empty() {
             return Ok(Vec::new());
         }
-        let mut clauses = vec![format!(r#"recording:"{}""#, lucene_escape(&query.title))];
+        let mut clauses = if query.isrc.is_empty() { vec![format!(r#"recording:"{}""#, lucene_escape(&query.title))] } else { vec![format!(r#"isrc:"{}""#,lucene_escape(&query.isrc))] };
         if !query.artist.trim().is_empty() {
             clauses.push(format!(r#"artist:"{}""#, lucene_escape(&query.artist)));
         }

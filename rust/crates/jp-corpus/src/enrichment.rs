@@ -19,9 +19,11 @@ pub fn fill_missing(conn: &Connection, song_id: &str, candidate: &Metadata<'_>) 
         params![song_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?;
     let mut filled = 0;
-    let provenance = |field: &str| crate::lineage::set_provenance(
-        conn, "song", song_id, field, candidate.provider, candidate.provider_id, candidate.confidence,
-    );
+    let provenance = |field: &str| {
+        let origin = candidate.extra.get(&format!("field_source:{field}")).and_then(|v| v.split_once(':'));
+        let (provider, reference) = origin.unwrap_or((candidate.provider, candidate.provider_id));
+        crate::lineage::set_provenance(conn, "song", song_id, field, provider, reference, candidate.confidence)
+    };
     for (field, empty, value) in [
         ("album", album.is_empty(), candidate.album),
         ("year", year.is_empty(), candidate.year),
@@ -65,4 +67,23 @@ pub fn link_album(conn: &Connection, song_id: &str, album: &str, artist: &str, y
     };
     conn.execute("UPDATE songs SET album_id=?1 WHERE id=?2", params![id,song_id])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn aggregated_fields_keep_their_own_sources_and_existing_values() {
+        let corpus = crate::fixture::corpus().unwrap();
+        let conn = corpus.connection();
+        conn.execute("UPDATE songs SET year='',genre='' WHERE id='001'", []).unwrap();
+        let extra = [("field_source:year".into(), "musicbrainz:recording-2".into())].into_iter().collect();
+        super::fill_missing(conn, "001", &super::Metadata {
+            extra: &extra, album: "Different album", year: "2019", genre: "J-Pop", release_date: "",
+            provider: "itunes", provider_id: "track-1", confidence: Some(0.98),
+        }).unwrap();
+        let sources = crate::lineage::provenance(conn, "song", "001").unwrap();
+        assert!(sources.iter().any(|p| p.field == "year" && p.source == "musicbrainz" && p.source_ref == "recording-2"));
+        assert!(sources.iter().any(|p| p.field == "genre" && p.source == "itunes" && p.source_ref == "track-1"));
+        assert_ne!(conn.query_row("SELECT album FROM songs WHERE id='001'", [], |r| r.get::<_,String>(0)).unwrap(), "Different album");
+    }
 }

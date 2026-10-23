@@ -21,6 +21,10 @@
 //! 这个键决定「是不是同一首歌」，两处各写一套迟早会分叉。
 
 pub mod lyrics;
+pub mod alignment;
+pub mod timed_lyrics;
+#[cfg(feature = "network")]
+pub mod timed_sources;
 pub mod artwork;
 pub mod error;
 pub mod http;

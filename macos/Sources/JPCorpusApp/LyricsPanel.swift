@@ -13,6 +13,7 @@ struct LyricsPanel: View {
     @State private var showProfile = false
     /// 正在查的那段文字（从点的词开始到行尾，Yomitan 式从开头查）
     @State private var lookupText: String?
+    @State private var selectionLine: LyricLine?
 
     private static let contentPOS: Set<String> = ["NOUN", "PROPN", "VERB", "ADJ", "ADV"]
 
@@ -77,6 +78,12 @@ struct LyricsPanel: View {
             }
         }
         .background { backdrop }
+        .popover(item: $selectionLine) { line in
+            LyricSelectionView(text: line.text) { selected in
+                lookupText = selected
+                selectionLine = nil
+            }
+        }
         .task(id: player.track?.id) {
             cover = nil
             guard let track = player.track, !track.coverPath.isEmpty, let client = app.client else { return }
@@ -147,14 +154,26 @@ struct LyricsPanel: View {
         let player = app.player
         let looping = player.loop?.utteranceId == line.utteranceId
         let focused = player.focusUtterance == line.utteranceId
-        let hint = line.timeSec.map { formatTime($0) + " · 点一下从这里放，右键检索 / 查词 / 循环" } ?? "这一行没有时间戳"
+        let units = player.timingUnits(for: line)
+        let mode = player.displayMode(for: line)
+        let lineTime = line.timeSec.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+        let hint = units != nil ? "真实逐字时间 · 点单位从词首放，右键选择原文 / 查词 / 循环"
+            : lineTime.map { formatTime($0) + " · 点一下从这里放，右键检索 / 查词 / 循环" } ?? "纯文本 · 右键选择原文 / 查词"
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(line.text)
-                .font(.system(size: 19, weight: .bold))
-                .foregroundStyle(current ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .opacity(current ? 1 : (line.timeSec == nil ? 0.35 : 0.5))
-                .scaleEffect(current ? 1.0 : 0.97, anchor: .leading)
-                .fixedSize(horizontal: false, vertical: true)
+            if let units {
+                TimedLyricText(text: line.text, units: units, position: player.position) { unit in
+                    Task { await player.playUnit(unit, in: line) }
+                }
+                .opacity(current ? 1 : 0.55)
+            } else {
+                Text(line.text)
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundStyle(current && mode == .lineSynced ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                    .opacity(mode == .plain ? 0.65 : (current ? 1 : 0.5))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onTapGesture { if mode == .lineSynced { Task { await player.playLine(line) } } }
+            }
             if looping {
                 Image(systemName: "repeat").font(.callout.weight(.semibold)).foregroundStyle(.tint)
             }
@@ -169,12 +188,12 @@ struct LyricsPanel: View {
         .animation(.easeInOut(duration: 0.25), value: current)
         .contentShape(Rectangle())
         .help(hint)
-        .onTapGesture { Task { await player.playLine(line) } }
         .contextMenu {
             Button("从这里放") { Task { await player.playLine(line) } }
-                .disabled(line.timeSec == nil)
+                .disabled(lineTime == nil)
             Button(looping ? "取消循环" : "循环这一句") { Task { await player.toggleLoop(line.utteranceId) } }
-                .disabled(line.timeSec == nil)
+                .disabled(lineTime == nil)
+            Button("选择原文 / 查选中文本") { selectionLine = line }
             let words = line.tokens.filter { Self.contentPOS.contains($0.pos) }
             if !words.isEmpty {
                 Divider()

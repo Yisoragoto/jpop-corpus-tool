@@ -29,6 +29,10 @@
      浮层用它的话，底下的歌词、封面会整个透上来 */
   --surface-pop: rgba(30, 30, 36, .97);
   --radius: 7px;
+  --avatar-blue: #8eafc1;
+  --avatar-sage: #a0b5a9;
+  --avatar-lilac: #b1a7c2;
+  --avatar-sand: #c0b09a;
 
   /* 控件（按钮、输入框、下拉）统一的尺寸和质感，数值照 WinUI 3 深色主题：
      一样高、一样的圆角，填充是一层很淡的白，描边上沿比下沿亮一点，像有厚度。 */
@@ -46,6 +50,10 @@
   /* 深底上的链接色（WinUI 的 AccentTextFillColorPrimary） */
   --accent-text: #99ebff;
   --shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  /* 歌手档案顶上的大名字压在照片边上，垫一层影子保证看得清 */
+  --hero-text-shadow: 0 2px 22px rgba(0, 0, 0, .55);
+  --hero-scrim: rgba(12, 12, 16, .6);
+  --hero-scrim-side: rgba(12, 12, 16, .45);
   /* 带一点回弹的缓动：按钮、卡片、弹出层共用，动起来是一个手感 */
   --spring: cubic-bezier(.2, .9, .25, 1.15);
   --ease-out: cubic-bezier(.2, .8, .3, 1);
@@ -485,6 +493,7 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 /* ── 语料面板 ── */
 .lemma { margin: 0 0 12px; font-size: 22px; }
 .numbers { display: flex; gap: 20px; margin-bottom: 6px; }
+.word-scope { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 6px; }
 .numbers .stat { align-items: flex-start; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
 .chip {
@@ -849,14 +858,14 @@ button.primary:disabled { background: rgba(255, 255, 255, .159); color: rgba(255
 .segmented button.on { background: var(--accent); color: rgba(0, 0, 0, .9); }
 
 /* 输入框：底边一条亮线，聚焦时变成两像素的强调色（WinUI 的 TextBox） */
-input[type="text"], input[type="search"], input[type="number"] {
+input[type="text"], input[type="search"], input[type="number"], input[type="password"] {
   height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-radius);
   font: inherit; font-size: 13px; color: var(--fg); background: var(--btn-fill);
   border: 1px solid var(--btn-stroke); border-bottom-color: rgba(255, 255, 255, .45);
   transition: background 120ms, box-shadow 120ms;
 }
-input[type="text"]:hover, input[type="search"]:hover, input[type="number"]:hover { background: var(--btn-fill-hover); }
-input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus {
+input[type="text"]:hover, input[type="search"]:hover, input[type="number"]:hover, input[type="password"]:hover { background: var(--btn-fill-hover); }
+input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus, input[type="password"]:focus {
   outline: none; background: rgba(30, 30, 30, .7); border-bottom-color: var(--accent);
   box-shadow: inset 0 -1px 0 var(--accent);
 }
@@ -1588,6 +1597,38 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 .empty-state .lyrics-fill { justify-content: center; margin-top: 4px; }
 .empty-state .lyrics-fill .muted { text-align: center; }
 
+/* 逐字歌词：候选与来源设置都在当前位置展开，沿用 WinUI 控件。 */
+.timed-lyrics { min-width: 0; margin: 16px 0 22px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; text-align: left; }
+.timed-lyrics h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.timed-lyrics .timed-hint { margin: 8px 0; color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.timed-toolbar, .timed-source-checks { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.timed-song-picker { display: grid; gap: 6px; flex: 1; min-width: 140px; font-size: 12px; }
+.timed-song-picker select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+.timed-toolbar { align-items: end; }
+.timed-sources { margin: 12px 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--ctl-radius); }
+.timed-sources summary, .lyrics-timed-entry > summary { cursor: pointer; font-size: 12px; border-radius: var(--ctl-radius); }
+.timed-sources summary:focus-visible, .lyrics-timed-entry > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.timed-sources form { margin-top: 12px; }
+.timed-sources fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.timed-source-checks .check { white-space: normal; line-height: 1.4; }
+.timed-field { display: grid; gap: 6px; margin: 12px 0 6px; font-size: 12px; }
+.timed-field input { min-width: 0; width: 100%; box-sizing: border-box; }
+.timed-warnings { margin: 10px 0; padding-left: 20px; color: var(--warn); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.timed-candidates { display: grid; gap: 10px; margin-top: 10px; }
+.timed-candidate { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--btn-fill); }
+.timed-candidate header { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; font-size: 12px; overflow-wrap: anywhere; }
+.timed-candidate header span { color: var(--muted); }
+.timed-candidate header button { margin-left: auto; }
+.timed-preview { margin: 8px 0 0; font: inherit; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lyrics-timed-entry { flex: 1 1 100%; min-width: 0; text-align: left; }
+.lyrics-timed-entry > summary { padding: 6px 0; color: var(--accent); }
+.lyrics-timed-entry .timed-lyrics { margin: 8px 0 0; }
+.menu-panel:has(.lyrics-timed-entry[open]) { width: min(560px, calc(100vw - 56px)); max-height: min(70vh, 720px); overflow-y: auto; }
+.menu-panel .timed-lyrics button { width: auto; text-align: center; padding: 0 10px; }
+.menu-panel .timed-lyrics button:disabled { color: var(--text-disabled); background: var(--btn-fill-disabled); cursor: default; }
+.menu-panel .timed-lyrics button:disabled:hover { background: var(--btn-fill-disabled); }
+.menu-panel .lyrics-timed-entry > summary { padding: 6px 10px; }
+
 /* 单曲导入：选中的文件列表。只显示文件名，完整路径一行塞不下 */
 .chosen-files { padding: 10px 2px 2px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .chosen-files .list.compact {
@@ -1633,11 +1674,11 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 .rank-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rank-artist { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── 头像：没照片就画名字的第一个字 ── */
+/* ── 头像：没有照片时仍有完整、居中的身份标记 ── */
 .avatar { object-fit: cover; flex: 0 0 auto; display: block; background: var(--panel-2); }
 .avatar-text {
   display: grid; place-items: center; color: var(--muted);
-  background: linear-gradient(180deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, .04));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--avatar-tone, var(--avatar-blue)) 20%, var(--surface-pop)), var(--content));
   border: 1px solid var(--line); font-weight: 600; user-select: none;
 }
 
@@ -1693,9 +1734,7 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 .wc-bar { position: relative; z-index: 4; animation: rise-in 420ms 80ms var(--ease-out) backwards; }
 .wc-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* 控件用统一的那一套；词云的底是照片，字要更亮一点才看得清 */
-.wc-select.font { max-width: 170px; }
 .wc-select option { background: #1e1e26; color: var(--fg); }
-.wc-check { color: rgba(255, 255, 255, .85); }
 .wc-stage.present .wc-tools > button { opacity: .35; transition: opacity .2s; }
 .wc-stage.present:hover .wc-tools > button { opacity: 1; }
 
@@ -1897,12 +1936,12 @@ button.chip.on { color: var(--accent-text); background: var(--accent-soft); bord
 }
 
 /* 档案 */
-.profile-pane { padding: 20px 28px 48px; }
+.profile-pane { grid-column: 3 / -1; padding: 20px 28px 48px; }
 .profile { max-width: 1200px; margin: 0 auto; display: grid; gap: 22px; }
 .profile-hero {
   position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 22px;
-  padding: 26px; border-radius: 16px; overflow: hidden; isolation: isolate;
-  background: var(--panel); border: 1px solid var(--line);
+  padding: 26px 0 30px; overflow: hidden; isolation: isolate;
+  border-bottom: 1px solid var(--line);
   animation: rise-in 520ms var(--ease-out) backwards;
 }
 /* 照片放大虚化垫在后面，上面盖一层暗色保证字看得清 */
@@ -1911,12 +1950,13 @@ button.chip.on { color: var(--accent-text); background: var(--accent-soft); bord
   filter: blur(42px) saturate(1.3); opacity: .55; transform: scale(1.1);
   animation: hero-bg-in 900ms var(--ease-out) backwards;
 }
-.profile-hero::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(100deg, rgba(10, 10, 14, .55), rgba(10, 10, 14, .25)); }
+.profile-hero::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(100deg, var(--content), transparent); opacity: 0; }
+.profile-hero:has(.profile-hero-bg[style])::after { opacity: 1; }
 @keyframes hero-bg-in { from { opacity: 0; transform: scale(1.25); } }
 .profile-photo { display: block; border-radius: 50%; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); }
 .profile-photo.square { border-radius: 10px; }
-.profile-photo .avatar { display: block; object-fit: cover; }
-.profile-photo .avatar-text { font-size: 42px !important; }
+.profile-photo img.avatar { display: block; object-fit: cover; }
+.profile-photo .avatar-text { display: grid; place-items: center; }
 .profile-hero-text { min-width: 0; display: grid; gap: 8px; justify-items: start; }
 .profile-hero-text h1 { margin: 0; font-size: 28px; line-height: 1.2; letter-spacing: -.3px; overflow-wrap: anywhere; }
 .profile-hero-text p { margin: 0; }
@@ -2028,7 +2068,7 @@ button.chip.on { color: var(--accent-text); background: var(--accent-soft); bord
   animation: rise-in 500ms calc(160ms + var(--n, 0) * 70ms) var(--ease-out) backwards;
 }
 .member-card:hover { transform: translateY(-2px); background: var(--control-hover); }
-.member-card span { display: flex; flex-direction: column; min-width: 0; }
+.member-card > span:not(.avatar) { display: flex; flex-direction: column; min-width: 0; }
 .member-card b { font-size: 13px; font-weight: 500; }
 .member-card small { font-size: 11px; color: var(--muted); }
 .member-card.former { border-style: dashed; }
@@ -2069,14 +2109,6 @@ button.chip.on { color: var(--accent-text); background: var(--accent-soft); bord
 @keyframes album-flash { 0%, 40% { background: var(--accent-soft); } 100% { background: transparent; } }
 .profile-album h3 { margin: 2px 0 8px; font-size: 14px; font-weight: 600; }
 .profile-album h3 small { margin-left: 8px; font-weight: 400; font-size: 11px; color: var(--muted); }
-.song-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.song-chips button {
-  white-space: nowrap; padding: 3px 11px; border-radius: 999px; font-size: 12px; background: var(--control); border: 1px solid transparent;
-  transition: background 150ms, border-color 150ms, transform 240ms var(--spring);
-}
-.song-chips button:hover { background: var(--control-hover); border-color: var(--line-strong); transform: translateY(-1px); }
-.song-chips button.now { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-.now-mark { margin-right: 4px; }
 
 .album-tracklist { display: grid; gap: 1px; }
 .album-track {
@@ -2409,18 +2441,15 @@ body.col-resizing .columns.library-page { transition: none; }
 /* 图标按钮：标准按钮的样子，正方形 */
 .browser-view-btn { width: var(--ctl-h); padding: 0 !important; color: var(--muted) !important; }
 .browser-view-btn:not(:disabled):hover { color: var(--fg) !important; }
-.browser-view-btn.on { color: var(--accent-text) !important; border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 
 /* 右栏的小关系网 */
 .local-graph { height: 220px; margin: 0 -8px 8px; border-radius: 12px; background: rgba(0, 0, 0, .18); position: relative; }
-.side-head-row { display: flex; align-items: center; justify-content: space-between; }
-.side-head-row .link-btn { font-size: 11px; }
 
 /* 窄窗口：三栏挤不下时，右栏挪到中栏下面（查词照样用得了），两边不再能拖 */
 @media (max-width: 1100px) {
   .columns.library-page { grid-template-columns: 220px 6px minmax(0, 1fr) 6px 260px !important; }
   .profile-hero { grid-template-columns: auto minmax(0, 1fr); padding: 20px; gap: 16px; }
-  .profile-hero .play-all { grid-column: 2; justify-self: start; }
+  .profile-hero .play-all, .profile-hero .hero-actions { grid-column: 2; justify-self: start; }
   .profile-photo .avatar, .profile-photo .cover { width: 80px !important; height: 80px !important; }
   .profile-pane { padding: 16px 18px 40px; }
 }
@@ -2756,7 +2785,6 @@ table.data tr.current td { background: var(--accent-soft); }
   display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 9.5px; line-height: 15px;
   vertical-align: 1px; border: 1px solid currentColor; opacity: .8;
 }
-.wc-timing.estimate { color: var(--muted); border-style: dashed; }
 .wc-timing.lrc { color: #9be3a6; }
 .wc-timing.manual { color: var(--accent); }
 .wc-song.calibrating { background: rgba(255, 255, 255, .06); }
@@ -2797,3 +2825,213 @@ table.data tr.current td { background: var(--accent-soft); }
 .lang-option:active { transform: scale(.97); }
 .lang-hint { margin: 14px 0 16px; text-align: center; font-size: 12px; color: var(--muted); }
 .lang-go { align-self: center; min-width: 140px; justify-content: center; }
+
+/* Identity and controls share actual layout centering, including nested profile avatars. */
+.avatar-text { --avatar-tone: var(--avatar-blue); color: color-mix(in srgb, var(--avatar-tone) 70%, var(--fg)); line-height: 1; overflow: hidden; }
+.avatar-tone-1 { --avatar-tone: var(--avatar-sage); }
+.avatar-tone-2 { --avatar-tone: var(--avatar-lilac); }
+.avatar-tone-3 { --avatar-tone: var(--avatar-sand); }
+.avatar-monogram { display: block; line-height: 1; letter-spacing: -.035em; text-align: center; }
+.cover-empty { display: grid; place-items: center; background: linear-gradient(135deg, var(--panel-2), var(--content)); color: var(--muted); border: 1px solid var(--line); }
+.cover-empty svg { display: block; width: 68%; height: 68%; stroke: currentColor; stroke-width: 1; opacity: .45; }
+.role-tag, .belong, .photo-change, .role-chips .chip, .song-chips button { display: inline-flex; align-items: center; justify-content: center; line-height: 1.2; min-height: 26px; }
+.role-tag { padding: 3px 10px; border-radius: var(--ctl-radius); }
+.belong { gap: 7px; padding: 4px 10px 4px 4px; }
+.photo-change { padding-inline: 12px; }
+.role-chips .chip { padding-block: 4px; }
+.profile-photo { flex-shrink: 0; box-shadow: none; }
+.hero-actions { align-self: center; flex-wrap: wrap; }
+.fact { gap: 3px; }
+.profile-stats { margin-top: 8px; }
+.graph-view { background: radial-gradient(ellipse at center, var(--panel), transparent 70%); }
+.lyrics-batch { padding: 16px 0 20px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+.lyrics-batch-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.lyrics-batch-heading strong { font-size: 15px; font-weight: 600; }
+.lyrics-batch-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.lyrics-batch-status { display: flex; align-items: center; gap: 16px; margin-top: 16px; font-size: 12px; }
+.lyrics-batch-status > span:first-child { flex-shrink: 0; }
+.lyrics-batch progress { appearance: none; display: block; border: 0; width: 100%; height: 4px; margin-top: 9px; border-radius: 2px; background: var(--panel-2); overflow: hidden; }
+.lyrics-batch progress::-webkit-progress-bar { background: var(--panel-2); }
+.lyrics-batch progress::-webkit-progress-value { background: var(--accent); border-radius: 2px; }
+.lyrics-batch-totals { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--muted); font-size: 12px; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.lyrics-batch-results { margin-top: 12px; font-size: 12px; }
+.lyrics-batch-results > div { max-height: 260px; overflow-y: auto; margin-top: 10px; }
+.lyrics-batch-item { display: grid; grid-template-columns: minmax(120px,1fr) auto auto; align-items: center; gap: 6px 14px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.lyrics-batch-item strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
+.lyrics-batch-item small, .lyrics-batch-item p { color: var(--muted); }
+.lyrics-batch-item p { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere; }
+.import-lyrics-option { margin-block: 10px; }
+
+.tag { display: inline-flex; align-items: center; justify-content: center; line-height: 1.3; vertical-align: middle; }
+
+.scrape > .timed-lyrics { padding: 20px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.scrape > .lyrics-batch { margin-bottom: 8px; }
+
+/* 左栏底部：整个资料库的三种看法（关系网、时间轴、词云），带文字 */
+.browser-views { display: grid; gap: 1px; padding: 8px 6px 10px; border-top: 1px solid var(--line); }
+.browser-views button {
+  display: flex; align-items: center; gap: 10px; height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-radius);
+  color: var(--muted); text-align: left; font-size: 13px; transition: background 140ms, color 140ms;
+}
+.browser-views button:hover { background: var(--control-hover); color: var(--fg); }
+.browser-views button.on { background: var(--accent-soft); color: var(--accent-text); }
+
+/* 歌手档案：顶上一大块照片和名字，下面分页。占满中栏和右栏 */
+.profile-pane:has(> .profile.artist) { padding-top: 0; }
+.profile-pane:has(> .profile.artist) > .nav-back { display: flex; margin: 14px 0 -46px; }
+.profile.artist { max-width: none; gap: 0; container-type: inline-size; }
+.artist-hero {
+  position: relative; z-index: 2; isolation: isolate; margin: 0 -28px; min-height: 300px;
+  padding: 72px 40px 26px; display: flex; align-items: flex-end;
+}
+/* 照片两层（虚化的底色 + 右边渐隐的原图）单独裁在这一层里，「⋯」菜单才不会被裁掉 */
+.artist-hero-art { position: absolute; inset: 0; z-index: -1; overflow: hidden; }
+.artist-hero-glow {
+  position: absolute; inset: -90px; z-index: -2; background: center / cover no-repeat;
+  filter: blur(70px) saturate(1.3); opacity: .32; animation: hero-bg-in 900ms var(--ease-out) backwards;
+}
+/* 照片靠右，左边渐变进底色。取景点在竖直 34%：28% 时正方形的 logo（ヨルシカ）偏下，40% 又会把竖图的头顶（Vaundy）切到边上。
+   左边只用一层横向渐隐：横竖两层靠 mask-composite 取交集，在 WebView2 里实际按并集叠，
+   上半截的左边就成了硬边。底边交给 ::after 的渐暗 */
+.artist-hero-photo {
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(62%, 820px); z-index: -1;
+  background: center 34% / cover no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 50%);
+  mask-image: linear-gradient(90deg, transparent, black 50%);
+  animation: fade-in 700ms ease backwards;
+}
+/* 名字和按钮在左下角压在照片上：左下角暗一点，字才看得清 */
+.artist-hero-art::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(0deg, var(--hero-scrim), transparent 60%), linear-gradient(90deg, var(--hero-scrim-side), transparent 50%);
+}
+.artist-hero.no-photo .artist-hero-art::after { display: none; }
+.artist-hero-initial { position: absolute; right: 56px; top: 50%; transform: translateY(-50%); opacity: .85; }
+.artist-hero-initial .avatar-text { font-size: 56px !important; }
+.artist-hero-text { position: relative; display: grid; gap: 10px; justify-items: start; max-width: min(680px, 72%); animation: rise-in 520ms var(--ease-out) backwards; }
+.artist-hero-text h1 {
+  margin: 0; font-size: clamp(34px, 6.5cqi, 72px); line-height: 1.05; letter-spacing: -.5px; font-weight: 700;
+  overflow-wrap: anywhere; text-shadow: var(--hero-text-shadow);
+}
+.artist-hero-years { font-size: 12px; color: var(--muted); padding: 1px 4px; align-self: center; }
+.artist-hero-bands { display: flex; flex-wrap: wrap; gap: 6px; }
+.artist-hero .profile-stats { margin-top: 2px; }
+.artist-hero .hero-actions { align-self: auto; margin-top: 6px; align-items: center; }
+.artist-hero .play-all { border-radius: 999px; padding: 0 20px; height: 36px; gap: 6px; }
+.menu-panel.menu-left { left: 0; right: auto; transform-origin: top left; }
+.menu-panel .artist-provenance { margin: 4px 0 0; padding: 7px 10px 4px; border-top: 1px solid var(--line); max-width: 320px; line-height: 1.5; }
+
+.profile-tabs { display: flex; gap: 28px; margin: 0 -28px 24px; padding: 0 40px; border-bottom: 1px solid var(--line); }
+.profile-tabs button { position: relative; height: 44px; padding: 0; font-size: 14px; color: var(--muted); transition: color 140ms; }
+.profile-tabs button:hover { color: var(--fg); }
+.profile-tabs button.on { color: var(--fg); font-weight: 600; }
+.profile-tabs button.on::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; border-radius: 2px; background: var(--accent);
+  animation: tab-in 260ms var(--spring) backwards;
+}
+@keyframes tab-in { from { transform: scaleX(.3); opacity: 0; } }
+.profile.artist > [role="tabpanel"] { padding: 0 12px; animation: fade-in 220ms ease backwards; }
+
+/* 概览：左边专辑封面，右边成员、常一起署名、词云 */
+.profile-overview { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(250px, 1fr); gap: 32px; align-items: start; }
+.overview-main { display: grid; gap: 36px; min-width: 0; }
+/* 单曲区默认横条：小封面 + 名字 + 年份·类型，自动分几列 */
+.release-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2px 18px; }
+.release-row { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 8px; border-radius: var(--radius); text-align: left; animation: rise-in 360ms var(--ease-out) backwards; animation-delay: calc(var(--n, 0) * 24ms); }
+.release-row:hover { background: var(--control-hover); }
+.release-row > span { display: grid; gap: 4px; min-width: 0; }
+.release-row b { font-size: 14px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.release-row small { font-size: 12px; color: var(--muted); }
+.view-switch { display: inline-flex; gap: 2px; margin-left: auto; align-self: center; }
+.overview-head .view-switch + .link-btn { margin-left: 8px; }
+.view-switch button { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--ctl-radius); color: var(--muted); }
+.view-switch button:hover { background: var(--control-hover); color: var(--fg); }
+.view-switch button.on { color: var(--fg); background: var(--control-hover); }
+.view-switch svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+.overview-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.overview-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
+.overview-head .link-btn { margin-left: auto; font-size: 12px; }
+.cover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 22px 18px; }
+.cover-card {
+  display: grid; gap: 2px; min-width: 0; text-align: left;
+  animation: rise-in 480ms calc(80ms + var(--n, 0) * 45ms) var(--ease-out) backwards;
+}
+.cover-card .cover { display: block; width: 100% !important; height: auto !important; aspect-ratio: 1; margin-bottom: 8px; box-shadow: var(--shadow); transition: transform 320ms var(--spring); }
+.cover-card:hover .cover { transform: translateY(-3px); }
+.cover-card b { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cover-card small { font-size: 11.5px; color: var(--muted); }
+.overview-side { display: grid; gap: 14px; }
+.overview-card { width: 100%; padding: 14px 16px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); text-align: left; }
+.overview-card .overview-head { margin-bottom: 8px; }
+.overview-card .overview-head h2 { font-size: 14px; }
+.overview-people { display: grid; gap: 2px; }
+.mini-person { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 8px; text-align: left; transition: background 140ms; }
+.mini-person:hover { background: var(--control-hover); }
+.mini-person span { display: grid; min-width: 0; }
+.mini-person b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-person small { font-size: 11.5px; color: var(--muted); }
+.mini-person.former b { color: var(--muted); }
+.overview-peers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.peer-tile { display: grid; justify-items: center; gap: 4px; padding: 8px 4px; border-radius: 8px; min-width: 0; transition: background 140ms; }
+.peer-tile:hover { background: var(--control-hover); }
+.peer-tile b { max-width: 100%; font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peer-tile small { font-size: 11px; color: var(--muted); }
+.cloud-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; transition: background 160ms, transform 260ms var(--spring); }
+.cloud-card:hover { background: var(--panel-2); transform: translateY(-1px); }
+.cloud-card-art { position: relative; width: 64px; height: 44px; font-family: "Klee One", serif; }
+.cloud-card-art b, .cloud-card-art i, .cloud-card-art em { position: absolute; font-style: normal; line-height: 1; }
+.cloud-card-art b { left: 0; top: 2px; font-size: 28px; color: var(--accent-text); }
+.cloud-card-art i { left: 32px; top: 0; font-size: 18px; }
+.cloud-card-art em { left: 28px; top: 24px; font-size: 15px; opacity: .7; }
+.cloud-card-text { display: grid; gap: 2px; }
+.cloud-card-text strong { font-size: 14px; }
+.cloud-card-text small { font-size: 12px; color: var(--muted); }
+.cloud-card-go { font-size: 12px; color: var(--accent-text); }
+
+/* 作品：一张专辑一块，歌一行一首 */
+.profile.artist .profile-album:hover { background: transparent; }
+.album-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.album-row {
+  width: 100%; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 12px; align-items: center;
+  height: 34px; padding: 0 10px; border-radius: 6px; text-align: left; font-size: 13px; transition: background 140ms;
+}
+.album-row:hover { background: var(--control-hover); }
+.album-row.now { color: var(--accent-text); background: var(--accent-soft); }
+.album-row-no { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.album-row.now .album-row-no { color: var(--accent); }
+.album-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.album-row-artist { max-width: 220px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.album-row-time { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* 成员与合作：左边合作者，右边小关系网 */
+.profile-people { display: grid; gap: 28px; }
+.people-around { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.people-list { display: grid; gap: 2px; }
+.people-graph .local-graph { height: 360px; margin: 0; }
+
+/* 时间轴页：发行轴 + 去全局时间树 */
+.profile-timeline { display: grid; gap: 16px; justify-items: start; }
+.profile-timeline .raxis { width: 100%; }
+
+@container (max-width: 760px) {
+  .profile-overview, .people-around { grid-template-columns: minmax(0, 1fr); }
+  .artist-hero-text { max-width: 100%; }
+  .artist-hero-photo { width: 100%; opacity: .45; }
+}
+
+/* 词云「设置」：字体、词数、配色、仅日文、去虚词收在这个弹层里，工具栏只留常用筛选 */
+.wc-options { position: relative; margin-left: auto; }
+.wc-options-btn { display: inline-flex; align-items: center; gap: 6px; }
+.wc-options-btn.on { background-color: var(--btn-fill-hover); }
+.wc-options-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 280px;
+  display: grid; gap: 12px; padding: 14px; border-radius: 10px;
+  background: var(--surface-pop); border: 1px solid var(--line-strong); box-shadow: var(--shadow);
+  transform-origin: top right; animation: menu-in 220ms var(--spring) backwards;
+}
+.wc-field { display: grid; gap: 6px; }
+.wc-field > label, .wc-field-label { font-size: 12px; color: var(--muted); }
+.wc-field select { width: 100%; }
+.wc-field .link-btn { justify-self: start; font-size: 12px; }
+.wc-options-panel .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wc-options-panel hr { margin: 0; border: 0; border-top: 1px solid var(--line); }

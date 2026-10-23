@@ -46,6 +46,12 @@ function readOrient(): TreeOrient {
 /** 放大了谁、定位到哪张：跟着模块走，回到时间轴时还在 */
 const memory: { zoom: number | null; focus: string | null } = { zoom: null, focus: null };
 
+/** 从某个人的档案打开：直接放大成他的时间树 */
+export function focusTimelineOn(personId: number) {
+  memory.zoom = personId;
+  memory.focus = null;
+}
+
 /** 封面边长：专辑按歌数，单曲小一号 */
 function coverSize(r: TimelineRelease): number {
   return r.albumId === null ? 24 : Math.min(44, 26 + r.tracks * 1.6);

@@ -2,7 +2,7 @@ import Foundation
 import JPCore
 
 /// Only the async operations used by the native client; no raw FFI or synchronous calls.
-public protocol CorpusCalling: Sendable {
+public protocol CorpusCalling: AnyObject, Sendable {
     func scanFiles(_ paths: [String]) async throws -> ScanResult
     func scanFolder(_ path: String) async throws -> ScanResult
     func runImport(tokenize: Bool) async throws -> ImportStarted
@@ -18,6 +18,7 @@ public protocol CorpusCalling: Sendable {
     func track(_ songId: String) async throws -> Track?
     func setAudioRoots(_ roots: [String]) async throws
     func lyrics(_ songId: String) async throws -> [LyricLine]
+    func lyricTimeline(_ songId: String) async throws -> [LineTimeline]
     func lineSpans(_ songId: String) async throws -> [LineSpan]
     func listenWindow(_ utteranceId: Int64, before: Int, after: Int) async throws -> ListenWindow?
     func resolveMedia(_ stored: String) async throws -> String?
@@ -36,6 +37,9 @@ public protocol CorpusCalling: Sendable {
 extension CorpusClient: CorpusCalling {}
 
 public extension CorpusCalling {
+    /// A client without timing support safely falls back to line playback.
+    func lyricTimeline(_ songId: String) async throws -> [LineTimeline] { [] }
+
     func listenWindow(_ utteranceId: Int64) async throws -> ListenWindow? {
         try await listenWindow(utteranceId, before: 0, after: 0)
     }

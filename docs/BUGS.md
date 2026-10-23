@@ -13,4 +13,13 @@
 |---|---|---|---|
 | 0001 | [聚焦导入或播放按钮时空格被全局热键吞掉](bugs/0001-space-button.md) | 已修复 | — |
 | 0002 | [切换 debug 的原生确认框被 ACL 拒绝](bugs/0002-debug-dialog-acl.md) | 已修复 | fec2f5e |
+| 0003 | [鼠标点过按钮后快捷键失灵](bugs/0003-hotkeys-after-click.md) | 已修复 | — |
+| 0004 | [点词查词会跳播放进度](bugs/0004-lookup-seeks-playback.md) | 已修复 | — |
+| 0005 | [有逐字时间的歌整首每个字都拆成组件](bugs/0005-every-line-split.md) | 已修复 | — |
+| 0006 | [空格和标点没有时间就整行退回逐行](bugs/0006-separator-breaks-karaoke.md) | 已修复 | — |
+| 0007 | [全库逐字补歌词不限速](bugs/0007-batch-no-throttle.md) | 已修复 | — |
+| 0008 | [QQ／酷狗逐字歌词的「曲名 - 歌手」行进了语料](bugs/0008-title-line-as-lyrics.md) | 已修复 | — |
+| 0009 | [歌词里有 & 或引号的 QRC 整首解析失败](bugs/0009-qrc-unescaped-chars.md) | 已修复 | — |
+| 0010 | [乐手署名段被当成歌词](bugs/0010-musician-credits-as-lyrics.md) | 已修复 | — |
+| 0011 | [KRC／YRC 里一个空单位让整首解析失败](bugs/0011-krc-empty-unit.md) | 已修复 | — |
 <!-- /bugs:index -->

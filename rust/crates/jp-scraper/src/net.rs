@@ -182,6 +182,12 @@ pub fn artist_providers() -> (
 ///
 /// `for_artwork` 为真时启用「没封面就扣分」，供封面刮削路径使用。
 pub fn default_resolver(for_artwork: bool) -> anyhow::Result<crate::resolver::MetadataResolver> {
+    resolver_with_apple(for_artwork, None)
+}
+
+/// Optional official catalog provider. Credentials belong to this resolver only.
+pub fn resolver_with_apple(for_artwork: bool, apple: Option<(&str, &str)>) -> anyhow::Result<crate::resolver::MetadataResolver> {
+    use crate::http::{HttpClient, HttpConfig};
     use crate::matching::{MatchScorer, ScorerConfig};
     use crate::resolver::ResolverConfig;
     let config = if for_artwork {
@@ -189,7 +195,12 @@ pub fn default_resolver(for_artwork: bool) -> anyhow::Result<crate::resolver::Me
     } else {
         ScorerConfig::default()
     };
-    Ok(crate::resolver::MetadataResolver::new(default_providers())?
+    let mut providers = default_providers();
+    if let Some((region, token)) = apple {
+        let provider = crate::providers::apple::AppleMusicProvider::new(HttpClient::new(Box::new(UreqTransport)).with_config(HttpConfig { timeout: std::time::Duration::from_secs(8), retries:0, ..Default::default() }), region, token)?;
+        providers.insert(0, Box::new(provider));
+    }
+    Ok(crate::resolver::MetadataResolver::new(providers)?
         .with_scorer(MatchScorer::new(config))
         // iTunes 一问就中的时候不再问 MusicBrainz。
         //

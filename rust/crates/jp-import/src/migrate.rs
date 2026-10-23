@@ -171,6 +171,11 @@ fn move_lineage(tx: &Connection, report: &mut MigrateReport) -> Result<()> {
          FROM src.lyric_versions v JOIN temp.ver_map vm ON vm.old_id = v.id JOIN temp.song_map sm ON sm.old_id = v.song_id",
         [],
     )?;
+    for column in ["raw_format","source_raw","sync_granularity","timing_origin","timing_validation_json"] {
+        if column_exists(tx,"src","lyric_versions",column)? {
+            tx.execute(&format!("UPDATE main.lyric_versions SET {column}=(SELECT v.{column} FROM src.lyric_versions v JOIN temp.ver_map m ON m.old_id=v.id WHERE m.new_id=main.lyric_versions.id) WHERE id IN (SELECT new_id FROM temp.ver_map)"),[])?;
+        }
+    }
 
     // ── 每行的状态 ──
     tx.execute(
@@ -450,6 +455,9 @@ pub fn run(
              FROM src.tokens t JOIN temp.utt_map um ON um.old_id = t.utterance_id",
             [],
         )?;
+        if table_exists(&tx,"src","word_timings")? {
+            tx.execute("INSERT INTO main.word_timings(utterance_id,char_start,char_end,start_sec,end_sec,source) SELECT um.new_id,w.char_start,w.char_end,w.start_sec,w.end_sec,w.source FROM src.word_timings w JOIN temp.utt_map um ON um.old_id=w.utterance_id",[])?;
+        }
 
         // ── 分词校正 ──
         report.corrections = tx.execute(
@@ -623,6 +631,9 @@ mod tests {
         crate::maintain::clear_lyrics(&src, "001").unwrap();
         let second = crate::import::LyricSource::new("online", "netease", "", "user");
         crate::import::attach_lyrics_text(&src, "001", "[00:02.00]月が綺麗\n", &second, None, "ヨルシカ", "夜行").unwrap();
+        src.execute("UPDATE lyric_versions SET raw_format='ttml',source_raw='<tt>original</tt>',sync_granularity='unit',timing_origin='native' WHERE is_current=1",[]).unwrap();
+        let utterance:i64=src.query_row("SELECT id FROM utterances WHERE song_id='001'",[],|r|r.get(0)).unwrap();
+        jp_corpus::word_timing::set_manual(&src,utterance,0,1,2.25).unwrap();
         jp_corpus::lineage::set_provenance(&src, "song", "001", "year", "manual", "", None).unwrap();
         src.execute(
             "INSERT INTO subcorpora (name, filter_json) VALUES ('全部', '{\"performerIds\":[],\"jpOnly\":false}')",
@@ -641,6 +652,12 @@ mod tests {
         let versions = jp_corpus::lineage::versions(&target, new_id).unwrap();
         assert_eq!(versions.len(), 2);
         assert!(versions[0].is_current && versions[0].source_type == "online");
+        assert_eq!(versions[0].raw_format,"ttml");
+        assert_eq!(versions[0].timing_origin,"native");
+        let timings=jp_corpus::word_timing::for_song(&target,new_id).unwrap();
+        assert_eq!(timings.len(),1);
+        assert_eq!(timings[0].start_sec,2.25);
+        assert_eq!(timings[0].source,"manual");
         assert_eq!(
             jp_corpus::lineage::version_raw(&target, versions[1].id).unwrap().unwrap().1.as_deref(),
             Some("[00:01.00]夜が明ける\n"),

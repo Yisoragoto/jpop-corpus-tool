@@ -39,6 +39,7 @@ import {
 import { PerformerPicker } from "../components/PerformerPicker";
 import { SubcorpusPicker } from "../components/SubcorpusPicker";
 import { mergeSubcorpus, useActiveScope } from "../subcorpusScope";
+import type { WordJump } from "../wordCloud";
 import { VirtualList } from "../components/VirtualList";
 import { TokenCorrectionDialog } from "../components/TokenCorrectionDialog";
 import { audition, isPlayingSpan, playFrom } from "../listen";
@@ -71,6 +72,8 @@ export interface KwicRequest {
   keyword: string;
   field: MatchField;
   nonce: number;
+  /** 从词云来的：歌手、年份、词性和词云一样。没有就沿用这一页现有的筛选 */
+  jump?: WordJump;
 }
 
 /**
@@ -141,7 +144,13 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
   const [searched, setSearched] = useState<{ query: string; field: MatchField } | null>(null);
 
   const runKwic = useCallback(
-    async (query: string, matchField: MatchField, nearFilter: NearFilter | null = near) => {
+    async (
+      query: string,
+      matchField: MatchField,
+      nearFilter: NearFilter | null = near,
+      // 刚从别处带着筛选跳过来时，state 还没更新到这一轮，直接用带来的
+      given?: { subcorpus: Subcorpus; pos: string },
+    ) => {
       const keywords = parseKeywords(query);
       if (!keywords.length) return;
       setBusy(true);
@@ -151,12 +160,12 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
         const q: KwicQuery = {
           keywords,
           field: matchField,
-          pos: pos || null,
+          pos: (given ? given.pos : pos) || null,
           crossLine,
           dedup,
           jpOnly,
           limit: KWIC_LIMIT,
-          subcorpus,
+          subcorpus: given?.subcorpus ?? subcorpus,
           near: nearFilter,
         };
         setKwicHits(await api.kwic(q));
@@ -196,16 +205,28 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
       .catch(() => undefined);
   }, []);
 
-  // 分析页点了「检索」：切到 KWIC、按词元查
+  // 分析页、词云点了「检索」：切到 KWIC、按词元查
   useEffect(() => {
     if (!request) return;
     setMode("kwic");
     setText(request.keyword);
     setField(request.field);
     setNear(null);
+    let given: { subcorpus: Subcorpus; pos: string } | undefined;
+    const jump = request.jump;
+    if (jump) {
+      const from = jump.yearFrom === null ? "" : String(jump.yearFrom);
+      const to = jump.yearTo === null ? "" : String(jump.yearTo);
+      const p = (POS_FILTERS as readonly string[]).includes(jump.pos) ? jump.pos : "";
+      setPersonIds(jump.performerIds);
+      setYearFrom(from);
+      setYearTo(to);
+      setPos(p);
+      given = { subcorpus: mergeSubcorpus(yearSubcorpus(from, to, jump.performerIds), scope), pos: p };
+    }
     onRequestConsumed();
-    void runKwic(request.keyword, request.field, null);
-  }, [request, runKwic, onRequestConsumed]);
+    void runKwic(request.keyword, request.field, null, given);
+  }, [request, runKwic, onRequestConsumed, scope]);
 
   // 搭配：只对单个词有意义（多个候选词、多词表达都没有唯一的节点）
   const node = useMemo(() => {

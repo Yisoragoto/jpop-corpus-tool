@@ -11,6 +11,9 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 regex = "1"
+roxmltree = "0.20"
+base64 = "0.22"
+flate2 = "1"
 # Jaro-Winkler。Python 侧用 rapidfuzz，实现同一个算法，已对过账。
 strsim = "0.11"
 rusqlite = { version = "0.40", features = ["bundled"] }

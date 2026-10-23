@@ -487,7 +487,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             <SettingCard
               icon={Icons.lyrics}
               title={tr("逐字点亮当前行")}
-              description={tr("像卡拉 OK 歌词那样，唱到哪个字亮到哪个字。有逐字歌词（增强型 LRC）或手动校准时用真实时间；没有时按字数估。关掉就是原来的整行高亮。")}
+              description={tr("这一行有完整的真实逐字或逐词时间时才逐字点亮，一个词里的几个字连着扫过去。时间缺失或有问题的行整行高亮，纯文本不高亮，不按字数估算。")}
             >
               <Switch
                 checked={settings.karaokeLyrics}
@@ -663,10 +663,10 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
               title={tr("补齐缺失歌词")}
               description={
                 missingLyrics === null
-                  ? tr("先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空")
+                  ? tr("使用已启用的歌词来源，优先逐字，找不到时回退逐行；不确定的保留待复核")
                   : missingLyrics === 0
                     ? tr("每一首都有歌词了")
-                    : tr("{missingLyrics} 首还没有歌词。先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）", { missingLyrics })
+                    : tr("{missingLyrics} 首还没有歌词，将优先获取真实逐字歌词，找不到时回退逐行", { missingLyrics })
               }
             >
               {lyricsRunning ? (

@@ -74,14 +74,19 @@ pub fn track_file_for(conn: &rusqlite::Connection, song_id: &str) -> Result<Opti
             },
         )
         .optional()?;
-    let Some(track) = row else { return Ok(None) };
+    let Some(mut track) = row else { return Ok(None) };
 
     // 有原始元数据就用原始的
     let store = ScrapeStore::new(conn);
     if !track.path.is_empty()
         && let Ok(Some(original)) = store.original_metadata(&track.path)
     {
-        return Ok(Some(original));
+        track = original;
+    }
+    if !track.path.is_empty() && (track.isrc.is_empty() || track.recording_mbid.is_empty()) {
+        let tags = jp_import::scan::scan_file(std::path::Path::new(&track.path));
+        if track.isrc.is_empty() { track.isrc=tags.isrc; }
+        if track.recording_mbid.is_empty() { track.recording_mbid=tags.recording_mbid; }
     }
     Ok(Some(track))
 }
@@ -425,6 +430,7 @@ pub fn spawn_batch<R: Runtime>(
     db_path: std::path::PathBuf,
     covers_dir: std::path::PathBuf,
     song_ids: Vec<String>,
+    sources: jp_scraper::timed_sources::SourceOptions,
 ) -> Result<()> {
     // 线程崩了也要让界面收一条终态（见 `crate::job`）
     let crashed = app.clone();
@@ -448,7 +454,8 @@ pub fn spawn_batch<R: Runtime>(
             // 自己开一条连接：占着 UI 那条十几分钟的话，期间所有查询都会卡住
             let conn = rusqlite::Connection::open(&db_path)?;
             conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
-            let resolver = jp_scraper::default_resolver(false)?;
+            let apple = (sources.apple && !sources.apple_developer_token.is_empty()).then_some((sources.apple_storefront.as_str(), sources.apple_developer_token.as_str()));
+            let resolver = jp_scraper::net::resolver_with_apple(false, apple)?;
 
             // 两级并发。都是量出来的，不是猜的：
             //
@@ -560,6 +567,122 @@ pub fn spawn_batch<R: Runtime>(
                 error,
                 ..Default::default()
             },
+        );
+    });
+    Ok(())
+}
+
+// ────────────────────────── 补专辑信息 ──────────────────────────
+
+/// 专辑信息（发行类型、整张碟曲目数）还不全的专辑里的歌。按专辑排好，每张专辑的歌挨着，
+/// 补齐一张后同专辑剩下的歌就不用再查了。
+pub fn album_fill_targets(conn: &rusqlite::Connection) -> Result<Vec<(i64, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, s.id FROM albums a JOIN songs s ON s.album_id = a.id          WHERE COALESCE(a.album_type,'') = '' OR a.track_count IS NULL          ORDER BY a.id, s.id",
+    )?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+fn album_complete(conn: &rusqlite::Connection, album_id: i64) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(album_type,'') <> '' AND track_count IS NOT NULL FROM albums WHERE id = ?1",
+        [album_id],
+        |r| r.get(0),
+    )?)
+}
+
+/// 给已经识别过的歌补专辑层面的数据（发行类型、曲目数、厂牌……）。
+///
+/// 和 [`spawn_batch`] 用同一个匹配流程，但**不动刮削状态**：已经成功的歌这次没匹配上，
+/// 也不会被打回「待复核」。只有自动采纳的候选才写，而且只补空字段（见 [`apply_candidate`]）。
+pub fn spawn_album_fill<R: Runtime>(
+    app: AppHandle<R>,
+    job: Arc<ScrapeJob>,
+    db_path: std::path::PathBuf,
+    targets: Vec<(i64, String)>,
+) -> Result<()> {
+    let crashed = app.clone();
+    let guard = job
+        .start_with(move || {
+            let _ = crashed.emit(
+                "scrape://progress",
+                ScrapeProgress { kind: "album".into(), finished: true, error: "补专辑信息的后台线程崩了，详情见日志".into(), ..Default::default() },
+            );
+        })
+        .ok_or_else(|| anyhow::anyhow!("已经有一个刮削作业在跑"))?;
+    std::thread::spawn(move || {
+        let total = targets.len();
+        let mut done = 0usize;
+        let outcome = (|| -> Result<bool> {
+            let conn = rusqlite::Connection::open(&db_path)?;
+            conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+            conn.busy_timeout(std::time::Duration::from_secs(10))?;
+            let resolver = Arc::new(jp_scraper::net::resolver_with_apple(false, None)?);
+            const IN_FLIGHT: usize = 4;
+            let mut queue: std::collections::VecDeque<(i64, String)> = targets.into();
+            let mut flying: std::collections::VecDeque<(i64, String, String, std::thread::JoinHandle<jp_scraper::ResolvedTrack>)> = Default::default();
+            loop {
+                if job.cancelled() {
+                    return Ok(true);
+                }
+                while flying.len() < IN_FLIGHT {
+                    let Some((album_id, song_id)) = queue.pop_front() else { break };
+                    // 同专辑前面的歌已经补齐了：这首直接算处理过
+                    if album_complete(&conn, album_id)? {
+                        done += 1;
+                        continue;
+                    }
+                    let Some(track) = track_file_for(&conn, &song_id)? else {
+                        done += 1;
+                        continue;
+                    };
+                    let resolver = resolver.clone();
+                    let title = track.title().to_string();
+                    flying.push_back((album_id, song_id, title, std::thread::spawn(move || resolver.resolve(&track))));
+                }
+                let Some((album_id, song_id, title, handle)) = flying.pop_front() else { break };
+                let result = handle.join().map_err(|_| anyhow::anyhow!("匹配线程崩了"))?;
+                let mut status = result.status.as_str().to_string();
+                if result.status == ScrapeStatus::Success
+                    && let Some(candidate) = &result.candidate
+                    && let Err(err) = apply_candidate(&conn, &song_id, candidate, Some(result.confidence))
+                {
+                    crate::log::warn(format!("补专辑信息 {song_id} 失败: {err:#}"));
+                    status = "failed".into();
+                }
+                let filled = album_complete(&conn, album_id).unwrap_or(false);
+                done += 1;
+                let _ = app.emit(
+                    "scrape://progress",
+                    ScrapeProgress {
+                        kind: "album".into(),
+                        done,
+                        total,
+                        song_id,
+                        title,
+                        status,
+                        confidence: result.confidence,
+                        matched: if filled { "filled".into() } else { String::new() },
+                        ..Default::default()
+                    },
+                );
+            }
+            Ok(false)
+        })();
+        let (cancelled, error) = match outcome {
+            Ok(c) => (c, String::new()),
+            Err(err) => {
+                crate::log::error(format!("补专辑信息中断: {err:#}"));
+                (false, format!("{err:#}"))
+            }
+        };
+        drop(guard);
+        let _ = app.emit(
+            "scrape://progress",
+            ScrapeProgress { kind: "album".into(), done: total, total, finished: true, cancelled, error, ..Default::default() },
         );
     });
     Ok(())

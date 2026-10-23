@@ -27,6 +27,7 @@ import {
   type Completeness,
   type CompletenessCount,
   type LyricsProgress,
+  type LyricsUpgradeProgress,
   type ReviewItem,
   type ScrapeAttempt,
   type ScrapeCandidate,
@@ -36,6 +37,8 @@ import {
 } from "../api";
 import { Avatar } from "../components/Avatar";
 import { CommandButton } from "../components/CommandButton";
+import { LyricsUpgradePanel } from "../components/LyricsUpgradePanel";
+import { TimedLyricsPanel } from "../components/TimedLyricsPanel";
 import { tr } from "../i18n";
 
 interface Props {
@@ -44,7 +47,7 @@ interface Props {
   onChanged: () => void;
 }
 
-type RowKey = "identified" | "trackCovers" | "albumCovers" | "photos" | "lyrics" | "durations";
+type RowKey = "identified" | "trackCovers" | "albumCovers" | "albumInfo" | "photos" | "lyrics" | "durations";
 
 const errorText = (e: unknown) => String((e as { message?: string })?.message ?? e);
 
@@ -91,7 +94,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
   useEffect(() => {
     void refresh();
     void api.scrapeIsRunning().then(setRunning).catch(() => undefined);
-    void api.lyricsFillRunning().then((r) => r && setLyricsJob((j) => j ?? EMPTY_LYRICS)).catch(() => undefined);
+
   }, [refresh]);
 
   // 点开的失败 / 跳过列表跟着刷新
@@ -112,7 +115,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
         const p = event.payload;
         // 整批断了要说出来：这是真错误，走横幅
         if (p.error) errorRef.current(tr("刮削中断：{error}", { error: p.error }));
-        note(p.kind === "artist" ? "photos" : "identified", tr("{v}：处理 {done}/{total}", { v: p.cancelled ? tr("已中断") : tr("跑完了"), done: p.done, total: p.total }));
+        note(p.kind === "artist" ? "photos" : p.kind === "album" ? "albumInfo" : "identified", tr("{v}：处理 {done}/{total}", { v: p.cancelled ? tr("已中断") : tr("跑完了"), done: p.done, total: p.total }));
         void refresh();
         onChanged();
       }
@@ -122,6 +125,17 @@ export function ScrapePage({ onError, onChanged }: Props) {
     };
   }, [refresh, onChanged]);
 
+  useEffect(() => {
+    let alive = true;
+    const accept = (p: LyricsUpgradeProgress) => {
+      if (!alive || p.total === 0) return;
+      setLyricsJob({ ...EMPTY_LYRICS, done:p.done, total:p.total, title:p.title, filled:p.upgraded+p.lineFilled, notFound:p.notFound, failed:p.failed, finished:!p.running, cancelled:p.cancelled, error:p.error });
+      if (!p.running) { void refresh(); onChanged(); }
+    };
+    void api.lyricsUpgradeStatus().then(accept).catch(() => undefined);
+    const off = listen<LyricsUpgradeProgress>("lyrics-upgrade://progress", event => accept(event.payload));
+    return () => { alive = false; void off.then(f => f()); };
+  }, [refresh, onChanged]);
   // 补歌词的进度
   useEffect(() => {
     const off = listen<LyricsProgress>("lyrics://progress", (event) => {
@@ -144,7 +158,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
   }, [refresh, onChanged]);
 
   const startJob = useCallback(
-    async (kind: "track" | "artist", row: RowKey, begin: () => Promise<number>, nothing: string) => {
+    async (kind: "track" | "artist" | "album", row: RowKey, begin: () => Promise<number>, nothing: string) => {
       setMenuOpen(false);
       try {
         const total = await begin();
@@ -246,7 +260,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
   const jobLine =
     running && progress !== null
       ? {
-          label: progress.kind === "artist" ? tr("歌手照片") : tr("识别曲目"),
+          label: progress.kind === "artist" ? tr("歌手照片") : progress.kind === "album" ? tr("专辑信息") : tr("识别曲目"),
           done: progress.done,
           total: progress.total,
           detail: `${progress.title}${progress.matched ? ` → ${progress.matched}` : ""}`,
@@ -307,6 +321,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
         </div>
       </header>
 
+      <LyricsUpgradePanel onChanged={() => { void refresh(); onChanged(); }} onError={onError} />
       <div className="scrape-rows">
         <CompletenessRow
           label={tr("曲目识别")}
@@ -366,6 +381,21 @@ export function ScrapePage({ onError, onChanged }: Props) {
           }
         />
         <CompletenessRow
+          label={tr("专辑信息")}
+          count={complete.albumInfo}
+          note={notes.albumInfo}
+          action={
+            gap(complete.albumInfo) > 0
+              ? {
+                  label: tr("补 {n} 张", { n: gap(complete.albumInfo) }),
+                  disabled: blocked,
+                  run: () => void startJob("album", "albumInfo", () => api.scrapeAlbumFillStart(), tr("每张专辑的发行类型和曲目数都齐了")),
+                  title: tr("发行类型（单曲 / EP / 专辑）、整张碟的曲目数、厂牌。对已经识别的歌重新匹配一次，只补空着的字段，不改动已有的信息和识别状态"),
+                }
+              : undefined
+          }
+        />
+        <CompletenessRow
           label={tr("歌手照片")}
           count={photos}
           note={notes.photos}
@@ -419,7 +449,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
                       errorRef.current(errorText(e));
                     });
                   },
-                  title: tr("先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空"),
+                  title: tr("使用已启用的歌词来源，优先逐字，找不到时回退逐行；不确定的保留待复核"),
                 }
               : undefined
           }
@@ -458,6 +488,8 @@ export function ScrapePage({ onError, onChanged }: Props) {
           <CommandButton icon="cancel" label={tr("中断")} onClick={jobLine.stop} />
         </div>
       )}
+
+      <TimedLyricsPanel onChanged={() => { void refresh(); onChanged(); }} onError={onError} />
 
       <section className="section scrape-review">
         <header className="section-head">

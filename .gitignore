@@ -13,6 +13,7 @@ venv/
 
 # Local app data
 settings.json
+lyric-sources.json
 corpus.db
 corpus.db-*
 backups/*

@@ -2035,9 +2035,12 @@ name = "jp-scraper"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
+ "flate2",
  "jp-corpus",
  "jp-normalize",
  "regex",
+ "roxmltree",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3290,6 +3293,12 @@ checksum = "f7a9846f28f3dec5c369fa0bf68bfa35bff5017d71bcd52fd7f864df948ded73"
 dependencies = [
  "rodio",
 ]
+
+[[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "rsqlite-vfs"

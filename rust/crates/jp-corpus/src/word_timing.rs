@@ -9,10 +9,10 @@
 //!
 //! 位置用这一行 `text` 里的**字符下标**（Unicode 标量，不是字节，也不是 UTF-16），
 //! `[char_start, char_end)`。歌词行被删（换歌词、删歌）时这一行的词级时间跟着删。
-//! 都没有的地方由界面按字数估（`app/src/wordTiming.ts`），估出来的不入库。
+//! 没有完整可信时间单位时，界面回退逐行/纯文本，不估计字符时间。
 
 use anyhow::Result;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 pub mod source {
@@ -39,6 +39,7 @@ pub struct Segment {
     pub start: usize,
     pub end: usize,
     pub time_sec: f64,
+    pub end_sec: Option<f64>,
 }
 
 /// 这几行的词级时间，按行、按位置排好。
@@ -98,7 +99,7 @@ pub fn set_manual(conn: &Connection, utterance_id: i64, char_start: i64, char_en
     Ok(())
 }
 
-/// 撤掉一处手动校准（回到逐字时间或者估算）。
+/// 撤掉一处手动校准（回到来源时间或者整行定位）。
 pub fn clear_manual(conn: &Connection, utterance_id: i64, char_start: i64) -> Result<()> {
     conn.execute(
         "DELETE FROM word_timings WHERE utterance_id = ?1 AND char_start = ?2 AND source = ?3",
@@ -107,14 +108,70 @@ pub fn clear_manual(conn: &Connection, utterance_id: i64, char_start: i64) -> Re
     Ok(())
 }
 
-/// 导入时写一行的逐字时间（来源 `lrc`）。`end_sec` 取下一段的开始，最后一段没有。
+/// 不唱的分隔：空白和标点。来源常常不给它们时间（`夜が　明ける` 中间的全角空格），
+/// 和 `jp_scraper::timed_lyrics` 里的 `untimed_separator` 是同一张表。
+pub fn untimed_separator(ch: char) -> bool {
+    ch.is_whitespace()
+        || ch.is_ascii_punctuation()
+        || "、。！？「」『』（）［］【】〈〉《》〔〕…‥—―〜～・：；，．“”‘’".contains(ch)
+}
+
+/// 入库前把一行的逐字时间整理成「整行连续覆盖、前后不重叠」的样子，**不造新的时间**：
+///
+/// - 段与段之间、行首行尾**只有空白和标点**的空当，并进相邻的那一段（跟着它一起亮）；
+///   夹着真正的字就不动——那一行照旧整行退回逐行高亮；
+/// - 后一段在前一段结束之前就开始了（来源四舍五入、连唱）：前一段的结束截到后一段开始。
+///
+/// 不这样做的话，显示那边（`display_timeline`）要求每个字都被覆盖、单位之间不重叠，
+/// 一个全角空格或几毫秒的重叠就让整行退回逐行高亮。
+pub fn normalize(text: &str, segments: &[Segment]) -> Vec<Segment> {
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut out: Vec<Segment> = segments.iter().filter(|s| s.start < s.end && s.end <= len).cloned().collect();
+    out.sort_by_key(|s| s.start);
+    let separators = |from: usize, to: usize| from <= to && chars[from..to].iter().copied().all(untimed_separator);
+    if let Some(first) = out.first_mut()
+        && separators(0, first.start)
+    {
+        first.start = 0;
+    }
+    for i in 1..out.len() {
+        let (before, after) = out.split_at_mut(i);
+        let (prev, next) = (&mut before[i - 1], &mut after[0]);
+        if prev.end < next.start && separators(prev.end, next.start) {
+            prev.end = next.start;
+        }
+        if let Some(end) = prev.end_sec
+            && end > next.time_sec
+            && next.time_sec > prev.time_sec
+        {
+            prev.end_sec = Some(next.time_sec);
+        }
+    }
+    if let Some(last) = out.last_mut()
+        && separators(last.end, len)
+    {
+        last.end = len;
+    }
+    out
+}
+
+/// 导入时写一行的逐字时间（来源 `lrc`）。优先保留显式结束时间；没有才取下一段开始。
+/// 写之前按这一行的正文整理一遍（见 [`normalize`]）。
 pub fn insert_lrc(conn: &Connection, utterance_id: i64, segments: &[Segment]) -> Result<usize> {
+    let text: Option<String> = conn
+        .query_row("SELECT text FROM utterances WHERE id = ?1", [utterance_id], |r| r.get(0))
+        .optional()?;
+    let segments = match &text {
+        Some(text) => normalize(text, segments),
+        None => segments.to_vec(),
+    };
     let mut written = 0;
     for (i, seg) in segments.iter().enumerate() {
         if seg.end <= seg.start {
             continue;
         }
-        let end_sec = segments.get(i + 1).map(|next| next.time_sec);
+        let end_sec = seg.end_sec.or_else(|| segments.get(i + 1).map(|next| next.time_sec));
         conn.execute(
             "INSERT OR REPLACE INTO word_timings (utterance_id, char_start, char_end, start_sec, end_sec, source) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -159,7 +216,7 @@ mod tests {
     #[test]
     fn manual_calibration_overrides_and_can_be_cleared() {
         let conn = db();
-        insert_lrc(&conn, 1, &[Segment { start: 0, end: 2, time_sec: 10.1 }, Segment { start: 4, end: 6, time_sec: 11.2 }]).unwrap();
+        insert_lrc(&conn, 1, &[Segment { start: 0, end: 2, time_sec: 10.1, end_sec: None }, Segment { start: 4, end: 6, time_sec: 11.2, end_sec: None }]).unwrap();
         set_manual(&conn, 1, 4, 5, 11.45).unwrap();
         let rows = for_song(&conn, "001").unwrap();
         let at4: Vec<_> = rows.iter().filter(|r| r.char_start == 4).map(|r| (r.source.as_str(), r.start_sec)).collect();
@@ -189,5 +246,40 @@ mod tests {
         set_manual(&conn, 2, 0, 2, 14.1).unwrap();
         assert_eq!(delete_for_song(&conn, "001").unwrap(), 1);
         assert!(for_song(&conn, "001").unwrap().is_empty());
+    }
+
+    fn seg(start: usize, end: usize, time_sec: f64, end_sec: Option<f64>) -> Segment {
+        Segment { start, end, time_sec, end_sec }
+    }
+
+    #[test]
+    fn separators_between_and_around_units_join_the_neighbouring_unit() {
+        // 「夜が　明ける。」：全角空格和句号来源不给时间
+        let out = normalize("「夜が　明ける。", &[seg(1, 3, 10.0, Some(10.4)), seg(4, 7, 10.6, Some(11.2))]);
+        assert_eq!(out, vec![seg(0, 4, 10.0, Some(10.4)), seg(4, 8, 10.6, Some(11.2))], "时间一个都没变，只是字的范围");
+    }
+
+    #[test]
+    fn a_real_untimed_character_is_left_alone() {
+        let input = [seg(0, 2, 10.0, Some(10.4)), seg(3, 5, 10.6, Some(11.2))];
+        assert_eq!(normalize("夜が明ける", &input), input.to_vec(), "「明」没有时间，照旧整行退回");
+    }
+
+    #[test]
+    fn an_overlap_cuts_the_previous_end_back_to_the_next_start() {
+        let out = normalize("夜が明ける", &[seg(0, 2, 10.0, Some(10.62)), seg(2, 5, 10.6, Some(11.2))]);
+        assert_eq!(out[0].end_sec, Some(10.6));
+        // 时间倒退的（下一段比这一段还早开始）不是重叠，不去修，交给显示那边整行退回
+        let out = normalize("夜が明ける", &[seg(0, 2, 10.0, Some(10.5)), seg(2, 5, 9.0, Some(11.2))]);
+        assert_eq!(out[0].end_sec, Some(10.5));
+    }
+
+    #[test]
+    fn insert_lrc_normalizes_against_the_stored_line_text() {
+        let conn = db();
+        conn.execute("UPDATE utterances SET text = '雨が　降る' WHERE id = 1", []).unwrap();
+        insert_lrc(&conn, 1, &[seg(0, 2, 10.0, Some(10.5)), seg(3, 5, 10.6, Some(11.0))]).unwrap();
+        let rows = for_song(&conn, "001").unwrap();
+        assert_eq!(rows.iter().map(|r| (r.char_start, r.char_end)).collect::<Vec<_>>(), vec![(0, 3), (3, 5)]);
     }
 }

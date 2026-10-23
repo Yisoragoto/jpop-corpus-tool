@@ -16,6 +16,8 @@ pub mod job;
 pub mod library_admin;
 pub mod log;
 pub mod lyrics;
+pub mod timed_lyrics;
+pub mod lyric_upgrade;
 pub mod maintenance;
 pub mod migrate;
 /// 断点续传下载。和 Tauri 无关，在 `jp-setup` 里，macOS 客户端也用它
@@ -150,6 +152,14 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::lyrics_fill_cancel,
             commands::lyrics_fill_running,
             commands::lyrics_fill_one,
+            commands::lyrics_upgrade_start,
+            commands::lyrics_upgrade_status,
+            commands::lyrics_upgrade_cancel,
+            commands::lyrics_timed_targets,
+            commands::lyrics_timed_search,
+            commands::lyrics_timed_apply,
+            commands::lyrics_sources_get,
+            commands::lyrics_sources_set,
             commands::lyrics_import_file,
             // 语料质量与来源追踪
             commands::quality_overview,
@@ -186,6 +196,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::scrape_attempts,
             commands::scrape_track,
             commands::scrape_start,
+            commands::scrape_album_fill_start,
             commands::scrape_cancel,
             commands::scrape_is_running,
             commands::scrape_accept,

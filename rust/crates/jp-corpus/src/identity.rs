@@ -28,7 +28,8 @@ pub fn apply(conn: &Connection, song_id: &str, values: &BTreeMap<String,String>,
         } else { album_id };
         let mut fields = vec![("song",song_id.to_string(),"songs","isrc","isrc"), ("song",song_id.to_string(),"songs","recording_mbid","musicbrainz:recording")];
         // 本地专辑与候选不同，不能把再版/合辑的厂牌安到当前专辑上。
-        let same_album = values.get("album_title").is_none_or(|title| jp_normalize::matching_key(title) == jp_normalize::matching_key(&album));
+        // 「修羅 - Single」和「修羅」是同一张：iTunes 给单曲/EP 加的后缀两边都先去掉再比。
+        let same_album = values.get("album_title").is_none_or(|title| album_key(title) == album_key(&album));
         if let Some(album_id) = album_id.filter(|_| same_album) {
             for (field,provider) in [("release_group_mbid","musicbrainz:release-group"),("label",""),("barcode","barcode"),("album_type",""),("track_count","")] {
                 fields.push(("album",album_id.to_string(),"albums",field,provider));
@@ -46,6 +47,12 @@ pub fn apply(conn: &Connection, song_id: &str, values: &BTreeMap<String,String>,
         }
         Ok(())
     })
+}
+
+fn album_key(title: &str) -> String {
+    let title = title.trim_end();
+    let bare = [" - Single", " - EP"].iter().find_map(|suffix| title.strip_suffix(suffix)).unwrap_or(title);
+    jp_normalize::matching_key(bare)
 }
 
 pub(crate) fn atomic(conn: &Connection, work: impl FnOnce() -> Result<()>) -> Result<()> {
@@ -72,6 +79,13 @@ pub fn fields(conn: &Connection, song_id: &str) -> Result<BTreeMap<String,String
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn an_itunes_single_suffix_does_not_make_the_same_album_look_different() {
+        assert_eq!(album_key("修羅 - Single"), album_key("修羅"));
+        assert_eq!(album_key("創作 - EP"), album_key("創作"));
+        assert_ne!(album_key("834.194"), album_key("新宝島"));
+        assert_eq!(album_key("Single Collection"), jp_normalize::matching_key("Single Collection"));
+    }
     #[test]
     fn fields_ids_and_provenance_are_saved_and_manual_fields_are_protected() {
         let corpus = crate::fixture::corpus().unwrap(); let conn = corpus.connection();

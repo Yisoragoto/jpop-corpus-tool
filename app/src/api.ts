@@ -41,6 +41,10 @@ export interface Album {
   artworkPath: string;
   trackCount: number;
   totalDurationSec: number;
+  /** 发行类型，刮削来源原样（Single / EP / Album，Deezer 是小写）。还没补到是空串 */
+  releaseType: string;
+  /** 整张碟的曲目数；trackCount 是库里收了几首 */
+  releaseTrackCount: number | null;
 }
 
 export interface PersonSummary {
@@ -920,7 +924,7 @@ export const api = {
   scanFiles: (paths: string[], maxDepth?: number) =>
     call<ScanResult>("scan_files", { paths, maxDepth }),
   /** 执行上一次扫描的结果。写库就在这一步。 */
-  runImport: (tokenize?: boolean) => call<ImportReport>("run_import", { tokenize }),
+  runImport: (tokenize?: boolean, fetchLyrics = true) => call<ImportReport>("run_import", { tokenize, fetchLyrics }),
   /**
    * 语料库的文件夹里有没有还没导入的音频。只读，**不记成待导入的一批**——
    * 要导的话拿结果里的路径再调 `scanFiles`。两个参数是用户说过「别再看 / 别再提」的（见 `newSongs.ts`）。
@@ -940,6 +944,18 @@ export const api = {
   /** 用自己的一份歌词文件覆盖这首歌的歌词。 */
   lyricsImportFile: (songId: string, path: string) =>
     call<AttachedLyrics>("lyrics_import_file", { songId, path }),
+  /** 只列已有逐行歌词、仍缺真实逐字时间的歌，不触发在线搜索。 */
+  lyricsUpgradeStart: () => call<void>("lyrics_upgrade_start"),
+  lyricsUpgradeCancel: () => call<void>("lyrics_upgrade_cancel"),
+  lyricsUpgradeStatus: () => call<LyricsUpgradeProgress>("lyrics_upgrade_status"),
+  lyricsTimedTargets: () => call<TimedTarget[]>("lyrics_timed_targets"),
+  lyricsTimedSearch: (songId: string) => call<TimedSearch>("lyrics_timed_search", { songId }),
+  lyricsTimedApply: (songId: string, candidateId: string) =>
+    call<AttachedLyrics>("lyrics_timed_apply", { songId, candidateId }),
+  lyricsSourcesGet: () => call<TimedSourceSettings>("lyrics_sources_get"),
+  /** secret 缺省保留，空字符串清除；只发送给后端，不在前端持久化。 */
+  lyricsSourcesSet: (config: TimedSourceConfig) =>
+    call<TimedSourceSettings>("lyrics_sources_set", { config }),
 
   // 数据迁移
   /** 预览：把那个目录的数据搬过来会发生什么。只读。 */
@@ -1008,6 +1024,8 @@ export const api = {
   /** 批量刮削，后台跑。返回这次要刮几首，进度走 scrape://progress 事件。 */
   scrapeStart: (onlyMissing?: boolean, limit?: number) =>
     call<number>("scrape_start", { onlyMissing, limit }),
+  /** 给已识别的歌补专辑信息（发行类型、曲目数）。返回要查的歌数，0 表示都齐了 */
+  scrapeAlbumFillStart: () => call<number>("scrape_album_fill_start"),
   scrapeCancel: () => call<void>("scrape_cancel"),
   scrapeIsRunning: () => call<boolean>("scrape_is_running"),
   /** 用户在复核界面选定一条候选。真的会写 songs、信用和封面。 */
@@ -1213,7 +1231,64 @@ export interface MissingLyrics {
 }
 
 /** 歌词是哪来的。 */
-export type LyricsSource = "embedded" | "sibling" | "netease" | "manual";
+export type LyricsSource = "embedded" | "sibling" | "netease" | "manual" | "qq" | "kugou" | "amll" | "apple" | "lrclib";
+
+export interface LyricsUpgradeProgress {
+  running: boolean; cancelled: boolean; total: number; done: number; upgraded: number; lineFilled: number; skipped: number; notFound: number; failed: number; title: string; error: string;
+  results: { songId: string; title: string; status: string; source: string; message: string }[];
+}
+
+export interface TimedTarget {
+  songId: string;
+  title: string;
+  artist: string;
+  lyricLines: number;
+  /** 仅计来源提供的真实逐字时间，不含按字数估算。 */
+  timedLines: number;
+}
+
+export interface TimedCandidate {
+  id: string;
+  source: string;
+  format: string;
+  title: string;
+  artist: string;
+  lineCount: number;
+  timedLineCount: number;
+  /** 增量可选字段；缺省时只按实际逐字数量和明确的格式展示精度。 */
+  mode?: "karaoke" | "lineSynced" | "plain";
+  preview: string[];
+  matchNote: string;
+}
+
+export interface SourceWarning {
+  source: string;
+  message: string;
+}
+
+export interface TimedSearch {
+  songId: string;
+  title: string;
+  currentLines: number;
+  currentTimedLines: number;
+  candidates: TimedCandidate[];
+  warnings: SourceWarning[];
+}
+
+export interface TimedSourceConfig {
+  netease: boolean;
+  qq: boolean;
+  kugou: boolean;
+  amll: boolean;
+  lrclib: boolean;
+  apple: boolean;
+  appleStorefront: string;
+  appleDeveloperToken?: string;
+}
+
+export interface TimedSourceSettings extends Omit<TimedSourceConfig, "appleDeveloperToken"> {
+  appleDeveloperTokenSet: boolean;
+}
 
 /** 挂上歌词之后的结果。 */
 export interface AttachedLyrics {
@@ -1411,6 +1486,11 @@ export const LYRICS_SOURCE_LABELS: Record<LyricsSource, string> = {
   sibling: tr("音频旁边的 .lrc"),
   netease: tr("在线搜到"),
   manual: tr("手动导入"),
+  qq: tr("QQ 音乐"),
+  kugou: tr("酷狗音乐"),
+  amll: "AMLL",
+  apple: tr("Apple Music（元数据）"),
+  lrclib: "LRCLIB",
 };
 
 export type ImportOutcome =
@@ -1621,6 +1701,8 @@ export interface Completeness {
   skipped: number;
   trackCovers: CompletenessCount;
   albumCovers: CompletenessCount;
+  /** 发行类型和整张碟曲目数都有了的专辑 */
+  albumInfo: CompletenessCount;
   lyrics: CompletenessCount;
   durations: CompletenessCount;
 }

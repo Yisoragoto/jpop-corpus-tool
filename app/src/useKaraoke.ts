@@ -3,10 +3,12 @@
  *
  * 播放位置是 10Hz 轮询来的（`usePlayback.ts`），拿它直接点字一卡一卡的。这里用
  * requestAnimationFrame 自己走一个时钟（`advanceClock`），每帧**直接改 DOM**：给当前行里
- * 已经唱过的字加 `kc-on`、正在唱的那个字加 `kc-now` 并设 `--p`（亮了几成）。
+ * 已经唱过的单位加 `kc-on`、正在唱的单位加 `kc-now` 并设 `--p`（亮了几成）。
+ * 一个真实单位内的几个字按顺序扫过去（只是画法），不拆出虚构的字符起止时间。
  * 不走 React 状态——每帧 setState 会把整首歌词重渲染一遍。
  *
  * 字是曲库页 `renderLineText` 渲染出来的 `.karaoke-line .kc`（`data-c` 是字符下标）。
+ * 平滑的是播放器时钟，不是歌词时间轴；没有完整真实时间轴时不启动动画。
  * 普通歌词和全屏歌词同时挂着时两份一起点。React 重渲染时这些 span 的 className
  * 属性没变，React 不会去碰 DOM，这里加的类不会被冲掉。
  */
@@ -54,6 +56,24 @@ export function advanceClock(
   return { sec: Math.max(prev.sec, target), at: now };
 }
 
+/** 只消费已验证的来源时间轴；null 会清除上一帧的点亮状态。 */
+export function paintKaraoke(timeline: CharTimeline | null, sec: number, elements: Iterable<HTMLElement>): void {
+  const { done, activeEnd, frac } = timeline === null ? { done: 0, activeEnd: 0, frac: 0 } : charProgress(timeline, sec);
+  for (const element of elements) {
+    const index = Number(element.dataset.c);
+    const valid = timeline !== null && Number.isInteger(index) && index >= 0 && index < timeline.starts.length;
+    const on = valid && index < done;
+    // 一个单位里的几个字连成一道从左到右扫过去：这只是画法，单位的起止时间仍是来源给的那一对
+    const width = activeEnd - done;
+    const local = width > 0 ? Math.min(1, Math.max(0, frac * width - (index - done))) : 0;
+    const now = valid && index >= done && index < activeEnd && local > 0;
+    if (now) element.style.setProperty("--p", `${(local * 100).toFixed(1)}%`);
+    else element.style.removeProperty("--p");
+    element.classList.toggle("kc-on", on);
+    element.classList.toggle("kc-now", now);
+  }
+}
+
 export function useKaraoke(
   timeline: CharTimeline | null,
   positionSec: number,
@@ -69,26 +89,18 @@ export function useKaraoke(
   }, [positionSec]);
 
   useEffect(() => {
-    if (timeline === null) return;
+    const elements = () => document.querySelectorAll<HTMLElement>(".karaoke-line .kc");
+    if (timeline === null) { paintKaraoke(null, 0, elements()); return; }
     let frame = 0;
     let clock: ClockState | null = null;
     const paint = () => {
       clock = advanceClock(clock, polled.current, performance.now(), playing, rate);
-      const { done, frac } = charProgress(timeline, clock.sec);
-      for (const el of document.querySelectorAll<HTMLElement>(".karaoke-line .kc")) {
-        const c = Number(el.dataset.c);
-        const on = c < done;
-        const now = c === done && frac > 0;
-        // 先设 --p 再加类：不然这个字会先拿上一次留下的 --p 画一帧
-        if (now) el.style.setProperty("--p", `${(frac * 100).toFixed(1)}%`);
-        if (el.classList.contains("kc-on") !== on) el.classList.toggle("kc-on", on);
-        if (el.classList.contains("kc-now") !== now) el.classList.toggle("kc-now", now);
-      }
+      paintKaraoke(timeline, clock.sec, elements());
       if (playing) frame = requestAnimationFrame(paint);
     };
     // 先画一帧：暂停时停在这里，刚换行时字也立刻就位
     frame = requestAnimationFrame(paint);
-    return () => cancelAnimationFrame(frame);
+    return () => { cancelAnimationFrame(frame); paintKaraoke(null, 0, elements()); };
     // 暂停时拖动进度条：位置变了也要重画一帧；在播时每帧都在画，不用跟着位置重启
   }, [timeline, playing, rate, repaintKey, playing ? 0 : positionSec]);
 }

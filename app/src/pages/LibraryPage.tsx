@@ -22,9 +22,9 @@ import {
 import { Stat } from "../components/Stat";
 import { useArtistPhotos } from "../components/PerformerPicker";
 import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
-import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
+import { AlbumView, PersonProfile } from "../components/PersonProfile";
 import { GraphView } from "../components/GraphView";
-import { TimelineView } from "../components/TimelineView";
+import { focusTimelineOn, TimelineView } from "../components/TimelineView";
 import { CloudView, focusCloudOn } from "../components/CloudView";
 import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
@@ -43,11 +43,12 @@ import { segmentLine, type Piece } from "../lyricSegments";
 import { albumOwner, sameView, type LibraryView } from "../libraryIndex";
 import { morph } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
-import type { LibraryActions, LibraryState } from "../useLibrary";
+import { WORD_EXAMPLE_LIMIT, type LibraryActions, type LibraryState } from "../useLibrary";
+import type { WordJump } from "../wordCloud";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
 import { useAppSettings } from "../settings";
 import { useKaraoke } from "../useKaraoke";
-import { charTimeline, type WordTiming } from "../wordTiming";
+import { charTimeline, lyricEndBound, validLyricTime, type WordTiming } from "../wordTiming";
 import { audition } from "../listen";
 import { SongProfile } from "../components/SongProfile";
 import { dictApi, type FindTermsResult } from "../dict/api";
@@ -79,13 +80,13 @@ function matchedPrefix(text: string, length: number): string {
 }
 
 /** 一个词里的字：有注音的套 ruby */
-function renderPieces(pieces: Piece[]): ReactNode {
+function renderPieces(pieces: Piece[], renderText: (text: string) => ReactNode = (text) => text): ReactNode {
   return pieces.map((piece, k) =>
     piece.reading === undefined ? (
-      <Fragment key={k}>{piece.text}</Fragment>
+      <Fragment key={k}>{renderText(piece.text)}</Fragment>
     ) : (
       <ruby key={k}>
-        {piece.text}
+        {renderText(piece.text)}
         <rt>{piece.reading}</rt>
       </ruby>
     ),
@@ -93,8 +94,8 @@ function renderPieces(pieces: Piece[]): ReactNode {
 }
 
 /**
- * 这首歌的词级时间（逐字歌词 + 手动校准），给逐字点亮用。关着时不取；换歌（歌词重读）时重取。
- * 取不到（旧库没有这张表之类）就当没有，全部按字数估。
+ * 这首歌的真实单位时间，供高亮与点击定位共用；换歌（歌词重读）时重取。
+ * 取不到就使用逐行 / 纯文本显示，不生成逐字时间。
  */
 function useSongWordTimings(lyrics: { utteranceId: number }[], enabled: boolean): WordTiming[] {
   const [state, setState] = useState<{ lyrics: unknown; list: WordTiming[] }>({ lyrics: null, list: [] });
@@ -140,8 +141,8 @@ interface Props {
   /** 从命令面板跳过来时要看的人。消费掉就清空 */
   focusPersonId: number | null;
   onFocusConsumed: () => void;
-  /** 词云里点「在检索页看」 */
-  onSearchWord: (lemma: string) => void;
+  /** 词云里点「在检索页看」：带着词云的范围 */
+  onSearchWord: (lemma: string, jump?: WordJump) => void;
   /** 外面（分析页）请求打开词云 */
   cloudWanted?: boolean;
   onCloudConsumed?: () => void;
@@ -167,7 +168,7 @@ export function LibraryPage({
   stageWanted = false,
   onStageConsumed,
 }: Props) {
-  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordLoading, activeLemma } =
+  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordJump, wordLoading, activeLemma } =
     library;
   const lyricsRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLParagraphElement>(null);
@@ -358,20 +359,32 @@ export function LibraryPage({
   // 当前行由位置推导，不是引擎给的——见 usePlayback.ts。
   // **歌词属于 selected，位置属于正在放的那一首**，换歌的一瞬间两者不是同一首。
   const lyricsArePlaying = selected !== null && playback.songId === selected.id;
-  const currentLine = useCurrentLine(lyrics, playback.positionSec, lyricsArePlaying);
   const loopLine = useLineLoop(lyrics);
 
-  // 逐字点亮（设置「歌词」页可关）：只算当前这一行每个字的时间，动画在 useKaraoke 里直接改 DOM
+  // 每行独立验证真实单位；部分行缺失或异常时，只降级该行。
   const karaokeEnabled = useAppSettings().karaokeLyrics;
-  const wordTimings = useSongWordTimings(lyrics, karaokeEnabled);
-  const karaoke = useMemo(() => {
-    if (!karaokeEnabled || !lyricsArePlaying) return null;
-    const line = lyrics[currentLine];
-    if (line === undefined || line.timeSec === null) return null;
-    const next = lyrics.slice(currentLine + 1).find((l) => l.timeSec !== null)?.timeSec ?? null;
-    const mine = wordTimings.filter((t) => t.utteranceId === line.utteranceId);
-    return charTimeline(line.text, line.timeSec, next, mine);
-  }, [karaokeEnabled, lyricsArePlaying, lyrics, currentLine, wordTimings]);
+  const wordTimings = useSongWordTimings(lyrics, true);
+  const timelines = useMemo(() => {
+    const byLine = new Map<number, WordTiming[]>();
+    for (const timing of wordTimings) {
+      const list = byLine.get(timing.utteranceId) ?? [];
+      list.push(timing);
+      byLine.set(timing.utteranceId, list);
+    }
+    return lyrics.map((line, index) => {
+      if (line.tokens.length > 0 && lineSegments[index] === null) return null;
+      const next = lyrics.slice(index + 1).find((other) => validLyricTime(other.timeSec)
+        && (!validLyricTime(line.timeSec) || other.timeSec > line.timeSec))?.timeSec ?? null;
+      const end = lyricEndBound(next, selected?.durationSec ?? null);
+      return charTimeline(line.text, line.timeSec, end, byLine.get(line.utteranceId) ?? NO_TIMINGS);
+    });
+  }, [lyrics, wordTimings, lineSegments, selected?.durationSec]);
+  // 只有纯文本时保持 null。若来源本身提供完整词段，可使用其真实起点定位当前行。
+  const syncedLyrics = useMemo(() => lyrics.map((line, index) => ({
+    ...line, timeSec: validLyricTime(line.timeSec) ? line.timeSec : timelines[index]?.starts[0] ?? null,
+  })), [lyrics, timelines]);
+  const currentLine = useCurrentLine(syncedLyrics, playback.positionSec, lyricsArePlaying);
+  const karaoke = karaokeEnabled && lyricsArePlaying ? timelines[currentLine] ?? null : null;
   useKaraoke(
     karaoke,
     playback.positionSec,
@@ -434,33 +447,23 @@ export function LibraryPage({
     const songId = selected.id;
     // 逐字点亮的那一行：每个字包一层 span（`data-c` 是字符下标），按渲染顺序数下去
     const karaokeLine = karaoke !== null && idx === currentLine;
+    // 只有当前行拆成一个个字：其余行原样输出，播放轮询每秒重渲染 10 次，整首都拆开太重
     let c = 0;
-    const chars = (text: string): ReactNode =>
-      karaokeLine
-        ? [...text].map((ch) => {
-            const at = c++;
-            return (
-              <span key={at} className="kc" data-c={at}>
-                {ch}
-              </span>
-            );
-          })
-        : text;
-    const pieces = (list: Piece[]): ReactNode =>
-      karaokeLine
-        ? list.map((piece, k) =>
-            piece.reading === undefined ? (
-              <Fragment key={k}>{chars(piece.text)}</Fragment>
-            ) : (
-              <ruby key={k}>
-                {chars(piece.text)}
-                <rt>{piece.reading}</rt>
-              </ruby>
-            ),
-          )
-        : renderPieces(list);
+    const chars = (text: string): ReactNode => {
+      if (!karaokeLine) return text;
+      return [...text].map((ch) => {
+        const at = c++;
+        return (
+          <span key={at} className="kc" data-c={at}>
+            {ch}
+          </span>
+        );
+      });
+    };
+    const pieces = (list: Piece[]): ReactNode => renderPieces(list, chars);
     return (
-      <span className={karaokeLine ? "text karaoke-line" : "text"} lang="ja">
+      <span className={karaokeLine ? "text karaoke-line" : "text"} lang="ja"
+        data-lyrics-mode={karaokeLine ? "karaoke" : validLyricTime(syncedLyrics[idx]?.timeSec ?? null) ? "lineSynced" : "plain"}>
         {line.tokens.length === 0
           ? chars(line.text)
           : (lineSegments[idx] ?? line.tokens.map((_, index) => ({ kind: "token" as const, index, pieces: [] }))).map((segment, k) => {
@@ -469,20 +472,23 @@ export function LibraryPage({
               const token = line.tokens[i];
               if (token === undefined) return null;
               // 分词对不齐原文时（拆分结果是 null）退回只显示词
-              const content = segment.pieces.length > 0 ? pieces(segment.pieces) : chars(token.surface);
               // 从这个词起到行尾，交给词典做最长匹配
               const rest = () => line.tokens.slice(i).map((t) => t.surface).join("");
               const context = { songId, utteranceId: line.utteranceId, tokenIndex: i };
+              const lookupToken = () => {
+                if (CONTENT_POS.has(token.pos)) void actions.openWord(token.lemma);
+                lookUp(rest(), context);
+                setStageSide(true);
+              };
+              const content = segment.pieces.length > 0 ? pieces(segment.pieces) : chars(token.surface);
               return CONTENT_POS.has(token.pos) ? (
                 <button
                   key={i}
                   className={`token ${activeLemma === token.lemma ? "on" : ""}`}
                   onClick={(e) => {
-                    // 全屏里点行是跳转，点词不跳
+                    // 点词只查词、不动播放进度（全屏里点行才是跳转）
                     e.stopPropagation();
-                    void actions.openWord(token.lemma);
-                    lookUp(rest(), context);
-                    setStageSide(true);
+                    lookupToken();
                   }}
                   title={`${token.lemma} · ${POS_LABELS[token.pos] ?? token.pos}`}
                 >
@@ -494,8 +500,7 @@ export function LibraryPage({
                   className="token-lookup"
                   onClick={(e) => {
                     e.stopPropagation();
-                    lookUp(rest(), context);
-                    setStageSide(true);
+                    lookupToken();
                   }}
                   title={tr("查词典")}
                 >
@@ -671,7 +676,9 @@ export function LibraryPage({
     (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => {
       lastSongId.current = songId;
       if (fullscreen) setStageFor(songId);
-      void actions.openTrackById(songId, { scrollTo: utteranceId, seekTo: timeSec, autoPlay: true });
+      void actions.openTrackById(songId, {
+        scrollTo: utteranceId, seekTo: validLyricTime(timeSec) ? timeSec : null, autoPlay: validLyricTime(timeSec),
+      });
     },
     [actions],
   );
@@ -786,6 +793,9 @@ export function LibraryPage({
         </div>
       ))}
       {word.examples.length === 0 && <p className="muted">{tr("没有例句")}</p>}
+      {word.examples.length >= WORD_EXAMPLE_LIMIT && (
+        <p className="muted small">{tr("只列了前 {n} 句，全部在检索页看", { n: WORD_EXAMPLE_LIMIT })}</p>
+      )}
     </div>
   );
 
@@ -831,7 +841,13 @@ export function LibraryPage({
             <Stat label={tr("歌曲")} value={word.songCount} align="start" />
             <Stat label={tr("歌手")} value={word.artistCount} align="start" />
           </div>
-          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma)} />
+          {wordJump !== null && wordJump.label !== "" && (
+            <p className="muted small word-scope">
+              {tr("只看 {label}", { label: wordJump.label })}
+              <button className="link-btn" onClick={() => void actions.openWord(word.lemma)}>{tr("看整个库")}</button>
+            </p>
+          )}
+          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma, wordJump)} />
           {word.firstYear && (
             <p className="muted small">
               {word.firstYear} — {word.lastYear}
@@ -870,8 +886,8 @@ export function LibraryPage({
     </button>
   );
   const songView = view?.kind === "song" || view === null;
-  /** 关系网、时间轴占中栏加右栏 */
-  const wide = view?.kind === "graph" || view?.kind === "timeline" || view?.kind === "cloud";
+  /** 关系网、时间轴、词云、档案占中栏加右栏 */
+  const wide = view !== null && view.kind !== "song";
 
   return (
     <div
@@ -937,9 +953,11 @@ export function LibraryPage({
             coverOf={coverOf}
             covered={stageOpen}
             onSearchWord={onSearchWord}
-            onShowExamples={(lemma) => {
+            onShowExamples={(lemma, jump) => {
               go({ kind: "song" });
-              void actions.openWord(lemma);
+              // 释义：原来只有点歌词里的词才查词典，从词云过来右栏只剩例句
+              lookUp(lemma);
+              void actions.openWord(lemma, jump);
             }}
             onError={onAudioError}
           />
@@ -981,6 +999,11 @@ export function LibraryPage({
               onOpenCloud={() => {
                 focusCloudOn(view.id);
                 go({ kind: "cloud" });
+              }}
+              onOpenGraph={() => go({ kind: "graph", focus: view.id })}
+              onOpenTimeline={() => {
+                focusTimelineOn(view.id);
+                go({ kind: "timeline" });
               }}
               onError={onAudioError}
             />
@@ -1172,6 +1195,7 @@ export function LibraryPage({
 
             {lyrics.map((line, idx) => {
               const active = idx === currentLine;
+              const startSec = syncedLyrics[idx]?.timeSec ?? null;
               const looped =
                 playback.loopRegion !== null &&
                 line.timeSec !== null &&
@@ -1187,15 +1211,15 @@ export function LibraryPage({
                 >
                   <button
                     className="time"
-                    disabled={!audioReady || line.timeSec === null}
-                    onClick={() => line.timeSec !== null && void api.audioSeek(line.timeSec)}
-                    title={line.timeSec === null ? tr("这行没有时间轴") : tr("跳到这一句")}
+                    disabled={!audioReady || !validLyricTime(startSec)}
+                    onClick={() => validLyricTime(startSec) && void api.audioSeek(startSec)}
+                    title={!validLyricTime(startSec) ? tr("这行没有时间轴") : tr("跳到这一句")}
                   >
-                    {line.timeSec === null ? "—" : formatDuration(line.timeSec)}
+                    {!validLyricTime(startSec) ? "—" : formatDuration(startSec)}
                   </button>
                   <button
                     className="loop-line"
-                    disabled={!audioReady || line.timeSec === null}
+                    disabled={!audioReady || !validLyricTime(line.timeSec)}
                     onClick={async () => {
                       if (looped) {
                         await api.audioSetLoop();
@@ -1224,19 +1248,7 @@ export function LibraryPage({
         onReset={columns.reset}
       />
 
-      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>
-        {view?.kind === "person" ? (
-          <PersonSide
-            personId={view.id}
-            data={data}
-            onOpenPerson={openPerson}
-            onOpenGraph={() => go({ kind: "graph", focus: view.id })}
-            onError={onAudioError}
-          />
-        ) : (
-          corpusContent
-        )}
-      </aside>
+      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>{corpusContent}</aside>
 
       {stageOpen && selected && (
         <LyricsStage
@@ -1246,13 +1258,13 @@ export function LibraryPage({
           track={selected}
           credits={credits}
           photoOf={photoOf}
-          lines={lyrics}
+          lines={syncedLyrics}
           currentLine={currentLine}
           renderText={renderLineText}
           canSeek={audioReady}
           onSeekLine={(idx) => {
-            const time = lyrics[idx]?.timeSec;
-            if (audioReady && time !== null && time !== undefined) void api.audioSeek(time);
+            const time = syncedLyrics[idx]?.timeSec ?? null;
+            if (audioReady && validLyricTime(time)) void api.audioSeek(time);
           }}
           display={display}
           withFurigana={furigana !== null}

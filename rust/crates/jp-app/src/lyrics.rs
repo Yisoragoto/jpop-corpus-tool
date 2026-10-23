@@ -57,6 +57,11 @@ pub enum LyricsSource {
     Sibling,
     /// 在线搜到的
     Netease,
+    Qq,
+    Kugou,
+    Amll,
+    Apple,
+    Lrclib,
     /// 用户自己选的文件
     Manual,
     /// 从这首歌以前的某一版恢复的
@@ -71,6 +76,11 @@ impl LyricsSource {
             Self::Embedded => "embedded",
             Self::Sibling => "sibling",
             Self::Netease => "netease",
+            Self::Qq => "qq",
+            Self::Kugou => "kugou",
+            Self::Amll => "amll",
+            Self::Apple => "apple",
+            Self::Lrclib => "lrclib",
             Self::Manual => "manual",
             Self::Restored => "restored",
             Self::Edited => "edited",
@@ -78,11 +88,16 @@ impl LyricsSource {
     }
 
     /// 记进 `lyric_versions` 的来源。`matched` 是界面上显示的那个名字（文件名、在线条目）
-    fn lineage(self, matched: &str) -> jp_import::LyricSource {
+    pub(crate) fn lineage(self, matched: &str) -> jp_import::LyricSource {
         let (kind, name, reference) = match self {
             Self::Embedded => ("embedded", matched, ""),
             Self::Sibling => ("sibling", matched, ""),
             Self::Netease => ("online", "netease", matched),
+            Self::Qq => ("online", "qq", matched),
+            Self::Kugou => ("online", "kugou", matched),
+            Self::Amll => ("online", "amll", matched),
+            Self::Apple => ("online", "apple", matched),
+            Self::Lrclib => ("online", "lrclib", matched),
             Self::Manual => ("manual_file", matched, ""),
             Self::Restored => ("restored", matched, ""),
             Self::Edited => ("manual_edit", matched, ""),
@@ -184,6 +199,22 @@ pub fn apply_lrc_text(
     matched: &str,
     analyzer: Option<&jp_tokenizer::Analyzer>,
 ) -> Result<Attached> {
+    apply_lrc_inner(conn, lyrics_dir, song, lrc_text, source, matched, analyzer, None, None, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_lrc_inner(
+    conn: &mut Connection,
+    lyrics_dir: &Path,
+    song: SongRef<'_>,
+    lrc_text: &str,
+    source: LyricsSource,
+    matched: &str,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+    saved: Option<&[crate::timed_lyrics::SavedLine]>,
+    restored_from: Option<i64>,
+    original: Option<(&str,&str)>,
+) -> Result<Attached> {
     let SongRef { id: song_id, artist, title } = song;
     if lrc_text.trim().is_empty() {
         bail!("歌词是空的");
@@ -191,17 +222,27 @@ pub fn apply_lrc_text(
     std::fs::create_dir_all(lyrics_dir)
         .with_context(|| format!("建不出歌词目录：{}", lyrics_dir.display()))?;
     let dest = lyrics_dir.join(format!("{song_id}.lrc"));
-    write_atomic(&dest, lrc_text.as_bytes())
-        .with_context(|| format!("写歌词文件失败：{}", dest.display()))?;
-
     let tx = conn.transaction()?;
+    crate::timed_lyrics::archive_before(&tx, &crate::timed_lyrics::snapshot(&tx, song_id)?)?;
     jp_import::maintain::clear_lyrics(&tx, song_id)?;
-    let stats = jp_import::attach_lyrics(&tx, song_id, &dest, &source.lineage(matched), analyzer, artist, title)?;
+    let stats = if let Some(lines) = saved {
+        let stats = jp_import::attach_lines(&tx, song_id, lrc_text, crate::timed_lyrics::saved_lines(lines), &source.lineage(matched), analyzer, artist, title)?;
+        crate::timed_lyrics::restore_timings(&tx, song_id, lines)?;
+        stats
+    } else {
+        jp_import::attach_lyrics_text(&tx, song_id, lrc_text, &source.lineage(matched), analyzer, artist, title)?
+    };
     if stats.lyric_lines == 0 {
         // 解析出 0 行：这份文件不是歌词（空文件、纯标签、纯时间轴）。
         // 回滚，让这首歌继续算「缺歌词」——否则它会从补齐名单里消失，
         // 而用户永远不知道为什么还是没有歌词。
         bail!("这份歌词解析出 0 行，没有改动");
+    }
+    if let Some(version) = restored_from {
+        tx.execute("UPDATE lyric_versions SET (raw_format,source_raw,sync_granularity,timing_origin,timing_validation_json) = (SELECT raw_format,source_raw,sync_granularity,timing_origin,timing_validation_json FROM lyric_versions WHERE id=?2 AND song_id=?1) WHERE song_id=?1 AND is_current=1",params![song_id,version])?;
+    }
+    if let Some((format,raw)) = original {
+        tx.execute("UPDATE lyric_versions SET raw_format=?2,source_raw=?3 WHERE song_id=?1 AND is_current=1",params![song_id,format,raw])?;
     }
     // source_file 记一笔来处。存量库这一列是空的，不靠它判断有无歌词（见 `missing`），
     // 但重装、迁库时它是唯一能回答「这份歌词哪来的」的东西。
@@ -209,7 +250,7 @@ pub fn apply_lrc_text(
         "UPDATE songs SET source_file=?2 WHERE id=?1",
         params![song_id, dest.display().to_string()],
     )?;
-    tx.commit()?;
+    crate::timed_lyrics::commit_with_file(tx, &dest, lrc_text.as_bytes())?;
 
     Ok(Attached {
         song_id: song_id.to_string(),
@@ -221,17 +262,6 @@ pub fn apply_lrc_text(
         corrections_restored: stats.corrections_restored,
         lrc_path: dest.display().to_string(),
     })
-}
-
-/// 先写临时文件再改名：写一半断电/崩了的话，原来那份歌词还是完整的。
-fn write_atomic(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let tmp = dest.with_extension("lrc.part");
-    std::fs::write(&tmp, bytes)?;
-    // Windows 上 rename 不覆盖已存在的目标，所以先删
-    if dest.exists() {
-        std::fs::remove_file(dest)?;
-    }
-    std::fs::rename(&tmp, dest)
 }
 
 /// 界面上逐行编辑之后的一行。
@@ -289,14 +319,17 @@ pub fn save_edited_lines(
     }
 
     let raw = jp_import::lrc::format(&clean);
+    let timing_before = crate::timed_lyrics::snapshot(conn, song_id)?;
     std::fs::create_dir_all(lyrics_dir)
         .with_context(|| format!("建不出歌词目录：{}", lyrics_dir.display()))?;
     let dest = lyrics_dir.join(format!("{song_id}.lrc"));
 
     let tx = conn.transaction()?;
+    crate::timed_lyrics::archive_before(&tx, &crate::timed_lyrics::snapshot(&tx, song_id)?)?;
     jp_import::maintain::clear_lyrics(&tx, song_id)?;
     let source = LyricsSource::Edited.lineage(note.trim());
     let stats = jp_import::attach_lines(&tx, song_id, &raw, clean, &source, analyzer, &artist, &title)?;
+    crate::timed_lyrics::preserve_unchanged(&tx, &timing_before)?;
     let version_id: Option<i64> = tx.query_row(
         "SELECT id FROM lyric_versions WHERE song_id=?1 AND is_current=1",
         params![song_id],
@@ -318,8 +351,7 @@ pub fn save_edited_lines(
     )?;
     tx.execute("UPDATE songs SET source_file=?2 WHERE id=?1", params![song_id, dest.display().to_string()])?;
     // 先落盘再提交：文件写不进去就整个回滚，库和盘上的 .lrc 不会对不上
-    write_atomic(&dest, raw.as_bytes()).with_context(|| format!("写歌词文件失败：{}", dest.display()))?;
-    tx.commit()?;
+    crate::timed_lyrics::commit_with_file(tx, &dest, raw.as_bytes())?;
 
     Ok(Attached {
         song_id: song_id.to_string(),
@@ -358,7 +390,8 @@ pub fn restore_version(
         |r| r.get(0),
     )?;
     let (artist, title) = song_names(conn, song_id)?;
-    apply_lrc_text(
+    let saved = crate::timed_lyrics::version_timings(conn, song_id, version_id)?;
+    apply_lrc_inner(
         conn,
         lyrics_dir,
         SongRef { id: song_id, artist: &artist, title: &title },
@@ -366,6 +399,9 @@ pub fn restore_version(
         LyricsSource::Restored,
         &format!("第 {version_no} 版"),
         analyzer,
+        saved.as_deref(),
+        Some(version_id),
+        None,
     )
 }
 
@@ -381,12 +417,16 @@ pub fn attach_from_file(
     analyzer: Option<&jp_tokenizer::Analyzer>,
 ) -> Result<Attached> {
     let (artist, title) = song_names(conn, song_id)?;
-    let text = read_text(path)?;
+    let converted = crate::timed_lyrics::file_to_lrc(path)?;
+    let text = match &converted {
+        Some(file) => file.text.clone(),
+        None => read_text(path)?,
+    };
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    apply_lrc_text(
+    apply_lrc_inner(
         conn,
         lyrics_dir,
         SongRef { id: song_id, artist: &artist, title: &title },
@@ -394,12 +434,15 @@ pub fn attach_from_file(
         LyricsSource::Manual,
         &name,
         analyzer,
+        None,
+        None,
+        converted.as_ref().map(|f|(f.format.as_str(),f.original.as_str())),
     )
 }
 
 /// 读文本，编码按 UTF-8 → CP932 → GBK 试，和 `jp_import::lrc::parse_file` 同一套规则。
 /// 带 BOM 的 UTF-16 也认：`Encoding::decode` 先嗅 BOM（见 `jp_import::lrc` 里 `decode` 的注释）。
-fn read_text(path: &Path) -> Result<String> {
+pub(crate) fn read_text(path: &Path) -> Result<String> {
     let bytes =
         std::fs::read(path).with_context(|| format!("读不了歌词文件：{}", path.display()))?;
     if let Ok(text) = std::str::from_utf8(&bytes) {

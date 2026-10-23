@@ -35,6 +35,7 @@ import {
   type LemmaForm,
   type Placed,
   type SongHits,
+  type WordJump,
 } from "../wordCloud";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
@@ -73,10 +74,10 @@ interface Props {
   nowLine: NowLine | null;
   /** 从这一句开始放。`fullscreen` = 同时进全屏歌词（退出来还是词云）；否则只在词云里放 */
   onPlayLine: (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => void;
-  /** 去检索页按词元查 */
-  onSearchWord: (lemma: string) => void;
-  /** 去看这个词的例句 */
-  onShowExamples: (lemma: string) => void;
+  /** 去检索页按词元查，范围和词云一样 */
+  onSearchWord: (lemma: string, jump: WordJump) => void;
+  /** 去看这个词的释义和例句，范围和词云一样 */
+  onShowExamples: (lemma: string, jump: WordJump) => void;
   /** 全屏：窗口全屏显示词云 */
   present: boolean;
   /** 上面盖着全屏歌词：词云这边不响应 Esc，也退到播放条底下 */
@@ -247,6 +248,8 @@ class CloudMotion {
 }
 
 /* ── 主组件 ── */
+export type { WordJump };
+
 export function WordCloud({
   rows,
   performerIds,
@@ -733,8 +736,8 @@ function SongPanel({
   coverOf: (songId: string) => string;
   onClose: () => void;
   onPlayLine: (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => void;
-  onSearchWord: (lemma: string) => void;
-  onShowExamples: (lemma: string) => void;
+  onSearchWord: (lemma: string, jump: WordJump) => void;
+  onShowExamples: (lemma: string, jump: WordJump) => void;
   onError: (message: string) => void;
 }) {
   const settings = useAppSettings();
@@ -742,6 +745,18 @@ function SongPanel({
   const [truncated, setTruncated] = useState(false);
   // 词云的词频按当前子语料算，点词列出来的歌也得是这块语料里的
   const scope = useActiveScope();
+  const jump = useMemo<WordJump>(() => {
+    const names = performerIds.map((id) => people.find((p) => p.id === id)?.name).filter(Boolean);
+    const span = years.from !== null || years.to !== null ? `${years.from ?? ""}–${years.to ?? ""}` : "";
+    return {
+      performerIds,
+      yearFrom: years.from,
+      yearTo: years.to,
+      pos: word.pos ?? "",
+      variants: word.variants,
+      label: [names.join("、"), span].filter(Boolean).join(" · "),
+    };
+  }, [performerIds, people, years.from, years.to, word]);
 
   useEffect(() => {
     let alive = true;
@@ -770,7 +785,7 @@ function SongPanel({
     };
   }, [word, performerIds, years.from, years.to, scope, onError]);
 
-  // 每首歌显示的那一处：拿它的词级时间（逐字 / 校准），没有就估
+  // 每首歌显示的那一处：真实单位 / 校准起点，没有就从行首播放。
   const [timings, setTimings] = useState<WordTiming[]>([]);
   const loadTimings = useCallback(() => {
     if (songs === null || songs.length === 0) return;
@@ -786,7 +801,7 @@ function SongPanel({
   const startOf = (s: SongHits): WordStart | null => wordStart(s.first, timings);
   const playFromWord = (s: SongHits, fullscreen: boolean) => {
     const at = startOf(s);
-    onPlayLine(s.songId, s.first.utteranceId, at?.sec ?? s.first.timeSec, fullscreen);
+    onPlayLine(s.songId, s.first.utteranceId, at?.sec ?? null, fullscreen);
   };
   const beginCalibrate = (s: SongHits) => {
     setCalibrating(s.songId);
@@ -906,7 +921,7 @@ function SongPanel({
               style={{ animationDelay: `${60 + Math.min(i, 12) * 35}ms` }}
               onContextMenu={(e) => {
                 // 校准不占位置：在这一行上右键打开（再右键收起）
-                if (at === null || at.kind === "line") return;
+                if (at === null) return;
                 e.preventDefault();
                 if (cal) setCalibrating(null);
                 else beginCalibrate(s);
@@ -916,16 +931,17 @@ function SongPanel({
               <button
                 className="wc-song-face"
                 onClick={() => playFromWord(s, true)}
-                title={tr("从「{keyword}」开始放，进全屏歌词（退出来还是词云）", { keyword: s.first.keyword })}
+                title={tr("从真实单位起点播放；没有词级时间则从行首播放，并进入全屏歌词")}
               >
                 {coverOf(s.songId) ? <Cover path={coverOf(s.songId)} size={40} rounded={6} /> : <Avatar path={photoOf(s.artist)} name={s.artist} size={40} />}
                 <span className="wc-song-icon" aria-hidden="true">
                   ⤢
                 </span>
               </button>
-              <button className="wc-song-meta" onClick={() => playFromWord(s, false)} title={tr("从「{keyword}」开始放", { keyword: s.first.keyword })}>
+              <button className="wc-song-meta" onClick={() => playFromWord(s, false)} title={tr("从真实单位起点播放；没有词级时间则从行首播放")}>
                 <strong>{s.title}</strong>
                 <small>{tr("{artist} · {count} 次", { artist: s.artist, count: s.count })}{at !== null ? ` · ${formatTime(at.sec)}` : ""}
+                  {/* 只标有真实词级时间的；从行首放的不标，免得每一行都挂一个标签 */}
                   {at !== null && at.kind !== "line" && (
                     <span className={`wc-timing ${at.kind}`} title={tr("{TIMING_HINT}。右键这一行可以校准", { TIMING_HINT: TIMING_HINT[at.kind] })}>
                       {TIMING_LABEL[at.kind]}
@@ -944,7 +960,7 @@ function SongPanel({
               <button
                 className="wc-song-go"
                 onClick={() => playFromWord(s, false)}
-                title={tr("从「{keyword}」开始放", { keyword: s.first.keyword })}
+                title={tr("从真实单位起点播放；没有词级时间则从行首播放")}
                 aria-label={tr("播放 {title}", { title: s.title })}
               >
                 {now ? (
@@ -972,7 +988,7 @@ function SongPanel({
                         +0.1
                       </button>
                       <button onClick={() => playFromWord(s, false)}>{tr("重听")}</button>
-                      <button onClick={() => void clearCalibration(s)} title={tr("删掉这处校准，回到估算")}>{tr("撤销")}</button>
+                      <button onClick={() => void clearCalibration(s)} title={tr("删掉这处校准，回到来源单位起点或行首")}>{tr("撤销")}</button>
                     </span>
                   )}
                 </div>
@@ -983,19 +999,18 @@ function SongPanel({
       </div>
       {!compact && (
         <div className="wc-pop-foot">
-          <button onClick={() => onSearchWord(word.lemma)}>{tr("在检索页看 KWIC")}</button>
-          <button onClick={() => onShowExamples(word.lemma)}>{tr("看例句和释义")}</button>
+          <button onClick={() => onSearchWord(word.lemma, jump)}>{tr("在检索页看 KWIC")}</button>
+          <button onClick={() => onShowExamples(word.lemma, jump)}>{tr("看例句和释义")}</button>
         </div>
       )}
     </aside>
   );
 }
 
-const TIMING_LABEL: Record<string, string> = { manual: tr("已校准"), lrc: tr("逐字"), estimate: tr("估") };
+const TIMING_LABEL: Record<string, string> = { manual: tr("已校准"), lrc: tr("逐字") };
 const TIMING_HINT: Record<string, string> = {
   manual: tr("从你校准过的位置放"),
   lrc: tr("从逐字歌词里这个词的时间放"),
-  estimate: tr("这一行没有逐字时间，按字数估的位置，可能差零点几秒"),
 };
 
 function formatTime(sec: number): string {

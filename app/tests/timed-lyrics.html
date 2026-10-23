@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="UTF-8"><title>Timed lyrics browser tests</title>
+    <style>
+      body:has(.qa-layout) { height: auto; overflow: auto; background: #17171c; }
+      .qa-layout { padding: 24px; }
+      .qa-layout > header { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+      .qa-layout > header h1 { margin: 0 0 6px; font-size: 20px; }
+      .qa-layout > header p { margin: 4px 0; color: var(--muted); }
+      .qa-layout .qa-label { color: var(--accent); font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <pre id="qa-report">Running browser tests…</pre>
+    <div id="qa-root"></div>
+    <script>Object.defineProperty(navigator, "languages", { value: ["zh-CN"] });</script>
+    <script type="module" src="/src/components/TimedLyricsPanel.browser.test.tsx"></script>
+  </body>
+</html>
