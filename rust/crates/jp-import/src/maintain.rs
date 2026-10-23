@@ -99,10 +99,12 @@ fn remove_orphan_people(conn: &Connection, ids: &BTreeSet<i64>) -> Result<usize>
 /// 这张专辑没有歌了就删掉
 fn remove_orphan_album(conn: &Connection, album_id: Option<i64>) -> Result<usize> {
     let Some(id) = album_id else { return Ok(0) };
-    Ok(conn.execute(
+    let removed = conn.execute(
         "DELETE FROM albums WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM songs WHERE album_id=?1)",
         params![id],
-    )?)
+    )?;
+    if removed > 0 { jp_corpus::identity::forget(conn, "album", &id.to_string())?; }
+    Ok(removed)
 }
 
 /// 改曲目信息。歌名、歌手不能为空。**在一个事务里调**（`tx` 可以是 `Transaction`）。
@@ -238,6 +240,7 @@ pub fn delete_song(conn: &Connection, song_id: &str) -> Result<DeleteReport> {
             |r| r.get::<_, i64>(0),
         )? as usize;
     }
+    jp_corpus::word_timing::delete_for_song(conn, song_id)?;
     conn.execute("DELETE FROM utterances WHERE song_id=?1", params![song_id])?;
     if table_exists(conn, "chapters")? {
         conn.execute("DELETE FROM chapters WHERE source_id=?1", params![song_id])?;
@@ -314,6 +317,7 @@ pub fn clear_lyrics(conn: &Connection, song_id: &str) -> Result<ClearedLyrics> {
         )?;
         report.tokens += conn.execute("DELETE FROM tokens WHERE utterance_id=?1", params![id])?;
     }
+    jp_corpus::word_timing::delete_for_song(conn, song_id)?;
     conn.execute("DELETE FROM utterances WHERE song_id=?1", params![song_id])?;
     // 旧版的原文留在 lyric_versions 里，只是不再是当前版
     if table_exists(conn, "lyric_versions")? {
@@ -367,6 +371,9 @@ pub fn relink_audio(conn: &Connection, song_id: &str, new_path: &str) -> Result<
         if table_exists(conn, "scrape_attempts")? {
             conn.execute("UPDATE scrape_attempts SET file_path=?1 WHERE file_path=?2", params![new_path, old])?;
         }
+    }
+    if let Err(err) = jp_corpus::fingerprint::refresh(conn, song_id, Path::new(new_path)) {
+        eprintln!("重新链接后指纹未写入 {song_id}: {err:#}");
     }
     Ok(old)
 }

@@ -21,6 +21,7 @@ import {
   type Comparison,
 } from "../corpusQuality";
 import { pyGrouped } from "../pyFormat";
+import { tr } from "../i18n";
 
 interface Props {
   filter: StatsFilter;
@@ -74,36 +75,29 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
   return (
     <section className="card analysis-runs">
       <div className="card-head">
-        <h2>分析记录</h2>
+        <h2>{tr("分析记录")}</h2>
         <div className="card-tools">
-          <input type="text" className="label-input" placeholder="备注（可不填）" value={label} onChange={(e) => setLabel(e.target.value)} />
-          <button className="ghost" disabled={busy} onClick={() => void save({ kind: "corpusReport" })}>
-            存档报告
-          </button>
+          <input type="text" className="label-input" placeholder={tr("备注（可不填）")} value={label} onChange={(e) => setLabel(e.target.value)} />
+          <button className="ghost" disabled={busy} onClick={() => void save({ kind: "corpusReport" })}>{tr("存档报告")}</button>
           <button
             className="ghost"
             disabled={busy}
             onClick={() => void save({ kind: "frequency", pos: pos || null, limit: frequencyLimit })}
-          >
-            存档词频表
-          </button>
+          >{tr("存档词频表")}</button>
         </div>
       </div>
-      <p className="muted small">
-        存档按上面的条件现算一次，连同筛选条件、纳入的每首歌和它的歌词版本、用过的分词器、统计口径和生成时间一起存下来。
-        「重跑」在现在的库上用同样的条件再算一次，并说明和原来差在哪。
-      </p>
+      <p className="muted small">{tr("存档按上面的条件现算一次，连同筛选条件、纳入的每首歌和它的歌词版本、用过的分词器、统计口径和生成时间一起存下来。 「重跑」在现在的库上用同样的条件再算一次，并说明和原来差在哪。")}</p>
 
-      {runs.length === 0 && <p className="muted small">还没有存档。</p>}
+      {runs.length === 0 && <p className="muted small">{tr("还没有存档。")}</p>}
       {runs.length > 0 && (
         <table className="data compact">
           <thead>
             <tr>
               <th className="num">#</th>
-              <th>种类</th>
-              <th>范围</th>
-              <th className="num">曲数</th>
-              <th>时间</th>
+              <th>{tr("种类")}</th>
+              <th>{tr("范围")}</th>
+              <th className="num">{tr("曲数")}</th>
+              <th>{tr("时间")}</th>
               <th />
             </tr>
           </thead>
@@ -128,9 +122,7 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
                         setComparison(null);
                       })
                     }
-                  >
-                    详情
-                  </button>
+                  >{tr("详情")}</button>
                   <button
                     className="link-btn"
                     disabled={busy}
@@ -141,9 +133,7 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
                         await load();
                       })
                     }
-                  >
-                    重跑对比
-                  </button>
+                  >{tr("重跑对比")}</button>
                   {r.rerunOf !== null && (
                     <button
                       className="link-btn"
@@ -153,9 +143,7 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
                           setDetail(null);
                         })
                       }
-                    >
-                      和 #{r.rerunOf} 比
-                    </button>
+                    >{tr("和 #{rerunOf} 比", { rerunOf: r.rerunOf })}</button>
                   )}
                   <button
                     className="link-btn danger"
@@ -166,9 +154,7 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
                         await load();
                       })
                     }
-                  >
-                    删除
-                  </button>
+                  >{tr("删除")}</button>
                 </td>
               </tr>
             ))}
@@ -190,31 +176,24 @@ function RunDetail({ run, onClose }: { run: AnalysisRun; onClose: () => void }) 
           #{run.id} {KIND_LABELS[run.spec.kind]}
           {run.label && ` · ${run.label}`}
         </h3>
-        <button className="link-btn" onClick={onClose}>
-          收起
-        </button>
+        <button className="link-btn" onClick={onClose}>{tr("收起")}</button>
       </div>
       <dl>
-        <dt>生成时间</dt>
-        <dd>
-          {when(run.createdAt)} · 程序 {run.appVersion || "?"} · 库结构 {run.schemaVersion}
-        </dd>
-        <dt>条件</dt>
+        <dt>{tr("生成时间")}</dt>
+        <dd>{tr("{createdAt} · 程序", { createdAt: when(run.createdAt) })}{" "}{run.appVersion || "?"}{" "}{tr("· 库结构 {schemaVersion}", { schemaVersion: run.schemaVersion })}</dd>
+        <dt>{tr("条件")}</dt>
         <dd>{describeFilter(run.filter)}</dd>
-        <dt>范围</dt>
-        <dd>
-          {run.scope.songCount} 首 / {pyGrouped(run.scope.lineCount)} 行 · 指纹 <code>{run.scopeHash}</code>
+        <dt>{tr("范围")}</dt>
+        <dd>{tr("{songCount} 首 / {lineCount} 行 · 指纹", { songCount: run.scope.songCount, lineCount: pyGrouped(run.scope.lineCount) })}{" "}<code>{run.scopeHash}</code>
         </dd>
-        <dt>分词器</dt>
+        <dt>{tr("分词器")}</dt>
         <dd>
           {run.tokenizers.runs.map((t) => (
-            <div key={t.id}>
-              {tokenizerLabel(t)}（{t.lineCount} 行）
-            </div>
+            <div key={t.id}>{tr("{t}（{lineCount} 行）", { t: tokenizerLabel(t), lineCount: t.lineCount })}</div>
           ))}
-          {run.tokenizers.unknownLines > 0 && <div className="muted">{run.tokenizers.unknownLines} 行不知道用的哪个分词器（老库导入的）</div>}
+          {run.tokenizers.unknownLines > 0 && <div className="muted">{tr("{unknownLines} 行不知道用的哪个分词器（老库导入的）", { unknownLines: run.tokenizers.unknownLines })}</div>}
         </dd>
-        <dt>口径</dt>
+        <dt>{tr("口径")}</dt>
         <dd>
           <ul className="method-list">
             {Object.entries(run.method).map(([k, v]) => (
@@ -226,14 +205,12 @@ function RunDetail({ run, onClose }: { run: AnalysisRun; onClose: () => void }) 
         </dd>
         {run.snapshot && (
           <>
-            <dt>库指纹</dt>
+            <dt>{tr("库指纹")}</dt>
             <dd>
-              <code>{run.snapshot.fingerprint}</code> · {run.snapshot.songs} 首 / {pyGrouped(run.snapshot.tokens)} 词 /{" "}
-              {run.snapshot.corrections} 处校正
-            </dd>
+              <code>{run.snapshot.fingerprint}</code>{" "}{tr("· {songs} 首 / {tokens} 词 /{v}{corrections} 处校正", { songs: run.snapshot.songs, tokens: pyGrouped(run.snapshot.tokens), v: " ", corrections: run.snapshot.corrections })}</dd>
           </>
         )}
-        <dt>结果指纹</dt>
+        <dt>{tr("结果指纹")}</dt>
         <dd>
           <code>{run.resultHash}</code>
         </dd>
@@ -244,29 +221,27 @@ function RunDetail({ run, onClose }: { run: AnalysisRun; onClose: () => void }) 
 
 function ComparisonView({ data, onClose }: { data: Comparison; onClose: () => void }) {
   const flags: [string, boolean][] = [
-    ["条件", data.sameFilter],
-    ["参数", data.sameSpec],
-    ["口径", data.sameMethod],
-    ["范围", data.sameScope],
-    ["分词器", data.sameTokenizers],
-    ["库结构", data.sameSchema],
-    ...(data.sameCorpus === null ? [] : ([["库指纹", data.sameCorpus]] as [string, boolean][])),
+    [tr("条件"), data.sameFilter],
+    [tr("参数"), data.sameSpec],
+    [tr("口径"), data.sameMethod],
+    [tr("范围"), data.sameScope],
+    [tr("分词器"), data.sameTokenizers],
+    [tr("库结构"), data.sameSchema],
+    ...(data.sameCorpus === null ? [] : ([[tr("库指纹"), data.sameCorpus]] as [string, boolean][])),
   ];
   return (
     <div className="run-detail comparison small">
       <div className="card-head">
         <h3>
-          #{data.before.id} → #{data.after.id}：{data.resultIdentical ? "结果完全一致" : "结果不同"}
+          #{data.before.id} → #{data.after.id}{tr("：")}{data.resultIdentical ? tr("结果完全一致") : tr("结果不同")}
         </h3>
-        <button className="link-btn" onClick={onClose}>
-          收起
-        </button>
+        <button className="link-btn" onClick={onClose}>{tr("收起")}</button>
       </div>
       <p>
         {flags.map(([name, same]) => (
           <span key={name} className={`chip ${same ? "" : "on"}`}>
             {name}
-            {same ? "相同" : "不同"}
+            {same ? tr("相同") : tr("不同")}
           </span>
         ))}
       </p>
@@ -279,18 +254,18 @@ function ComparisonView({ data, onClose }: { data: Comparison; onClose: () => vo
       )}
       {(data.scope.added.length > 0 || data.scope.removed.length > 0 || data.scope.lyricsChanged.length > 0) && (
         <p className="muted">
-          {data.scope.added.length > 0 && `新纳入：${data.scope.added.slice(0, 20).join("、")}${data.scope.added.length > 20 ? "…" : ""}　`}
-          {data.scope.removed.length > 0 && `少了：${data.scope.removed.slice(0, 20).join("、")}　`}
-          {data.scope.lyricsChanged.length > 0 && `换了歌词：${data.scope.lyricsChanged.slice(0, 20).join("、")}`}
+          {data.scope.added.length > 0 && tr("新纳入：{slice}{v}　", { slice: data.scope.added.slice(0, 20).join(tr("、")), v: data.scope.added.length > 20 ? "…" : "" })}
+          {data.scope.removed.length > 0 && tr("少了：{slice}　", { slice: data.scope.removed.slice(0, 20).join(tr("、")) })}
+          {data.scope.lyricsChanged.length > 0 && tr("换了歌词：{slice}", { slice: data.scope.lyricsChanged.slice(0, 20).join(tr("、")) })}
         </p>
       )}
       {data.metrics.length > 0 && (
         <table className="data compact">
           <thead>
             <tr>
-              <th>指标</th>
-              <th className="num">之前</th>
-              <th className="num">之后</th>
+              <th>{tr("指标")}</th>
+              <th className="num">{tr("之前")}</th>
+              <th className="num">{tr("之后")}</th>
             </tr>
           </thead>
           <tbody>
@@ -308,10 +283,10 @@ function ComparisonView({ data, onClose }: { data: Comparison; onClose: () => vo
         <table className="data compact">
           <thead>
             <tr>
-              <th>词元</th>
-              <th>词性</th>
-              <th className="num">名次</th>
-              <th className="num">频次</th>
+              <th>{tr("词元")}</th>
+              <th>{tr("词性")}</th>
+              <th className="num">{tr("名次")}</th>
+              <th className="num">{tr("频次")}</th>
             </tr>
           </thead>
           <tbody>

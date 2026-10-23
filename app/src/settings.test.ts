@@ -55,4 +55,9 @@ describe("词云词数", () => {
     expect(parseSettings(JSON.stringify({ wordCloudCount: 9999 })).wordCloudCount).toBe(250);
     expect(parseSettings(JSON.stringify({ wordCloudCount: "多" })).wordCloudCount).toBe(DEFAULT_SETTINGS.wordCloudCount);
   });
+
+  it("词云隐藏词：只收非空字符串，去重", () => {
+    expect(parseSettings(JSON.stringify({ wordCloudHidden: ["つ", "つ", 3, "", "まま"] })).wordCloudHidden).toEqual(["つ", "まま"]);
+    expect(parseSettings(JSON.stringify({ wordCloudHidden: "つ" })).wordCloudHidden).toEqual([]);
+  });
 });

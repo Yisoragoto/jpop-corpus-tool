@@ -4,9 +4,8 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
-import { lyricFontStack, useFontOptions, type FontOption } from "../fonts";
+import { lyricFontStack, pickFontFiles, useFontOptions, type FontOption } from "../fonts";
 import {
   DISPLAY_LIMITS,
   FURIGANA_MODE_LABELS,
@@ -15,6 +14,7 @@ import {
   type FuriganaMode,
   type LyricsDisplay,
 } from "../lyricsDisplay";
+import { tr } from "../i18n";
 
 interface Props {
   display: LyricsDisplay;
@@ -62,12 +62,7 @@ export function LyricsTools({ display, onError, onExpand }: Props) {
 
   const importFonts = async () => {
     try {
-      const picked = await openDialog({
-        multiple: true,
-        title: "导入字体",
-        filters: [{ name: "字体文件", extensions: ["ttf", "otf", "ttc"] }],
-      });
-      const paths = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
+      const paths = await pickFontFiles();
       if (paths.length === 0) return;
       setJustImported(paths);
       fonts.addImported(paths);
@@ -85,56 +80,45 @@ export function LyricsTools({ display, onError, onExpand }: Props) {
         className={`tool-toggle ${display.furigana ? "on" : ""}`}
         onClick={() => updateLyricsDisplay({ furigana: !display.furigana })}
         aria-pressed={display.furigana}
-        title={display.furigana ? "隐藏振假名" : "显示振假名"}
+        title={display.furigana ? tr("隐藏振假名") : tr("显示振假名")}
       >
-        <ruby>
-          振<rt>ふり</rt>
-        </ruby>
-        假名
-      </button>
+        <ruby>{tr("振")}<rt>ふり</rt>
+        </ruby>{tr("假名")}</button>
       <button
         className={`tool-toggle ${open ? "on" : ""}`}
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        title="歌词字体、字号、振假名、行距、字距"
-      >
-        显示
-      </button>
+        title={tr("歌词字体、字号、振假名、行距、字距")}
+      >{tr("显示")}</button>
       {onExpand && (
-        <button className="tool-toggle" onClick={onExpand} title="全屏歌词（Esc 退出）">
-          全屏
-        </button>
+        <button className="tool-toggle" onClick={onExpand} title={tr("全屏歌词（Esc 退出）")}>{tr("全屏")}</button>
       )}
       {open && (
-        <div className="lyrics-display-panel" role="dialog" aria-label="歌词显示">
+        <div className="lyrics-display-panel" role="dialog" aria-label={tr("歌词显示")}>
           <FontSelect
-            label="主字体"
+            label={tr("主字体")}
             value={display.fontFamily}
-            emptyLabel="默认（界面字体）"
+            emptyLabel={tr("默认（界面字体）")}
             options={fonts.options}
             onChange={(v) => updateLyricsDisplay({ fontFamily: v })}
           />
           <FontSelect
-            label="备用字体"
+            label={tr("备用字体")}
             value={display.fallbackFamily}
-            emptyLabel="不设"
+            emptyLabel={tr("不设")}
             options={fonts.options}
             onChange={(v) => updateLyricsDisplay({ fallbackFamily: v })}
-            title="主字体里没有的字用这个显示"
+            title={tr("主字体里没有的字用这个显示")}
           />
           <div className="display-row">
             <span className="display-label" />
-            <button className="link-btn" onClick={() => void importFonts()} title="ttf / otf / ttc。只记住文件位置，不复制">
-              导入字体…
-            </button>
+            <button className="link-btn" onClick={() => void importFonts()} title={tr("ttf / otf / ttc，或装着字体的 zip（解压到语料库的 fonts 文件夹）")}>{tr("导入字体…")}</button>
             {brokenImports.length > 0 && (
               <button
                 className="link-btn warn"
                 onClick={() => brokenImports.forEach(fonts.removeImported)}
                 title={brokenImports.join("\n")}
-              >
-                清除 {brokenImports.length} 个读不到的
-              </button>
+              >{tr("清除 {length} 个读不到的", { length: brokenImports.length })}</button>
             )}
           </div>
           <p
@@ -148,29 +132,29 @@ export function LyricsTools({ display, onError, onExpand }: Props) {
           >
             {PREVIEW_TEXT}
           </p>
-          <Slider label="字号" value={display.fontSize} limits={DISPLAY_LIMITS.fontSize} onChange={(v) => updateLyricsDisplay({ fontSize: v })} />
+          <Slider label={tr("字号")} value={display.fontSize} limits={DISPLAY_LIMITS.fontSize} onChange={(v) => updateLyricsDisplay({ fontSize: v })} />
           <Slider
-            label="振假名字号"
+            label={tr("振假名字号")}
             value={display.rubySize}
             limits={DISPLAY_LIMITS.rubySize}
             onChange={(v) => updateLyricsDisplay({ rubySize: v })}
           />
-          <Slider label="行距" value={display.lineGap} limits={DISPLAY_LIMITS.lineGap} onChange={(v) => updateLyricsDisplay({ lineGap: v })} />
+          <Slider label={tr("行距")} value={display.lineGap} limits={DISPLAY_LIMITS.lineGap} onChange={(v) => updateLyricsDisplay({ lineGap: v })} />
           <Slider
-            label="字距"
+            label={tr("字距")}
             value={display.letterSpacing}
             limits={DISPLAY_LIMITS.letterSpacing}
             onChange={(v) => updateLyricsDisplay({ letterSpacing: v })}
           />
           <div className="display-row">
-            <span className="display-label">注音方式</span>
+            <span className="display-label">{tr("注音方式")}</span>
             <div className="segmented">
               {(Object.keys(FURIGANA_MODE_LABELS) as FuriganaMode[]).map((mode) => (
                 <button
                   key={mode}
                   className={display.furiganaMode === mode ? "on" : ""}
                   onClick={() => updateLyricsDisplay({ furiganaMode: mode, furigana: true })}
-                  title={mode === "kanji" ? "例：思(おも)い出(だ)す" : "例：思い出す(おもいだす)"}
+                  title={mode === "kanji" ? tr("例：{sample}", { sample: "思(おも)い出(だ)す" }) : tr("例：{sample}", { sample: "思い出す(おもいだす)" })}
                 >
                   {FURIGANA_MODE_LABELS[mode]}
                 </button>
@@ -178,9 +162,7 @@ export function LyricsTools({ display, onError, onExpand }: Props) {
             </div>
           </div>
           <div className="display-foot">
-            <button className="link-btn" onClick={resetLyricsDisplay}>
-              恢复默认
-            </button>
+            <button className="link-btn" onClick={resetLyricsDisplay}>{tr("恢复默认")}</button>
           </div>
         </div>
       )}
@@ -210,13 +192,13 @@ function FontSelect({
       <select className="font-select" value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">{emptyLabel}</option>
         {options === null && value !== "" && <option value={value}>{value}</option>}
-        {!known && <option value={value}>{value}（本机没有）</option>}
+        {!known && <option value={value}>{tr("{value}（本机没有）", { value })}</option>}
         {options?.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
-        {options === null && <option disabled>读取字体…</option>}
+        {options === null && <option disabled>{tr("读取字体…")}</option>}
       </select>
     </label>
   );

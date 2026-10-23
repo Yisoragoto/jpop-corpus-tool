@@ -3,6 +3,8 @@
  */
 
 /** 秒 → `m:ss.xx`（和 LRC 一样到厘秒）。没有时间是空串 */
+import { tr } from "./i18n";
+
 export function formatStamp(sec: number | null): string {
   if (sec === null || !Number.isFinite(sec)) return "";
   const centis = Math.round(Math.max(0, sec) * 100);
@@ -41,7 +43,7 @@ export interface EditRow {
 export function summarizeEdit(before: EditRow[], after: EditRow[]): string {
   const clean = after.filter((r) => r.text.trim() !== "");
   const key = (r: EditRow) => `${r.timeSec ?? ""}\u0000${r.text.trim()}`;
-  if (before.length === clean.length && before.every((r, i) => key(r) === key(clean[i]!))) return "没有改动";
+  if (before.length === clean.length && before.every((r, i) => key(r) === key(clean[i]!))) return tr("没有改动");
   const count = (rows: EditRow[]) => {
     const m = new Map<string, number>();
     for (const r of rows) m.set(r.text.trim(), (m.get(r.text.trim()) ?? 0) + 1);
@@ -56,9 +58,9 @@ export function summarizeEdit(before: EditRow[], after: EditRow[]): string {
   const retimed =
     added === 0 && removed === 0 ? clean.filter((r, i) => before[i] && r.timeSec !== before[i]!.timeSec).length : 0;
   const parts = [];
-  if (added) parts.push(`新增或改写 ${added} 行`);
-  if (removed) parts.push(`去掉或改写前 ${removed} 行`);
-  if (retimed) parts.push(`调了 ${retimed} 行的时间`);
-  if (!parts.length) parts.push("调了行的顺序或时间");
-  return `${parts.join("，")}（${before.length} → ${clean.length} 行）`;
+  if (added) parts.push(tr("新增或改写 {added} 行", { added }));
+  if (removed) parts.push(tr("去掉或改写前 {removed} 行", { removed }));
+  if (retimed) parts.push(tr("调了 {retimed} 行的时间", { retimed }));
+  if (!parts.length) parts.push(tr("调了行的顺序或时间"));
+  return tr("{parts}（{length} → {length2} 行）", { parts: parts.join(tr("，")), length: before.length, length2: clean.length });
 }

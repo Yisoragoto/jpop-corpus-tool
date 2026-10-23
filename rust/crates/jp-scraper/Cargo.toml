@@ -11,6 +11,9 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 regex = "1"
+roxmltree = "0.20"
+base64 = "0.22"
+flate2 = "1"
 # Jaro-Winkler。Python 侧用 rapidfuzz，实现同一个算法，已对过账。
 strsim = "0.11"
 rusqlite = { version = "0.40", features = ["bundled"] }
@@ -19,6 +22,8 @@ ureq = { version = "3.4.1", features = ["rustls"], optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true
+# 身份与来源的回归要走真正数据层，避免测试再手抄一份建表和落库 SQL。
+jp-corpus = { path = "../jp-corpus" }
 
 [features]
 # 真实 HTTP 传输层。核心逻辑（打分、判定、落库）不依赖它，

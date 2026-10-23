@@ -1,6 +1,6 @@
 [package]
 name = "jp-app"
-version = "0.3.0"
+version = "0.3.3"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -43,7 +43,10 @@ jp-audio = { path = "../jp-audio" }
 jp-corpus = { path = "../jp-corpus" }
 jp-import = { path = "../jp-import" }
 # 检查更新：问 GitHub Releases、下安装包、校验哈希。三个都已经在依赖树里。
-ureq = "3"
+# win-system-proxy：没设 HTTPS_PROXY 时读 Windows 的系统代理（Clash 之类「系统代理」开关写的注册表）。
+# 国内直连 GitHub 下载地址会超时，双击启动的程序又没有终端里的代理环境变量，不开它更新就连不上。
+# 特性会合并到整个依赖树，刮削、下载词典走的同一个 ureq 也一起生效。
+ureq = { version = "3", features = ["win-system-proxy"] }
 sha2 = "0.10"
 # 断点续传、分词词典的下载和定位（和 macOS 客户端共用）
 jp-setup = { path = "../jp-setup" }

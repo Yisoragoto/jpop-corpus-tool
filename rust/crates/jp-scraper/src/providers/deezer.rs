@@ -16,10 +16,28 @@ use crate::http::HttpClient;
 use crate::matching::artist_similarity;
 use crate::models::{ScrapeCandidate, SearchQuery};
 
-use super::{ArtistInfo, MetadataProvider, as_f64, as_i64, as_str};
+use super::{ArtistInfo, MetadataProvider, as_f64, as_i64, as_str, date_of, year_of};
 
 const ARTIST_URL: &str = "https://api.deezer.com/search/artist";
 const TRACK_URL: &str = "https://api.deezer.com/search";
+
+fn album_identity(value: &serde_json::Value, candidate: &mut ScrapeCandidate) {
+    if let Some(title) = value["title"].as_str().filter(|s|!s.is_empty()) { candidate.extra.insert("album_title".into(),title.into()); }
+    for (field,value) in [("label",value["label"].as_str()),("barcode",value["upc"].as_str()),("album_type",value["record_type"].as_str())] {
+        if let Some(value) = value.filter(|s|!s.is_empty()) { candidate.extra.insert(field.into(),value.into()); }
+    }
+    if let Some(n) = value["nb_tracks"].as_u64().filter(|n|*n>0) { candidate.extra.insert("track_count".into(),n.to_string()); }
+    if let Some(id) = value["id"].as_u64() { candidate.extra.insert("album_id".into(),id.to_string()); }
+    let date = date_of(value["release_date"].as_str().unwrap_or(""));
+    if candidate.release_date.is_empty() && !date.is_empty() { candidate.year = year_of(&date); candidate.release_date = date; }
+}
+
+fn track_identity(value: &serde_json::Value, candidate: &mut ScrapeCandidate) {
+    if let Some(isrc) = value["isrc"].as_str().filter(|s|!s.is_empty()) { candidate.extra.insert("isrc".into(),isrc.into()); }
+    album_identity(&value["album"],candidate);
+    let date = date_of(value["release_date"].as_str().unwrap_or(""));
+    if !date.is_empty() { candidate.year = year_of(&date); candidate.release_date = date; }
+}
 
 /// 空 hash 的占位图 URL。
 pub fn is_placeholder_picture(url: &str) -> bool {
@@ -46,6 +64,24 @@ impl MetadataProvider for DeezerProvider {
     /// 曲目元数据不如 iTunes/MB 干净，先验压低；艺人照片才是它的主职。
     fn confidence(&self) -> f64 {
         0.85
+    }
+
+    fn enrich(&self, candidate: &ScrapeCandidate) -> Result<ScrapeCandidate, ProviderError> {
+        let mut candidate = candidate.clone();
+        if !candidate.extra.contains_key("isrc") {
+            let id: u64 = candidate.provider_id.parse().map_err(|_| ProviderError::invalid_response("曲目详情编号无效").with_provider("deezer"))?;
+            let value = self.http.get_json(&format!("https://api.deezer.com/track/{id}"))?;
+            if value["id"].as_u64() != Some(id) { return Err(ProviderError::invalid_response("曲目详情编号不匹配").with_provider("deezer")); }
+            track_identity(&value,&mut candidate);
+        }
+        if (!candidate.extra.contains_key("label") || !candidate.extra.contains_key("track_count") || candidate.release_date.is_empty())
+            && let Some(id) = candidate.extra.get("album_id").and_then(|s|s.parse::<u64>().ok())
+        {
+            let value = self.http.get_json(&format!("https://api.deezer.com/album/{id}"))?;
+            if value["id"].as_u64() != Some(id) { return Err(ProviderError::invalid_response("专辑详情编号不匹配").with_provider("deezer")); }
+            album_identity(&value,&mut candidate);
+        }
+        Ok(candidate)
     }
 
     fn search_tracks(
@@ -88,7 +124,7 @@ impl MetadataProvider for DeezerProvider {
                 .filter(|s| !s.is_empty())
                 .or_else(|| cover("cover_medium"))
                 .unwrap_or_default();
-            out.push(ScrapeCandidate {
+            let mut candidate = ScrapeCandidate {
                 provider: "deezer".into(),
                 provider_id: as_i64(item.get("id"))
                     .map(|v| v.to_string())
@@ -102,7 +138,9 @@ impl MetadataProvider for DeezerProvider {
                 thumb_url: thumb,
                 provider_confidence: self.confidence(),
                 ..Default::default()
-            });
+            };
+            track_identity(&serde_json::Value::Object(item.clone()), &mut candidate);
+            out.push(candidate);
         }
         Ok(out)
     }

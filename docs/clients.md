@@ -112,13 +112,25 @@ cd macos && swift run JPCorpus      # 或 ./scripts/bundle.sh 打成 .app
 swift test                          # 经真的静态库调 Rust，检查跨语言的数据形状和最小闭环
 ```
 
-CI：`.github/workflows/macos.yml` 在 macOS runner 上跑 Rust 核心测试、`swift build`、`swift test`、打 .app。
+CI：`.github/workflows/macos.yml` 在 macOS runner 上跑 Rust 核心测试、`swift build`、`swift test`、回归探针、打 .app 与真窗口导入 smoke；失败日志与跳过的用例均可见。
+
+## 验证与功能边界
+
+原生客户端的完整能力矩阵和测试边界见 [macos-status.md](macos-status.md)。
+应用、导入和播放器状态在可测试的 `JPCorpusModel` target，界面在 `JPCorpusApp`；
+`JPCoreTests` 检查真 FFI，`JPCorpusModelTests` 检查模型与源码接线，SmokeRun 在真窗口里导入并刷新曲目表。
+Swift 编译与运行由 CI 的 macOS job 验证，本机 Windows 不具备 Swift 验证环境。
 
 ## 还没做的
 
-- macOS 上的刮削、Yomitan 词典导入、Anki 制卡（核心在 `jp-scraper` / `jp-dict` / `jp-anki`，都不依赖 Tauri）。
-- macOS 导入后还不做的两件事：取出内嵌封面（`jp-app/src/scrape.rs`）、追加 `metadata/songs.csv`
-  （`jp-app/src/library_admin.rs`）。两处还在 `jp-app` 里，要先挪进 Tauri 无关的 crate。
-- 词级时间戳。
-- macOS 上换歌词、逐行编辑歌词、恢复旧版（要落盘 `.lrc`，代码还在 `jp-app/src/lyrics.rs`）。
-- 搭配目前只在行内开窗；跨行、按句法依存的搭配没做。
+| 功能 | 状态 | 有测试覆盖 | 备注 |
+|---|---|---|---|
+| 刮削 | 未实现 | 无原生界面覆盖 | 核心在 jp-scraper，尚无 Mac 入口 |
+| Yomitan 词典导入 | 未实现 | 无原生界面覆盖 | 可读已有 dictionaries.db；Sudachi 安装是另一条已实现的链路 |
+| Anki 制卡 | 未实现 | 无原生界面覆盖 | 核心在 jp-anki |
+| 资料库关系网、时间轴、词云 | 未实现 | 无原生界面覆盖 | 当前 Mac 只有曲目表 |
+| 自动更新 | 未实现 | 无原生界面覆盖 | 从新源码重建 |
+| 换歌词、逐行编辑、恢复旧版 | 未实现 | 无原生界面覆盖 | 歌词显示部分可用；写 .lrc 的代码仍在 jp-app/src/lyrics.rs |
+| 完整子语料管理、分析存档与来源面板 | 部分 | 基础分析与筛选有 CoreBridgeTests；存档原生 UI 未覆盖 | Rust/FFI 有接口，SwiftUI 尚未提供完整管理入口 |
+| 导入内嵌封面、追加 metadata/songs.csv | 部分 | 导入主体有模型/真 FFI/smoke；这两项未覆盖 | 对应代码仍在 jp-app/src/scrape.rs 与 library_admin.rs |
+| 词级定位、跨行/句法搭配 | 部分 | 行级区间和行内搭配有 CoreBridgeTests；新增粒度未覆盖 | 当前按 LRC 行级时间及行内窗口计算 |

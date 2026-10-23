@@ -1,5 +1,6 @@
 import JPCore
 import SwiftUI
+import JPCorpusModel
 
 /// 查什么、从哪查的。从歌词里点的词带着歌、行、第几个词，制卡时用这一行做例句、切这一句的音频
 struct LookupRequest: Equatable {
@@ -131,7 +132,7 @@ struct LookupPane: View {
     }
 
     private func load() async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         result = nil
         error = nil
         outcome = [:]
@@ -156,7 +157,7 @@ struct LookupPane: View {
     }
 
     private func mine(_ head: LookupHeadword, key: String) async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         mining = key
         defer { mining = nil }
         let mineRequest = MineRequest(

@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../events";
 
 import {
   api,
@@ -27,6 +27,7 @@ import {
   type Completeness,
   type CompletenessCount,
   type LyricsProgress,
+  type LyricsUpgradeProgress,
   type ReviewItem,
   type ScrapeAttempt,
   type ScrapeCandidate,
@@ -36,6 +37,9 @@ import {
 } from "../api";
 import { Avatar } from "../components/Avatar";
 import { CommandButton } from "../components/CommandButton";
+import { LyricsUpgradePanel } from "../components/LyricsUpgradePanel";
+import { TimedLyricsPanel } from "../components/TimedLyricsPanel";
+import { tr } from "../i18n";
 
 interface Props {
   onError: (message: string) => void;
@@ -43,7 +47,7 @@ interface Props {
   onChanged: () => void;
 }
 
-type RowKey = "identified" | "trackCovers" | "albumCovers" | "photos" | "lyrics" | "durations";
+type RowKey = "identified" | "trackCovers" | "albumCovers" | "albumInfo" | "photos" | "lyrics" | "durations";
 
 const errorText = (e: unknown) => String((e as { message?: string })?.message ?? e);
 
@@ -90,7 +94,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
   useEffect(() => {
     void refresh();
     void api.scrapeIsRunning().then(setRunning).catch(() => undefined);
-    void api.lyricsFillRunning().then((r) => r && setLyricsJob((j) => j ?? EMPTY_LYRICS)).catch(() => undefined);
+
   }, [refresh]);
 
   // 点开的失败 / 跳过列表跟着刷新
@@ -110,8 +114,8 @@ export function ScrapePage({ onError, onChanged }: Props) {
         setRunning(false);
         const p = event.payload;
         // 整批断了要说出来：这是真错误，走横幅
-        if (p.error) errorRef.current(`刮削中断：${p.error}`);
-        note(p.kind === "artist" ? "photos" : "identified", `${p.cancelled ? "已中断" : "跑完了"}：处理 ${p.done}/${p.total}`);
+        if (p.error) errorRef.current(tr("刮削中断：{error}", { error: p.error }));
+        note(p.kind === "artist" ? "photos" : p.kind === "album" ? "albumInfo" : "identified", tr("{v}：处理 {done}/{total}", { v: p.cancelled ? tr("已中断") : tr("跑完了"), done: p.done, total: p.total }));
         void refresh();
         onChanged();
       }
@@ -121,17 +125,28 @@ export function ScrapePage({ onError, onChanged }: Props) {
     };
   }, [refresh, onChanged]);
 
+  useEffect(() => {
+    let alive = true;
+    const accept = (p: LyricsUpgradeProgress) => {
+      if (!alive || p.total === 0) return;
+      setLyricsJob({ ...EMPTY_LYRICS, done:p.done, total:p.total, title:p.title, filled:p.upgraded+p.lineFilled, notFound:p.notFound, failed:p.failed, finished:!p.running, cancelled:p.cancelled, error:p.error });
+      if (!p.running) { void refresh(); onChanged(); }
+    };
+    void api.lyricsUpgradeStatus().then(accept).catch(() => undefined);
+    const off = listen<LyricsUpgradeProgress>("lyrics-upgrade://progress", event => accept(event.payload));
+    return () => { alive = false; void off.then(f => f()); };
+  }, [refresh, onChanged]);
   // 补歌词的进度
   useEffect(() => {
     const off = listen<LyricsProgress>("lyrics://progress", (event) => {
       setLyricsJob(event.payload);
       const p = event.payload;
       if (p.finished) {
-        if (p.error !== "") errorRef.current(`补齐歌词中断：${p.error}`);
+        if (p.error !== "") errorRef.current(tr("补齐歌词中断：{error}", { error: p.error }));
         note(
           "lyrics",
-          `${p.cancelled ? "已停下" : "补完了"}：补上 ${p.filled}，挑不出来 ${p.notFound}` +
-            (p.failed > 0 ? `，失败 ${p.failed}` : ""),
+          tr("{v}：补上 {filled}，挑不出来 {notFound}", { v: p.cancelled ? tr("已停下") : tr("补完了"), filled: p.filled, notFound: p.notFound }) +
+            (p.failed > 0 ? tr("，失败 {failed}", { failed: p.failed }) : ""),
         );
         void refresh();
         onChanged();
@@ -143,7 +158,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
   }, [refresh, onChanged]);
 
   const startJob = useCallback(
-    async (kind: "track" | "artist", row: RowKey, begin: () => Promise<number>, nothing: string) => {
+    async (kind: "track" | "artist" | "album", row: RowKey, begin: () => Promise<number>, nothing: string) => {
       setMenuOpen(false);
       try {
         const total = await begin();
@@ -183,12 +198,12 @@ export function ScrapePage({ onError, onChanged }: Props) {
         const applied = await api.scrapeAccept(item.filePath, index);
         // 说清楚实际写了什么——要让用户看得见它确实做了事
         const parts = [
-          applied.fieldsFilled > 0 ? `补了 ${applied.fieldsFilled} 个字段` : "",
-          applied.creditsProtected > 0 ? `${applied.creditsProtected} 条信用标为人工` : "",
-          applied.creditsAdded > 0 ? `新增 ${applied.creditsAdded} 条信用` : "",
-          applied.coverPath !== null ? "封面已下载" : "",
+          applied.fieldsFilled > 0 ? tr("补了 {fieldsFilled} 个字段", { fieldsFilled: applied.fieldsFilled }) : "",
+          applied.creditsProtected > 0 ? tr("{creditsProtected} 条信用标为人工", { creditsProtected: applied.creditsProtected }) : "",
+          applied.creditsAdded > 0 ? tr("新增 {creditsAdded} 条信用", { creditsAdded: applied.creditsAdded }) : "",
+          applied.coverPath !== null ? tr("封面已下载") : "",
         ].filter((p) => p !== "");
-        note("review", `${item.localTitle || item.filePath}：${parts.length > 0 ? parts.join("，") : "已确认，没有需要补写的"}`);
+        note("review", `${item.localTitle || item.filePath}${tr("：")}${parts.length > 0 ? parts.join(tr("，")) : tr("已确认，没有需要补写的")}`);
         await refresh();
         onChanged();
       } catch (e) {
@@ -201,8 +216,8 @@ export function ScrapePage({ onError, onChanged }: Props) {
   const skip = useCallback(
     async (item: ReviewItem) => {
       try {
-        await api.scrapeSkip(item.filePath, "复核时跳过");
-        note("review", `${item.localTitle || item.filePath}：已跳过`);
+        await api.scrapeSkip(item.filePath, tr("复核时跳过"));
+        note("review", tr("{v}：已跳过", { v: item.localTitle || item.filePath }));
         await refresh();
       } catch (e) {
         errorRef.current(errorText(e));
@@ -234,7 +249,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
     return () => window.removeEventListener("mousedown", onDown);
   }, [menuOpen]);
 
-  if (summary === null || complete === null) return <div className="page muted pad">加载中…</div>;
+  if (summary === null || complete === null) return <div className="page muted pad">{tr("加载中…")}</div>;
 
   const missingArtists = artists.filter((a) => !a.hasImage);
   const photos: CompletenessCount = { done: artists.length - missingArtists.length, total: artists.length };
@@ -245,7 +260,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
   const jobLine =
     running && progress !== null
       ? {
-          label: progress.kind === "artist" ? "歌手照片" : "识别曲目",
+          label: progress.kind === "artist" ? tr("歌手照片") : progress.kind === "album" ? tr("专辑信息") : tr("识别曲目"),
           done: progress.done,
           total: progress.total,
           detail: `${progress.title}${progress.matched ? ` → ${progress.matched}` : ""}`,
@@ -253,7 +268,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
         }
       : lyricsRunning && lyricsJob !== null
         ? {
-            label: "补歌词",
+            label: tr("补歌词"),
             done: lyricsJob.done,
             total: lyricsJob.total,
             detail: lyricsJob.title,
@@ -264,23 +279,21 @@ export function ScrapePage({ onError, onChanged }: Props) {
   return (
     <div className="page scrape">
       <header className="scrape-head">
-        <h2>库的完整度</h2>
-        <span className="scrape-head-hint">
-          {summary.total} 首里认出 {summary.success} 首
-          {complete.skipped > 0 ? ` · 跳过 ${complete.skipped} 首` : ""}
+        <h2>{tr("库的完整度")}</h2>
+        <span className="scrape-head-hint">{tr("{total} 首里认出 {success} 首", { total: summary.total, success: summary.success })}{complete.skipped > 0 ? tr(" · 跳过 {skipped} 首", { skipped: complete.skipped }) : ""}
         </span>
         <div className="scrape-head-actions" ref={menuRef}>
           <CommandButton
             icon="scrape"
-            label={running ? "刮削中…" : "刮新加的歌"}
+            label={running ? tr("刮削中…") : tr("刮新加的歌")}
             primary
             disabled={blocked}
-            onClick={() => void startJob("track", "identified", () => api.scrapeStart(true, 1000), "没有要刮的：每首都刮过了")}
-            title="只刮还没刮过、或者刮失败过的。认不准的不会写进库，停在下面「需要你确认」"
+            onClick={() => void startJob("track", "identified", () => api.scrapeStart(true, 1000), tr("没有要刮的：每首都刮过了"))}
+            title={tr("只刮还没刮过、或者刮失败过的。认不准的不会写进库，停在下面「需要你确认」")}
           />
           <button
             className="btn scrape-more"
-            aria-label="更多刮削操作"
+            aria-label={tr("更多刮削操作")}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
           >
@@ -291,97 +304,109 @@ export function ScrapePage({ onError, onChanged }: Props) {
               <button
                 role="menuitem"
                 disabled={blocked}
-                onClick={() => void startJob("track", "identified", () => api.scrapeStart(false, 1000), "库里没有歌")}
-              >
-                全部重刮
-                <span>每一首重新搜一遍，要十几分钟</span>
+                onClick={() => void startJob("track", "identified", () => api.scrapeStart(false, 1000), tr("库里没有歌"))}
+              >{tr("全部重刮")}<span>{tr("每一首重新搜一遍，要十几分钟")}</span>
               </button>
               <button
                 role="menuitem"
                 disabled={blocked || summary.failed === 0}
                 onClick={() => {
                   setMenuOpen(false);
-                  void runOnce("identified", async () => `${await api.scrapeRetryFailed()} 首失败的打回待刮，点「刮新加的歌」重试`);
+                  void runOnce("identified", async () => tr("{v} 首失败的打回待刮，点「刮新加的歌」重试", { v: await api.scrapeRetryFailed() }));
                 }}
-              >
-                重试失败的
-                <span>{summary.failed === 0 ? "没有失败的" : `${summary.failed} 首；需要确认的不动——那缺的是决定不是重试`}</span>
+              >{tr("重试失败的")}<span>{summary.failed === 0 ? tr("没有失败的") : tr("{failed} 首；需要确认的不动——那缺的是决定不是重试", { failed: summary.failed })}</span>
               </button>
             </div>
           )}
         </div>
       </header>
 
+      <LyricsUpgradePanel onChanged={() => { void refresh(); onChanged(); }} onError={onError} />
       <div className="scrape-rows">
         <CompletenessRow
-          label="曲目识别"
+          label={tr("曲目识别")}
           count={complete.identified}
           note={notes.identified}
           action={
             gap(complete.identified) > 0
               ? {
-                  label: `刮 ${gap(complete.identified)} 首`,
+                  label: tr("刮 {identified} 首", { identified: gap(complete.identified) }),
                   disabled: blocked,
-                  run: () => void startJob("track", "identified", () => api.scrapeStart(true, 1000), "没有要刮的"),
-                  title: "失败过的、需要确认的、跳过的也算在没认出里；需要确认的在下面挑",
+                  run: () => void startJob("track", "identified", () => api.scrapeStart(true, 1000), tr("没有要刮的")),
+                  title: tr("失败过的、需要确认的、跳过的也算在没认出里；需要确认的在下面挑"),
                 }
               : undefined
           }
         />
         <CompletenessRow
-          label="曲目封面"
+          label={tr("曲目封面")}
           count={complete.trackCovers}
           note={notes.trackCovers}
           action={
             gap(complete.trackCovers) > 0
               ? {
-                  label: busyRow === "trackCovers" ? "补封面中…" : `补 ${gap(complete.trackCovers)} 张`,
+                  label: busyRow === "trackCovers" ? tr("补封面中…") : tr("补 {trackCovers} 张", { trackCovers: gap(complete.trackCovers) }),
                   disabled: blocked,
                   run: () =>
                     void runOnce("trackCovers", async () => {
                       const r = await api.scrapeBackfillCovers();
                       return r.checked === 0
-                        ? "每首歌都有封面了"
-                        : `补上 ${r.filled}` +
-                            (r.failed > 0 ? `，还是下不到 ${r.failed}` : "") +
-                            (r.noCandidate > 0 ? `，${r.noCandidate} 首没有候选，要重刮` : "");
+                        ? tr("每首歌都有封面了")
+                        : tr("补上 {filled}", { filled: r.filled }) +
+                            (r.failed > 0 ? tr("，还是下不到 {failed}", { failed: r.failed }) : "") +
+                            (r.noCandidate > 0 ? tr("，{noCandidate} 首没有候选，要重刮", { noCandidate: r.noCandidate }) : "");
                     }),
-                  title: "用刮削时存下的候选重新取封面（MusicBrainz 的封面在 Cover Art Archive），不重新搜索",
+                  title: tr("用刮削时存下的候选重新取封面（MusicBrainz 的封面在 Cover Art Archive），不重新搜索"),
                 }
               : undefined
           }
         />
         <CompletenessRow
-          label="专辑封面"
+          label={tr("专辑封面")}
           count={complete.albumCovers}
           note={notes.albumCovers}
           action={
             gap(complete.albumCovers) > 0
               ? {
-                  label: busyRow === "albumCovers" ? "填封面中…" : `补 ${gap(complete.albumCovers)} 张`,
+                  label: busyRow === "albumCovers" ? tr("填封面中…") : tr("补 {albumCovers} 张", { albumCovers: gap(complete.albumCovers) }),
                   disabled: blocked,
                   run: () =>
                     void runOnce("albumCovers", async () => {
                       const n = await api.fillAlbumArtwork();
-                      return n === 0 ? "填不上：这些专辑的曲目也还没有封面，先补曲目封面" : `填了 ${n} 张`;
+                      return n === 0 ? tr("填不上：这些专辑的曲目也还没有封面，先补曲目封面") : tr("填了 {n} 张", { n });
                     }),
-                  title: "同一张专辑的曲目封面就是专辑封面，直接拿来用，不额外发请求",
+                  title: tr("同一张专辑的曲目封面就是专辑封面，直接拿来用，不额外发请求"),
                 }
               : undefined
           }
         />
         <CompletenessRow
-          label="歌手照片"
+          label={tr("专辑信息")}
+          count={complete.albumInfo}
+          note={notes.albumInfo}
+          action={
+            gap(complete.albumInfo) > 0
+              ? {
+                  label: tr("补 {n} 张", { n: gap(complete.albumInfo) }),
+                  disabled: blocked,
+                  run: () => void startJob("album", "albumInfo", () => api.scrapeAlbumFillStart(), tr("每张专辑的发行类型和曲目数都齐了")),
+                  title: tr("发行类型（单曲 / EP / 专辑）、整张碟的曲目数、厂牌。对已经识别的歌重新匹配一次，只补空着的字段，不改动已有的信息和识别状态"),
+                }
+              : undefined
+          }
+        />
+        <CompletenessRow
+          label={tr("歌手照片")}
           count={photos}
           note={notes.photos}
           action={
             missingArtists.length > 0
               ? {
-                  label: `刮 ${missingArtists.length} 位`,
+                  label: tr("刮 {length} 位", { length: missingArtists.length }),
                   disabled: blocked,
-                  run: () => void startJob("artist", "photos", () => api.scrapeArtistsStart(true), "每个歌手都已经有照片了"),
+                  run: () => void startJob("artist", "photos", () => api.scrapeArtistsStart(true), tr("每个歌手都已经有照片了")),
                   title:
-                    "MusicBrainz 拿资料和别名，Deezer 拿照片。顺序不能反——很多日本歌手在 Deezer 上按罗马字收录（ずっと真夜中でいいのに。→ ZUTOMAYO），不带别名查不到",
+                    tr("MusicBrainz 拿资料和别名，Deezer 拿照片。顺序不能反——很多日本歌手在 Deezer 上按罗马字收录（ずっと真夜中でいいのに。→ ZUTOMAYO），不带别名查不到"),
                 }
               : undefined
           }
@@ -393,11 +418,11 @@ export function ScrapePage({ onError, onChanged }: Props) {
                   key={a.name}
                   className="scrape-missing-artist"
                   disabled={blocked}
-                  title={`${a.name}：${a.trackCount} 首，还没有照片。点一下单独刮这一位`}
+                  title={tr("{name}：{trackCount} 首，还没有照片。点一下单独刮这一位", { name: a.name, trackCount: a.trackCount })}
                   onClick={() =>
                     void runOnce("photos", async () => {
                       const got = await api.scrapeArtist(a.name);
-                      return got.notFound ? `${a.name}：一条都没查到` : got.imagePath ? `${a.name}：照片有了` : `${a.name}：认出来了，但没有照片`;
+                      return got.notFound ? tr("{name}：一条都没查到", { name: a.name }) : got.imagePath ? tr("{name}：照片有了", { name: a.name }) : tr("{name}：认出来了，但没有照片", { name: a.name });
                     })
                   }
                 >
@@ -409,13 +434,13 @@ export function ScrapePage({ onError, onChanged }: Props) {
           )}
         </CompletenessRow>
         <CompletenessRow
-          label="歌词"
+          label={tr("歌词")}
           count={complete.lyrics}
           note={notes.lyrics}
           action={
             gap(complete.lyrics) > 0 && !lyricsRunning
               ? {
-                  label: `补 ${gap(complete.lyrics)} 首`,
+                  label: tr("补 {lyrics} 首", { lyrics: gap(complete.lyrics) }),
                   disabled: blocked,
                   run: () => {
                     setLyricsJob(EMPTY_LYRICS);
@@ -424,26 +449,26 @@ export function ScrapePage({ onError, onChanged }: Props) {
                       errorRef.current(errorText(e));
                     });
                   },
-                  title: "先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空",
+                  title: tr("使用已启用的歌词来源，优先逐字，找不到时回退逐行；不确定的保留待复核"),
                 }
               : undefined
           }
         />
         <CompletenessRow
-          label="时长"
+          label={tr("时长")}
           count={complete.durations}
           note={notes.durations}
           action={
             gap(complete.durations) > 0
               ? {
-                  label: busyRow === "durations" ? "读时长中…" : `补 ${gap(complete.durations)} 首`,
+                  label: busyRow === "durations" ? tr("读时长中…") : tr("补 {durations} 首", { durations: gap(complete.durations) }),
                   disabled: blocked,
                   run: () =>
                     void runOnce("durations", async () => {
                       const r = await api.backfillDurations();
-                      return `补上 ${r.written}` + (r.missing > 0 ? `，${r.missing} 个文件不在了` : "") + (r.failed + r.unknown > 0 ? `，${r.failed + r.unknown} 个读不出来` : "");
+                      return tr("补上 {written}", { written: r.written }) + (r.missing > 0 ? tr("，{missing} 个文件不在了", { missing: r.missing }) : "") + (r.failed + r.unknown > 0 ? tr("，{v} 个读不出来", { v: r.failed + r.unknown }) : "");
                     }),
-                  title: "扫一遍音频文件，把读得出的时长写进库",
+                  title: tr("扫一遍音频文件，把读得出的时长写进库"),
                 }
               : undefined
           }
@@ -452,7 +477,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
 
       {jobLine !== null && (
         <div className="scrape-job" role="status">
-          <span className="scrape-job-label">正在{jobLine.label}</span>
+          <span className="scrape-job-label">{tr("正在{label}", { label: jobLine.label })}</span>
           <div className="scrape-bar">
             <div style={{ width: `${jobLine.total > 0 ? (jobLine.done / jobLine.total) * 100 : 0}%` }} />
           </div>
@@ -460,18 +485,20 @@ export function ScrapePage({ onError, onChanged }: Props) {
             {jobLine.done}/{jobLine.total}
           </span>
           <span className="scrape-job-detail">{jobLine.detail}</span>
-          <CommandButton icon="cancel" label="中断" onClick={jobLine.stop} />
+          <CommandButton icon="cancel" label={tr("中断")} onClick={jobLine.stop} />
         </div>
       )}
 
+      <TimedLyricsPanel onChanged={() => { void refresh(); onChanged(); }} onError={onError} />
+
       <section className="section scrape-review">
         <header className="section-head">
-          <h2>需要你确认 · {review.length}</h2>
-          <span className="section-hint">置信度不够的不会自动写进库，停在这里等你挑</span>
+          <h2>{tr("需要你确认 · {length}", { length: review.length })}</h2>
+          <span className="section-hint">{tr("置信度不够的不会自动写进库，停在这里等你挑")}</span>
         </header>
         {notes.review !== undefined && <p className="scrape-note">{notes.review}</p>}
         {review.length === 0 ? (
-          <p className="section-empty">刮削结果都很确定，没有要你看的。</p>
+          <p className="section-empty">{tr("刮削结果都很确定，没有要你看的。")}</p>
         ) : (
           <div className="list">
             {review.map((item) => (
@@ -506,7 +533,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
         {extra !== null && (
           <div className="list">
             {extraItems.length === 0 ? (
-              <p className="section-empty">这一类是空的。</p>
+              <p className="section-empty">{tr("这一类是空的。")}</p>
             ) : (
               extraItems.map((item) => (
                 <ReviewRow
@@ -630,9 +657,9 @@ function ReviewRow({
       <div className="track-meta">
         <span>{item.localArtist || "—"}</span>
         <span>{item.localAlbum || "—"}</span>
-        {item.retryCount > 0 && <span>试过 {item.retryCount} 次</span>}
+        {item.retryCount > 0 && <span>{tr("试过 {retryCount} 次", { retryCount: item.retryCount })}</span>}
         <button className="chip" onClick={onToggleHistory}>
-          {open ? "收起历史" : "历史"}
+          {open ? tr("收起历史") : tr("历史")}
         </button>
       </div>
 
@@ -659,13 +686,13 @@ function ReviewRow({
       )}
 
       <div className="toolbar">
-        <button onClick={onSkip}>跳过这首</button>
+        <button onClick={onSkip}>{tr("跳过这首")}</button>
       </div>
 
       {open && (
         <div className="attempts">
           {history.length === 0 ? (
-            <p className="muted small">没有历史记录。</p>
+            <p className="muted small">{tr("没有历史记录。")}</p>
           ) : (
             history.map((a) => (
               <p key={a.id} className="muted small">
@@ -725,7 +752,7 @@ function CandidateRow({
       </div>
       <div className="candidate-actions">
         <b>{score.toFixed(3)}</b>
-        <button onClick={onAccept}>采用</button>
+        <button onClick={onAccept}>{tr("采用")}</button>
       </div>
     </div>
   );

@@ -9,9 +9,8 @@
  * | Ctrl/Cmd+K | 全局搜索 |
  * | Ctrl/Cmd+P | 命令面板 |
  *
- * **在输入框里打字时一律不抢键。** 空格是打字、方向键是移动光标，
- * 抢了会让搜索框没法用。判断依据是事件目标，不是焦点状态——
- * 后者在 Tauri 的 webview 里不总是可靠。
+ * **输入框、滑块、用键盘移过去的按钮自己处理按键**（见 `keepsKey`）。判断依据是事件目标，
+ * 不是焦点状态——后者在 Tauri 的 webview 里不总是可靠。
  */
 
 import { useEffect } from "react";
@@ -34,13 +33,63 @@ export interface HotkeyHandlers {
   volume: number;
 }
 
-function isTyping(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
+const TYPING = 'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),textarea,select';
+/** 自己用方向键的控件：滑块、列表、单选组 */
+const ARROW_OWNERS = 'input[type="range"],[role="slider"],[role="listbox"],[role="tree"],[role="tablist"],[role="radiogroup"],[role="radio"],[role="menu"]';
+/** 空格 / 回车会「按下」的控件 */
+const ACTIVATABLE = 'button,a[href],summary,input[type="checkbox"],input[type="radio"],input[type="button"],input[type="submit"],[role="button"],[role="checkbox"],[role="switch"],[role="menuitem"],[role="tab"],[tabindex]';
+
+/**
+ * 焦点是不是鼠标点出来的。不能在 keydown 里问 `:focus-visible`：一按键，Chromium 就把当前焦点
+ * 标成 focus-visible，问出来永远是「键盘聚焦」。所以自己记：按下鼠标后紧跟着的那次聚焦算鼠标的。
+ */
+let pointerDownAt = -Infinity;
+let pointerFocused: EventTarget | null = null;
+
+export function trackFocusOrigin(): () => void {
+  const onPointer = () => {
+    pointerDownAt = performance.now();
+  };
+  // 按了键（Tab 之类）之后的聚焦就不算鼠标的了
+  const onKey = () => {
+    pointerDownAt = -Infinity;
+  };
+  const onFocus = (e: FocusEvent) => {
+    pointerFocused = performance.now() - pointerDownAt < 300 ? e.target : null;
+  };
+  window.addEventListener("pointerdown", onPointer, true);
+  window.addEventListener("focusin", onFocus, true);
+  window.addEventListener("keydown", onKey, true);
+  return () => {
+    window.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("pointerdown", onPointer, true);
+    window.removeEventListener("focusin", onFocus, true);
+  };
+}
+
+export function keyboardFocused(element: Element): boolean {
+  return element !== pointerFocused;
+}
+
+/**
+ * 这个键该不该留给焦点所在的元素，而不是当全局快捷键。
+ *
+ * - 输入框里打字：所有键都留给它（空格是打字、方向键是移动光标）；
+ * - 滑块、列表这类自己用方向键的控件：方向键留给它；
+ * - 按钮这类会被空格「按下」的：只有**用键盘移过去**时才把空格留给它——
+ *   BUG-0001 是用 Tab 移到「导入」上按空格没反应。用鼠标点过的按钮焦点也停在上面，
+ *   这时空格还是播放 / 暂停，方向键还是快进快退、音量，否则点一下播放键快捷键就全失灵了。
+ */
+export function keepsKey(target: EventTarget | null, code: string, byKeyboard: (element: Element) => boolean = keyboardFocused): boolean {
+  if (typeof Element === "undefined" || !(target instanceof Element)) return false;
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  if (target.closest(TYPING) !== null) return true;
+  if (code.startsWith("Arrow")) return target.closest(ARROW_OWNERS) !== null;
+  if (code === "Space" || code === "Enter") {
+    const control = target.closest(ACTIVATABLE);
+    return control !== null && byKeyboard(control);
+  }
+  return false;
 }
 
 export function useHotkeys({
@@ -73,7 +122,7 @@ export function useHotkeys({
         return;
       }
 
-      if (isTyping(e.target) || mod || e.altKey) return;
+      if (e.defaultPrevented || keepsKey(e.target, e.code) || mod || e.altKey) return;
       if (!audioReady) return;
 
       switch (e.code) {
@@ -103,6 +152,10 @@ export function useHotkeys({
     };
 
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const untrack = trackFocusOrigin();
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      untrack();
+    };
   }, [onQuickSearch, onCommandPalette, audioReady, positionSec, volume]);
 }

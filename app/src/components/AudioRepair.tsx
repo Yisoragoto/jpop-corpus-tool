@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { AUDIO_EXTENSIONS, csvProblem, libraryApi, type MissingAudio } from "../libraryAdmin";
+import { tr } from "../i18n";
 
 interface Props {
   missing: MissingAudio[];
@@ -38,7 +39,7 @@ export function AudioRepair({ missing, onApplied, onClose, onError }: Props) {
     });
 
   const scanFolder = async () => {
-    const folder = await openDialog({ directory: true, title: "选一个放着音频文件的文件夹" });
+    const folder = await openDialog({ directory: true, title: tr("选一个放着音频文件的文件夹") });
     if (typeof folder !== "string") return;
     setBusy("scanning");
     setScanNote("");
@@ -53,8 +54,8 @@ export function AudioRepair({ missing, onApplied, onClose, onError }: Props) {
       const open = missing.length - suggestions.length;
       setScanNote(
         suggestions.length === 0
-          ? `在「${folder}」里没有找到有把握配上的文件`
-          : `配上 ${suggestions.length} 首${open > 0 ? `，${open} 首没有有把握的匹配，可以逐首手动选` : ""}`,
+          ? tr("在「{folder}」里没有找到有把握配上的文件", { folder })
+          : tr("配上 {length} 首{v}", { length: suggestions.length, v: open > 0 ? tr("，{open} 首没有有把握的匹配，可以逐首手动选", { open }) : "" }),
       );
     } catch (err) {
       onError(String((err as { message?: string })?.message ?? err));
@@ -65,10 +66,10 @@ export function AudioRepair({ missing, onApplied, onClose, onError }: Props) {
 
   const chooseFile = async (song: MissingAudio) => {
     const file = await openDialog({
-      title: `${song.artist}《${song.title}》的音频文件`,
-      filters: [{ name: "音频文件", extensions: AUDIO_EXTENSIONS }],
+      title: tr("{artist}《{title}》的音频文件", { artist: song.artist, title: song.title }),
+      filters: [{ name: tr("音频文件"), extensions: AUDIO_EXTENSIONS }],
     });
-    if (typeof file === "string") setPick(song.songId, { path: file, reason: "手动选的" });
+    if (typeof file === "string") setPick(song.songId, { path: file, reason: tr("手动选的") });
   };
 
   const apply = async () => {
@@ -94,21 +95,21 @@ export function AudioRepair({ missing, onApplied, onClose, onError }: Props) {
   return (
     <section className="audio-repair">
       <div className="audio-repair-head">
-        <h2>找回音频文件</h2>
-        <button className="stage-close" onClick={onClose} title="关闭" aria-label="关闭">
+        <h2>{tr("找回音频文件")}</h2>
+        <button className="stage-close" onClick={onClose} title={tr("关闭")} aria-label={tr("关闭")}>
           ✕
         </button>
       </div>
       <p className="muted small">
         {missing.length === 0
-          ? "所有曲目的音频文件都在。"
-          : `${missing.length} 首歌在库里记的路径上找不到音频文件（被移动、改名或删掉了）。扫一个文件夹自动配对，或者逐首手动选；确认后才会改库。`}
+          ? tr("所有曲目的音频文件都在。")
+          : tr("{length} 首歌在库里记的路径上找不到音频文件（被移动、改名或删掉了）。扫一个文件夹自动配对，或者逐首手动选；确认后才会改库。", { length: missing.length })}
       </p>
       {missing.length > 0 && (
         <>
           <div className="toolbar">
             <button className="primary" onClick={() => void scanFolder()} disabled={busy !== ""}>
-              {busy === "scanning" ? "扫描中…" : "扫描文件夹自动配对…"}
+              {busy === "scanning" ? tr("扫描中…") : tr("扫描文件夹自动配对…")}
             </button>
             {scanNote && <span className="muted small">{scanNote}</span>}
           </div>
@@ -123,8 +124,7 @@ export function AudioRepair({ missing, onApplied, onClose, onError }: Props) {
                     <span className="muted small">
                       {song.artist} · {song.songId}
                     </span>
-                    <span className="repair-old small" title={song.audioPath}>
-                      原路径：{song.audioPath || "（空）"}
+                    <span className="repair-old small" title={song.audioPath}>{tr("原路径：")}{song.audioPath || tr("（空）")}
                     </span>
                   </div>
                   <div className="repair-pick">
@@ -136,18 +136,14 @@ export function AudioRepair({ missing, onApplied, onClose, onError }: Props) {
                         <span className="muted small">{pick.reason}</span>
                       </>
                     ) : (
-                      <span className="muted small">还没配上</span>
+                      <span className="muted small">{tr("还没配上")}</span>
                     )}
                     {error && <span className="warn small">{error}</span>}
                   </div>
                   <div className="repair-actions">
-                    <button className="link-btn" onClick={() => void chooseFile(song)} disabled={busy !== ""}>
-                      选择文件…
-                    </button>
+                    <button className="link-btn" onClick={() => void chooseFile(song)} disabled={busy !== ""}>{tr("选择文件…")}</button>
                     {pick && (
-                      <button className="link-btn" onClick={() => setPick(song.songId, null)} disabled={busy !== ""}>
-                        不改
-                      </button>
+                      <button className="link-btn" onClick={() => setPick(song.songId, null)} disabled={busy !== ""}>{tr("不改")}</button>
                     )}
                   </div>
                 </div>
@@ -156,7 +152,7 @@ export function AudioRepair({ missing, onApplied, onClose, onError }: Props) {
           </div>
           <div className="song-editor-actions">
             <button className="primary" onClick={() => void apply()} disabled={pending === 0 || busy !== ""}>
-              {busy === "applying" ? "写入中…" : `确认更新 ${pending} 首`}
+              {busy === "applying" ? tr("写入中…") : tr("确认更新 {pending} 首", { pending })}
             </button>
           </div>
         </>

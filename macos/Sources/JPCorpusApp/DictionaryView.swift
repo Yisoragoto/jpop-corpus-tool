@@ -1,6 +1,7 @@
 import JPCore
 import SwiftUI
 import UniformTypeIdentifiers
+import JPCorpusModel
 
 /// 词典页：导入 Yomitan 格式的词典包、启用 / 停用、拖动排序、删除；Anki 制卡的设置；试查一个词。
 /// 词典库是语料库目录里的 dictionaries.db，和 Windows 版同一个文件、同一套导入代码（jp-dict）
@@ -46,7 +47,12 @@ struct DictionaryView: View {
         }
         .task { await refreshAnki() }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.zip, .folder], allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result { Task { await importDictionaries(urls) } }
+            switch result {
+            case .failure(let error):
+                app.errorMessage = error.localizedDescription
+            case .success(let urls):
+                Task { await importDictionaries(urls) }
+            }
         }
     }
 
@@ -71,7 +77,7 @@ struct DictionaryView: View {
                         ProgressView().controlSize(.small)
                     }
                     Text(job.stage).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Button("停止") { Task { try? await app.client?.dictImportCancel() } }
+                    Button("停止") { Task { try? await app.core?.dictImportCancel() } }
                         .controlSize(.small)
                 }
                 Text("大词典要几分钟。导入时照样能查词、检索；停止的话正在导的那本整本不留。")
@@ -234,14 +240,14 @@ struct DictionaryView: View {
 
     private func reload() async {
         do {
-            dictionaries = try await app.client?.dictionaries() ?? []
+            dictionaries = try await app.core?.dictionaries() ?? []
         } catch {
             app.errorMessage = error.localizedDescription
         }
     }
 
     private func refreshAnki() async {
-        anki = try? await app.client?.ankiStatus()
+        anki = try? await app.core?.ankiStatus()
     }
 
     private func submitProbe() {
@@ -251,7 +257,7 @@ struct DictionaryView: View {
     }
 
     private func importDictionaries(_ urls: [URL]) async {
-        guard let client = app.client, !urls.isEmpty else { return }
+        guard let client = app.core, !urls.isEmpty else { return }
         lastBatch = nil
         let access = urls.map { $0.startAccessingSecurityScopedResource() }
         defer { for (url, ok) in zip(urls, access) where ok { url.stopAccessingSecurityScopedResource() } }
@@ -274,7 +280,7 @@ struct DictionaryView: View {
 
     private func setEnabled(_ d: DictionaryInfo, _ on: Bool) async {
         do {
-            try await app.client?.dictSetEnabled(d.id, on)
+            try await app.core?.dictSetEnabled(d.id, on)
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription
@@ -285,7 +291,7 @@ struct DictionaryView: View {
         // 先在界面上挪过去，不等往返
         dictionaries = ids.compactMap { id in dictionaries.first { $0.id == id } }
         do {
-            try await app.client?.dictSetOrder(ids)
+            try await app.core?.dictSetOrder(ids)
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription
@@ -294,7 +300,7 @@ struct DictionaryView: View {
 
     private func delete(_ d: DictionaryInfo) async {
         do {
-            try await app.client?.dictDelete(d.id)
+            try await app.core?.dictDelete(d.id)
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription

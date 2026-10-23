@@ -13,6 +13,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { crashNotice } from "./errors";
+import { tr } from "./i18n";
 
 interface Props {
   children: ReactNode;
@@ -31,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
     // 控制台留一份完整的：组件栈只在这儿有，界面上放不下
-    console.error("界面渲染出错", error, info.componentStack);
+    console.error(tr("界面渲染出错"), error, info.componentStack);
   }
 
   render() {
@@ -41,13 +42,8 @@ export class ErrorBoundary extends Component<Props, State> {
       <div className="crash">
         <h1>{title}</h1>
         <p className="crash-detail">{detail}</p>
-        <p className="muted small">
-          数据没有受影响——界面是只读地显示库里的东西。
-          重载之后如果还是这样，到「设置 → 系统 → 导出诊断信息」把那段文字发给我。
-        </p>
-        <button type="button" onClick={() => window.location.reload()}>
-          重载界面
-        </button>
+        <p className="muted small">{tr("数据没有受影响——界面是只读地显示库里的东西。 重载之后如果还是这样，到「设置 → 系统 → 导出诊断信息」把那段文字发给我。")}</p>
+        <button type="button" onClick={() => window.location.reload()}>{tr("重载界面")}</button>
       </div>
     );
   }

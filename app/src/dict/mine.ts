@@ -8,15 +8,16 @@
 import { useSyncExternalStore } from "react";
 
 import { call } from "../api";
+import { tr } from "../i18n";
 
 export type LapisCardKind = "vocab" | "wordAndSentence" | "click" | "sentence" | "audio";
 
 export const LAPIS_CARD_KIND_LABELS: Record<LapisCardKind, string> = {
-  vocab: "单词卡",
-  wordAndSentence: "词+句卡",
-  click: "点击卡",
-  sentence: "句子卡",
-  audio: "音频卡",
+  vocab: tr("单词卡"),
+  wordAndSentence: tr("词+句卡"),
+  click: tr("点击卡"),
+  sentence: tr("句子卡"),
+  audio: tr("音频卡"),
 };
 
 export interface MineSettings {

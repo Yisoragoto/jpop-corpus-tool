@@ -39,9 +39,12 @@ just heard into Anki cards.
 [Releases](https://github.com/Yisoragoto/jpop-corpus-tool/releases). Windows 10/11 needs the
 **WebView2 runtime**, which the system usually already has and the installer offers to add if not.
 
-**Settings → System** checks for new releases, shows the changelog, and can download and install
-an update for you — the installer is pulled from this repository's Releases and its SHA-256 is verified
-before anything is run. Automatic installing is off by default.
+The interface comes in **English and Simplified Chinese**: pick one on first launch, and switch any time
+under **Settings → Appearance**.
+
+When a new release is out, a dialog shows what changed and lets you choose **Update now**, **Later** or
+**Skip this version**. The installer is pulled from this repository's Releases, its SHA-256 is verified,
+and it installs over the current version (no uninstall step) and reopens the app.
 
 **macOS**: a native SwiftUI client lives in `macos/`; for now it is built from source — see
 [Native macOS client](#native-macos-client). Both clients share one Rust core and one library format, so a
@@ -59,8 +62,9 @@ The old PyQt6 Python code is kept under `legacy/` for reference; `corpus.db` wor
   - Memberships come from scraping (MusicBrainz), from suggestions based on credits that you confirm, or from
     manual edits; whatever you change or reject is never overwritten by a scrape.
   - The sidebar collapses to give the content the full width.
-- A profile for every person: a header over their blurred photo, the roles they had, the bands they were in, a
-  release axis, their works by album, collaborators, and where the details came from. Artist photos can be
+- A profile for every person, laid out like an artist page in a music app: a large photo and name, the roles they
+  had and the bands they were in, then four tabs — overview, works (track lists by album), members & collaborators,
+  and a release axis. Artist photos can be
   replaced by hand (scraping won't overwrite them, and the scraped one can be restored).
 - Songs have a breadcrumb (artist › album › title) and clickable credits; edit, replace lyrics, line-by-line
   lyric editing, source & validation, and delete live in the "⋯" menu.

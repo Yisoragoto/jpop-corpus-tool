@@ -66,7 +66,7 @@ pub(crate) fn albums(conn: &Connection, artist_key: Option<&str>, limit: i64) ->
         "SELECT al.id, al.title, al.album_artist, al.year, \
                 CASE WHEN COALESCE(al.artwork_path,'') <> '' THEN al.artwork_path \
                      ELSE COALESCE(MIN(NULLIF(s.cover_path,'')), '') END, \
-                COUNT(s.id), COALESCE(SUM(s.duration_sec), 0) \
+                COUNT(s.id), COALESCE(SUM(s.duration_sec), 0), COALESCE(al.album_type, ''), al.track_count \
          FROM albums al LEFT JOIN songs s ON s.album_id = al.id \
          {filter} GROUP BY al.id ORDER BY al.year DESC, al.title \
          LIMIT ?{}",
@@ -82,6 +82,8 @@ pub(crate) fn albums(conn: &Connection, artist_key: Option<&str>, limit: i64) ->
             artwork_path: row.get(4)?,
             track_count: row.get(5)?,
             total_duration_sec: row.get(6)?,
+            release_type: row.get(7)?,
+            release_track_count: row.get(8)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

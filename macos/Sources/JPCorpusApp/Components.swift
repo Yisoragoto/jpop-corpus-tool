@@ -1,6 +1,7 @@
 import AppKit
 import JPCore
 import SwiftUI
+import JPCorpusModel
 
 /// 封面 / 头像。库里记的是导入那台机器上的路径，先经 Rust 的 resolveMedia 找到本机的文件
 @MainActor

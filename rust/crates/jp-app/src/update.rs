@@ -28,6 +28,26 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
+pub use jp_corpus::update_settings::{Channel, Preferences};
+pub mod channels;
+pub use channels::{Transport, check_with};
+
+pub const BUILD_ID: &str = match option_env!("JPOP_BUILD_ID") { Some(id) => id, None => "local-unavailable" };
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreferenceView {
+    pub channel: Channel,
+    pub current: String,
+    pub build_id: String,
+    pub skipped_stable: String,
+    pub skipped_debug: String,
+}
+
+pub fn preferences() -> PreferenceView {
+    let prefs = jp_corpus::update_settings::read();
+    PreferenceView { channel: prefs.update_channel, current: env!("CARGO_PKG_VERSION").into(), build_id: BUILD_ID.into(), skipped_stable: prefs.skipped_stable, skipped_debug: prefs.skipped_debug }
+}
 
 /// 版本发在哪
 pub const REPO: &str = "Yisoragoto/jpop-corpus-tool";
@@ -57,6 +77,7 @@ pub struct AssetView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseView {
+    pub build_id: Option<String>,
     /// 去掉 `v` 前缀的版本号
     pub version: String,
     pub tag: String,
@@ -73,6 +94,10 @@ pub struct ReleaseView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateStatus {
+    pub channel: Channel,
+    pub build_id: String,
+    pub skipped: bool,
+    pub message: String,
     /// 正在跑的这一版
     pub current: String,
     /// 最新的那一次发布。接口挂了或者仓库一个 release 都没有时是 None
@@ -115,7 +140,7 @@ pub fn is_official_download_url(url: &str) -> bool {
 /// 安装包的文件名能不能用。
 ///
 /// 它会拼进缓存目录（`dir.join(name)`），所以带路径分隔符、`..`、盘符的一律不要——
-/// 否则能写到缓存目录外面去。只许 `[A-Za-z0-9._-]`，且必须是 NSIS 的 `-setup.exe`。
+/// 否则能写到缓存目录外面去。debug 是改名后的同一份 NSIS，额外只认固定产品名和合法版本。
 pub fn check_asset_name(name: &str) -> Result<()> {
     let allowed = name
         .chars()
@@ -123,9 +148,9 @@ pub fn check_asset_name(name: &str) -> Result<()> {
     let stem_ok = name
         .to_ascii_lowercase()
         .strip_suffix("-setup.exe")
-        .is_some_and(|stem| !stem.is_empty());
+        .is_some_and(|stem| !stem.is_empty()) || debug_asset_version(name).is_some();
     if !allowed || !stem_ok || name.contains("..") {
-        bail!("安装包文件名不合规，已拒绝：{name:?}（只允许字母数字和 . _ -，且以 -setup.exe 结尾）");
+        bail!("安装包文件名不合规，已拒绝：{name:?}（只允许字母数字和 . _ -，仅接受正式或 debug 安装包）");
     }
     Ok(())
 }
@@ -166,6 +191,7 @@ pub fn parse_release(value: &serde_json::Value) -> Option<ReleaseView> {
         .unwrap_or_default();
 
     Some(ReleaseView {
+        build_id: None,
         installer: pick_installer(&assets),
         version,
         name: value
@@ -213,24 +239,32 @@ pub fn parse_releases(body: &[u8]) -> Result<Vec<ReleaseView>> {
 
 /// 发一个 GET，拿回整个响应体。
 fn get(url: &str) -> Result<Vec<u8>> {
+    get_optional(url)?.context("发布不存在，请稍后重试")
+}
+
+fn get_optional(url: &str) -> Result<Option<Vec<u8>>> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_connect(Some(std::time::Duration::from_secs(10)))
         .timeout_global(Some(std::time::Duration::from_secs(30)))
         .build()
         .into();
-    let mut response = agent
+    let response = agent
         .get(url)
         .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github+json")
-        .call()
-        .with_context(|| format!("连不上 {url}"))?;
+        .call();
+    let mut response = match response {
+        Ok(response) => response,
+        Err(ureq::Error::StatusCode(404)) => return Ok(None),
+        Err(err) => return Err(err).with_context(|| format!("连不上 {url}")),
+    };
     let body = response
         .body_mut()
         .with_config()
         .limit(4 * 1024 * 1024)
         .read_to_vec()
         .context("读取更新信息失败")?;
-    Ok(body)
+    Ok(Some(body))
 }
 
 /// 最近几次发布。「查看更新日志」用。
@@ -241,17 +275,25 @@ pub fn changelog(limit: usize) -> Result<Vec<ReleaseView>> {
 
 /// 查一次有没有新版。
 pub fn check(current: &str) -> Result<UpdateStatus> {
-    // 用列表而不是 /latest：预发布版不在 /latest 里，而「最近发了什么」这一份
-    // 顺带就是更新日志要的数据，少发一次请求。
-    let releases = changelog(5)?;
-    let latest = releases.into_iter().find(|r| !r.prerelease);
-    Ok(UpdateStatus {
-        update_available: latest
-            .as_ref()
-            .is_some_and(|r| is_newer(current, &r.version)),
-        current: current.to_string(),
-        latest,
-    })
+    let prefs = jp_corpus::update_settings::read();
+    let mut status = check_with(current, BUILD_ID, prefs.update_channel, &channels::OfficialTransport)?;
+    anyhow::ensure!(jp_corpus::update_settings::read().update_channel == prefs.update_channel, "更新轨道已切换，请重新检查更新");
+    status.skipped = status.latest.as_ref().is_some_and(|r| prefs.skipped(status.channel, r.build_id.as_deref().unwrap_or(&r.version)));
+    Ok(status)
+}
+
+fn debug_asset_version(name: &str) -> Option<&str> {
+    let version = name.strip_prefix("JPOP.Corpus.Tool_")?.strip_suffix("-debug.exe")?;
+    semver::Version::parse(version).ok()?;
+    Some(version)
+}
+
+fn check_download_size(path: &Path, asset: &AssetView) -> Result<()> {
+    if debug_asset_version(&asset.name).is_some() && std::fs::metadata(path)?.len() != asset.size {
+        let _ = std::fs::remove_file(path);
+        bail!("debug 安装包大小与 latest.json 不一致，已丢弃，请重新检查更新");
+    }
+    Ok(())
 }
 
 /// 下载进度。
@@ -310,6 +352,7 @@ pub fn download_installer(
     let _queued = DOWNLOADING.lock().unwrap_or_else(|err| err.into_inner());
 
     if verified(&dest, &expected) {
+        check_download_size(&dest, asset)?;
         on_progress(asset.size, asset.size);
         return Ok(dest);
     }
@@ -329,6 +372,7 @@ pub fn download_installer(
         bail!("下载的文件校验不过（期望 {expected}，实际 {got}），已删掉；再点一次会重新下");
     }
 
+    check_download_size(&part, asset)?;
     crate::net::finish(&part, &dest)?;
     Ok(dest)
 }
@@ -353,6 +397,10 @@ struct Downloaded {
 }
 
 impl UpdateMemory {
+    pub fn clear(&self) {
+        *self.checked.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.downloaded.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
     /// 记下这次检查拿到的最新发布。下载只从这里取资产。
     pub fn remember_check(&self, status: &UpdateStatus) {
         *self.checked.lock().unwrap_or_else(|e| e.into_inner()) = status.latest.clone();
@@ -366,14 +414,18 @@ impl UpdateMemory {
         let Some(release) = self.checked.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
             bail!("还没有检查过更新：先检查更新，再下载");
         };
-        let wanted = version.trim().trim_start_matches(['v', 'V']);
-        if wanted != release.version {
+        let wanted = if release.build_id.is_some() { version.trim() } else { version.trim().trim_start_matches(['v', 'V']) };
+        let identity = release.build_id.as_deref().unwrap_or(&release.version);
+        if wanted != identity {
             bail!(
                 "要下载的版本 {version} 不是刚才检查到的 {}；请重新检查更新",
-                release.version
+                identity
             );
         }
-        if !is_newer(current, &release.version) {
+        let allowed = if let Some(build_id) = &release.build_id {
+            build_id != BUILD_ID && channels::not_older(current, &release.version)
+        } else { is_newer(current, &release.version) };
+        if !allowed {
             bail!(
                 "{} 不比正在用的 {current} 新，拒绝降级或重装",
                 release.version
@@ -413,6 +465,9 @@ impl UpdateMemory {
     }
 }
 
+/// 拉起安装程序时带的参数，见 [`launch_installer`]
+pub const INSTALLER_ARGS: [&str; 3] = ["/P", "/UPDATE", "/R"];
+
 /// 拉起安装程序。调用方随后退出应用——NSIS 要替换正在运行的 exe。
 pub fn launch_installer(path: &Path) -> Result<()> {
     anyhow::ensure!(path.is_file(), "找不到安装包：{}", path.display());
@@ -421,7 +476,13 @@ pub fn launch_installer(path: &Path) -> Result<()> {
     if INSTALL_LAUNCHED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return Ok(());
     }
+    // 带上 Tauri 安装程序（NSIS）的更新参数，和官方 updater 插件一样：
+    // - `/P` 被动模式：只显示一个进度条，不问任何问题、跳过所有页面；
+    // - `/UPDATE` 覆盖安装：不先卸载旧版（不弹「先卸载旧版本？」），快捷方式、开机自启保持原样；
+    // - `/R` 装完自动重新打开应用。
+    // 安装位置沿用上次的（安装程序自己从注册表读）。
     std::process::Command::new(path)
+        .args(INSTALLER_ARGS)
         .spawn()
         .with_context(|| format!("启动安装程序失败：{}", path.display()))?;
     Ok(())
@@ -437,6 +498,14 @@ mod tests {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/github-releases.json"),
         )
         .expect("缺少 tests/data/github-releases.json")
+    }
+
+    #[test]
+    fn the_installer_updates_in_place_without_asking() {
+        // 不带 /UPDATE 时 NSIS 会先弹「要先卸载旧版本吗」；不带 /P 会走完整的安装向导
+        for flag in ["/P", "/UPDATE", "/R"] {
+            assert!(INSTALLER_ARGS.contains(&flag), "缺 {flag}");
+        }
     }
 
     #[test]
@@ -604,6 +673,7 @@ mod tests {
 
     fn release(version: &str, name: &str) -> ReleaseView {
         ReleaseView {
+            build_id: None,
             version: version.into(),
             tag: format!("v{version}"),
             name: version.into(),
@@ -622,6 +692,7 @@ mod tests {
 
     fn checked(memory: &UpdateMemory, current: &str, latest: ReleaseView) {
         memory.remember_check(&UpdateStatus {
+            channel: Channel::Stable, build_id: BUILD_ID.into(), skipped: false, message: String::new(),
             current: current.into(),
             update_available: is_newer(current, &latest.version),
             latest: Some(latest),
@@ -658,6 +729,31 @@ mod tests {
         assert!(format!("{err}").contains("降级"), "{err}");
         checked(&memory, "0.2.8", release("0.2.8", "JPOP.Corpus.Tool_0.2.8_x64-setup.exe"));
         assert!(memory.installer_for("0.2.8", "0.2.8").is_err());
+    }
+
+    #[test]
+    fn a_new_debug_build_of_the_same_version_can_be_downloaded_but_not_a_downgrade() {
+        let memory = UpdateMemory::default();
+        let mut candidate = release("0.3.3", "JPOP.Corpus.Tool_0.3.3-debug.exe");
+        candidate.build_id = Some("new-debug-build".into());
+        candidate.tag = "debug".into(); candidate.prerelease = true;
+        candidate.installer.as_mut().unwrap().url = format!("{DOWNLOAD_PREFIX}debug/JPOP.Corpus.Tool_0.3.3-debug.exe");
+        checked(&memory, "0.3.3", candidate);
+        assert!(memory.installer_for("0.3.3", "new-debug-build").is_ok());
+        assert!(memory.installer_for("0.3.3", "old-debug-build").is_err());
+        assert!(memory.installer_for("0.4.0", "new-debug-build").is_err());
+    }
+
+    #[test]
+    fn debug_size_mismatch_discards_even_a_hash_verified_cached_file() {
+        let dir = std::env::temp_dir().join(format!("jp-debug-size-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let name = "JPOP.Corpus.Tool_0.3.3-debug.exe";
+        std::fs::write(dir.join(name), b"abc").unwrap();
+        let asset = AssetView { name: name.into(), url: format!("{DOWNLOAD_PREFIX}debug/{name}"), size: 4, sha256: Some(format!("{:x}", Sha256::digest(b"abc"))) };
+        assert!(download_installer(&asset, &dir, |_, _| {}).unwrap_err().to_string().contains("大小"));
+        assert!(!dir.join(name).exists());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// 文件名会拼进缓存目录：带路径的、绝对路径的、不是 setup.exe 的，在碰网络之前就拒绝

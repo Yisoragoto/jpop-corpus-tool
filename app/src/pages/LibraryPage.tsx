@@ -22,9 +22,9 @@ import {
 import { Stat } from "../components/Stat";
 import { useArtistPhotos } from "../components/PerformerPicker";
 import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
-import { AlbumView, PersonProfile, PersonSide } from "../components/PersonProfile";
+import { AlbumView, PersonProfile } from "../components/PersonProfile";
 import { GraphView } from "../components/GraphView";
-import { TimelineView } from "../components/TimelineView";
+import { focusTimelineOn, TimelineView } from "../components/TimelineView";
 import { CloudView, focusCloudOn } from "../components/CloudView";
 import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
@@ -43,8 +43,12 @@ import { segmentLine, type Piece } from "../lyricSegments";
 import { albumOwner, sameView, type LibraryView } from "../libraryIndex";
 import { morph } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
-import type { LibraryActions, LibraryState } from "../useLibrary";
+import { WORD_EXAMPLE_LIMIT, type LibraryActions, type LibraryState } from "../useLibrary";
+import type { WordJump } from "../wordCloud";
 import { useCurrentLine, useLineLoop } from "../usePlayback";
+import { useAppSettings } from "../settings";
+import { useKaraoke } from "../useKaraoke";
+import { charTimeline, lyricEndBound, validLyricTime, type WordTiming } from "../wordTiming";
 import { audition } from "../listen";
 import { SongProfile } from "../components/SongProfile";
 import { dictApi, type FindTermsResult } from "../dict/api";
@@ -52,6 +56,7 @@ import { LookupResults } from "../dict/LookupResults";
 import { MineButton } from "../dict/MineButton";
 import { mineApi, useMineSettings, type MineCheck } from "../dict/mine";
 import { ColumnSplitter, useColumnWidths } from "../components/ColumnSplitter";
+import { tr } from "../i18n";
 
 /** 查词是从哪一行第几个词发起的（制卡时用来取例句、切音频）。点释义里的链接查词时没有。 */
 interface LineContext {
@@ -75,18 +80,40 @@ function matchedPrefix(text: string, length: number): string {
 }
 
 /** 一个词里的字：有注音的套 ruby */
-function renderPieces(pieces: Piece[]): ReactNode {
+function renderPieces(pieces: Piece[], renderText: (text: string) => ReactNode = (text) => text): ReactNode {
   return pieces.map((piece, k) =>
     piece.reading === undefined ? (
-      <Fragment key={k}>{piece.text}</Fragment>
+      <Fragment key={k}>{renderText(piece.text)}</Fragment>
     ) : (
       <ruby key={k}>
-        {piece.text}
+        {renderText(piece.text)}
         <rt>{piece.reading}</rt>
       </ruby>
     ),
   );
 }
+
+/**
+ * 这首歌的真实单位时间，供高亮与点击定位共用；换歌（歌词重读）时重取。
+ * 取不到就使用逐行 / 纯文本显示，不生成逐字时间。
+ */
+function useSongWordTimings(lyrics: { utteranceId: number }[], enabled: boolean): WordTiming[] {
+  const [state, setState] = useState<{ lyrics: unknown; list: WordTiming[] }>({ lyrics: null, list: [] });
+  useEffect(() => {
+    if (!enabled || lyrics.length === 0) return;
+    let alive = true;
+    api.wordTimings(lyrics.map((l) => l.utteranceId)).then(
+      (list) => alive && setState({ lyrics, list }),
+      () => alive && setState({ lyrics, list: [] }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [lyrics, enabled]);
+  return enabled && state.lyrics === lyrics ? state.list : NO_TIMINGS;
+}
+
+const NO_TIMINGS: WordTiming[] = [];
 
 /** 右栏看的是词典还是例句，记住——下次查词还停在你上次看的那一页。 */
 const CORPUS_TAB_KEY = "jp.library.corpusTab";
@@ -114,8 +141,8 @@ interface Props {
   /** 从命令面板跳过来时要看的人。消费掉就清空 */
   focusPersonId: number | null;
   onFocusConsumed: () => void;
-  /** 词云里点「在检索页看」 */
-  onSearchWord: (lemma: string) => void;
+  /** 词云里点「在检索页看」：带着词云的范围 */
+  onSearchWord: (lemma: string, jump?: WordJump) => void;
   /** 外面（分析页）请求打开词云 */
   cloudWanted?: boolean;
   onCloudConsumed?: () => void;
@@ -141,7 +168,7 @@ export function LibraryPage({
   stageWanted = false,
   onStageConsumed,
 }: Props) {
-  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordLoading, activeLemma } =
+  const { tracks, selected, lyrics, credits, lyricsLoading, word, wordJump, wordLoading, activeLemma } =
     library;
   const lyricsRef = useRef<HTMLDivElement>(null);
   const currentLineRef = useRef<HTMLParagraphElement>(null);
@@ -332,8 +359,39 @@ export function LibraryPage({
   // 当前行由位置推导，不是引擎给的——见 usePlayback.ts。
   // **歌词属于 selected，位置属于正在放的那一首**，换歌的一瞬间两者不是同一首。
   const lyricsArePlaying = selected !== null && playback.songId === selected.id;
-  const currentLine = useCurrentLine(lyrics, playback.positionSec, lyricsArePlaying);
   const loopLine = useLineLoop(lyrics);
+
+  // 每行独立验证真实单位；部分行缺失或异常时，只降级该行。
+  const karaokeEnabled = useAppSettings().karaokeLyrics;
+  const wordTimings = useSongWordTimings(lyrics, true);
+  const timelines = useMemo(() => {
+    const byLine = new Map<number, WordTiming[]>();
+    for (const timing of wordTimings) {
+      const list = byLine.get(timing.utteranceId) ?? [];
+      list.push(timing);
+      byLine.set(timing.utteranceId, list);
+    }
+    return lyrics.map((line, index) => {
+      if (line.tokens.length > 0 && lineSegments[index] === null) return null;
+      const next = lyrics.slice(index + 1).find((other) => validLyricTime(other.timeSec)
+        && (!validLyricTime(line.timeSec) || other.timeSec > line.timeSec))?.timeSec ?? null;
+      const end = lyricEndBound(next, selected?.durationSec ?? null);
+      return charTimeline(line.text, line.timeSec, end, byLine.get(line.utteranceId) ?? NO_TIMINGS);
+    });
+  }, [lyrics, wordTimings, lineSegments, selected?.durationSec]);
+  // 只有纯文本时保持 null。若来源本身提供完整词段，可使用其真实起点定位当前行。
+  const syncedLyrics = useMemo(() => lyrics.map((line, index) => ({
+    ...line, timeSec: validLyricTime(line.timeSec) ? line.timeSec : timelines[index]?.starts[0] ?? null,
+  })), [lyrics, timelines]);
+  const currentLine = useCurrentLine(syncedLyrics, playback.positionSec, lyricsArePlaying);
+  const karaoke = karaokeEnabled && lyricsArePlaying ? timelines[currentLine] ?? null : null;
+  useKaraoke(
+    karaoke,
+    playback.positionSec,
+    playback.playState === "playing",
+    playback.rate,
+    `${stageOpen}|${furigana !== null}|${display.furiganaMode}`,
+  );
 
   // 换歌先回到开头。歌词栏是个常驻的滚动容器，内容换了 scrollTop 不会跟着变，
   // 上一首滚到了 3:38 的位置，新歌一进来就停在半腰。
@@ -387,30 +445,50 @@ export function LibraryPage({
     const line = lyrics[idx];
     if (line === undefined || selected === null) return null;
     const songId = selected.id;
+    // 逐字点亮的那一行：每个字包一层 span（`data-c` 是字符下标），按渲染顺序数下去
+    const karaokeLine = karaoke !== null && idx === currentLine;
+    // 只有当前行拆成一个个字：其余行原样输出，播放轮询每秒重渲染 10 次，整首都拆开太重
+    let c = 0;
+    const chars = (text: string): ReactNode => {
+      if (!karaokeLine) return text;
+      return [...text].map((ch) => {
+        const at = c++;
+        return (
+          <span key={at} className="kc" data-c={at}>
+            {ch}
+          </span>
+        );
+      });
+    };
+    const pieces = (list: Piece[]): ReactNode => renderPieces(list, chars);
     return (
-      <span className="text" lang="ja">
+      <span className={karaokeLine ? "text karaoke-line" : "text"} lang="ja"
+        data-lyrics-mode={karaokeLine ? "karaoke" : validLyricTime(syncedLyrics[idx]?.timeSec ?? null) ? "lineSynced" : "plain"}>
         {line.tokens.length === 0
-          ? line.text
+          ? chars(line.text)
           : (lineSegments[idx] ?? line.tokens.map((_, index) => ({ kind: "token" as const, index, pieces: [] }))).map((segment, k) => {
-              if (segment.kind === "gap") return <Fragment key={`gap-${k}`}>{segment.text}</Fragment>;
+              if (segment.kind === "gap") return <Fragment key={`gap-${k}`}>{chars(segment.text)}</Fragment>;
               const i = segment.index;
               const token = line.tokens[i];
               if (token === undefined) return null;
               // 分词对不齐原文时（拆分结果是 null）退回只显示词
-              const content = segment.pieces.length > 0 ? renderPieces(segment.pieces) : token.surface;
               // 从这个词起到行尾，交给词典做最长匹配
               const rest = () => line.tokens.slice(i).map((t) => t.surface).join("");
               const context = { songId, utteranceId: line.utteranceId, tokenIndex: i };
+              const lookupToken = () => {
+                if (CONTENT_POS.has(token.pos)) void actions.openWord(token.lemma);
+                lookUp(rest(), context);
+                setStageSide(true);
+              };
+              const content = segment.pieces.length > 0 ? pieces(segment.pieces) : chars(token.surface);
               return CONTENT_POS.has(token.pos) ? (
                 <button
                   key={i}
                   className={`token ${activeLemma === token.lemma ? "on" : ""}`}
                   onClick={(e) => {
-                    // 全屏里点行是跳转，点词不跳
+                    // 点词只查词、不动播放进度（全屏里点行才是跳转）
                     e.stopPropagation();
-                    void actions.openWord(token.lemma);
-                    lookUp(rest(), context);
-                    setStageSide(true);
+                    lookupToken();
                   }}
                   title={`${token.lemma} · ${POS_LABELS[token.pos] ?? token.pos}`}
                 >
@@ -422,10 +500,9 @@ export function LibraryPage({
                   className="token-lookup"
                   onClick={(e) => {
                     e.stopPropagation();
-                    lookUp(rest(), context);
-                    setStageSide(true);
+                    lookupToken();
                   }}
-                  title="查词典"
+                  title={tr("查词典")}
                 >
                   {content}
                 </span>
@@ -599,7 +676,9 @@ export function LibraryPage({
     (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => {
       lastSongId.current = songId;
       if (fullscreen) setStageFor(songId);
-      void actions.openTrackById(songId, { scrollTo: utteranceId, seekTo: timeSec, autoPlay: true });
+      void actions.openTrackById(songId, {
+        scrollTo: utteranceId, seekTo: validLyricTime(timeSec) ? timeSec : null, autoPlay: validLyricTime(timeSec),
+      });
     },
     [actions],
   );
@@ -642,7 +721,7 @@ export function LibraryPage({
             ? matchedPrefix(lookup.text, lookup.result.originalTextLength)
             : matchedPrefix(lookup.text, 8)}
         </span>
-        <button className="corpus-dict-close" onClick={() => setLookup(null)} title="关闭这次查词">
+        <button className="corpus-dict-close" onClick={() => setLookup(null)} title={tr("关闭这次查词")}>
           ✕
         </button>
       </h3>
@@ -651,7 +730,7 @@ export function LibraryPage({
           result={lookup.result}
           loading={lookup.loading}
           error={lookup.error}
-          emptyText="词典里没有查到（在「词典」页导入词典）"
+          emptyText={tr("词典里没有查到（在「词典」页导入词典）")}
           onLookup={lookUpLink}
           compact
           entryActions={(entry) => {
@@ -705,15 +784,18 @@ export function LibraryPage({
             <button
               className="kwic-play"
               onClick={() => void audition(actions, ex.utteranceId).catch((e) => onAudioError(String(e)))}
-              title="试听这一句（到行尾自动停）"
-              aria-label="试听这一句"
+              title={tr("试听这一句（到行尾自动停）")}
+              aria-label={tr("试听这一句")}
             >
               ▶
             </button>
           )}
         </div>
       ))}
-      {word.examples.length === 0 && <p className="muted">没有例句</p>}
+      {word.examples.length === 0 && <p className="muted">{tr("没有例句")}</p>}
+      {word.examples.length >= WORD_EXAMPLE_LIMIT && (
+        <p className="muted small">{tr("只列了前 {n} 句，全部在检索页看", { n: WORD_EXAMPLE_LIMIT })}</p>
+      )}
     </div>
   );
 
@@ -721,17 +803,17 @@ export function LibraryPage({
     <>
       {!word && !wordLoading && lookup === null && selected !== null && (
         <div className="song-facts">
-          <h3 className="side-head">这首歌</h3>
+          <h3 className="side-head">{tr("这首歌")}</h3>
           <dl className="facts">
-            {selected.album && <><dt>专辑</dt><dd>{selected.album}</dd></>}
-            {selected.year && <><dt>年份</dt><dd>{selected.year}</dd></>}
-            {selected.genre && <><dt>流派</dt><dd>{selected.genre}</dd></>}
-            {selected.durationSec !== null && <><dt>时长</dt><dd>{formatDuration(selected.durationSec)}</dd></>}
-            <dt>歌词</dt><dd>{lyrics.length > 0 ? `${lyrics.length} 行` : "没有"}</dd>
+            {selected.album && <><dt>{tr("专辑")}</dt><dd>{selected.album}</dd></>}
+            {selected.year && <><dt>{tr("年份")}</dt><dd>{selected.year}</dd></>}
+            {selected.genre && <><dt>{tr("流派")}</dt><dd>{selected.genre}</dd></>}
+            {selected.durationSec !== null && <><dt>{tr("时长")}</dt><dd>{formatDuration(selected.durationSec)}</dd></>}
+            <dt>{tr("歌词")}</dt><dd>{lyrics.length > 0 ? tr("{length} 行", { length: lyrics.length }) : tr("没有")}</dd>
           </dl>
           {credits.length > 0 && (
             <>
-              <h3 className="side-head">署名</h3>
+              <h3 className="side-head">{tr("署名")}</h3>
               {creditPeople.map((c, i) => (
                 <button key={c.personId} className="peer" style={{ ["--n" as string]: i }} onClick={() => openPerson(c.personId)}>
                   <Avatar path={c.roles.includes("performer") ? photoOf(c.name) : ""} name={c.name} size={30} />
@@ -744,22 +826,28 @@ export function LibraryPage({
             </>
           )}
           <SongProfile songId={selected.id} onSearchWord={onSearchWord} />
-          <p className="muted small hint">点歌词里的词，这里换成释义和它在整个语料里的例句</p>
+          <p className="muted small hint">{tr("点歌词里的词，这里换成释义和它在整个语料里的例句")}</p>
         </div>
       )}
       {!word && !wordLoading && lookup === null && selected === null && (
-        <p className="muted pad">点歌词里的词：看释义，以及它在整个语料里的样子</p>
+        <p className="muted pad">{tr("点歌词里的词：看释义，以及它在整个语料里的样子")}</p>
       )}
-      {wordLoading && <p className="muted pad">查询中…</p>}
+      {wordLoading && <p className="muted pad">{tr("查询中…")}</p>}
       {word && !wordLoading && (
         <>
           <h2 className="lemma">{word.lemma}</h2>
           <div className="numbers">
-            <Stat label="出现" value={word.occurrences} align="start" />
-            <Stat label="歌曲" value={word.songCount} align="start" />
-            <Stat label="歌手" value={word.artistCount} align="start" />
+            <Stat label={tr("出现")} value={word.occurrences} align="start" />
+            <Stat label={tr("歌曲")} value={word.songCount} align="start" />
+            <Stat label={tr("歌手")} value={word.artistCount} align="start" />
           </div>
-          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma)} />
+          {wordJump !== null && wordJump.label !== "" && (
+            <p className="muted small word-scope">
+              {tr("只看 {label}", { label: wordJump.label })}
+              <button className="link-btn" onClick={() => void actions.openWord(word.lemma)}>{tr("看整个库")}</button>
+            </p>
+          )}
+          <SubcorpusPicker onError={onAudioError} onChange={() => void actions.openWord(word.lemma, wordJump)} />
           {word.firstYear && (
             <p className="muted small">
               {word.firstYear} — {word.lastYear}
@@ -778,31 +866,28 @@ export function LibraryPage({
       {(word !== null || lookup !== null) && !wordLoading && (
         <>
           <div className="segmented corpus-tabs">
-            <button className={corpusTab === "dict" ? "on" : ""} onClick={() => pickTab("dict")}>
-              词典
-            </button>
-            <button className={corpusTab === "examples" ? "on" : ""} onClick={() => pickTab("examples")}>
-              例句{word ? ` ${word.examples.length}` : ""}
+            <button className={corpusTab === "dict" ? "on" : ""} onClick={() => pickTab("dict")}>{tr("词典")}</button>
+            <button className={corpusTab === "examples" ? "on" : ""} onClick={() => pickTab("examples")}>{tr("例句")}{word ? ` ${word.examples.length}` : ""}
             </button>
           </div>
           {corpusTab === "dict"
-            ? dictionarySection || <p className="muted pad">这次没有查词典（点歌词里的词会查）</p>
-            : examplesSection || <p className="muted pad">没有例句</p>}
+            ? dictionarySection || <p className="muted pad">{tr("这次没有查词典（点歌词里的词会查）")}</p>
+            : examplesSection || <p className="muted pad">{tr("没有例句")}</p>}
         </>
       )}
     </>
   );
 
   const backButton = canBack && (
-    <button className="btn nav-back" onClick={back} title="返回" aria-label="返回">
+    <button className="btn nav-back" onClick={back} title={tr("返回")} aria-label={tr("返回")}>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="m14 7-5 5 5 5" />
       </svg>
     </button>
   );
   const songView = view?.kind === "song" || view === null;
-  /** 关系网、时间轴占中栏加右栏 */
-  const wide = view?.kind === "graph" || view?.kind === "timeline" || view?.kind === "cloud";
+  /** 关系网、时间轴、词云、档案占中栏加右栏 */
+  const wide = view !== null && view.kind !== "song";
 
   return (
     <div
@@ -811,7 +896,7 @@ export function LibraryPage({
       ref={columns.container}
     >
       {browserHidden && (
-        <button className="btn browser-reveal" onClick={toggleBrowser} title="展开左栏" aria-label="展开左栏">
+        <button className="btn browser-reveal" onClick={toggleBrowser} title={tr("展开左栏")} aria-label={tr("展开左栏")}>
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
             <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
             <path d="M9 4.5v15M13 10l2 2-2 2" />
@@ -833,9 +918,7 @@ export function LibraryPage({
         onHide={toggleBrowser}
         banner={
           missing.length > 0 && (
-            <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title="扫文件夹或逐首选文件找回">
-              ⚠ {missing.length} 首找不到音频文件 · 找回
-            </button>
+            <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title={tr("扫文件夹或逐首选文件找回")}>{tr("⚠ {length} 首找不到音频文件 · 找回", { length: missing.length })}</button>
           )
         }
       />
@@ -843,7 +926,7 @@ export function LibraryPage({
       <ColumnSplitter
         className="split-left"
         edge="left"
-        label="资料库左栏宽度"
+        label={tr("资料库左栏宽度")}
         onDrag={columns.drag}
         onNudge={columns.nudge}
         onReset={columns.reset}
@@ -870,9 +953,11 @@ export function LibraryPage({
             coverOf={coverOf}
             covered={stageOpen}
             onSearchWord={onSearchWord}
-            onShowExamples={(lemma) => {
+            onShowExamples={(lemma, jump) => {
               go({ kind: "song" });
-              void actions.openWord(lemma);
+              // 释义：原来只有点歌词里的词才查词典，从词云过来右栏只剩例句
+              lookUp(lemma);
+              void actions.openWord(lemma, jump);
             }}
             onError={onAudioError}
           />
@@ -915,6 +1000,11 @@ export function LibraryPage({
                 focusCloudOn(view.id);
                 go({ kind: "cloud" });
               }}
+              onOpenGraph={() => go({ kind: "graph", focus: view.id })}
+              onOpenTimeline={() => {
+                focusTimelineOn(view.id);
+                go({ kind: "timeline" });
+              }}
               onError={onAudioError}
             />
           ) : (
@@ -943,17 +1033,17 @@ export function LibraryPage({
             onApplied={(ids) => {
               refreshMissing();
               void actions.refreshAfterChange(ids, false);
-              setMaintainNote({ forSong: selected?.id ?? null, text: `找回了 ${ids.length} 首的音频` });
+              setMaintainNote({ forSong: selected?.id ?? null, text: tr("找回了 {length} 首的音频", { length: ids.length }) });
             }}
             onClose={() => setPanel(null)}
             onError={onAudioError}
           />
         )}
         {panel !== "repair" && note && !selected && <p className="maintain-note">{note}</p>}
-        {panel !== "repair" && !selected && <p className="muted pad">从左侧选一位音乐人、一张专辑或一首歌</p>}
+        {panel !== "repair" && !selected && <p className="muted pad">{tr("从左侧选一位音乐人、一张专辑或一首歌")}</p>}
         {panel !== "repair" && selected && (
           <>
-            <nav className="crumbs" aria-label="这首歌在哪">
+            <nav className="crumbs" aria-label={tr("这首歌在哪")}>
               {performers.length > 0
                 ? performers.map((c, i) => (
                     <Fragment key={c.personId}>
@@ -961,7 +1051,7 @@ export function LibraryPage({
                       <button onClick={() => openPerson(c.personId)}>{c.name}</button>
                     </Fragment>
                   ))
-                : <span>{selected.artist || "未知歌手"}</span>}
+                : <span>{selected.artist || tr("未知歌手")}</span>}
               {selected.album && (
                 <>
                   <span className="crumb-sep">›</span>
@@ -988,7 +1078,7 @@ export function LibraryPage({
                   <ul className="credits">
                     {credits.map((c) => (
                       <li key={`${c.role}-${c.personId}`}>
-                        <button className="credit-link" onClick={() => openPerson(c.personId)} title={`看 ${c.name} 的档案`}>
+                        <button className="credit-link" onClick={() => openPerson(c.personId)} title={tr("看 {name} 的档案", { name: c.name })}>
                           <span className="role">{ROLE_LABELS[c.role] ?? c.role}</span>
                           {c.name}
                         </button>
@@ -1004,8 +1094,8 @@ export function LibraryPage({
                     <button
                       className={`btn more-btn ${menuOpen ? "on" : ""}`}
                       onClick={() => setMenuOpen((v) => !v)}
-                      title="更多"
-                      aria-label="更多"
+                      title={tr("更多")}
+                      aria-label={tr("更多")}
                       aria-expanded={menuOpen}
                     >
                       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -1016,37 +1106,23 @@ export function LibraryPage({
                     </button>
                     {menuOpen && (
                       <div className="menu-panel" role="menu">
-                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "edit" ? null : "edit"); }}>
-                          编辑信息
-                        </button>
-                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lineage" ? null : "lineage"); }}>
-                          来源与校验
-                        </button>
+                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "edit" ? null : "edit"); }}>{tr("编辑信息")}</button>
+                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lineage" ? null : "lineage"); }}>{tr("来源与校验")}</button>
                         {lyrics.length > 0 && (
-                          <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lyrics" ? null : "lyrics"); }}>
-                            逐行编辑歌词
-                          </button>
+                          <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lyrics" ? null : "lyrics"); }}>{tr("逐行编辑歌词")}</button>
                         )}
                         {lyrics.length > 0 && (
                           <LyricsFill songId={selected.id} hasLyrics onAttached={() => void actions.reloadLyrics()} onError={onAudioError} />
                         )}
                         <hr />
-                        <button role="menuitem" className="danger" onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}>
-                          删除这首歌…
-                        </button>
+                        <button role="menuitem" className="danger" onClick={() => { setMenuOpen(false); setConfirmDelete(true); }}>{tr("删除这首歌…")}</button>
                       </div>
                     )}
                   </div>
                 </div>
                 {confirmDelete && (
-                  <span className="confirm-delete">
-                    删掉《{selected.title}》？歌词和分词一起删，音频文件不动
-                    <button className="link-btn danger" onClick={() => void deleteSelected()}>
-                      确认删除
-                    </button>
-                    <button className="link-btn" onClick={() => setConfirmDelete(false)}>
-                      取消
-                    </button>
+                  <span className="confirm-delete">{tr("删掉《{title}》？歌词和分词一起删，音频文件不动", { title: selected.title })}<button className="link-btn danger" onClick={() => void deleteSelected()}>{tr("确认删除")}</button>
+                    <button className="link-btn" onClick={() => setConfirmDelete(false)}>{tr("取消")}</button>
                   </span>
                 )}
               </div>
@@ -1092,30 +1168,22 @@ export function LibraryPage({
             )}
             {note && <p className="maintain-note">{note}</p>}
             {missingIds.has(selected.id) && (
-              <p className="warn small">
-                这首歌的音频文件找不到了：{selected.audioPath || "（没有记录路径）"}。
-                <button className="link-btn" onClick={() => setPanel("repair")}>
-                  找回
-                </button>
+              <p className="warn small">{tr("这首歌的音频文件找不到了：")}{selected.audioPath || tr("（没有记录路径）")}{tr("。")}
+                <button className="link-btn" onClick={() => setPanel("repair")}>{tr("找回")}</button>
               </p>
             )}
 
             {untokenized && (
-              <p className="warn small">
-                这首歌有歌词但还没分词，所以点不了词、也没有振假名（多半是在还没有分词词典时入库的）。
-                <button className="link-btn" onClick={() => void tokenizeNow()} disabled={tokenizing}>
-                  {tokenizing ? "分词中…" : "现在补分词"}
+              <p className="warn small">{tr("这首歌有歌词但还没分词，所以点不了词、也没有振假名（多半是在还没有分词词典时入库的）。")}<button className="link-btn" onClick={() => void tokenizeNow()} disabled={tokenizing}>
+                  {tokenizing ? tr("分词中…") : tr("现在补分词")}
                 </button>
               </p>
             )}
-            {lyricsLoading && <p className="muted pad">加载歌词…</p>}
+            {lyricsLoading && <p className="muted pad">{tr("加载歌词…")}</p>}
             {!lyricsLoading && lyrics.length === 0 && (
               <div className="empty-state pad">
-                <p>这首歌还没有歌词</p>
-                <p className="muted small">
-                  导入只认音频旁边的同名 .lrc。在线搜一下，或者自己选一份文件——
-                  歌词会存进语料库目录的 raw/lyrics_lrc，和导入进来的一样。
-                </p>
+                <p>{tr("这首歌还没有歌词")}</p>
+                <p className="muted small">{tr("导入只认音频旁边的同名 .lrc。在线搜一下，或者自己选一份文件—— 歌词会存进语料库目录的 raw/lyrics_lrc，和导入进来的一样。")}</p>
                 <LyricsFill
                   songId={selected.id}
                   hasLyrics={false}
@@ -1127,6 +1195,7 @@ export function LibraryPage({
 
             {lyrics.map((line, idx) => {
               const active = idx === currentLine;
+              const startSec = syncedLyrics[idx]?.timeSec ?? null;
               const looped =
                 playback.loopRegion !== null &&
                 line.timeSec !== null &&
@@ -1142,23 +1211,23 @@ export function LibraryPage({
                 >
                   <button
                     className="time"
-                    disabled={!audioReady || line.timeSec === null}
-                    onClick={() => line.timeSec !== null && void api.audioSeek(line.timeSec)}
-                    title={line.timeSec === null ? "这行没有时间轴" : "跳到这一句"}
+                    disabled={!audioReady || !validLyricTime(startSec)}
+                    onClick={() => validLyricTime(startSec) && void api.audioSeek(startSec)}
+                    title={!validLyricTime(startSec) ? tr("这行没有时间轴") : tr("跳到这一句")}
                   >
-                    {line.timeSec === null ? "—" : formatDuration(line.timeSec)}
+                    {!validLyricTime(startSec) ? "—" : formatDuration(startSec)}
                   </button>
                   <button
                     className="loop-line"
-                    disabled={!audioReady || line.timeSec === null}
+                    disabled={!audioReady || !validLyricTime(line.timeSec)}
                     onClick={async () => {
                       if (looped) {
                         await api.audioSetLoop();
                       } else if (!(await loopLine(idx))) {
-                        onAudioError("这一句太短，无法循环");
+                        onAudioError(tr("这一句太短，无法循环"));
                       }
                     }}
-                    title={looped ? "取消单句循环" : "循环这一句"}
+                    title={looped ? tr("取消单句循环") : tr("循环这一句")}
                   >
                     🔁
                   </button>
@@ -1173,25 +1242,13 @@ export function LibraryPage({
       <ColumnSplitter
         className={`split-right ${wide ? "is-hidden" : ""}`}
         edge="right"
-        label="查词栏宽度"
+        label={tr("查词栏宽度")}
         onDrag={columns.drag}
         onNudge={columns.nudge}
         onReset={columns.reset}
       />
 
-      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>
-        {view?.kind === "person" ? (
-          <PersonSide
-            personId={view.id}
-            data={data}
-            onOpenPerson={openPerson}
-            onOpenGraph={() => go({ kind: "graph", focus: view.id })}
-            onError={onAudioError}
-          />
-        ) : (
-          corpusContent
-        )}
-      </aside>
+      <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>{corpusContent}</aside>
 
       {stageOpen && selected && (
         <LyricsStage
@@ -1201,13 +1258,13 @@ export function LibraryPage({
           track={selected}
           credits={credits}
           photoOf={photoOf}
-          lines={lyrics}
+          lines={syncedLyrics}
           currentLine={currentLine}
           renderText={renderLineText}
           canSeek={audioReady}
           onSeekLine={(idx) => {
-            const time = lyrics[idx]?.timeSec;
-            if (audioReady && time !== null && time !== undefined) void api.audioSeek(time);
+            const time = syncedLyrics[idx]?.timeSec ?? null;
+            if (audioReady && validLyricTime(time)) void api.audioSeek(time);
           }}
           display={display}
           withFurigana={furigana !== null}

@@ -1,4 +1,5 @@
 import Foundation
+import JPCorpusModel
 
 // 来源追踪、语料质量里的代码 → 中文。和 Tauri 前端 app/src/corpusQuality.ts 同一套说法
 

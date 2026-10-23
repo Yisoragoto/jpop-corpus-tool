@@ -14,6 +14,7 @@
 import { useSyncExternalStore } from "react";
 
 import type { ImportReport, NewAudio, PlanItem, ScanResult, WatchedFolder } from "./api";
+import { tr } from "./i18n";
 
 /** 超过这么多首就不给直接导：一眼看不完的东西不该一键写库 */
 export const DIRECT_IMPORT_LIMIT = 20;
@@ -25,20 +26,20 @@ export function newItems(scan: ScanResult): PlanItem[] {
 
 /** 这批新歌为什么要先看一眼；能直接导返回 null */
 export function reviewReason(items: PlanItem[]): string | null {
-  if (items.length > DIRECT_IMPORT_LIMIT) return `一次 ${items.length} 首，先过一眼计划`;
+  if (items.length > DIRECT_IMPORT_LIMIT) return tr("一次 {length} 首，先过一眼计划", { length: items.length });
   const unreadable = items.filter((item) => item.warning !== null).length;
-  if (unreadable > 0) return `${unreadable} 首读不出标签，曲名歌手是猜的`;
+  if (unreadable > 0) return tr("{unreadable} 首读不出标签，曲名歌手是猜的", { unreadable });
   const guessed = items.filter((item) => item.artistSource === "folder").length;
-  if (guessed > 0) return `${guessed} 首的歌手是从文件夹名猜的`;
+  if (guessed > 0) return tr("{guessed} 首的歌手是从文件夹名猜的", { guessed });
   const anonymous = items.filter((item) => item.artistSource === "none" || item.artist.trim() === "").length;
-  if (anonymous > 0) return `${anonymous} 首定不出歌手`;
+  if (anonymous > 0) return tr("{anonymous} 首定不出歌手", { anonymous });
   return null;
 }
 
 /** 「曲名 — 歌手、曲名 — 歌手 等 5 首」。列不完的只说总数，全的在悬停提示和导入页里 */
 export function describeNewSongs(items: PlanItem[], max = 3): string {
   const named = items.slice(0, max).map((item) => (item.artist.trim() === "" ? item.title : `${item.title} — ${item.artist}`));
-  return items.length > max ? `${named.join("、")} 等 ${items.length} 首` : named.join("、");
+  return items.length > max ? tr("{named} 等 {length} 首", { named: named.join(tr("、")), length: items.length }) : named.join(tr("、"));
 }
 
 /** 路径的比较键，和后端 `path_key` 一样：分隔符统一，Windows 的路径不分大小写 */

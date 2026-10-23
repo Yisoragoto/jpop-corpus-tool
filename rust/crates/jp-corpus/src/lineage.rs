@@ -466,6 +466,7 @@ pub fn provenance(conn: &Connection, entity_type: &str, entity_id: &str) -> Resu
 
 /// 删歌时一起删：版本和字段来源挂在歌的 id 上，修订历史留着（它是日志）。
 pub fn forget_song(conn: &Connection, song_id: &str) -> Result<()> {
+    crate::identity::forget(conn,"song",song_id)?;
     conn.execute("DELETE FROM lyric_versions WHERE song_id=?1", params![song_id])?;
     conn.execute("DELETE FROM field_provenance WHERE entity_type='song' AND entity_id=?1", params![song_id])?;
     Ok(())
@@ -493,13 +494,18 @@ pub struct LyricVersion {
     pub validated_at: String,
     pub is_current: bool,
     pub note: String,
+    pub raw_format: String,
+    pub sync_granularity: String,
+    pub timing_origin: String,
+    pub timing_validation: serde_json::Value,
 }
 
 /// 一首歌的全部歌词版本，新的在前
 pub fn versions(conn: &Connection, song_id: &str) -> Result<Vec<LyricVersion>> {
     let mut stmt = conn.prepare(
         "SELECT id, version_no, source_type, source_name, source_ref, imported_at, raw_text IS NOT NULL, content_hash, \
-         line_count, timed_line_count, completeness, validation_json, validated_at, is_current, note \
+         line_count, timed_line_count, completeness, validation_json, validated_at, is_current, note, \
+         raw_format, sync_granularity, timing_origin, timing_validation_json \
          FROM lyric_versions WHERE song_id=?1 ORDER BY version_no DESC",
     )?;
     let rows = stmt.query_map(params![song_id], |r| {
@@ -519,6 +525,10 @@ pub fn versions(conn: &Connection, song_id: &str) -> Result<Vec<LyricVersion>> {
             validated_at: r.get(12)?,
             is_current: r.get(13)?,
             note: r.get(14)?,
+            raw_format: r.get(15)?,
+            sync_granularity: r.get(16)?,
+            timing_origin: r.get(17)?,
+            timing_validation: serde_json::from_str(&r.get::<_, String>(18)?).unwrap_or_default(),
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)

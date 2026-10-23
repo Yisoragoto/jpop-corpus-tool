@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 
 import type { TermDictionaryEntry } from "./api";
 import { artistSubdeck, mineApi, useMineSettings, type MineContext } from "./mine";
+import { tr } from "../i18n";
 
 type State =
   | { kind: "idle" }
@@ -59,19 +60,17 @@ export function MineButton({ entry, context, existing, unavailable, onError }: P
         className={problems.length > 0 ? "mine-btn done partial" : "mine-btn done"}
         onClick={() => browse([state.noteId])}
         title={[
-          `已加入 Anki「${state.deck}」${state.deckCreated ? "（新建的子牌组）" : ""}，点击在 Anki 里打开`,
+          tr("已加入 Anki「{deck}」{v}，点击在 Anki 里打开", { deck: state.deck, v: state.deckCreated ? tr("（新建的子牌组）") : "" }),
           ...problems,
         ].join("\n")}
       >
-        {state.warnings.length > 0 ? "✓ 已制卡（有问题）" : "✓ 已制卡"}
+        {state.warnings.length > 0 ? tr("✓ 已制卡（有问题）") : tr("✓ 已制卡")}
       </button>
     );
   }
   if (existingIds !== null) {
     return (
-      <button className="mine-btn existing" onClick={() => browse(existingIds)} title="Anki 里已经有这个词的卡，点击打开">
-        已有卡
-      </button>
+      <button className="mine-btn existing" onClick={() => browse(existingIds)} title={tr("Anki 里已经有这个词的卡，点击打开")}>{tr("已有卡")}</button>
     );
   }
 
@@ -82,7 +81,7 @@ export function MineButton({ entry, context, existing, unavailable, onError }: P
       if (outcome.kind === "added") {
         const notes =
           outcome.skippedFields.length > 0
-            ? [`这个笔记类型没有这些字段，内容没写进去：${outcome.skippedFields.join("、")}`]
+            ? [tr("这个笔记类型没有这些字段，内容没写进去：{skippedFields}", { skippedFields: outcome.skippedFields.join(tr("、")) })]
             : [];
         setState({
           kind: "added",
@@ -93,7 +92,7 @@ export function MineButton({ entry, context, existing, unavailable, onError }: P
           warnings: outcome.warnings,
         });
         // 当前句没有音频这类问题要让人看见，不能只藏在悬停提示里
-        if (outcome.warnings.length > 0) onError(`「${headword.term}」已制卡，但${outcome.warnings.join("；")}`);
+        if (outcome.warnings.length > 0) onError(tr("「{term}」已制卡，但{warnings}", { term: headword.term, warnings: outcome.warnings.join(tr("；")) }));
       } else {
         setDuplicate(outcome.noteIds);
         setState({ kind: "idle" });
@@ -114,13 +113,13 @@ export function MineButton({ entry, context, existing, unavailable, onError }: P
         unavailable !== ""
           ? unavailable
           : state.kind === "error"
-            ? `制卡失败：${state.message}（点击重试）`
+            ? tr("制卡失败：{message}（点击重试）", { message: state.message })
             : subdeck !== null
-              ? `做成 ${settings.model} 卡，放进「${subdeck}」（没有这个子牌组就新建）`
-              : `做成 ${settings.model} 卡，放进「${settings.deck}」`
+              ? tr("做成 {model} 卡，放进「{subdeck}」（没有这个子牌组就新建）", { model: settings.model, subdeck })
+              : tr("做成 {model} 卡，放进「{deck}」", { model: settings.model, deck: settings.deck })
       }
     >
-      {state.kind === "adding" ? "制卡中…" : state.kind === "error" ? "重试制卡" : "＋ 制卡"}
+      {state.kind === "adding" ? tr("制卡中…") : state.kind === "error" ? tr("重试制卡") : tr("＋ 制卡")}
     </button>
   );
 }

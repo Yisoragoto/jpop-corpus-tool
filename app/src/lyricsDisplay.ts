@@ -8,12 +8,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { call } from "./api";
+import { tr } from "./i18n";
 
 export type FuriganaMode = "kanji" | "word";
 
 export const FURIGANA_MODE_LABELS: Record<FuriganaMode, string> = {
-  kanji: "只注汉字",
-  word: "整词注音",
+  kanji: tr("只注汉字"),
+  word: tr("整词注音"),
 };
 
 export interface LyricsDisplay {

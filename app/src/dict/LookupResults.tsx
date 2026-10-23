@@ -14,6 +14,7 @@ import { dictApi, type FindTermsResult, type TermDictionaryEntry } from "./api";
 import { setDictionariesCollapsed, useCollapsedDictionaries } from "./collapse";
 import { TermEntry } from "./TermEntry";
 import "./dict.css";
+import { tr } from "../i18n";
 
 const STYLE_ELEMENT_ID = "dictionary-styles";
 /** 窄栏默认显示几条词条 */
@@ -82,10 +83,10 @@ export function LookupResults({ result, loading, error, emptyText, onLookup, com
     return <p className="dict-empty warn">{error}</p>;
   }
   if (result === null) {
-    return loading ? <p className="dict-empty muted">查词中…</p> : null;
+    return loading ? <p className="dict-empty muted">{tr("查词中…")}</p> : null;
   }
   if (entries.length === 0) {
-    return <p className="dict-empty muted">{loading ? "查词中…" : (emptyText ?? "没有查到")}</p>;
+    return <p className="dict-empty muted">{loading ? tr("查词中…") : (emptyText ?? tr("没有查到"))}</p>;
   }
 
   const allCollapsed = titles.length > 0 && titles.every((title) => collapsed.has(title));
@@ -93,10 +94,10 @@ export function LookupResults({ result, loading, error, emptyText, onLookup, com
   return (
     <div className="dict-results" data-loading={loading ? "true" : undefined} data-compact={compact ? "true" : undefined}>
       <div className="dict-results-toolbar">
-        <span>{entries.length} 条</span>
+        <span>{tr("{length} 条", { length: entries.length })}</span>
         {titles.length > 0 && (
           <button onClick={() => setDictionariesCollapsed(titles, !allCollapsed)}>
-            {allCollapsed ? "展开全部词典" : "折叠全部词典"}
+            {allCollapsed ? tr("展开全部词典") : tr("折叠全部词典")}
           </button>
         )}
       </div>
@@ -110,9 +111,7 @@ export function LookupResults({ result, loading, error, emptyText, onLookup, com
         />
       ))}
       {entries.length > limit && (
-        <button className="dict-more" onClick={() => setShowAll(true)}>
-          再显示 {entries.length - limit} 条
-        </button>
+        <button className="dict-more" onClick={() => setShowAll(true)}>{tr("再显示 {v} 条", { v: entries.length - limit })}</button>
       )}
     </div>
   );

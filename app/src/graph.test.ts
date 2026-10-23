@@ -64,3 +64,15 @@ describe("Simulation", () => {
     expect(nodeAt(g.nodes, n.x + 500, n.y + 500)).toBe(-1);
   });
 });
+
+it("settled collaboration portraits have physical separation and capped hit regions", () => {
+  const entries=Array.from({length:18},(_,i)=>entry(i,`Person ${i}`,{performer:1,songs:i+1}));
+  const g=buildGraph(entries,entries.slice(1).map(e=>({source:0,target:e.id,shared:1})),[]);
+  new Simulation(g).settle();
+  for(let i=0;i<g.nodes.length;i++) for(let j=i+1;j<g.nodes.length;j++) {
+    const a=g.nodes[i]!,b=g.nodes[j]!;
+    expect(Math.hypot(a.x-b.x,a.y-b.y)).toBeGreaterThan(a.r+b.r+4);
+  }
+  const a=g.nodes[0]!;
+  expect(nodeAt([a],a.x+10,a.y,0,5)).toBe(-1);
+});

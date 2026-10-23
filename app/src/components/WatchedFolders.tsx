@@ -12,6 +12,7 @@ import { api, type NewAudio, type WatchedFolder } from "../api";
 import { messageOf } from "../errors";
 import { NO_IGNORES, pathKey, setIgnores, useNewSongIgnores, withIgnored, withoutIgnoredFolder } from "../newSongs";
 import { CommandButton } from "./CommandButton";
+import { tr } from "../i18n";
 
 interface Props {
   /** 把这些文件交给下面的扫描 → 复核 → 导入 */
@@ -26,11 +27,11 @@ interface Props {
 function why(folder: WatchedFolder): string {
   switch (folder.reason) {
     case "library":
-      return folder.depth <= 1 ? "语料库目录 · 只看直接放在这里的文件" : "语料库目录里放音频的地方";
+      return folder.depth <= 1 ? tr("语料库目录 · 只看直接放在这里的文件") : tr("语料库目录里放音频的地方");
     case "libraryAudio":
-      return `库里有 ${folder.songs} 首歌在这里 · 只看这一层`;
+      return tr("库里有 {songs} 首歌在这里 · 只看这一层", { songs: folder.songs });
     case "parent":
-      return `库里有 ${folder.songs} 首歌在这下面 · 连子文件夹一起看`;
+      return tr("库里有 {songs} 首歌在这下面 · 连子文件夹一起看", { songs: folder.songs });
   }
 }
 
@@ -44,7 +45,7 @@ export function WatchedFolders({ onReview, onError, disabled, refreshKey }: Prop
     try {
       setFound(await api.libraryNewAudio(ignores.folders, ignores.files));
     } catch (err) {
-      onError(`查不了语料库文件夹：${messageOf(err)}`);
+      onError(tr("查不了语料库文件夹：{err}", { err: messageOf(err) }));
     } finally {
       setBusy(false);
     }
@@ -62,8 +63,8 @@ export function WatchedFolders({ onReview, onError, disabled, refreshKey }: Prop
   return (
     <div className="card">
       <div className="card-head">
-        <h2>语料库文件夹</h2>
-        <span className="muted small">启动时会看这些地方有没有新歌</span>
+        <h2>{tr("语料库文件夹")}</h2>
+        <span className="muted small">{tr("启动时会看这些地方有没有新歌")}</span>
       </div>
       {found !== null && (
         <ul className="watched-folders">
@@ -74,16 +75,14 @@ export function WatchedFolders({ onReview, onError, disabled, refreshKey }: Prop
               </span>
               <span className="muted small">
                 {why(folder)}
-                {folder.unknown > 0 && ` · ${folder.unknown} 个文件不在库里`}
-                {folder.new > 0 && `（${folder.new} 首新歌）`}
+                {folder.unknown > 0 && tr(" · {unknown} 个文件不在库里", { unknown: folder.unknown })}
+                {folder.new > 0 && tr("（{new} 首新歌）", { new: folder.new })}
               </span>
               <button
                 className="link-btn"
                 onClick={() => setIgnores(withIgnored(ignores, { folders: [folder.path] }))}
-                title="以后不看这个文件夹和它下面的"
-              >
-                不再检查
-              </button>
+                title={tr("以后不看这个文件夹和它下面的")}
+              >{tr("不再检查")}</button>
             </li>
           ))}
           {ignores.folders.map((folder) => (
@@ -91,10 +90,8 @@ export function WatchedFolders({ onReview, onError, disabled, refreshKey }: Prop
               <span className="watched-path" title={folder}>
                 {folder}
               </span>
-              <span className="muted small">已设为不检查</span>
-              <button className="link-btn" onClick={() => setIgnores(withoutIgnoredFolder(ignores, folder))}>
-                恢复
-              </button>
+              <span className="muted small">{tr("已设为不检查")}</span>
+              <button className="link-btn" onClick={() => setIgnores(withoutIgnoredFolder(ignores, folder))}>{tr("恢复")}</button>
             </li>
           ))}
         </ul>
@@ -102,39 +99,35 @@ export function WatchedFolders({ onReview, onError, disabled, refreshKey }: Prop
       <div className="toolbar">
         <CommandButton
           icon="refresh"
-          label={busy ? "正在查…" : "重新检查"}
+          label={busy ? tr("正在查…") : tr("重新检查")}
           onClick={() => void check()}
           disabled={busy || disabled}
-          title="只读：看看这些文件夹里有没有还没导入的音频"
+          title={tr("只读：看看这些文件夹里有没有还没导入的音频")}
         />
         {unknown.length > 0 && (
           <CommandButton
             icon="scan"
-            label={fresh > 0 ? `查看这 ${fresh} 首新歌` : `查看这 ${unknown.length} 个文件`}
+            label={fresh > 0 ? tr("查看这 {fresh} 首新歌", { fresh }) : tr("查看这 {length} 个文件", { length: unknown.length })}
             onClick={() => onReview(unknown.map((item) => item.path))}
             disabled={busy || disabled}
             primary={fresh > 0}
-            title="把它们放进下面的计划里，看完再决定导不导"
+            title={tr("把它们放进下面的计划里，看完再决定导不导")}
           />
         )}
         <span className="muted small">
           {found === null
             ? ""
             : unknown.length === 0
-              ? "这些文件夹里的音频都已经在库里了。"
+              ? tr("这些文件夹里的音频都已经在库里了。")
               : fresh === 0
-                ? `有 ${others} 个文件不在库里，但都不算新歌（疑似重复、格式放不了或者读不出曲名）。`
+                ? tr("有 {others} 个文件不在库里，但都不算新歌（疑似重复、格式放不了或者读不出曲名）。", { others })
                 : others > 0
-                  ? `另有 ${others} 个不算新歌（疑似重复、格式放不了或者读不出曲名）。`
+                  ? tr("另有 {others} 个不算新歌（疑似重复、格式放不了或者读不出曲名）。", { others })
                   : ""}
         </span>
       </div>
       {ignores.files.length > 0 && (
-        <p className="muted small">
-          有 {ignores.files.length} 个文件设成了「不再提示」。{" "}
-          <button className="link-btn" onClick={() => setIgnores({ ...ignores, files: NO_IGNORES.files })}>
-            恢复提示
-          </button>
+        <p className="muted small">{tr("有 {length} 个文件设成了「不再提示」。{v}", { length: ignores.files.length, v: " " })}<button className="link-btn" onClick={() => setIgnores({ ...ignores, files: NO_IGNORES.files })}>{tr("恢复提示")}</button>
         </p>
       )}
     </div>

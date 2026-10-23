@@ -12,6 +12,8 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { nodeAt, Simulation, type Graph, type GraphNode } from "../graph";
 import { prefersReducedMotion } from "../motion";
 import { ROLE_COLORS } from "./LibraryBrowser";
+import { monogram } from "../avatarIdentity";
+import { tr } from "../i18n";
 
 interface Props {
   graph: Graph;
@@ -75,8 +77,9 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
       maxY = Math.max(maxY, n.y + n.r);
     }
     const pad = compact ? 28 : 60;
-    const k = Math.min(compact ? 2 : 3, Math.max(0.15, Math.min((st.size.w - pad * 2) / (maxX - minX || 1), (st.size.h - pad * 2) / (maxY - minY || 1))));
-    st.view = { k, x: st.size.w / 2 - ((minX + maxX) / 2) * k, y: st.size.h / 2 - ((minY + maxY) / 2) * k };
+    const inset = compact ? 0 : Math.min(260, st.size.w * 0.26);
+    const k = Math.min(compact ? 2 : 3, Math.max(0.15, Math.min((st.size.w - inset - pad * 2) / (maxX - minX || 1), (st.size.h - pad * 2) / (maxY - minY || 1))));
+    st.view = { k, x: (st.size.w + inset) / 2 - ((minX + maxX) / 2) * k, y: st.size.h / 2 - ((minY + maxY) / 2) * k };
   }, [graph, compact]);
 
   // 换图：新的模拟，从头长出来
@@ -156,7 +159,7 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
     const ctx = canvas.getContext("2d");
     if (ctx === null) return;
     const { nodes, links, neighbors } = graph;
-    const { focusId, query, compact } = props.current;
+    const { focusId, query } = props.current;
 
     if (st.sim.running) {
       st.sim.tick();
@@ -195,19 +198,24 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
     ctx.clearRect(0, 0, w, h);
     ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty);
 
-    // 线
+    const theme = getComputedStyle(canvas);
+    const tone = (name: string) => theme.getPropertyValue(name).trim();
+    const fg = tone("--fg"), muted = tone("--muted"), surface = tone("--surface-pop"), accent = tone("--accent"), line = tone("--line-strong");
+    // Edges end at the portrait rim, with a single restrained accent on hover.
     for (const l of links) {
       const s = nodes[l.s]!;
       const t = nodes[l.t]!;
       const hot = st.hover >= 0 && (l.s === st.hover || l.t === st.hover);
       const alpha = Math.min(st.vis[l.s]!, st.vis[l.t]!);
-      ctx.globalAlpha = hot ? 0.9 : 0.22 * alpha + 0.03;
-      ctx.strokeStyle = hot ? "#4cc2ff" : l.member ? "#e8d9ff" : "#ffffff";
-      ctx.lineWidth = (0.6 + Math.log2(1 + l.shared) * 0.45 + (hot ? 0.6 : 0)) / Math.sqrt(k);
+      ctx.globalAlpha = hot ? 0.7 : 0.28 * alpha;
+      ctx.strokeStyle = hot ? accent : muted;
+      ctx.lineWidth = (hot ? 1.3 : 0.7) / k;
       ctx.setLineDash(l.member ? [4 / k, 4 / k] : []);
       ctx.beginPath();
-      ctx.moveTo(s.x, s.y);
-      ctx.lineTo(t.x, t.y);
+      const distance = Math.hypot(t.x-s.x,t.y-s.y) || 1;
+      const dx=(t.x-s.x)/distance, dy=(t.y-s.y)/distance;
+      ctx.moveTo(s.x+dx*Math.min(s.r,21/k),s.y+dy*Math.min(s.r,21/k));
+      ctx.lineTo(t.x-dx*Math.min(t.r,21/k),t.y-dy*Math.min(t.r,21/k));
       ctx.stroke();
     }
     ctx.setLineDash([]);
@@ -218,13 +226,12 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
       if (v <= 0.001) return;
       const focus = n.id === focusId;
       const hovered = i === st.hover;
-      const r = n.r * Math.max(0.05, st.appear[i]!) * (hovered ? 1.15 : 1);
+      const r = Math.min(n.r, 21 / k) * Math.max(0.05, st.appear[i]!) * (hovered ? 1.08 : 1);
       ctx.globalAlpha = Math.max(v, 0.06);
       if (focus || hovered) {
-        ctx.fillStyle = "rgba(76, 194, 255, .22)";
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 6 / Math.sqrt(k), 0, Math.PI * 2);
-        ctx.fill();
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = 1.5 / k;
+        ctx.beginPath(); ctx.arc(n.x, n.y, r + 3 / k, 0, Math.PI * 2); ctx.stroke();
       }
       const img = r * k > 9 ? image(n.imagePath) : null;
       ctx.beginPath();
@@ -232,35 +239,52 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
       if (img !== null) {
         ctx.save();
         ctx.clip();
-        ctx.drawImage(img, n.x - r, n.y - r, r * 2, r * 2);
+        const scale = Math.max(2*r/img.naturalWidth, 2*r/img.naturalHeight);
+        ctx.drawImage(img, n.x-img.naturalWidth*scale/2, n.y-img.naturalHeight*scale/2, img.naturalWidth*scale, img.naturalHeight*scale);
         ctx.restore();
       } else {
-        ctx.fillStyle = ROLE_COLORS[n.role] ?? "#ccc";
-        ctx.fill();
+        const fill = ctx.createLinearGradient(n.x-r,n.y-r,n.x+r,n.y+r);
+        fill.addColorStop(0, surface); fill.addColorStop(1, line);
+        ctx.fillStyle = fill; ctx.fill();
+        if (r*k > 10) {
+          ctx.fillStyle = fg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.font = `500 ${r * (monogram(n.name).length > 2 ? .62 : .8)}px "Segoe UI", "Yu Gothic UI", sans-serif`;
+          ctx.fillText(monogram(n.name),n.x,n.y,r*1.7);
+        }
       }
-      if (n.isBand || img !== null) {
-        ctx.lineWidth = 1.6 / k;
-        ctx.strokeStyle = n.isBand ? "rgba(255,255,255,.75)" : (ROLE_COLORS[n.role] ?? "#ccc");
-        ctx.stroke();
+      ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2);
+      ctx.lineWidth = 1 / k; ctx.strokeStyle = n.isBand ? fg : line; ctx.stroke();
+      if (n.r*k > 10) {
+        ctx.beginPath(); ctx.arc(n.x+r*.7,n.y+r*.7,2.5/k,0,Math.PI*2);
+        ctx.fillStyle=ROLE_COLORS[n.role] ?? muted; ctx.fill();
       }
     });
 
-    // 名字：亮着的、焦点、放大到看得清的；小图全显示
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    const fontPx = (compact ? 10.5 : 11.5) / k;
-    ctx.font = `${fontPx}px "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", "Microsoft YaHei UI", system-ui, sans-serif`;
-    nodes.forEach((n, i) => {
-      const v = st.vis[i]!;
-      const show = compact || n.id === focusId || i === st.hover || (anyLit && lit.has(i)) || n.r * k > 9 || k > 1.6;
-      if (!show || v < 0.05) return;
-      ctx.globalAlpha = Math.min(1, v * (i === st.hover || n.id === focusId ? 1 : 0.85));
-      ctx.lineWidth = 3 / k;
-      ctx.strokeStyle = "rgba(14,14,18,.85)";
-      ctx.strokeText(n.name, n.x, n.y + n.r + 3 / k);
-      ctx.fillStyle = i === st.hover || n.id === focusId ? "#ffffff" : "#d6d6dd";
-      ctx.fillText(n.name, n.x, n.y + n.r + 3 / k);
-    });
+    // Place selected/hovered names first, then omit colliding secondary labels.
+    const labels: {left:number;top:number;right:number;bottom:number}[]=[];
+    const fontPx=12/k;
+    ctx.font=`500 ${fontPx}px "Segoe UI Variable Text", "Yu Gothic UI", "Microsoft YaHei UI", sans-serif`;
+    ctx.textAlign="center"; ctx.textBaseline="top";
+    const order=nodes.map((n,i)=>({n,i})).sort((a,b)=>Number(b.n.id===focusId || b.i===st.hover)-Number(a.n.id===focusId || a.i===st.hover) || b.n.songs-a.n.songs);
+    for (const {n,i} of order) {
+      const v=st.vis[i]!;
+      const priority=n.id===focusId || i===st.hover;
+      if (v<.05 || (!priority && n.r*k<10 && k<1.6)) continue;
+      let name=n.name;
+      while (ctx.measureText(name).width*k>144 && [...name].length>2) name=[...name].slice(0,-2).join("")+"…";
+      const width=ctx.measureText(name).width*k+12;
+      const cx=Math.max(width/2+4,Math.min(w-width/2-4,n.x*k+tx));
+      const top=(n.y+Math.min(n.r,21/k))*k+ty+7;
+      const box={left:cx-width/2,top,right:cx+width/2,bottom:top+20};
+      if (top<0 || box.bottom>h || labels.some(b=>box.left<b.right && box.right>b.left && box.top<b.bottom && box.bottom>b.top)) continue;
+      if (!priority && nodes.some(other => other !== n && (() => { const r=Math.min(other.r*k,21)+3, x=other.x*k+tx, y=other.y*k+ty; return box.left<x+r && box.right>x-r && box.top<y+r && box.bottom>y-r; })())) continue;
+      labels.push(box);
+      const x=(cx-tx)/k, y=(top-ty)/k;
+      ctx.globalAlpha=priority ? 1 : v*.9;
+      ctx.fillStyle=surface;
+      ctx.beginPath(); ctx.roundRect(x-width/(2*k),y-2/k,width/k,20/k,4/k); ctx.fill();
+      ctx.fillStyle=priority ? fg : muted; ctx.fillText(name,x,y);
+    }
     ctx.globalAlpha = 1;
 
     if (st.sim.running || fading || st.drag !== null) st.frame = requestAnimationFrame(loop);
@@ -278,7 +302,7 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const st = state.current;
     const p = toGraph(e);
-    const i = nodeAt(graph.nodes, p.x, p.y, 4 / st.view.k);
+    const i = nodeAt(graph.nodes, p.x, p.y, 4 / st.view.k, 21 / st.view.k);
     e.currentTarget.setPointerCapture(e.pointerId);
     if (i >= 0) {
       st.drag = { kind: "node", i, moved: 0 };
@@ -313,7 +337,7 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
       return;
     }
     const p = toGraph(e);
-    const i = nodeAt(graph.nodes, p.x, p.y, 4 / st.view.k);
+    const i = nodeAt(graph.nodes, p.x, p.y, 4 / st.view.k, 21 / st.view.k);
     if (i !== st.hover) {
       st.hover = i;
       e.currentTarget.style.cursor = i >= 0 ? "pointer" : "grab";
@@ -352,7 +376,7 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
 
   const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const p = toGraph(e);
-    const i = nodeAt(graph.nodes, p.x, p.y, 4 / state.current.view.k);
+    const i = nodeAt(graph.nodes, p.x, p.y, 4 / state.current.view.k, 21 / state.current.view.k);
     if (i >= 0) props.current.onOpen?.(graph.nodes[i]!.id);
   };
 
@@ -385,7 +409,7 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
       onPointerCancel={onPointerUp}
       onPointerLeave={onLeave}
       onDoubleClick={onDoubleClick}
-      aria-label="关系网：拖动节点、拖空白处平移、滚轮缩放，双击打开这个人"
+      aria-label={tr("关系网：拖动节点、拖空白处平移、滚轮缩放，双击打开这个人")}
     />
   );
 }

@@ -256,6 +256,11 @@ fn import_one(
     )
     .with_context(|| format!("写 songs 失败（id={song_id}）"))?;
 
+    // 缺文件或解码失败不把坏音频散列成统一的空指纹，也不让指纹阻断原有歌词导入。
+    if let Err(err) = jp_corpus::fingerprint::refresh(tx, song_id, std::path::Path::new(&track.path)) {
+        eprintln!("音频指纹未写入 {}: {err:#}", track.path);
+    }
+
     // ── 演唱者 ──
     // 只按斜杠拆，和 Python 的 split_artists(slash_only=True) 一致。
     // 顿号和 × 会误伤乐队名（「Mrs. GREEN APPLE」这类）。
@@ -477,6 +482,13 @@ fn attach_parsed(
         (Some(a), Some(_)) => Some(tokenizer_run_id(tx, a)?),
         _ => None,
     };
+    if let Some(v) = &version {
+        let units: usize = parsed.lines.iter().map(|l|l.words.len()).sum();
+        let synced = parsed.lines.iter().filter(|l|l.time_sec.is_some()).count();
+        let mode = if units>0 { "unit" } else if synced>0 { "line" } else { "plain" };
+        let report = serde_json::json!({"status":"parsed", "algorithmGenerated":false, "unitCount":units, "timedLines":synced});
+        tx.execute("UPDATE lyric_versions SET raw_format=?2,source_raw=?3,sync_granularity=?4,timing_origin='source',timing_validation_json=?5 WHERE id=?1",params![v.id,if units>0 {"enhanced_lrc"}else if synced>0 {"lrc"}else{"text"},raw_text,mode,report.to_string()])?;
+    }
 
     for (line_idx, line) in parsed.lines.iter().enumerate() {
         let confidence = version
@@ -498,6 +510,14 @@ fn attach_parsed(
         )?;
         let utterance_id = tx.last_insert_rowid();
         stats.lyric_lines += 1;
+        if !line.words.is_empty() {
+            let segments: Vec<_> = line
+                .words
+                .iter()
+                .map(|w| jp_corpus::word_timing::Segment { start: w.start, end: w.end, time_sec: w.time_sec, end_sec: w.end_sec })
+                .collect();
+            jp_corpus::word_timing::insert_lrc(tx, utterance_id, &segments)?;
+        }
 
         // utterances_fts 是 content=utterances 的外部内容表，**没有触发器**。
         // 漏掉这一步，歌能存进去但全文检索永远搜不到。
@@ -601,40 +621,7 @@ pub fn add_credit(
 
 /// 找或建专辑，并回填 `songs.album_id`。
 pub(crate) fn link_album(tx: &Connection, song_id: &str, album: &str, artist: &str, year: &str) -> Result<()> {
-    let title = album.trim();
-    if title.is_empty() {
-        return Ok(()); // 没有专辑名就不建，空专辑比没专辑更麻烦
-    }
-    // 同名专辑挂在不同歌手名下是两张不同的专辑
-    let album_artist = split_slash(artist).into_iter().next().unwrap_or_default();
-    let title_key = matching_key(title);
-    let artist_key = matching_key(&album_artist);
-
-    let album_id = match tx
-        .query_row(
-            "SELECT id FROM albums WHERE normalized_title=?1 AND normalized_album_artist=?2",
-            params![title_key, artist_key],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()?
-    {
-        Some(id) => id,
-        None => {
-            tx.execute(
-                &format!(
-                    "INSERT INTO albums (title, normalized_title, album_artist, \
-                     normalized_album_artist, year, created_at) VALUES (?1,?2,?3,?4,?5,{NOW})"
-                ),
-                params![title, title_key, album_artist, artist_key, year],
-            )?;
-            tx.last_insert_rowid()
-        }
-    };
-    tx.execute(
-        "UPDATE songs SET album_id=?1 WHERE id=?2",
-        params![album_id, song_id],
-    )?;
-    Ok(())
+    jp_corpus::enrichment::link_album(tx, song_id, album, artist, year)
 }
 
 /// 按斜杠拆歌手串。拆不出就原样一个。
@@ -904,6 +891,33 @@ mod tests {
                 "J-Pop".into(),
                 Some(233.5)
             )
+        );
+    }
+
+    #[test]
+    fn word_timestamps_from_the_lrc_are_kept() {
+        let dir = tempdir();
+        let (audio, _) = with_lyrics(&dir, "song", "[00:10.00]<00:10.00>夜が<00:10.40>明ける
+[00:15.00]君を待っている
+");
+        let mut conn = test_db();
+        let mut t = track(&audio, "夜行", "ヨルシカ");
+        t.lyrics_path = Some(audio.replace(".flac", ".lrc"));
+        run(&mut conn, &[t]);
+
+        let words: Vec<(String, i64, i64, f64)> = conn
+            .prepare(
+                "SELECT u.text, w.char_start, w.char_end, w.start_sec FROM word_timings w                  JOIN utterances u ON u.id = w.utterance_id WHERE w.source = 'lrc' ORDER BY w.char_start",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            words,
+            vec![("夜が明ける".to_string(), 0, 2, 10.0), ("夜が明ける".to_string(), 2, 5, 10.4)],
+            "逐字时间要跟着导进来"
         );
     }
 

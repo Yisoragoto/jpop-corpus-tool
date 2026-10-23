@@ -24,6 +24,8 @@ pub struct Completeness {
     pub skipped: i64,
     pub track_covers: Count,
     pub album_covers: Count,
+    /// 专辑信息：发行类型（单曲 / EP / 专辑）和整张碟的曲目数都有了的专辑
+    pub album_info: Count,
     pub lyrics: Count,
     pub durations: Count,
 }
@@ -63,6 +65,10 @@ pub(crate) fn completeness(conn: &Connection) -> Result<Completeness> {
         },
         album_covers: Count {
             done: existing_files(conn, "SELECT artwork_path FROM albums")?,
+            total: scalar("SELECT COUNT(*) FROM albums")?,
+        },
+        album_info: Count {
+            done: scalar("SELECT COUNT(*) FROM albums WHERE COALESCE(album_type,'') <> '' AND track_count IS NOT NULL")?,
             total: scalar("SELECT COUNT(*) FROM albums")?,
         },
         lyrics: Count {
@@ -120,6 +126,7 @@ mod tests {
         assert_eq!(got.identified, Count { done: 0, total: 3 }, "没刮过");
         assert_eq!(got.track_covers, Count { done: 1, total: 3 }, "文件不在的不算有封面");
         assert_eq!(got.album_covers, Count { done: 1, total: 2 });
+        assert_eq!(got.album_info, Count { done: 0, total: 2 }, "没有发行类型和曲目数");
         assert_eq!(got.lyrics, Count { done: 1, total: 3 });
         assert_eq!(got.durations, Count { done: 1, total: 3 }, "0 秒不算有时长");
         std::fs::remove_dir_all(&dir).ok();

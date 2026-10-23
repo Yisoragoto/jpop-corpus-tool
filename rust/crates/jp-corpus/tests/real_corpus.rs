@@ -57,4 +57,4 @@ fn open_corpus() -> Option<Corpus> {
 }
 
 // 真库不是为这些断言造的，前提不成立时可以跳过（`false`）
-invariant_tests!(open_corpus().map(|corpus| (corpus, false)));
+invariant_tests!(open_corpus().map(|corpus| (corpus, false)), [ignore = "需要作者真实语料库（歌词、分词、人物和封面）"]);

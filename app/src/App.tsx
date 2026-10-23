@@ -12,7 +12,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { api, NO_DICTIONARY, type HealthReport, type NewAudio, type Overview, type QuickHit } from "./api";
+import { api, NO_DICTIONARY, type HealthReport, type NewAudio, type Overview, type QuickHit, type ReleaseInfo } from "./api";
+import { UpdateDialog } from "./components/UpdateDialog";
+import { LanguagePicker } from "./components/LanguagePicker";
+import { needsLanguageChoice } from "./i18n";
 import { messageOf } from "./errors";
 import { CommandPalette, type PaletteCommand, type PaletteMode } from "./components/CommandPalette";
 import { NavIcon } from "./components/NavIcons";
@@ -31,12 +34,15 @@ import { AnkiPage } from "./pages/AnkiPage";
 import { DictionaryPage } from "./pages/DictionaryPage";
 import { ScrapePage } from "./pages/ScrapePage";
 import { KwicPage, type KwicRequest } from "./pages/KwicPage";
+import type { WordJump } from "./wordCloud";
 import { LibraryPage } from "./pages/LibraryPage";
-import { SettingsPage } from "./pages/SettingsPage";
+import { openSettingsSection, SettingsPage } from "./pages/SettingsPage";
 import { useLibrary } from "./useLibrary";
 import { toggleFullscreen } from "./fullscreen";
 import { useHotkeys } from "./useHotkeys";
 import { usePlaybackState } from "./usePlayback";
+import { tr } from "./i18n";
+import { installHooks } from "./e2e";
 
 /** 和 styles.css「窗口宽窄」那一节的断点一致 */
 const NARROW_WINDOW = "(max-width: 1100px)";
@@ -44,18 +50,18 @@ const NARROW_WINDOW = "(max-width: 1100px)";
 type Route = "home" | "kwic" | "library" | "analytics" | "import" | "scrape" | "anki" | "dict" | "settings";
 
 const ROUTES: { key: Route; label: string; hint: string }[] = [
-  { key: "home", label: "首页", hint: "继续听 · 今日 · 语料库" },
-  { key: "kwic", label: "检索", hint: "KWIC 语境检索与歌词全文" },
-  { key: "library", label: "资料库", hint: "音乐人 · 专辑 · 歌曲 · 关系网 · 时间轴 · 词云" },
-  { key: "analytics", label: "分析", hint: "总览 · 时间线 · 词频统计 · 语料报告" },
-  { key: "import", label: "导入", hint: "扫描目录 · 复核 · 写入语料" },
-  { key: "scrape", label: "刮削", hint: "识别 · 补 metadata · 封面" },
-  { key: "anki", label: "Anki", hint: "选词 · 用语料例句做卡片" },
-  { key: "dict", label: "词典", hint: "查词 · 释义 · 音调 · 词频" },
+  { key: "home", label: tr("首页"), hint: tr("继续听 · 今日 · 语料库") },
+  { key: "kwic", label: tr("检索"), hint: tr("KWIC 语境检索与歌词全文") },
+  { key: "library", label: tr("资料库"), hint: tr("音乐人 · 专辑 · 歌曲 · 关系网 · 时间轴 · 词云") },
+  { key: "analytics", label: tr("分析"), hint: tr("总览 · 时间线 · 词频统计 · 语料报告") },
+  { key: "import", label: tr("导入"), hint: tr("扫描目录 · 复核 · 写入语料") },
+  { key: "scrape", label: tr("刮削"), hint: tr("识别 · 补 metadata · 封面") },
+  { key: "anki", label: "Anki", hint: tr("选词 · 用语料例句做卡片") },
+  { key: "dict", label: tr("词典"), hint: tr("查词 · 释义 · 音调 · 词频") },
 ];
 
 /** 设置不排在导航列表里，钉在左下角——和 Windows 11 设置、Niratan 一样 */
-const SETTINGS_ROUTE = { key: "settings" as const, label: "设置", hint: "外观 · 歌词 · 词典 · 制卡 · 曲库维护 · 更新" };
+const SETTINGS_ROUTE = { key: "settings" as const, label: tr("设置"), hint: tr("外观 · 歌词 · 词典 · 制卡 · 曲库维护 · 更新") };
 
 type Status = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready" };
 
@@ -98,26 +104,22 @@ export default function App() {
     void api.pitchCacheSetLimit(settings.pitchCacheLimitMb).catch(() => undefined);
   }, [settings.pitchCacheLimitMb]);
 
-  // 启动时检查更新（设置里可关）。只问版本号；开了「下载后自动安装」才会接着下。
+  // 启动时检查更新（设置里可关）。只问版本号；有新版就弹窗，装不装、什么时候装由人决定
+  // （装更新会关掉应用，不能趁人听歌时自己装）。点过「跳过这个版本」的那一版不再弹。
   // 放在这里而不是设置页：用户不进设置也该知道有新版。
+  const [updateOffer, setUpdateOffer] = useState<{ current: string; release: ReleaseInfo } | null>(null);
+  // 第一次启动：先选界面语言
+  const [pickLanguage, setPickLanguage] = useState(needsLanguageChoice);
   useEffect(() => {
     if (!settings.autoCheckUpdates) return;
     let alive = true;
     const timer = setTimeout(() => {
       void api
         .updateCheck()
-        .then(async (status) => {
+        .then((status) => {
           if (!alive || !status.updateAvailable || status.latest === null) return;
-          const asset = status.latest.installer;
-          if (!settings.autoInstallUpdates || asset === null) {
-            setNotice(`有新版本 ${status.latest.version}，到「设置 → 系统」里更新`);
-            return;
-          }
-          // 用户明确开过「下载后自动安装」才走到这里；装之前先说一声要关应用
-          setNotice(`正在下载新版本 ${status.latest.version}，装好会自动重启应用`);
-          await api.updateDownload(status.latest.version);
-          if (!alive) return;
-          await api.updateInstall();
+          if (status.skipped || (status.channel === "stable" && status.latest.version === settings.skippedUpdateVersion)) return;
+          setUpdateOffer({ current: status.current, release: status.latest });
         })
         .catch(() => undefined); // 没网、被限流都不该在启动时打扰用户
     }, 4000);
@@ -145,7 +147,7 @@ export default function App() {
           if (alive && newItems(found.scan).length > 0) setNewAudio(found);
         })
         // 查不了（盘没插、目录没权限）不该在启动时打扰用户；导入页上手动查的时候会报出来
-        .catch((err: unknown) => console.warn("启动时查新歌失败", err));
+        .catch((err: unknown) => console.warn(tr("启动时查新歌失败"), err));
     }, 1500);
     return () => {
       alive = false;
@@ -157,6 +159,7 @@ export default function App() {
   // 横幅上点「查看」：带着那几个文件去导入页，导入页用掉后清空
   const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
   const consumeImportRequest = useCallback(() => setImportRequest(null), []);
+  useEffect(() => installHooks((path) => { setRoute("import"); setImportRequest({ paths: [], folder: path, nonce: Date.now() }); }), []);
 
   // 字体探测很贵（本机 401 个名字冷着跑 1.8 秒），空闲时先备好，
   // 免得用户点开「显示」面板或设置页时卡在那里。结果会存进 localStorage。
@@ -168,7 +171,7 @@ export default function App() {
   // 而这是个桌面程序，用户看不到控制台，表现就是「点了没反应」。
   useEffect(() => {
     const onRejection = (event: PromiseRejectionEvent) => {
-      console.error("没人处理的 Promise 失败", event.reason);
+      console.error(tr("没人处理的 Promise 失败"), event.reason);
       setNotice(messageOf(event.reason));
     };
     window.addEventListener("unhandledrejection", onRejection);
@@ -214,8 +217,10 @@ export default function App() {
   const goLibrary = useCallback(() => setRoute("library"), []);
   // 分析页点「检索」：带着词跳到检索页，检索页用掉后清空
   const [kwicRequest, setKwicRequest] = useState<KwicRequest | null>(null);
-  const searchWord = useCallback((lemma: string) => {
-    setKwicRequest({ keyword: lemma, field: "lemma", nonce: Date.now() });
+  const searchWord = useCallback((lemma: string, jump?: WordJump) => {
+    // 词云里合并了几种写法（想い出・思い出）时每种都查，和词云弹出的歌一致
+    const keyword = jump && jump.variants.length > 1 ? jump.variants.join(" ") : lemma;
+    setKwicRequest(jump ? { keyword, field: "lemma", nonce: Date.now(), jump } : { keyword, field: "lemma", nonce: Date.now() });
     setRoute("kwic");
   }, []);
   const consumeKwicRequest = useCallback(() => setKwicRequest(null), []);
@@ -227,7 +232,7 @@ export default function App() {
     api
       .overview()
       .then(setOverview)
-      .catch((err: unknown) => setNotice(`读不出语料总览：${messageOf(err)}`));
+      .catch((err: unknown) => setNotice(tr("读不出语料总览：{err}", { err: messageOf(err) })));
   }, []);
 
   // 导入之后曲库和语料统计都变了，两个都得重拉。
@@ -238,7 +243,7 @@ export default function App() {
     api
       .listTracks()
       .then(actions.setTracks)
-      .catch((err: unknown) => setNotice(`读不出曲库：${messageOf(err)}`));
+      .catch((err: unknown) => setNotice(tr("读不出曲库：{err}", { err: messageOf(err) })));
     refreshOverview();
     setLibraryVersion((v) => v + 1);
   }, [actions, refreshOverview]);
@@ -282,41 +287,41 @@ export default function App() {
     () => [
       {
         id: "play",
-        label: playback.playState === "playing" ? "暂停" : "播放",
+        label: playback.playState === "playing" ? tr("暂停") : tr("播放"),
         hint: "Space",
-        ...(audioReady ? {} : { disabled: "没有音频设备" }),
+        ...(audioReady ? {} : { disabled: tr("没有音频设备") }),
         run: () => void api.audioToggle(),
       },
       {
         id: "loop-off",
-        label: "取消单句循环",
-        ...(playback.loopRegion ? {} : { disabled: "当前没有循环" }),
+        label: tr("取消单句循环"),
+        ...(playback.loopRegion ? {} : { disabled: tr("当前没有循环") }),
         run: () => void api.audioSetLoop(),
       },
-      { id: "fullscreen", label: "全屏 / 退出全屏", hint: "F11", run: () => toggleFullscreen() },
-      { id: "go-home", label: "打开 首页", hint: "继续听 · 今日 · 语料库", run: () => setRoute("home") },
-      { id: "go-kwic", label: "打开 检索", hint: "KWIC", run: () => setRoute("kwic") },
-      { id: "go-library", label: "打开 资料库", hint: "音乐人 · 专辑 · 歌曲", run: () => setRoute("library") },
-      { id: "go-analytics", label: "打开 分析", run: () => setRoute("analytics") },
-      { id: "go-import", label: "打开 导入", hint: "扫描目录并写入语料", run: () => setRoute("import") },
-      { id: "go-scrape", label: "打开 刮削", hint: "识别 · metadata · 封面", run: () => setRoute("scrape") },
-      { id: "go-anki", label: "打开 Anki", hint: "用语料例句做卡片", run: () => setRoute("anki") },
-      { id: "go-settings", label: "打开 设置", hint: "外观 · 歌词 · 词典 · 制卡", run: () => setRoute("settings") },
+      { id: "fullscreen", label: tr("全屏 / 退出全屏"), hint: "F11", run: () => toggleFullscreen() },
+      { id: "go-home", label: tr("打开 首页"), hint: tr("继续听 · 今日 · 语料库"), run: () => setRoute("home") },
+      { id: "go-kwic", label: tr("打开 检索"), hint: "KWIC", run: () => setRoute("kwic") },
+      { id: "go-library", label: tr("打开 资料库"), hint: tr("音乐人 · 专辑 · 歌曲"), run: () => setRoute("library") },
+      { id: "go-analytics", label: tr("打开 分析"), run: () => setRoute("analytics") },
+      { id: "go-import", label: tr("打开 导入"), hint: tr("扫描目录并写入语料"), run: () => setRoute("import") },
+      { id: "go-scrape", label: tr("打开 刮削"), hint: tr("识别 · metadata · 封面"), run: () => setRoute("scrape") },
+      { id: "go-anki", label: tr("打开 Anki"), hint: tr("用语料例句做卡片"), run: () => setRoute("anki") },
+      { id: "go-settings", label: tr("打开 设置"), hint: tr("外观 · 歌词 · 词典 · 制卡"), run: () => setRoute("settings") },
       {
         id: "search",
-        label: "全局搜索…",
+        label: tr("全局搜索…"),
         hint: "Ctrl/Cmd+K",
         run: () => setPalette("search"),
       },
       {
         id: "backfill",
-        label: "回填时长",
-        hint: "扫描音频文件补 duration_sec",
+        label: tr("回填时长"),
+        hint: tr("扫描音频文件补 duration_sec"),
         run: async () => {
           const report = await api.backfillDurations();
           setNotice(
-            `扫描 ${report.scanned} 首：写入 ${report.written}` +
-              (report.failed ? `，失败 ${report.failed}` : ""),
+            tr("扫描 {scanned} 首：写入 {written}", { scanned: report.scanned, written: report.written }) +
+              (report.failed ? tr("，失败 {failed}", { failed: report.failed }) : ""),
           );
           refreshOverview();
         },
@@ -326,17 +331,15 @@ export default function App() {
   );
 
   if (status.kind === "loading") {
-    return <div className="center muted">正在打开语料库…</div>;
+    return <div className="center muted">{tr("正在打开语料库…")}</div>;
   }
   if (status.kind === "error") {
     return (
       <div className="center">
         <div className="error-box">
-          <h2>启动失败</h2>
+          <h2>{tr("启动失败")}</h2>
           <p>{status.message}</p>
-          <p className="muted">
-            先跑 <code>python legacy/scripts/migrate_db.py</code> 和{" "}
-            <code>python scripts/backfill_library.py</code>
+          <p className="muted">{tr("先跑")}{" "}<code>python legacy/scripts/migrate_db.py</code>{" "}{tr("和{v}", { v: " " })}<code>python scripts/backfill_library.py</code>
           </p>
         </div>
       </div>
@@ -346,13 +349,13 @@ export default function App() {
   const current = [...ROUTES, SETTINGS_ROUTE].find((r) => r.key === route) ?? { key: route, label: "", hint: "" };
 
   return (
-    <div className="app">
+    <div className="app" data-route={route} data-track-count={overview?.tracks ?? 0} data-library-path={health?.dbPath ?? ""}>
       <aside className={`sidebar ${navOpen ? "" : "collapsed"}`}>
         <div className="sidebar-head">
           <button
             className="icon-btn nav-toggle"
             onClick={() => setNavOpen((v) => !v)}
-            title={navOpen ? "收起导航" : "展开导航"}
+            title={navOpen ? tr("收起导航") : tr("展开导航")}
           >
             <NavIcon name="menu" />
           </button>
@@ -374,9 +377,9 @@ export default function App() {
         </nav>
 
         <div className="sidebar-foot">
-          <button className="nav-search" onClick={() => setPalette("search")} title="搜索全库 (Ctrl K)">
+          <button className="nav-search" onClick={() => setPalette("search")} title={tr("搜索全库 (Ctrl K)")}>
             <NavIcon name="search" />
-            <span className="nav-label">搜索全库</span>
+            <span className="nav-label">{tr("搜索全库")}</span>
             <kbd>Ctrl K</kbd>
           </button>
           <nav className="nav">
@@ -400,17 +403,15 @@ export default function App() {
           </div>
           {overview && (
             <div className="stats">
-              <Stat label="曲目" value={overview.tracks} />
-              <Stat label="歌词行" value={overview.lyricLines} />
-              <Stat label="词汇" value={overview.vocabulary} />
+              <Stat label={tr("曲目")} value={overview.tracks} />
+              <Stat label={tr("歌词行")} value={overview.lyricLines} />
+              <Stat label={tr("词汇")} value={overview.vocabulary} />
             </div>
           )}
         </header>
 
         {health && !health.audioReady && (
-          <div className="banner">
-            没有可用的音频输出设备，播放已禁用；歌词与语料浏览不受影响。
-          </div>
+          <div className="banner">{tr("没有可用的音频输出设备，播放已禁用；歌词与语料浏览不受影响。")}</div>
         )}
         {/* 没有词典是唯一一条「能当场解决」的报错：横幅上直接给下载按钮，别让用户去设置里找 */}
         {notice && notice.includes(NO_DICTIONARY) && (
@@ -424,9 +425,7 @@ export default function App() {
           />
         )}
         {notice && !notice.includes(NO_DICTIONARY) && (
-          <div className="banner error" onClick={() => setNotice(null)}>
-            {notice}（点击关闭）
-          </div>
+          <div className="banner error" onClick={() => setNotice(null)}>{tr("{notice}（点击关闭）", { notice })}</div>
         )}
         {newAudio !== null && (
           <NewSongsBanner
@@ -500,7 +499,15 @@ export default function App() {
         {route === "settings" && (
           <SettingsPage health={health} onError={onError} onNavigate={setRoute} onChanged={refreshOverview} />
         )}
-        {route === "dict" && <DictionaryPage onError={onError} onOpenSettings={() => setRoute("settings")} />}
+        {route === "dict" && (
+          <DictionaryPage
+            onError={onError}
+            onOpenSettings={() => {
+              openSettingsSection("dict");
+              setRoute("settings");
+            }}
+          />
+        )}
         {route === "analytics" && (
           <AnalyticsPage
             key={libraryVersion}
@@ -515,6 +522,17 @@ export default function App() {
         )}
         </div>
       </main>
+
+      {pickLanguage && <LanguagePicker onDone={() => setPickLanguage(false)} />}
+
+      {updateOffer !== null && !pickLanguage && (
+        <UpdateDialog
+          current={updateOffer.current}
+          release={updateOffer.release}
+          offerSkip
+          onClose={() => setUpdateOffer(null)}
+        />
+      )}
 
       {palette && (
         <CommandPalette

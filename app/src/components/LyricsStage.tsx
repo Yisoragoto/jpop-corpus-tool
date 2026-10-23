@@ -25,6 +25,7 @@ import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import { LyricsTools } from "./LyricsTools";
 import { ColumnSplitter, usePaneWidth } from "./ColumnSplitter";
+import { tr } from "../i18n";
 
 interface Props {
   title: string;
@@ -101,7 +102,7 @@ export function LyricsStage(props: Props) {
         ["--stage-color" as string]: coverColor ?? "#1a1a20",
       }}
       role="dialog"
-      aria-label="全屏歌词"
+      aria-label={tr("全屏歌词")}
     >
       {blurCover && (
         <div className="stage-bg" aria-hidden="true">
@@ -120,20 +121,20 @@ export function LyricsStage(props: Props) {
           <p>{props.meta}</p>
         </div>
         <LyricsTools display={props.display} onError={props.onError} />
-        <button className="stage-close" onClick={onClose} title="退出全屏（Esc）" aria-label="退出全屏">
+        <button className="stage-close" onClick={onClose} title={tr("退出全屏（Esc）")} aria-label={tr("退出全屏")}>
           ✕
         </button>
       </header>
       <div className="stage-body" ref={side.container}>
         <div className="stage-lyrics" ref={scroller}>
-          {lines.length === 0 && <p className="muted stage-empty">这首歌还没有歌词</p>}
+          {lines.length === 0 && <p className="muted stage-empty">{tr("这首歌还没有歌词")}</p>}
           {lines.map((line, idx) => (
             <p
               key={line.utteranceId}
               data-idx={idx}
               className={`stage-line ${idx === currentLine ? "current" : ""} ${props.canSeek && line.timeSec !== null ? "seekable" : ""}`}
               onClick={() => props.onSeekLine(idx)}
-              title={props.canSeek && line.timeSec !== null ? "跳到这一句" : undefined}
+              title={props.canSeek && line.timeSec !== null ? tr("跳到这一句") : undefined}
             >
               {props.renderText(idx)}
             </p>
@@ -141,7 +142,7 @@ export function LyricsStage(props: Props) {
         </div>
         <ColumnSplitter
           edge="right"
-          label="查词栏宽度"
+          label={tr("查词栏宽度")}
           onDrag={side.drag}
           onNudge={side.nudge}
           onReset={side.reset}
@@ -159,7 +160,7 @@ export function LyricsStage(props: Props) {
             />
           ) : (
             <>
-              <button className="stage-side-close" onClick={props.onCloseSide} title="收起" aria-label="收起查词">
+              <button className="stage-side-close" onClick={props.onCloseSide} title={tr("收起")} aria-label={tr("收起查词")}>
                 ✕
               </button>
               {props.side}
@@ -197,11 +198,11 @@ function SongCard({
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   });
   const facts = [
-    track.album && { label: "专辑", value: track.album },
-    track.year && { label: "年份", value: track.year },
-    track.genre && { label: "流派", value: track.genre },
-    track.durationSec !== null && { label: "时长", value: formatDuration(track.durationSec) },
-    lineCount > 0 && { label: "歌词", value: `${lineCount} 行` },
+    track.album && { label: tr("专辑"), value: track.album },
+    track.year && { label: tr("年份"), value: track.year },
+    track.genre && { label: tr("流派"), value: track.genre },
+    track.durationSec !== null && { label: tr("时长"), value: formatDuration(track.durationSec) },
+    lineCount > 0 && { label: tr("歌词"), value: tr("{lineCount} 行", { lineCount }) },
   ].filter((f): f is { label: string; value: string } => Boolean(f));
 
   return (
@@ -231,7 +232,7 @@ function SongCard({
           ))}
         </dl>
       )}
-      {roles.length === 0 && <p className="stage-card-none">还没有署名信息（刮削或「编辑信息」里可以补）</p>}
+      {roles.length === 0 && <p className="stage-card-none">{tr("还没有署名信息（刮削或「编辑信息」里可以补）")}</p>}
 
       {facts.length > 0 && (
         <dl className="stage-facts" style={{ ["--i" as string]: roles.length }}>

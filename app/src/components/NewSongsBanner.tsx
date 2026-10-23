@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../events";
 
 import { api, type ImportProgress, type LyricsProgress, type NewAudio } from "../api";
 import { messageOf } from "../errors";
@@ -23,6 +23,7 @@ import {
   summarizeImport,
   type ImportOutcomeSummary,
 } from "../newSongs";
+import { tr } from "../i18n";
 
 interface Props {
   found: NewAudio;
@@ -63,10 +64,10 @@ export function NewSongsBanner({ found, onImported, onReview, onIgnore, onDismis
       const p = event.payload;
       const note =
         p.error !== ""
-          ? `补歌词中断：${p.error}`
-          : `补上 ${p.filled} 首` +
-            (p.notFound > 0 ? `，${p.notFound} 首没找到对得上的（可以在曲库里选中它，自己导入一份）` : "") +
-            (p.failed > 0 ? `，${p.failed} 首失败` : "");
+          ? tr("补歌词中断：{error}", { error: p.error })
+          : tr("补上 {filled} 首", { filled: p.filled }) +
+            (p.notFound > 0 ? tr("，{notFound} 首没找到对得上的（可以在曲库里选中它，自己导入一份）", { notFound: p.notFound }) : "") +
+            (p.failed > 0 ? tr("，{failed} 首失败", { failed: p.failed }) : "");
       setStage((s) => (s.kind === "done" ? { ...s, lyrics: note } : s));
       onImported();
     });
@@ -85,7 +86,7 @@ export function NewSongsBanner({ found, onImported, onReview, onIgnore, onDismis
       const planned = newItems(scan);
       if (planned.length === 0) {
         await api.cancelImport().catch(() => undefined);
-        onError("这几个文件现在已经不算新歌了（可能刚在导入页导过），没有再导一遍");
+        onError(tr("这几个文件现在已经不算新歌了（可能刚在导入页导过），没有再导一遍"));
         onDismiss();
         return;
       }
@@ -121,7 +122,7 @@ export function NewSongsBanner({ found, onImported, onReview, onIgnore, onDismis
     return (
       <div className="banner new-songs">
         <span className="new-songs-text">
-          {p === null ? "正在导入…" : `正在导入 ${p.done}/${p.total}：${p.title}`}
+          {p === null ? tr("正在导入…") : tr("正在导入 {done}/{total}：{title}", { done: p.done, total: p.total, title: p.title })}
         </span>
       </div>
     );
@@ -132,24 +133,22 @@ export function NewSongsBanner({ found, onImported, onReview, onIgnore, onDismis
     const missing = summary.withoutLyrics.length;
     return (
       <div className="banner new-songs">
-        <span className="new-songs-text" title={summary.failed.map((f) => `${f.title}：${f.error}`).join("\n")}>
-          <strong>已导入 {summary.imported} 首</strong>
-          {summary.artists.length > 0 && `，归在 ${summary.artists.join("、")} 名下`}
-          {summary.failed.length > 0 && `；${summary.failed.length} 首没导进去（${summary.failed[0]?.error}）`}
-          {lyrics !== "" && lyrics !== "running" ? `。${lyrics}` : missing > 0 ? `。其中 ${missing} 首还没有歌词` : "。"}
+        <span className="new-songs-text" title={summary.failed.map((f) => `${f.title}${tr("：")}${f.error}`).join("\n")}>
+          <strong>{tr("已导入 {imported} 首", { imported: summary.imported })}</strong>
+          {summary.artists.length > 0 && tr("，归在 {artists} 名下", { artists: summary.artists.join(tr("、")) })}
+          {summary.failed.length > 0 && tr("；{length} 首没导进去（{error}）", { length: summary.failed.length, error: summary.failed[0]?.error })}
+          {lyrics !== "" && lyrics !== "running" ? `${tr("。")}${lyrics}` : missing > 0 ? tr("。其中 {missing} 首还没有歌词", { missing }) : tr("。")}
         </span>
         {missing > 0 && lyrics === "" && (
           <button
             className="new-songs-go"
             onClick={() => void fillLyrics(summary.withoutLyrics)}
-            title="先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空"
-          >
-            在线补齐歌词
-          </button>
+            title={tr("先看音频旁边有没有同名 .lrc，没有再上网搜（网易云）。挑不准的宁可留空")}
+          >{tr("在线补齐歌词")}</button>
         )}
-        {lyrics === "running" && <span className="muted small">正在补歌词…</span>}
+        {lyrics === "running" && <span className="muted small">{tr("正在补歌词…")}</span>}
         {lyrics !== "running" && (
-          <button className="new-songs-close" onClick={onDismiss} title="关闭" aria-label="关闭">
+          <button className="new-songs-close" onClick={onDismiss} title={tr("关闭")} aria-label={tr("关闭")}>
             ✕
           </button>
         )}
@@ -160,39 +159,28 @@ export function NewSongsBanner({ found, onImported, onReview, onIgnore, onDismis
   const detail = [
     ...items.map((item) => `${item.title}${item.artist.trim() === "" ? "" : ` — ${item.artist}`}`),
     "",
-    ...folders.map((folder) => `在 ${folder}`),
+    ...folders.map((folder) => tr("在 {folder}", { folder })),
   ].join("\n");
   return (
     <div className="banner new-songs">
       <span className="new-songs-text" title={detail}>
-        <strong>检测到 {items.length} 首新歌</strong>：{describeNewSongs(items)}
+        <strong>{tr("检测到 {length} 首新歌", { length: items.length })}</strong>{tr("：")}{describeNewSongs(items)}
         {folders.length > 0 && (
-          <span className="muted small">
-            {" "}
-            · 在 {folders[0]}
-            {folders.length > 1 ? ` 等 ${folders.length} 个文件夹` : ""}
+          <span className="muted small">{tr("{v}· 在 {folders}", { v: " ", folders: folders[0] })}{folders.length > 1 ? tr(" 等 {length} 个文件夹", { length: folders.length }) : ""}
           </span>
         )}
         {review !== null && <span className="muted small"> · {review}</span>}
       </span>
       {review === null ? (
         <>
-          <button className="new-songs-go" onClick={() => void doImport()} title="导入并分词，归到各自的歌手和专辑名下">
-            导入 {items.length} 首
-          </button>
-          <button className="link-btn" onClick={() => onReview(paths)} title="去导入页看完整的计划再决定">
-            先看看
-          </button>
+          <button className="new-songs-go" onClick={() => void doImport()} title={tr("导入并分词，归到各自的歌手和专辑名下")}>{tr("导入 {length} 首", { length: items.length })}</button>
+          <button className="link-btn" onClick={() => onReview(paths)} title={tr("去导入页看完整的计划再决定")}>{tr("先看看")}</button>
         </>
       ) : (
-        <button className="new-songs-go" onClick={() => onReview(paths)} title="去导入页看完整的计划再导">
-          查看并导入
-        </button>
+        <button className="new-songs-go" onClick={() => onReview(paths)} title={tr("去导入页看完整的计划再导")}>{tr("查看并导入")}</button>
       )}
-      <button className="link-btn" onClick={() => onIgnore(paths)} title="这几个文件以后不再提示。可以在导入页恢复">
-        不再提示
-      </button>
-      <button className="new-songs-close" onClick={onDismiss} title="这次先不管，下次启动再提" aria-label="关闭">
+      <button className="link-btn" onClick={() => onIgnore(paths)} title={tr("这几个文件以后不再提示。可以在导入页恢复")}>{tr("不再提示")}</button>
+      <button className="new-songs-close" onClick={onDismiss} title={tr("这次先不管，下次启动再提")} aria-label={tr("关闭")}>
         ✕
       </button>
     </div>

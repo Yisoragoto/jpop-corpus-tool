@@ -1,0 +1,40 @@
+name: macOS 客户端问题 / macOS bug
+description: 导入、播放或原生界面的问题，请附版本、构建标识与日志。
+title: "[macOS] "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本 / App version
+      placeholder: v0.3.2
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: Build id 或 commit SHA
+      description: 关于页若没有 build id，请在构建源码目录运行 git rev-parse HEAD，粘贴完整 SHA。
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: macOS 版本和芯片 / macOS version and chip
+      placeholder: macOS 26 / Apple M1
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 操作步骤、预期与实际结果 / Steps, expected and actual behavior
+      description: 请写清从哪个按钮进入，选择的是已有语料库、音频文件夹、单个音频还是分词词典。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: smoke 或日志片段 / Smoke or log excerpt
+      description: 粘贴 smoke.txt 或终端错误；若完全没有输出，请写明启动命令和观察到的现象。提交前移除私人路径。
+      render: text
+    validations:
+      required: true

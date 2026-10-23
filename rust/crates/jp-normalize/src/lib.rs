@@ -99,6 +99,18 @@ pub fn bracket_contents(text: &str) -> Vec<String> {
 ///
 /// 去掉全部空白而不是折叠成一个，是因为日文曲名里空格的有无非常随意，
 /// 「夜に駆ける」和「夜に 駆ける」必须等价。
+/// 歌词开头那串「标签：人名」里常见的中日文署名标签（简繁日都收）。
+/// 和 jp-import `lrc.rs` 的署名表是同一批写法；这里只回答「是不是署名」，不分角色。
+pub fn is_cjk_credit_label(label: &str) -> bool {
+    const LABELS: &[&str] = &[
+        "词", "詞", "曲", "作词", "作詞", "作曲", "编曲", "編曲", "訳詞", "译词",
+        "制作人", "製作人", "监制", "監製", "混音", "母带", "母帶", "录音", "錄音",
+        "和声", "和聲", "吉他", "贝斯", "貝斯", "鼓", "键盘", "鍵盤", "钢琴", "鋼琴",
+        "弦乐", "弦樂",
+    ];
+    LABELS.contains(&label.trim())
+}
+
 pub fn matching_key(text: &str) -> String {
     let plain: String = text.nfkc().flat_map(char::to_lowercase).collect();
     let plain = FEAT_RE.replace_all(&plain, " ");

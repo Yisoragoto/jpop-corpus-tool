@@ -1,3 +1,4 @@
+import JPCorpusModel
 import JPCore
 import SwiftUI
 
@@ -129,12 +130,12 @@ struct FavoriteMenuItem: View {
     var body: some View {
         Button(favorite.map { $0 ? "取消收藏" : "收藏" } ?? "收藏 / 取消收藏") {
             Task {
-                guard let client = app.client else { return }
+                guard let client = app.core else { return }
                 favorite = try? await client.toggleFavorite(song: songId)
                 app.homeVersion += 1
             }
         }
-        .task { favorite = try? await app.client?.isFavorite(song: songId) }
+        .task { favorite = try? await app.core?.isFavorite(song: songId) }
     }
 }
 
@@ -171,7 +172,7 @@ private struct AlbumGrid: View {
         }
         .task(id: app.tracks.count) {
             do {
-                albums = try await app.client?.albums() ?? []
+                albums = try await app.core?.albums() ?? []
             } catch {
                 app.errorMessage = error.localizedDescription
             }
@@ -215,7 +216,7 @@ struct AlbumDetailView: View {
         .navigationTitle(album.title)
         .task {
             do {
-                tracks = try await app.client?.albumTracks(album.id) ?? []
+                tracks = try await app.core?.albumTracks(album.id) ?? []
             } catch {
                 app.errorMessage = error.localizedDescription
             }
@@ -303,7 +304,7 @@ private struct ArtistGrid: View {
         .clearScrollBackground()
         .task(id: app.tracks.count) {
             do {
-                people = try await app.client?.peopleDirectory() ?? []
+                people = try await app.core?.peopleDirectory() ?? []
             } catch {
                 app.errorMessage = error.localizedDescription
             }
@@ -403,7 +404,7 @@ struct PersonDetailView: View {
         .clearScrollBackground()
         .navigationTitle(person?.name ?? "歌手")
         .task(id: personId) {
-            guard let client = app.client else { return }
+            guard let client = app.core else { return }
             do {
                 async let dir = client.peopleDirectory()
                 async let w = client.personWorks(personId)

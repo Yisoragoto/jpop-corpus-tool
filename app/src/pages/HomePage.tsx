@@ -29,6 +29,7 @@ import { hitHint, hitKey, hitLabel, KIND_LABELS, useQuickSearch } from "../compo
 import { formatRelative } from "../relativeTime";
 import { useAppSettings } from "../settings";
 import type { LibraryActions } from "../useLibrary";
+import { tr } from "../i18n";
 
 interface Props {
   actions: LibraryActions;
@@ -81,7 +82,7 @@ export function HomePage({ actions, onNavigate, onError, onPickHit, playbackSong
     [actions],
   );
 
-  if (!home) return <div className="page muted pad">加载中…</div>;
+  if (!home) return <div className="page muted pad">{tr("加载中…")}</div>;
 
   return (
     <div className="page home">
@@ -89,9 +90,9 @@ export function HomePage({ actions, onNavigate, onError, onPickHit, playbackSong
 
       <div className="home-grid">
         <section className="home-panel home-main">
-          <h2 className="home-panel-title">继续听</h2>
+          <h2 className="home-panel-title">{tr("继续听")}</h2>
           {home.continueTrack === null ? (
-            <p className="section-empty">还没有收听记录。去曲库挑一首，听满 5 秒就会出现在这里。</p>
+            <p className="section-empty">{tr("还没有收听记录。去曲库挑一首，听满 5 秒就会出现在这里。")}</p>
           ) : (
             <ContinueHero
               track={home.continueTrack}
@@ -174,14 +175,14 @@ function HomeSearch({ onPickHit }: { onPickHit: (hit: QuickHit) => void | Promis
       <input
         type="search"
         value={text}
-        placeholder="搜歌名、歌手、专辑、歌词、词"
+        placeholder={tr("搜歌名、歌手、专辑、歌词、词")}
         onChange={(e) => {
           setText(e.target.value);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        aria-label="搜索全库"
+        aria-label={tr("搜索全库")}
       />
       <kbd>Ctrl K</kbd>
       {showList && (
@@ -199,7 +200,7 @@ function HomeSearch({ onPickHit }: { onPickHit: (hit: QuickHit) => void | Promis
               <span className="palette-hint">{hitHint(hit)}</span>
             </button>
           ))}
-          {!busy && hits.length === 0 && <p className="muted pad">没有结果</p>}
+          {!busy && hits.length === 0 && <p className="muted pad">{tr("没有结果")}</p>}
         </div>
       )}
     </div>
@@ -225,19 +226,17 @@ function ContinueHero({
 
   return (
     <div className="home-hero" style={color ? { background: color } : undefined}>
-      <button className="home-hero-cover" onClick={onOpen} title="在曲库里打开">
+      <button className="home-hero-cover" onClick={onOpen} title={tr("在曲库里打开")}>
         <Cover path={track.coverPath} size={168} rounded={10} />
       </button>
       <div className="home-hero-body">
-        <span className="home-hero-meta">
-          {formatRelative(track.lastPlayed)} · 听过 {track.playCount} 次
-        </span>
+        <span className="home-hero-meta">{tr("{lastPlayed} · 听过 {playCount} 次", { lastPlayed: formatRelative(track.lastPlayed), playCount: track.playCount })}</span>
         <button className="home-hero-title" onClick={onOpen}>
           {track.title}
         </button>
         <span className="home-hero-artist">{track.artist}</span>
         {track.stoppedLine !== "" && (
-          <span className="home-hero-line" title="上次停在这一行">
+          <span className="home-hero-line" title={tr("上次停在这一行")}>
             「{track.stoppedLine}」
           </span>
         )}
@@ -246,16 +245,14 @@ function ContinueHero({
             <div style={{ width: `${finished ? 100 : pct}%` }} />
           </div>
           <span>
-            {finished ? "听完了" : `${formatDuration(track.positionSec)} / ${formatDuration(track.durationSec)}`}
+            {finished ? tr("听完了") : `${formatDuration(track.positionSec)} / ${formatDuration(track.durationSec)}`}
           </span>
         </div>
         <div className="home-hero-actions">
           <button className="primary" onClick={() => onResume(from)}>
-            ▶ {finished ? "再听一遍" : `从 ${formatDuration(from)} 继续`}
+            ▶ {finished ? tr("再听一遍") : tr("从 {from} 继续", { from: formatDuration(from) })}
           </button>
-          <button className="home-hero-secondary" onClick={onOpen}>
-            看歌词
-          </button>
+          <button className="home-hero-secondary" onClick={onOpen}>{tr("看歌词")}</button>
         </div>
       </div>
     </div>
@@ -266,7 +263,7 @@ function ContinueHero({
 function RecentTile({ track, onClick }: { track: PlayedTrack; onClick: () => void }) {
   const duration = track.durationSec ?? 0;
   const done = track.lastCompleted || (duration > 0 && duration - track.lastPositionSec < 3);
-  const badge = done ? "听完" : duration > 0 ? `${Math.round((track.lastPositionSec / duration) * 100)}%` : "";
+  const badge = done ? tr("听完") : duration > 0 ? `${Math.round((track.lastPositionSec / duration) * 100)}%` : "";
   return (
     <button className="tile" onClick={onClick} title={`${track.title} · ${track.artist}`}>
       <span className="home-tile-cover">
@@ -285,21 +282,21 @@ function TodayPanel({ home, cardsToday }: { home: HomeSummary; cardsToday: numbe
   const minutes = Math.floor(today.listenedSec / 60);
   const ratio = Math.min(1, minutes / dailyGoalMinutes);
   const extras = [
-    cardsToday !== null ? `今天制卡 ${cardsToday} 张` : "",
-    today.streakDays > 0 ? `连续 ${today.streakDays} 天` : "",
+    cardsToday !== null ? tr("今天制卡 {cardsToday} 张", { cardsToday }) : "",
+    today.streakDays > 0 ? tr("连续 {streakDays} 天", { streakDays: today.streakDays }) : "",
   ].filter((s) => s !== "");
 
   return (
     <section className="home-panel">
-      <h2 className="home-panel-title">今日</h2>
+      <h2 className="home-panel-title">{tr("今日")}</h2>
       <div className="home-today">
         <Ring ratio={ratio} label={`${Math.round(ratio * 100)}%`} />
         <div className="home-today-text">
           <div className="home-today-big">
-            {minutes} <span>/ {dailyGoalMinutes} 分钟</span>
+            {minutes} <span>{tr("/ {dailyGoalMinutes} 分钟", { dailyGoalMinutes })}</span>
           </div>
           <div className="muted small">
-            {today.songs === 0 ? "今天还没听" : `${today.songs} 首 · 听到 ${today.linesHeard.toLocaleString()} 行歌词`}
+            {today.songs === 0 ? tr("今天还没听") : tr("{songs} 首 · 听到 {linesHeard} 行歌词", { songs: today.songs, linesHeard: today.linesHeard.toLocaleString() })}
           </div>
         </div>
       </div>
@@ -313,7 +310,7 @@ function Ring({ ratio, label }: { ratio: number; label: string }) {
   const r = 22;
   const c = 2 * Math.PI * r;
   return (
-    <svg className="home-ring" viewBox="0 0 56 56" width="56" height="56" role="img" aria-label={`完成 ${label}`}>
+    <svg className="home-ring" viewBox="0 0 56 56" width="56" height="56" role="img" aria-label={tr("完成 {label}", { label })}>
       <circle cx="28" cy="28" r={r} className="home-ring-track" />
       {/* 0 的时候不画：圆头线帽会留下一个点，像是有进度 */}
       {ratio > 0 && (
@@ -337,23 +334,21 @@ function CorpusPanel({ home, onMore }: { home: HomeSummary; onMore: () => void }
   const { overview, reach } = home;
   const reachPct = reach.totalLemmas > 0 ? Math.round((reach.heardLemmas / reach.totalLemmas) * 100) : 0;
   const rows: [string, string, string?][] = [
-    ["曲目", `${overview.tracks} 首 · ${formatLongDuration(overview.totalDurationSec)}`],
-    ["歌词", `${overview.lyricLines.toLocaleString()} 行 · ${overview.vocabulary.toLocaleString()} 个词`],
-    ["歌手 / 专辑", `${overview.people} 人 · ${overview.albums} 张`],
-    ["你听过", `${reach.heardSongs} 首`, "听满 30 秒才算"],
+    [tr("曲目"), tr("{tracks} 首 · {totalDurationSec}", { tracks: overview.tracks, totalDurationSec: formatLongDuration(overview.totalDurationSec) })],
+    [tr("歌词"), tr("{lyricLines} 行 · {vocabulary} 个词", { lyricLines: overview.lyricLines.toLocaleString(), vocabulary: overview.vocabulary.toLocaleString() })],
+    [tr("歌手 / 专辑"), tr("{people} 人 · {albums} 张", { people: overview.people, albums: overview.albums })],
+    [tr("你听过"), tr("{heardSongs} 首", { heardSongs: reach.heardSongs }), tr("听满 30 秒才算")],
     [
-      "碰到过的词",
+      tr("碰到过的词"),
       `${reachPct}%`,
-      `听过的歌里出现过 ${reach.heardLemmas.toLocaleString()} 个实词（名词、动词、形容词、副词），全库 ${reach.totalLemmas.toLocaleString()} 个`,
+      tr("听过的歌里出现过 {heardLemmas} 个实词（名词、动词、形容词、副词），全库 {totalLemmas} 个", { heardLemmas: reach.heardLemmas.toLocaleString(), totalLemmas: reach.totalLemmas.toLocaleString() }),
     ],
   ];
   return (
     <section className="home-panel">
       <header className="home-panel-head">
-        <h2 className="home-panel-title">语料库</h2>
-        <button className="link-btn" onClick={onMore}>
-          完整分析 →
-        </button>
+        <h2 className="home-panel-title">{tr("语料库")}</h2>
+        <button className="link-btn" onClick={onMore}>{tr("完整分析 →")}</button>
       </header>
       <dl className="home-stats">
         {rows.map(([k, v, tip]) => (
@@ -371,7 +366,7 @@ function AddedPanel({ tracks, onOpen }: { tracks: AddedTrack[]; onOpen: (songId:
   if (tracks.length === 0) return null;
   return (
     <section className="home-panel">
-      <h2 className="home-panel-title">最近添加</h2>
+      <h2 className="home-panel-title">{tr("最近添加")}</h2>
       <ul className="home-added">
         {tracks.map((t) => (
           <li key={t.songId}>

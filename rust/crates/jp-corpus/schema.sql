@@ -11,6 +11,11 @@ CREATE TABLE IF NOT EXISTS albums (
     year                    TEXT NOT NULL DEFAULT '',
     artwork_path            TEXT NOT NULL DEFAULT '',
     created_at              TEXT NOT NULL DEFAULT '',
+    release_group_mbid TEXT,
+    label TEXT,
+    barcode TEXT,
+    album_type TEXT,
+    track_count INTEGER,
     -- 同名专辑在不同歌手名下是两张不同的专辑
     UNIQUE (normalized_title, normalized_album_artist)
 );
@@ -139,7 +144,14 @@ CREATE TABLE IF NOT EXISTS songs (
             album      TEXT,
             genre      TEXT,
             audio_path TEXT
-        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT, language TEXT);
+        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT, language TEXT, isrc TEXT, recording_mbid TEXT, audio_fingerprint TEXT);
+
+CREATE TABLE IF NOT EXISTS external_ids (
+    entity_type TEXT, entity_id TEXT, provider TEXT, external_id TEXT, source TEXT, confidence REAL,
+    PRIMARY KEY(entity_type, entity_id, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_songs_audio_fingerprint ON songs(audio_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_external_ids_external_id ON external_ids(external_id);
 
 CREATE TABLE IF NOT EXISTS token_corrections (
             utterance_id INTEGER PRIMARY KEY,
@@ -239,6 +251,11 @@ CREATE TABLE IF NOT EXISTS lyric_versions (
     completeness     REAL,
     -- 校验结果：问题清单、重复行比例、语言判断
     validation_json  TEXT    NOT NULL DEFAULT '{}',
+    raw_format TEXT NOT NULL DEFAULT '',
+    source_raw TEXT,
+    sync_granularity TEXT NOT NULL DEFAULT 'unknown',
+    timing_origin TEXT NOT NULL DEFAULT 'unknown',
+    timing_validation_json TEXT NOT NULL DEFAULT '{}',
     validated_at     TEXT    NOT NULL DEFAULT '',
     is_current       INTEGER NOT NULL DEFAULT 0,
     note             TEXT    NOT NULL DEFAULT '',
@@ -411,3 +428,16 @@ CREATE INDEX IF NOT EXISTS idx_utt_song_id ON utterances(song_id);
 CREATE INDEX IF NOT EXISTS idx_utterances_song_time ON utterances(song_id, time_sec);
 
 CREATE INDEX IF NOT EXISTS idx_yomitan_zh_reading ON yomitan_zh(reading);
+
+-- 词级时间：一行歌词里某个词从第几秒开始唱（见 jp-corpus/src/word_timing.rs）。
+-- 位置是这一行 text 里的字符下标 [char_start, char_end)。
+-- source：lrc（导入的逐字时间）/ manual（手动校准，同一处两种都有时以它为准）
+CREATE TABLE IF NOT EXISTS word_timings (
+    utterance_id INTEGER NOT NULL REFERENCES utterances(id),
+    char_start   INTEGER NOT NULL,
+    char_end     INTEGER NOT NULL,
+    start_sec    REAL    NOT NULL,
+    end_sec      REAL,
+    source       TEXT    NOT NULL,
+    PRIMARY KEY (utterance_id, char_start, source)
+);

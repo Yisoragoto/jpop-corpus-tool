@@ -68,6 +68,8 @@ pub struct ScannedTrack {
     pub tag_album_artist: String,
     pub tag_year: String,
     pub tag_genre: String,
+    pub isrc: String,
+    pub recording_mbid: String,
     // ── 从文件名/目录推断的 ──
     pub guess_title: String,
     pub guess_artist: String,
@@ -204,6 +206,8 @@ pub fn scan_file(path: &Path) -> ScannedTrack {
                 track.tag_artist = tag.artist().unwrap_or_default().to_string();
                 track.tag_album = tag.album().unwrap_or_default().to_string();
                 track.tag_genre = tag.genre().unwrap_or_default().to_string();
+                track.isrc = tag.get_string(ItemKey::Isrc).unwrap_or_default().to_string();
+                track.recording_mbid = tag.get_string(ItemKey::MusicBrainzRecordingId).unwrap_or_default().to_string();
                 track.tag_album_artist = tag
                     .get_string(ItemKey::AlbumArtist)
                     .unwrap_or_default()

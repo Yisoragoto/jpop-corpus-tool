@@ -4,6 +4,7 @@
  */
 
 import { setActiveScope, useActiveScope, useSubcorpora } from "../subcorpusScope";
+import { tr } from "../i18n";
 
 interface Props {
   onError: (message: string) => void;
@@ -20,18 +21,16 @@ export function SubcorpusPicker({ onError, onChange, className = "rate subcorpus
     <select
       className={className}
       value={active?.id ?? ""}
-      title="只在这块子语料里找。子语料在「分析」页的筛选条里建"
+      title={tr("只在这块子语料里找。子语料在「分析」页的筛选条里建")}
       onChange={(e) => {
         const pick = list.find((s) => String(s.id) === e.target.value);
         setActiveScope(pick ? { id: pick.id, name: pick.name, filter: pick.filter } : null);
         onChange?.();
       }}
     >
-      <option value="">整个库</option>
+      <option value="">{tr("整个库")}</option>
       {list.map((s) => (
-        <option key={s.id} value={s.id}>
-          子语料：{s.name}（{s.songCount} 首）
-        </option>
+        <option key={s.id} value={s.id}>{tr("子语料：{name}（{songCount} 首）", { name: s.name, songCount: s.songCount })}</option>
       ))}
     </select>
   );

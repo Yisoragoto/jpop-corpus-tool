@@ -15,6 +15,7 @@ import {
   type StatsFilter,
   type Subcorpus,
 } from "./api";
+import { tr } from "./i18n";
 
 // ───────────────────────────── 校验 ─────────────────────────────
 
@@ -49,85 +50,85 @@ export interface Validation {
 
 /** 和 `quality::ISSUE_CODES` 同一套说法 */
 export const ISSUE_LABELS: Record<string, string> = {
-  empty: "一行歌词都没有",
-  replacement_char: "有乱码",
-  not_japanese: "看起来不是日文歌词",
-  too_few_lines: "行数太少",
-  ends_early: "提前结束，可能被截断",
-  untimed: "没有时间轴",
-  mixed_timing: "部分行没有时间",
-  non_monotonic: "时间倒退",
-  beyond_duration: "时间超过歌曲长度",
-  duplicate_timestamp: "和上一行同一个时间",
-  stacked_duplicate: "重复贴了一遍",
-  long_gap: "长空档（间奏或漏行）",
-  leftover_markup: "混进了时间标记或署名",
-  very_long_line: "一行特别长",
+  empty: tr("一行歌词都没有"),
+  replacement_char: tr("有乱码"),
+  not_japanese: tr("看起来不是日文歌词"),
+  too_few_lines: tr("行数太少"),
+  ends_early: tr("提前结束，可能被截断"),
+  untimed: tr("没有时间轴"),
+  mixed_timing: tr("部分行没有时间"),
+  non_monotonic: tr("时间倒退"),
+  beyond_duration: tr("时间超过歌曲长度"),
+  duplicate_timestamp: tr("和上一行同一个时间"),
+  stacked_duplicate: tr("重复贴了一遍"),
+  long_gap: tr("长空档（间奏或漏行）"),
+  leftover_markup: tr("混进了时间标记或署名"),
+  very_long_line: tr("一行特别长"),
 };
 
 export const LANGUAGE_LABELS: Record<string, string> = {
-  ja: "日文",
-  en: "英文",
-  ko: "韩文",
-  zh: "中文",
-  mixed: "混合",
-  unknown: "未知",
-  "": "未判断",
+  ja: tr("日文"),
+  en: tr("英文"),
+  ko: tr("韩文"),
+  zh: tr("中文"),
+  mixed: tr("混合"),
+  unknown: tr("未知"),
+  "": tr("未判断"),
 };
 
 export const SOURCE_LABELS: Record<string, string> = {
-  lrc_file: "导入时的 .lrc",
-  embedded: "音频内嵌",
-  sibling: "音频旁的 .lrc",
-  online: "在线",
-  manual_file: "你选的文件",
-  restored: "从旧版恢复",
-  manual_edit: "逐行编辑",
-  legacy: "老库（未记来源）",
+  lrc_file: tr("导入时的 .lrc"),
+  embedded: tr("音频内嵌"),
+  sibling: tr("音频旁的 .lrc"),
+  online: tr("在线"),
+  manual_file: tr("你选的文件"),
+  restored: tr("从旧版恢复"),
+  manual_edit: tr("逐行编辑"),
+  legacy: tr("老库（未记来源）"),
 };
 
 export const FIELD_SOURCE_LABELS: Record<string, string> = {
-  tag: "文件标签",
-  filename: "文件名",
-  folder: "所在目录",
-  manual: "你改的",
-  heuristic: "按歌词推断",
-  audio: "音频文件",
+  tag: tr("文件标签"),
+  filename: tr("文件名"),
+  folder: tr("所在目录"),
+  manual: tr("你改的"),
+  heuristic: tr("按歌词推断"),
+  audio: tr("音频文件"),
   itunes: "iTunes",
   musicbrainz: "MusicBrainz",
   deezer: "Deezer",
 };
 
 export const TOKEN_STATUS_LABELS: Record<string, string> = {
-  auto: "自动分词",
-  corrected: "校正过",
-  pending: "未分词",
-  empty: "无实词",
-  unknown: "未记录",
+  auto: tr("自动分词"),
+  corrected: tr("校正过"),
+  pending: tr("未分词"),
+  empty: tr("无实词"),
+  unknown: tr("未记录"),
 };
 
 export const REVISION_LABELS: Record<string, string> = {
-  lyrics_attached: "挂上歌词",
-  lyrics_replaced: "换了歌词",
-  lyrics_edited: "逐行编辑",
-  tokens_corrected: "校正分词",
-  tokens_reverted: "撤销校正",
-  corrections_restored: "套回校正",
-  retokenized: "重新分词",
-  metadata_edited: "改曲目信息",
-  song_deleted: "删除",
-  legacy_registered: "老库补登记",
+  lyrics_attached: tr("挂上歌词"),
+  lyrics_replaced: tr("换了歌词"),
+  lyrics_edited: tr("逐行编辑"),
+  tokens_corrected: tr("校正分词"),
+  tokens_reverted: tr("撤销校正"),
+  corrections_restored: tr("套回校正"),
+  retokenized: tr("重新分词"),
+  metadata_edited: tr("改曲目信息"),
+  song_deleted: tr("删除"),
+  legacy_registered: tr("老库补登记"),
 };
 
 export const issueLabel = (code: string) => ISSUE_LABELS[code] ?? code;
 
 /** 完整度的一句话评价 */
 export function completenessLabel(value: number | null | undefined): string {
-  if (value === null || value === undefined) return "未校验";
-  if (value >= 0.95) return "完整";
-  if (value >= 0.8) return "基本完整";
-  if (value >= 0.5) return "可能有缺";
-  return "很可能有问题";
+  if (value === null || value === undefined) return tr("未校验");
+  if (value >= 0.95) return tr("完整");
+  if (value >= 0.8) return tr("基本完整");
+  if (value >= 0.5) return tr("可能有缺");
+  return tr("很可能有问题");
 }
 
 export const percent = (value: number | null | undefined, digits = 0) =>
@@ -155,7 +156,7 @@ export interface TokenizerRunRow extends TokenizerRun {
 
 /** 「sudachi.rs 0.6.11 · 词典描述 · Mode C」 */
 export function tokenizerLabel(t: TokenizerRun): string {
-  const dict = t.dictDescription || "未知词典";
+  const dict = t.dictDescription || tr("未知词典");
   return `${t.engine} ${t.engineVersion} · ${dict} · Mode ${t.splitMode}`;
 }
 
@@ -368,30 +369,30 @@ export interface FilterFacets {
 }
 
 export const KIND_LABELS: Record<AnalysisSpec["kind"], string> = {
-  corpusReport: "语料报告",
-  frequency: "词频表",
-  corpusFrequency: "重复感知词频",
-  collocations: "搭配",
-  keyness: "子语料对比",
+  corpusReport: tr("语料报告"),
+  frequency: tr("词频表"),
+  corpusFrequency: tr("重复感知词频"),
+  collocations: tr("搭配"),
+  keyness: tr("子语料对比"),
 };
 
 /** 报告指标的中文名（对比表里用） */
 export const METRIC_LABELS: Record<string, string> = {
-  songCount: "曲数",
-  utteranceCount: "歌词行数",
-  tokenCount: "词次",
-  typeCount: "词种",
+  songCount: tr("曲数"),
+  utteranceCount: tr("歌词行数"),
+  tokenCount: tr("词次"),
+  typeCount: tr("词种"),
   ttr: "TTR",
   sttr: "STTR",
-  sttrChunk: "STTR 段长",
-  hapaxCount: "Hapax 数",
-  hapaxRatio: "Hapax 比率",
-  avgTypesPerSong: "平均每曲词汇量",
-  avgTokensPerLine: "平均每行 token",
+  sttrChunk: tr("STTR 段长"),
+  hapaxCount: tr("Hapax 数"),
+  hapaxRatio: tr("Hapax 比率"),
+  avgTypesPerSong: tr("平均每曲词汇量"),
+  avgTokensPerLine: tr("平均每行 token"),
 };
 
-const SIDE_LABELS: Record<string, string> = { provenance: "", target: "目标", reference: "参照" };
-const SIDE_FIELDS: Record<string, string> = { songs: "曲数", tokens: "词次" };
+const SIDE_LABELS: Record<string, string> = { provenance: "", target: tr("目标"), reference: tr("参照") };
+const SIDE_FIELDS: Record<string, string> = { songs: tr("曲数"), tokens: tr("词次") };
 
 export const metricLabel = (name: string): string => {
   const [side, field] = name.split(".");
@@ -400,7 +401,7 @@ export const metricLabel = (name: string): string => {
 };
 
 const baseMetricLabel = (name: string) =>
-  METRIC_LABELS[name] ?? (name.startsWith("coverage@") ? `Top ${name.slice(9)} 覆盖率` : name);
+  METRIC_LABELS[name] ?? (name.startsWith("coverage@") ? tr("Top {slice} 覆盖率", { slice: name.slice(9) }) : name);
 
 /** 一个筛选条件是不是「整个库」（只看范围，不看 jpOnly / distinctLines 这类口径） */
 export function isWholeCorpus(f: StatsFilter): boolean {
@@ -422,19 +423,19 @@ export function isWholeCorpus(f: StatsFilter): boolean {
 export function describeFilter(f: StatsFilter, performerNames: string[] = []): string {
   const parts: string[] = [];
   if (f.performerIds.length) {
-    parts.push(performerNames.length ? performerNames.join("、") : `${f.performerIds.length} 位演唱者`);
+    parts.push(performerNames.length ? performerNames.join(tr("、")) : tr("{length} 位演唱者", { length: f.performerIds.length }));
   }
-  if (f.yearFrom != null && f.yearTo != null) parts.push(f.yearFrom === f.yearTo ? `${f.yearFrom} 年` : `${f.yearFrom}–${f.yearTo} 年`);
-  else if (f.yearFrom != null) parts.push(`${f.yearFrom} 年起`);
-  else if (f.yearTo != null) parts.push(`${f.yearTo} 年前`);
+  if (f.yearFrom != null && f.yearTo != null) parts.push(f.yearFrom === f.yearTo ? tr("{yearFrom} 年", { yearFrom: f.yearFrom }) : tr("{yearFrom}–{yearTo} 年", { yearFrom: f.yearFrom, yearTo: f.yearTo }));
+  else if (f.yearFrom != null) parts.push(tr("{yearFrom} 年起", { yearFrom: f.yearFrom }));
+  else if (f.yearTo != null) parts.push(tr("{yearTo} 年前", { yearTo: f.yearTo }));
   if (f.genres?.length) parts.push(f.genres.join(" / "));
   if (f.languages?.length) parts.push(f.languages.map((l) => LANGUAGE_LABELS[l] ?? l).join(" / "));
-  if (f.albumIds?.length) parts.push(`${f.albumIds.length} 张专辑`);
-  if (f.songIds?.length) parts.push(`${f.songIds.length} 首指定的歌`);
-  if (f.minCompleteness != null) parts.push(`歌词完整度 ≥ ${percent(f.minCompleteness)}`);
-  const scope = parts.length ? parts.join(" · ") : "整个库";
-  const method = [f.jpOnly && "仅日文", f.distinctLines && "副歌只算一遍"].filter(Boolean).join("，");
-  return method ? `${scope}（${method}）` : scope;
+  if (f.albumIds?.length) parts.push(tr("{length} 张专辑", { length: f.albumIds.length }));
+  if (f.songIds?.length) parts.push(tr("{length} 首指定的歌", { length: f.songIds.length }));
+  if (f.minCompleteness != null) parts.push(tr("歌词完整度 ≥ {minCompleteness}", { minCompleteness: percent(f.minCompleteness) }));
+  const scope = parts.length ? parts.join(" · ") : tr("整个库");
+  const method = [f.jpOnly && tr("仅日文"), f.distinctLines && tr("副歌只算一遍")].filter(Boolean).join(tr("，"));
+  return method ? `${scope}${tr("（")}${method}${tr("）")}` : scope;
 }
 
 /** 把空数组、undefined 去掉，两份条件才比得出「一样」 */

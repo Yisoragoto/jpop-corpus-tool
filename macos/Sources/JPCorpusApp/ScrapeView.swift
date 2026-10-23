@@ -1,5 +1,6 @@
 import JPCore
 import SwiftUI
+import JPCorpusModel
 
 /// 刮削页：从 MusicBrainz / iTunes / Deezer 补元数据（专辑、年份、流派、发行日期）、封面和歌手照片。
 /// 和 Windows 版同一份逻辑（jp-scrape）：**只补空的，不覆盖本地原有的值**；拿不准的停在复核队列等你确认。
@@ -108,7 +109,7 @@ struct ScrapeView: View {
                 ProgressView().controlSize(.small)
             }
             Text("\(job.done) / \(job.total)  \(job.stage)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
-            Button("停止") { Task { try? await app.client?.scrapeCancel() } }
+            Button("停止") { Task { try? await app.core?.scrapeCancel() } }
                 .controlSize(.small)
         }
     }
@@ -162,7 +163,7 @@ struct ScrapeView: View {
     // MARK: - 动作实现
 
     private func reload() async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         do {
             async let c = client.completeness()
             async let s = client.scrapeSummary()
@@ -177,12 +178,12 @@ struct ScrapeView: View {
 
     /// 离开这页再回来时，作业可能还在跑：接着看它的进度
     private func resumeIfRunning() async {
-        guard let progress = try? await app.client?.scrapeProgress(), progress.running else { return }
+        guard let progress = try? await app.core?.scrapeProgress(), progress.running else { return }
         await follow()
     }
 
     private func start(artists: Bool) async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         lastBatch = nil
         message = nil
         do {
@@ -203,7 +204,7 @@ struct ScrapeView: View {
 
     /// 轮询作业直到结束，然后刷新统计和曲库（封面、专辑都可能变了）
     private func follow() async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         do {
             while true {
                 let progress = try await client.scrapeProgress()
@@ -228,7 +229,7 @@ struct ScrapeView: View {
     }
 
     private func backfill() async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         busy = true
         defer { busy = false }
         do {
@@ -243,7 +244,7 @@ struct ScrapeView: View {
     }
 
     private func retryFailed() async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         do {
             let n = try await client.scrapeRetryFailed()
             message = "打回待刮 \(n) 首，点「刮削曲目」重新跑"
@@ -254,7 +255,7 @@ struct ScrapeView: View {
     }
 
     private func accept(_ item: ReviewItem, _ index: Int) async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         busy = true
         defer { busy = false }
         do {
@@ -269,7 +270,7 @@ struct ScrapeView: View {
 
     private func skip(_ item: ReviewItem) async {
         do {
-            try await app.client?.scrapeSkip(filePath: item.filePath)
+            try await app.core?.scrapeSkip(filePath: item.filePath)
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription

@@ -1,6 +1,6 @@
 /**
  * 时间轴：总览是每位演唱者一条泳道，发行按日期落在上面，**画的是封面**（专辑方、单曲圆，越大歌越多）；
- * 挨得太近的上下错开，再挤的合成「+N」（`placeCovers`）。乐队解散处一道竖杠，一条虚线接到单飞的成员那一行。
+ * 发行多的年份自动撑宽（`warpYears`），同一行的封面一张挨一张排开（`packRow`），不叠、不合并。乐队解散处一道竖杠，一条虚线接到单飞的成员那一行。
  *
  * 点名字（或者某张封面）放大成这位音乐人的时间树（`TimelineTree`，横竖可选）。
  * 放大了谁、横还是竖都记在模块里：去档案、去放歌再回来，还是刚才那棵树。
@@ -10,15 +10,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type TimelineRelease } from "../api";
 import { messageOf } from "../errors";
-import { buildTimeline, placeCovers } from "../timeline";
+import { buildTimeline, packRow, warpYears } from "../timeline";
 import { releaseKey, TimelineTree, type TreeOrient } from "./TimelineTree";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import type { DirectoryData } from "./LibraryBrowser";
+import { tr } from "../i18n";
 
 const ROW = 64;
 const HEAD = 30;
 const PAD = 40;
+/** 同一行两张封面之间至少留这么宽 */
+const GAP = 6;
 const ZOOM_KEY = "jp.library.timelineZoom";
 
 function readZoom(): number {
@@ -42,6 +45,12 @@ function readOrient(): TreeOrient {
 
 /** 放大了谁、定位到哪张：跟着模块走，回到时间轴时还在 */
 const memory: { zoom: number | null; focus: string | null } = { zoom: null, focus: null };
+
+/** 从某个人的档案打开：直接放大成他的时间树 */
+export function focusTimelineOn(personId: number) {
+  memory.zoom = personId;
+  memory.focus = null;
+}
 
 /** 封面边长：专辑按歌数，单曲小一号 */
 function coverSize(r: TimelineRelease): number {
@@ -91,7 +100,7 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
       .catch((err: unknown) => {
         if (!alive) return;
         setReleases([]);
-        onError(`读不出时间轴：${messageOf(err)}`);
+        onError(tr("读不出时间轴：{err}", { err: messageOf(err) }));
       });
     return () => {
       alive = false;
@@ -119,7 +128,7 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
     scroller.current.scrollLeft = scroller.current.scrollWidth;
   }, [layout]);
 
-  if (layout === null || data === null || releases === null) return <p className="muted pad">加载中…</p>;
+  if (layout === null || data === null || releases === null) return <p className="muted pad">{tr("加载中…")}</p>;
 
   if (zoom !== null) {
     return (
@@ -142,8 +151,15 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
   }
 
   const { rows, connectors, min, max } = layout;
-  const width = (max - min) * perYear + PAD * 2;
-  const x = (at: number) => PAD + (at - min) * perYear;
+  const axis = warpYears(
+    rows.map((r) => r.releases.map((rel) => ({ at: rel.at, size: coverSize(rel) }))),
+    min,
+    max,
+    perYear,
+    GAP,
+  );
+  const width = axis.width + PAD * 2;
+  const x = (at: number) => PAD + axis.x(at);
   const y = (i: number) => HEAD + i * ROW + ROW / 2;
   const years: number[] = [];
   const step = perYear < 45 ? 5 : perYear < 70 ? 2 : 1;
@@ -153,21 +169,21 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
   return (
     <div className="timeline-view">
       <div className="timeline-bar">
-        <input className="search" placeholder="筛选音乐人" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input className="search" placeholder={tr("筛选音乐人")} value={query} onChange={(e) => setQuery(e.target.value)} />
         <label className="graph-slider timeline-zoom">
-          <span>缩放</span>
+          <span>{tr("缩放")}</span>
           <input type="range" min={30} max={240} value={perYear} onChange={(e) => setPerYear(Number(e.target.value))} />
         </label>
         <div className="timeline-legend muted small" aria-hidden="true">
-          <span><i className="tl-cover" />专辑</span>
-          <span><i className="tl-dot" />单曲（越大歌越多）</span>
-          <span><i className="tl-end" />解散</span>
-          <span><i className="tl-link" />之后单飞</span>
+          <span><i className="tl-cover" />{tr("专辑")}</span>
+          <span><i className="tl-dot" />{tr("单曲（越大歌越多）")}</span>
+          <span><i className="tl-end" />{tr("解散")}</span>
+          <span><i className="tl-link" />{tr("之后单飞")}</span>
         </div>
       </div>
 
       {rows.length === 0 ? (
-        <p className="muted pad">{query ? "没有匹配的音乐人" : "还没有带年份的歌。刮削补上发行日期之后这里就有了"}</p>
+        <p className="muted pad">{query ? tr("没有匹配的音乐人") : tr("还没有带年份的歌。刮削补上发行日期之后这里就有了")}</p>
       ) : (
         <div className="timeline-scroll" ref={scroller} onScroll={() => tip && setTip(null)}>
           <div className="timeline-grid" style={{ height: HEAD + rows.length * ROW + 16 }}>
@@ -179,16 +195,15 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
                   className={`timeline-name ${r.under !== null ? "under" : ""}`}
                   style={{ height: ROW, ["--n" as string]: Math.min(i, 20) }}
                   onClick={() => setZoom(r.id)}
-                  title={`放大看 ${r.name} 的时间树`}
+                  title={tr("放大看 {name} 的时间树", { name: r.name })}
                 >
                   <Avatar path={r.imagePath} name={r.name} size={r.under !== null ? 26 : 32} />
                   <span className="timeline-name-text">
                     <b>{r.name}</b>
                     <small>
-                      {r.isBand ? "乐队" : "个人"} · {r.releases.length} 次发行
-                    </small>
+                      {r.isBand ? tr("乐队") : tr("个人")}{" "}{tr("· {length} 次发行", { length: r.releases.length })}</small>
                   </span>
-                  <span className="timeline-zoom-in">放大 →</span>
+                  <span className="timeline-zoom-in">{tr("放大 →")}</span>
                 </button>
               ))}
             </div>
@@ -231,18 +246,17 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
                 })}
               </svg>
               {rows.map((r, i) =>
-                placeCovers(r.releases.map((rel) => ({ x: x(rel.at), size: coverSize(rel) }))).map((spot) => {
-                  const rel = r.releases[spot.index]!;
+                packRow(r.releases.map((rel) => ({ x: x(rel.at), size: coverSize(rel) })), GAP).map((cx, index) => {
+                  const rel = r.releases[index]!;
                   const size = coverSize(rel);
-                  const more = spot.extra.map((k) => r.releases[k]!);
                   return (
                     <button
                       key={`${r.id}-${releaseKey(rel)}`}
                       className={`tl-cover-btn ${rel.albumId === null ? "single" : ""}`}
                       style={{
-                        left: spot.cx,
-                        top: y(i) + spot.tier * 11,
-                        ["--d" as string]: `${Math.min(i, 20) * 40 + Math.min(spot.index, 14) * 45 + 300}ms`,
+                        left: cx,
+                        top: y(i),
+                        ["--d" as string]: `${Math.min(i, 20) * 40 + Math.min(index, 14) * 45 + 300}ms`,
                       }}
                       onMouseEnter={(e) => {
                         const box = (e.currentTarget.closest(".timeline-view") as HTMLElement).getBoundingClientRect();
@@ -251,10 +265,9 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
                       }}
                       onMouseLeave={() => setTip(null)}
                       onClick={() => setZoom(r.id, releaseKey(rel))}
-                      aria-label={`${rel.title}，${rel.date}`}
+                      aria-label={`${rel.title}${tr("，")}${rel.date}`}
                     >
                       <Cover path={rel.coverPath} size={size} rounded={rel.albumId === null ? size : 5} />
-                      {more.length > 0 && <span className="tl-more" title={more.map((m) => m.title).join("、")}>+{more.length}</span>}
                     </button>
                   );
                 }),
@@ -269,9 +282,7 @@ export function TimelineView({ data, version, playingSongId, onOpenPerson, onOpe
           <Cover path={tip.r.coverPath} size={40} rounded={6} />
           <span>
             <b>{tip.r.title}</b>
-            <small>
-              {tip.r.date} · {tip.r.tracks} 首
-            </small>
+            <small>{tr("{date} · {tracks} 首", { date: tip.r.date, tracks: tip.r.tracks })}</small>
           </span>
         </div>
       )}

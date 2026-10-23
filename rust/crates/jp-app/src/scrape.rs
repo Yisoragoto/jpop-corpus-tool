@@ -59,10 +59,29 @@ pub fn spawn_batch<R: Runtime>(
     db_path: std::path::PathBuf,
     covers_dir: std::path::PathBuf,
     song_ids: Vec<String>,
+    sources: jp_scraper::timed_sources::SourceOptions,
 ) -> Result<()> {
     spawn(app, job, "track", move |cancelled, progress| {
-        jp_scrape::run_batch(&db_path, &covers_dir, &song_ids, cancelled, progress)
+        jp_scrape::run_batch(&db_path, &covers_dir, &song_ids, apple_source(&sources), cancelled, progress)
     }, "刮削作业中断")
+}
+
+/// 设置里开了 Apple Music 而且填了开发者令牌时，给 resolver 的（地区, 令牌）
+pub fn apple_source(options: &jp_scraper::timed_sources::SourceOptions) -> Option<(&str, &str)> {
+    (options.apple && !options.apple_developer_token.is_empty())
+        .then_some((options.apple_storefront.as_str(), options.apple_developer_token.as_str()))
+}
+
+/// 后台给已经识别过的歌补专辑信息（发行类型、曲目数）。和刮削共用作业标志
+pub fn spawn_album_fill<R: Runtime>(
+    app: AppHandle<R>,
+    job: Arc<ScrapeJob>,
+    db_path: std::path::PathBuf,
+    targets: Vec<(i64, String)>,
+) -> Result<()> {
+    spawn(app, job, "album", move |cancelled, progress| {
+        jp_scrape::run_album_fill(&db_path, targets, cancelled, progress)
+    }, "补专辑信息中断")
 }
 
 /// 后台刮一批歌手。和曲目共用同一个作业标志——两边都要排 MusicBrainz

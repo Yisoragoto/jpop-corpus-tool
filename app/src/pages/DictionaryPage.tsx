@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../events";
 
 import { CommandButton } from "../components/CommandButton";
 import {
@@ -21,6 +21,7 @@ import {
 } from "../dict/api";
 import { errorMessage, pickDictionaryFiles } from "../dict/DictionaryManager";
 import { invalidateDictionaryStyles, LookupResults } from "../dict/LookupResults";
+import { tr } from "../i18n";
 
 interface Props {
   onError: (message: string) => void;
@@ -101,7 +102,7 @@ export function DictionaryPage({ onError, onOpenSettings }: Props) {
     };
   }, [query, dictionaries]);
 
-  if (dictionaries === null) return <div className="page muted pad">加载中…</div>;
+  if (dictionaries === null) return <div className="page muted pad">{tr("加载中…")}</div>;
 
   // ── 一本都没有：给入口，不给空输入框 ──
   if (dictionaries.length === 0) {
@@ -113,15 +114,14 @@ export function DictionaryPage({ onError, onOpenSettings }: Props) {
             <path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v16H6.5A1.5 1.5 0 0 1 5 18.5z" />
             <path d="M9 4v16" />
           </svg>
-          <h2>还没有词典</h2>
+          <h2>{tr("还没有词典")}</h2>
           <p>
-            导入 Yomitan 格式的 zip 就能查词：Jitendex、大辞泉、明鏡、JPDB 词频、アクセント辞典都认。
-            导进来之后，曲库里点歌词上的词也会出释义。
+            {tr("导入 Yomitan 格式的 zip 就能查词：Jitendex、大辞泉、明鏡、JPDB 词频、アクセント辞典都认。导进来之后，曲库里点歌词上的词也会出释义。")}
           </p>
           <div className="empty-actions">
             <CommandButton
               icon="import"
-              label={importing ? "正在导入…" : "导入 .zip"}
+              label={importing ? tr("正在导入…") : tr("导入 .zip")}
               onClick={() => {
                 void pickDictionaryFiles(onError).then(async (paths) => {
                   if (paths.length === 0) return;
@@ -135,16 +135,14 @@ export function DictionaryPage({ onError, onOpenSettings }: Props) {
             {migratable.length > 0 && (
               <CommandButton
                 icon="folder"
-                label={`从旧版迁移 ${migratable.length} 本`}
+                label={tr("从旧版迁移 {length} 本", { length: migratable.length })}
                 onClick={() => void dictApi.importStart(migratable.map((s) => s.path)).then(() => setImporting(true))}
                 disabled={importing}
                 title={migratable.map((s) => s.name).join("\n")}
               />
             )}
           </div>
-          <button className="link-btn" onClick={onOpenSettings}>
-            在设置里管理词典
-          </button>
+          <button className="link-btn" onClick={onOpenSettings}>{tr("在设置里管理词典")}</button>
         </div>
       </div>
     );
@@ -158,18 +156,14 @@ export function DictionaryPage({ onError, onOpenSettings }: Props) {
         <input
           className="search dict-query"
           lang="ja"
-          placeholder="查词：输入日语，活用形、片假名、罗马字都可以"
+          placeholder={tr("查词：输入日语，活用形、片假名、罗马字都可以")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           autoFocus
         />
         <div className="dict-subbar">
-          <span className="muted small">
-            {enabled} / {dictionaries.length} 本启用
-          </span>
-          <button className="link-btn" onClick={onOpenSettings}>
-            管理词典
-          </button>
+          <span className="muted small">{tr("{enabled} / {length} 本启用", { enabled, length: dictionaries.length })}</span>
+          <button className="link-btn" onClick={onOpenSettings}>{tr("管理词典")}</button>
         </div>
         <LookupResults result={result} loading={looking} error={lookupError} onLookup={setQuery} />
       </div>

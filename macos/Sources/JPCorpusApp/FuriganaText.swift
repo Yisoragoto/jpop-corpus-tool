@@ -1,5 +1,6 @@
 import JPCore
 import SwiftUI
+import JPCorpusModel
 
 /// 带振假名的一行歌词。注音位置是 Rust 按字符（Unicode 码点）算的，这里也按码点切。
 ///

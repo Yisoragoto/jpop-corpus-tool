@@ -905,7 +905,7 @@ dependencies = [
  "rustc_version",
  "toml 1.1.5+spec-1.1.0",
  "vswhom",
- "winreg",
+ "winreg 0.55.0",
 ]
 
 [[package]]
@@ -1913,7 +1913,7 @@ dependencies = [
 
 [[package]]
 name = "jp-app"
-version = "0.3.0"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "encoding_rs",
@@ -1954,14 +1954,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "jp-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-anki",
+ "jp-corpus",
+ "jp-import",
+ "jp-scraper",
+ "jp-tokenizer",
+ "serde_json",
+]
+
+[[package]]
 name = "jp-corpus"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "jp-normalize",
+ "rodio",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -2039,8 +2054,12 @@ name = "jp-scraper"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
+ "flate2",
+ "jp-corpus",
  "jp-normalize",
  "regex",
+ "roxmltree",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3293,6 +3312,12 @@ checksum = "f7a9846f28f3dec5c369fa0bf68bfa35bff5017d71bcd52fd7f864df948ded73"
 dependencies = [
  "rodio",
 ]
+
+[[package]]
+name = "roxmltree"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "rsqlite-vfs"
@@ -4826,6 +4851,7 @@ dependencies = [
  "ureq-proto",
  "utf8-zero",
  "webpki-roots",
+ "winreg 0.56.0",
 ]
 
 [[package]]
@@ -5603,6 +5629,16 @@ name = "winreg"
 version = "0.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "winreg"
+version = "0.56.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
 dependencies = [
  "cfg-if",
  "windows-sys 0.59.0",

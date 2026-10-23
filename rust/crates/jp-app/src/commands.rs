@@ -235,6 +235,24 @@ pub fn fonts_catalog<R: tauri::Runtime>(
     })
 }
 
+/// 导入字体压缩包：把里面的字体解到语料库目录的 `fonts/<包名>/`，返回解出来的文件，界面再当普通导入字体记住
+#[tauri::command]
+pub async fn fonts_import_archive<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    path: String,
+) -> CmdResult<Vec<String>> {
+    blocking(app, move |state| {
+        let root = state
+            .db_path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        let files = crate::fonts::extract_font_archive(std::path::Path::new(&path), &root.join("fonts"))?;
+        Ok(files.into_iter().map(|p| p.display().to_string()).collect())
+    })
+    .await
+}
+
 /// 一行歌词的振假名：要注音的那几段在 `text` 里的位置（按字符数）
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -267,6 +285,43 @@ pub fn lyrics_furigana(
         });
     }
     Ok(out)
+}
+
+/// 这几行歌词的词级时间（逐字歌词、手动校准）。词云点歌「从关键词开始放」用。
+#[tauri::command(async)]
+pub fn word_timings(
+    state: State<'_, AppState>,
+    utterance_ids: Vec<i64>,
+) -> CmdResult<Vec<jp_corpus::word_timing::WordTiming>> {
+    Ok(state.corpus().word_timings(&utterance_ids)?)
+}
+
+/// 手动校准：这一行第 `char_start..char_end` 个字从 `start_sec` 开始唱。存进库，以后每次都从这里放。
+#[tauri::command(async)]
+pub fn word_time_set(
+    state: State<'_, AppState>,
+    utterance_id: i64,
+    char_start: i64,
+    char_end: i64,
+    start_sec: f64,
+) -> CmdResult<()> {
+    Ok(state.corpus().set_word_time(utterance_id, char_start, char_end, start_sec)?)
+}
+
+/// 撤掉一处手动校准。
+#[tauri::command(async)]
+pub fn word_time_clear(state: State<'_, AppState>, utterance_id: i64, char_start: i64) -> CmdResult<()> {
+    Ok(state.corpus().clear_word_time(utterance_id, char_start)?)
+}
+
+/// 词云合并异体写法用：每个词元的正规化写法和读音。没装分词词典就返回空表（词云照常显示，只是不合并）。
+#[tauri::command]
+pub async fn lemma_forms<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    lemmas: Vec<String>,
+) -> CmdResult<Vec<jp_tokenizer::LemmaForm>> {
+    // 几百个词各分一次，几十毫秒；放阻塞线程池，别占主线程
+    blocking(app, move |state| Ok(state.analyzer().map(|a| a.lemma_forms(&lemmas)).unwrap_or_default())).await
 }
 
 // ────────────────────────────── 检索 ──────────────────────────────
@@ -798,25 +853,23 @@ pub fn lyrics_fill_start<R: tauri::Runtime>(
     state: State<'_, AppState>,
     song_ids: Option<Vec<String>>,
 ) -> CmdResult<()> {
-    crate::lyrics::spawn_fill(
-        app,
-        state.lyrics_job(),
-        state.db_path.clone(),
-        state.lyrics_dir.clone(),
-        song_ids,
-    )?;
+    let ids = crate::lyrics::missing(state.corpus().connection())?.into_iter()
+        .filter(|t| song_ids.as_ref().is_none_or(|ids| ids.contains(&t.song_id))).map(|t| t.song_id).collect();
+    let options = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).options();
+    crate::lyric_upgrade::enqueue(app, state.lyric_upgrades.clone(), state.db_path.clone(), state.lyrics_dir.clone(), ids, options)?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn lyrics_fill_cancel(state: State<'_, AppState>) -> CmdResult<()> {
     state.lyrics_job().request_cancel();
+    state.lyric_upgrades.cancel();
     Ok(())
 }
 
 #[tauri::command]
 pub fn lyrics_fill_running(state: State<'_, AppState>) -> CmdResult<bool> {
-    Ok(state.lyrics_job().is_running())
+    Ok(state.lyrics_job().is_running() || state.lyric_upgrades.status().running)
 }
 
 /// 单首：先看音频旁边有没有 .lrc，没有再上网搜。挑不出来返回 null。
@@ -829,19 +882,15 @@ pub async fn lyrics_fill_one<R: tauri::Runtime>(
 ) -> CmdResult<Option<crate::lyrics::Attached>> {
     blocking(app, move |state| {
         let targets = crate::lyrics::missing(state.corpus().connection())?;
-        let Some(target) = targets.into_iter().find(|t| t.song_id == song_id) else {
+        let Some(_target) = targets.into_iter().find(|t| t.song_id == song_id) else {
             anyhow::bail!("{song_id} 已经有歌词了，先清掉再补，或者直接导入一份文件覆盖");
         };
-        let provider = crate::lyrics::provider();
-        let lyrics_dir = state.lyrics_dir.clone();
-        let mut corpus = state.corpus();
-        crate::lyrics::fill_one(
-            corpus.connection_mut(),
-            &lyrics_dir,
-            &provider,
-            &target,
-            state.analyzer().as_deref(),
-        )
+        let options = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).options();
+        let mut conn = rusqlite::Connection::open(&state.db_path)?;
+        conn.busy_timeout(std::time::Duration::from_secs(10))?;
+        let result = crate::lyric_upgrade::fetch_one(&mut conn, &state.lyrics_dir, &song_id, &options, state.analyzer().as_deref())?;
+        if let Some((attached,_)) = result { return Ok(Some(attached)); }
+        Ok(None)
     })
     .await
 }
@@ -871,6 +920,87 @@ pub async fn lyrics_import_file<R: tauri::Runtime>(
 }
 
 // ──────────────────────────── 检查更新 ────────────────────────────
+
+#[tauri::command(async)]
+pub fn lyrics_sources_get(state: State<'_, AppState>) -> CmdResult<crate::timed_lyrics::SettingsView> {
+    Ok(state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).view())
+}
+
+#[tauri::command(async)]
+pub fn lyrics_sources_set(state: State<'_, AppState>, config: crate::timed_lyrics::SettingsInput) -> CmdResult<crate::timed_lyrics::SettingsView> {
+    Ok(state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).configure(config)?)
+}
+
+#[tauri::command(async)]
+pub fn lyrics_upgrade_status(state: State<'_, AppState>) -> crate::lyric_upgrade::Progress { state.lyric_upgrades.status() }
+
+#[tauri::command(async)]
+pub fn lyrics_upgrade_cancel(state: State<'_, AppState>) { state.lyric_upgrades.cancel(); }
+
+#[tauri::command(async)]
+pub fn lyrics_upgrade_start<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, AppState>) -> CmdResult<()> {
+    let ids = crate::timed_lyrics::targets(state.corpus().connection())?.into_iter().map(|t| t.song_id).collect();
+    let options = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).options();
+    crate::lyric_upgrade::enqueue(app, state.lyric_upgrades.clone(), state.db_path.clone(), state.lyrics_dir.clone(), ids, options)?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn lyrics_timed_targets(state: State<'_, AppState>) -> CmdResult<Vec<crate::timed_lyrics::Target>> {
+    Ok(crate::timed_lyrics::targets(state.corpus().connection())?)
+}
+
+#[tauri::command]
+pub async fn lyrics_timed_search<R: tauri::Runtime>(app: tauri::AppHandle<R>, song_id: String) -> CmdResult<crate::timed_lyrics::SearchView> {
+    blocking(app, move |state| {
+        let before = crate::timed_lyrics::snapshot(state.corpus().connection(), &song_id)?;
+        let (options, ticket) = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).begin_search(&song_id);
+        // The DB and session locks are both released throughout all network calls.
+        use jp_scraper::providers::LyricsProvider;
+        let mut lyric_options = options.clone();
+        // Apple is configured for the official metadata resolver only.
+        lyric_options.apple = false;
+        let provider = jp_scraper::providers::ConfiguredLyricsProvider(lyric_options);
+        let mut found = provider.search_lyrics(&jp_scraper::SearchQuery {title:before.title.clone(),artist:before.artist.clone(),duration_sec:before.duration,..Default::default()});
+        found.candidates.extend(found.fallback.drain(..).filter_map(crate::timed_lyrics::from_basic));
+        let mut accepted = Vec::new();
+        for candidate in found.candidates {
+            if crate::timed_lyrics::compatible(&before, &candidate) { accepted.push(candidate); }
+            else { found.warnings.push(jp_scraper::timed_sources::SourceWarning { source: candidate.source, message: "有结果，但正文差异过大、没有真实逐字时间或时间轴超出本地音频，未采用".into() }); }
+        }
+        for warning in &mut found.warnings { warning.message = crate::timed_lyrics::redact(&warning.message, &options); }
+        let current_lines = before.line_count();
+        let current_timed_lines = before.timed_lines();
+        let candidates = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).finish_search(ticket, &before, accepted)?;
+        Ok(crate::timed_lyrics::SearchView { song_id, title: before.title, current_lines, current_timed_lines, candidates, warnings: found.warnings })
+    }).await
+}
+
+#[tauri::command]
+pub async fn lyrics_timed_apply<R: tauri::Runtime>(app: tauri::AppHandle<R>, song_id: String, candidate_id: String) -> CmdResult<crate::lyrics::Attached> {
+    blocking(app, move |state| {
+        let pending = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).candidate(&song_id, &candidate_id)?;
+        let attached = crate::timed_lyrics::apply(state.corpus().connection_mut(), &state.lyrics_dir, &pending, state.analyzer().as_deref())?;
+        state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).forget(&song_id);
+        Ok(attached)
+    }).await
+}
+
+#[tauri::command(async)]
+pub fn update_preferences() -> crate::update::PreferenceView { crate::update::preferences() }
+
+#[tauri::command(async)]
+pub fn update_set_channel(state: State<'_, AppState>, channel: crate::update::Channel) -> CmdResult<crate::update::PreferenceView> {
+    jp_corpus::update_settings::set_channel(channel)?;
+    state.updates().clear();
+    Ok(crate::update::preferences())
+}
+
+#[tauri::command(async)]
+pub fn update_skip(channel: crate::update::Channel, id: String) -> CmdResult<crate::update::PreferenceView> {
+    jp_corpus::update_settings::skip(channel, &id)?;
+    Ok(crate::update::preferences())
+}
 
 /// 问一次 GitHub Releases：有没有比正在跑的这一版更新的。
 ///
@@ -1474,6 +1604,7 @@ pub struct ImportProgress {
 pub async fn run_import<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     tokenize: Option<bool>,
+    fetch_lyrics: Option<bool>,
 ) -> CmdResult<crate::library_admin::Maintained<jp_import::ImportReport>> {
     let handle = app.clone();
     blocking(app, move |state| {
@@ -1536,6 +1667,13 @@ pub async fn run_import<R: tauri::Runtime>(
         state.pending_scan().clear();
         // 新歌追加进 metadata/songs.csv（Python 版加歌时也追加）
         let csv = crate::library_admin::sync_imported(state, &report);
+        if fetch_lyrics.unwrap_or(false) {
+            let ids = report.tracks.iter().filter(|t| matches!(t.outcome,jp_import::Outcome::Imported { .. })).map(|t|t.song_id.clone()).collect();
+            let options = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).options();
+            if let Err(error) = crate::lyric_upgrade::enqueue(handle.clone(), state.lyric_upgrades.clone(), state.db_path.clone(), state.lyrics_dir.clone(), ids, options) {
+                crate::log::warn(format!("导入后歌词队列启动失败：{error:#}"));
+            }
+        }
         Ok(crate::library_admin::Maintained { report, csv })
     })
     .await
@@ -2033,7 +2171,8 @@ pub fn scrape_track(
 ) -> CmdResult<jp_scraper::ScrapeSummary> {
     // 要联网（识别 + 下封面），用自己的连接，见 `own_connection`
     let conn = &own_connection(&state)?;
-    Ok(crate::scrape::scrape_track(conn, &state.covers_dir, &song_id)?)
+    let options = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).options();
+    Ok(crate::scrape::scrape_track(conn, &state.covers_dir, &song_id, crate::scrape::apple_source(&options))?)
 }
 
 /// 批量刮削，后台跑。进度走 `scrape://progress` 事件。
@@ -2058,7 +2197,19 @@ pub fn scrape_start<R: tauri::Runtime>(
         state.db_path.clone(),
         state.covers_dir.clone(),
         song_ids,
+        state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).options(),
     )?;
+    Ok(total)
+}
+
+/// 给已经识别过的歌补专辑信息（发行类型、曲目数）。返回要查的歌数，0 表示都齐了。
+#[tauri::command(async)]
+pub fn scrape_album_fill_start<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, AppState>) -> CmdResult<usize> {
+    let targets = crate::scrape::album_fill_targets(state.corpus().connection())?;
+    let total = targets.len();
+    if total > 0 {
+        crate::scrape::spawn_album_fill(app, state.scrape_job(), state.db_path.clone(), targets)?;
+    }
     Ok(total)
 }
 

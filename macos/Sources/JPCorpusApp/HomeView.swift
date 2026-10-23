@@ -1,5 +1,6 @@
 import JPCore
 import SwiftUI
+import JPCorpusModel
 
 /// 首页：打开就能接着干的地方。和 Windows 版同一份数据（homeSummary）：
 /// 继续听、今天听了多少、听过的歌覆盖了多少词、最近播放、收藏、最近添加。每一块都点得进去。
@@ -60,7 +61,7 @@ struct HomeView: View {
     }
 
     private func load() async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         do {
             home = try await client.homeSummary()
         } catch {

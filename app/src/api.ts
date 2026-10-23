@@ -11,6 +11,10 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+import type { LemmaForm } from "./wordCloud";
+import type { WordTiming } from "./wordTiming";
+import { tr, trBackend, trPayload } from "./i18n";
+
 // ────────────────────────────── 曲库 ──────────────────────────────
 
 export interface Track {
@@ -37,6 +41,10 @@ export interface Album {
   artworkPath: string;
   trackCount: number;
   totalDurationSec: number;
+  /** 发行类型，刮削来源原样（Single / EP / Album，Deezer 是小写）。还没补到是空串 */
+  releaseType: string;
+  /** 整张碟的曲目数；trackCount 是库里收了几首 */
+  releaseTrackCount: number | null;
 }
 
 export interface PersonSummary {
@@ -730,7 +738,7 @@ export const RATE_STEPS = [0.5, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0] as const;
 export const PITCH_STEPS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6] as const;
 
 export function pitchLabel(semitones: number): string {
-  return semitones === 0 ? "原调" : `${semitones > 0 ? "+" : ""}${semitones} 半音`;
+  return semitones === 0 ? tr("原调") : tr("{v}{semitones} 半音", { v: semitones > 0 ? "+" : "", semitones });
 }
 
 // ────────────────────────────── 调用 ──────────────────────────────
@@ -764,10 +772,12 @@ function kicked<T>(pending: Promise<T>): Promise<T> {
 
 export async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   try {
-    return await invoke<T>(cmd, args);
+    // 结果里后端写的报错、提示句：英文界面下换成英文（trPayload 只认那几个字段名）
+    return trPayload(await invoke<T>(cmd, args));
   } catch (err) {
-    if (isCommandError(err)) throw new Error(err.message);
-    throw err instanceof Error ? err : new Error(String(err));
+    // 后端的报错是中文；英文界面下按 Rust 源码里的模板换成英文（locales/backend.ts）
+    if (isCommandError(err)) throw new Error(trBackend(err.message));
+    throw err instanceof Error ? err : new Error(trBackend(String(err)));
   }
 }
 
@@ -914,7 +924,7 @@ export const api = {
   scanFiles: (paths: string[], maxDepth?: number) =>
     call<ScanResult>("scan_files", { paths, maxDepth }),
   /** 执行上一次扫描的结果。写库就在这一步。 */
-  runImport: (tokenize?: boolean) => call<ImportReport>("run_import", { tokenize }),
+  runImport: (tokenize?: boolean, fetchLyrics = true) => call<ImportReport>("run_import", { tokenize, fetchLyrics }),
   /**
    * 语料库的文件夹里有没有还没导入的音频。只读，**不记成待导入的一批**——
    * 要导的话拿结果里的路径再调 `scanFiles`。两个参数是用户说过「别再看 / 别再提」的（见 `newSongs.ts`）。
@@ -934,6 +944,18 @@ export const api = {
   /** 用自己的一份歌词文件覆盖这首歌的歌词。 */
   lyricsImportFile: (songId: string, path: string) =>
     call<AttachedLyrics>("lyrics_import_file", { songId, path }),
+  /** 只列已有逐行歌词、仍缺真实逐字时间的歌，不触发在线搜索。 */
+  lyricsUpgradeStart: () => call<void>("lyrics_upgrade_start"),
+  lyricsUpgradeCancel: () => call<void>("lyrics_upgrade_cancel"),
+  lyricsUpgradeStatus: () => call<LyricsUpgradeProgress>("lyrics_upgrade_status"),
+  lyricsTimedTargets: () => call<TimedTarget[]>("lyrics_timed_targets"),
+  lyricsTimedSearch: (songId: string) => call<TimedSearch>("lyrics_timed_search", { songId }),
+  lyricsTimedApply: (songId: string, candidateId: string) =>
+    call<AttachedLyrics>("lyrics_timed_apply", { songId, candidateId }),
+  lyricsSourcesGet: () => call<TimedSourceSettings>("lyrics_sources_get"),
+  /** secret 缺省保留，空字符串清除；只发送给后端，不在前端持久化。 */
+  lyricsSourcesSet: (config: TimedSourceConfig) =>
+    call<TimedSourceSettings>("lyrics_sources_set", { config }),
 
   // 数据迁移
   /** 预览：把那个目录的数据搬过来会发生什么。只读。 */
@@ -962,7 +984,18 @@ export const api = {
 
   // 检查更新
   /** 问一次 GitHub Releases：有没有比正在跑的这一版更新的。 */
+  /** 这几行歌词的词级时间（逐字歌词 lrc、手动校准 manual） */
+  wordTimings: (utteranceIds: number[]) => call<WordTiming[]>("word_timings", { utteranceIds }),
+  /** 手动校准：这一行第 charStart..charEnd 个字从 startSec 开始 */
+  wordTimeSet: (utteranceId: number, charStart: number, charEnd: number, startSec: number) =>
+    call<void>("word_time_set", { utteranceId, charStart, charEnd, startSec }),
+  wordTimeClear: (utteranceId: number, charStart: number) => call<void>("word_time_clear", { utteranceId, charStart }),
+  /** 词元的正规化写法和读音（词云合并异体写法用）。没装分词词典时是空表 */
+  lemmaForms: (lemmas: string[]) => call<LemmaForm[]>("lemma_forms", { lemmas }),
   updateCheck: () => call<UpdateStatus>("update_check"),
+  updatePreferences: () => call<UpdatePreferences>("update_preferences"),
+  updateSetChannel: (channel: UpdateChannel) => call<UpdatePreferences>("update_set_channel", { channel }),
+  updateSkip: (channel: UpdateChannel, id: string) => call<UpdatePreferences>("update_skip", { channel, id }),
   /** 最近几次发布，给「查看更新日志」用。 */
   updateChangelog: (limit?: number) => call<ReleaseInfo[]>("update_changelog", { limit }),
   /**
@@ -991,6 +1024,8 @@ export const api = {
   /** 批量刮削，后台跑。返回这次要刮几首，进度走 scrape://progress 事件。 */
   scrapeStart: (onlyMissing?: boolean, limit?: number) =>
     call<number>("scrape_start", { onlyMissing, limit }),
+  /** 给已识别的歌补专辑信息（发行类型、曲目数）。返回要查的歌数，0 表示都齐了 */
+  scrapeAlbumFillStart: () => call<number>("scrape_album_fill_start"),
   scrapeCancel: () => call<void>("scrape_cancel"),
   scrapeIsRunning: () => call<boolean>("scrape_is_running"),
   /** 用户在复核界面选定一条候选。真的会写 songs、信用和封面。 */
@@ -1071,31 +1106,31 @@ export const api = {
 
 /** UPOS → 中文标签。只覆盖 UI 里会显示的那些。 */
 export const POS_LABELS: Record<string, string> = {
-  NOUN: "名词",
-  PROPN: "专名",
-  VERB: "动词",
-  ADJ: "形容词",
-  ADV: "副词",
-  AUX: "助动词",
-  PRON: "代词",
-  DET: "连体词",
-  NUM: "数词",
-  ADP: "助词",
-  SCONJ: "接续助词",
-  CCONJ: "接续词",
-  PART: "终助词",
-  INTJ: "感叹词",
+  NOUN: tr("名词"),
+  PROPN: tr("专名"),
+  VERB: tr("动词"),
+  ADJ: tr("形容词"),
+  ADV: tr("副词"),
+  AUX: tr("助动词"),
+  PRON: tr("代词"),
+  DET: tr("连体词"),
+  NUM: tr("数词"),
+  ADP: tr("助词"),
+  SCONJ: tr("接续助词"),
+  CCONJ: tr("接续词"),
+  PART: tr("终助词"),
+  INTJ: tr("感叹词"),
 };
 
 /** 实词。只有这些在歌词里可点击——助词点开也没有研究价值。 */
 export const CONTENT_POS = new Set(["NOUN", "PROPN", "VERB", "ADJ", "ADV"]);
 
 export const ROLE_LABELS: Record<string, string> = {
-  lyricist: "作词",
-  composer: "作曲",
-  arranger: "编曲",
+  lyricist: tr("作词"),
+  composer: tr("作曲"),
+  arranger: tr("编曲"),
   translator: "translator",
-  performer: "演唱",
+  performer: tr("演唱"),
 };
 
 /** 长时段显示：14.7 小时这种。总时长用它，单曲用 formatDuration。 */
@@ -1103,8 +1138,8 @@ export function formatLongDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "—";
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.round((seconds % 3600) / 60);
-  if (hours === 0) return `${minutes} 分`;
-  return `${hours} 小时 ${minutes} 分`;
+  if (hours === 0) return tr("{minutes} 分", { minutes });
+  return tr("{hours} 小时 {minutes} 分", { hours, minutes });
 }
 
 export function formatDuration(seconds: number | null): string {
@@ -1196,7 +1231,64 @@ export interface MissingLyrics {
 }
 
 /** 歌词是哪来的。 */
-export type LyricsSource = "embedded" | "sibling" | "netease" | "manual";
+export type LyricsSource = "embedded" | "sibling" | "netease" | "manual" | "qq" | "kugou" | "amll" | "apple" | "lrclib";
+
+export interface LyricsUpgradeProgress {
+  running: boolean; cancelled: boolean; total: number; done: number; upgraded: number; lineFilled: number; skipped: number; notFound: number; failed: number; title: string; error: string;
+  results: { songId: string; title: string; status: string; source: string; message: string }[];
+}
+
+export interface TimedTarget {
+  songId: string;
+  title: string;
+  artist: string;
+  lyricLines: number;
+  /** 仅计来源提供的真实逐字时间，不含按字数估算。 */
+  timedLines: number;
+}
+
+export interface TimedCandidate {
+  id: string;
+  source: string;
+  format: string;
+  title: string;
+  artist: string;
+  lineCount: number;
+  timedLineCount: number;
+  /** 增量可选字段；缺省时只按实际逐字数量和明确的格式展示精度。 */
+  mode?: "karaoke" | "lineSynced" | "plain";
+  preview: string[];
+  matchNote: string;
+}
+
+export interface SourceWarning {
+  source: string;
+  message: string;
+}
+
+export interface TimedSearch {
+  songId: string;
+  title: string;
+  currentLines: number;
+  currentTimedLines: number;
+  candidates: TimedCandidate[];
+  warnings: SourceWarning[];
+}
+
+export interface TimedSourceConfig {
+  netease: boolean;
+  qq: boolean;
+  kugou: boolean;
+  amll: boolean;
+  lrclib: boolean;
+  apple: boolean;
+  appleStorefront: string;
+  appleDeveloperToken?: string;
+}
+
+export interface TimedSourceSettings extends Omit<TimedSourceConfig, "appleDeveloperToken"> {
+  appleDeveloperTokenSet: boolean;
+}
 
 /** 挂上歌词之后的结果。 */
 export interface AttachedLyrics {
@@ -1336,7 +1428,7 @@ export interface DictProgress {
 export const DICT_DOWNLOAD_BYTES = 45_128_544;
 
 /** 后端说「没有词典」时错误里一定有这一句，界面据此换成「下载」那条横幅 */
-export const NO_DICTIONARY = "找不到 Sudachi 词典";
+export const NO_DICTIONARY = tr("找不到 Sudachi 词典");
 
 /** 一次发布里能装的那个文件（`update_check` 给的，只用来显示；下载时只回传版本号）。 */
 export interface UpdateAsset {
@@ -1349,6 +1441,7 @@ export interface UpdateAsset {
 
 /** 一次发布。`notes` 是 Markdown 原文。 */
 export interface ReleaseInfo {
+  buildId: string | null;
   version: string;
   tag: string;
   name: string;
@@ -1361,9 +1454,22 @@ export interface ReleaseInfo {
 }
 
 export interface UpdateStatus {
+  channel: UpdateChannel;
+  buildId: string;
+  skipped: boolean;
+  message: string;
   current: string;
   latest: ReleaseInfo | null;
   updateAvailable: boolean;
+}
+
+export type UpdateChannel = "stable" | "debug";
+export interface UpdatePreferences {
+  channel: UpdateChannel;
+  current: string;
+  buildId: string;
+  skippedStable: string;
+  skippedDebug: string;
 }
 
 /** 下载进度事件（`update://progress`）。 */
@@ -1376,10 +1482,15 @@ export interface UpdateProgress {
 }
 
 export const LYRICS_SOURCE_LABELS: Record<LyricsSource, string> = {
-  embedded: "音频文件内嵌",
-  sibling: "音频旁边的 .lrc",
-  netease: "在线搜到",
-  manual: "手动导入",
+  embedded: tr("音频文件内嵌"),
+  sibling: tr("音频旁边的 .lrc"),
+  netease: tr("在线搜到"),
+  manual: tr("手动导入"),
+  qq: tr("QQ 音乐"),
+  kugou: tr("酷狗音乐"),
+  amll: "AMLL",
+  apple: tr("Apple Music（元数据）"),
+  lrclib: "LRCLIB",
 };
 
 export type ImportOutcome =
@@ -1423,11 +1534,11 @@ export interface ImportProgress {
 }
 
 export const ACTION_LABELS: Record<ImportAction["kind"], string> = {
-  new: "新增",
-  alreadyImported: "已在库中",
-  possibleDuplicate: "疑似重复",
-  duplicateInBatch: "本批重复",
-  skipped: "跳过",
+  new: tr("新增"),
+  alreadyImported: tr("已在库中"),
+  possibleDuplicate: tr("疑似重复"),
+  duplicateInBatch: tr("本批重复"),
+  skipped: tr("跳过"),
 };
 
 // ────────────────────────────── 刮削 ──────────────────────────────
@@ -1542,26 +1653,26 @@ export interface ScrapeProgress {
 }
 
 export const SCRAPE_STATUS_LABELS: Record<ScrapeStatusName, string> = {
-  pending: "待刮",
-  running: "进行中",
-  success: "已匹配",
-  low_confidence: "需确认",
-  failed: "失败",
-  skipped: "已跳过",
+  pending: tr("待刮"),
+  running: tr("进行中"),
+  success: tr("已匹配"),
+  low_confidence: tr("需确认"),
+  failed: tr("失败"),
+  skipped: tr("已跳过"),
 };
 
 /** 失败原因 → 该怎么办。分类的意义就在这里。 */
 export const ERROR_HINTS: Record<string, string> = {
-  timeout: "请求超时，稍后重试",
-  rate_limit: "被限流，等一会儿再重试",
-  network: "网络不通",
-  unavailable: "对方服务暂时不可用",
-  invalid_response: "返回结构不对，可能是接口变了",
-  not_found: "对方明确说没有这条记录",
-  no_results: "搜索没有结果，改写法或换源才有用，重试没用",
-  no_match: "有候选但都不够像，需要人工挑",
-  download_failed: "元数据对上了，封面没下下来",
-  unknown: "未分类的错误",
+  timeout: tr("请求超时，稍后重试"),
+  rate_limit: tr("被限流，等一会儿再重试"),
+  network: tr("网络不通"),
+  unavailable: tr("对方服务暂时不可用"),
+  invalid_response: tr("返回结构不对，可能是接口变了"),
+  not_found: tr("对方明确说没有这条记录"),
+  no_results: tr("搜索没有结果，改写法或换源才有用，重试没用"),
+  no_match: tr("有候选但都不够像，需要人工挑"),
+  download_failed: tr("元数据对上了，封面没下下来"),
+  unknown: tr("未分类的错误"),
 };
 
 // ────────────────────────── 歌手 / 专辑封面 ──────────────────────────
@@ -1590,6 +1701,8 @@ export interface Completeness {
   skipped: number;
   trackCovers: CompletenessCount;
   albumCovers: CompletenessCount;
+  /** 发行类型和整张碟曲目数都有了的专辑 */
+  albumInfo: CompletenessCount;
   lyrics: CompletenessCount;
   durations: CompletenessCount;
 }
@@ -1735,14 +1848,14 @@ export interface AnkiProgress {
 }
 
 export const ANKI_OUTCOME_LABELS: Record<string, string> = {
-  added: "新增",
-  updated: "追加例句",
-  alreadyComplete: "已是最新",
-  skipped: "已有，跳过",
-  noExamples: "无例句",
-  refreshed: "已刷新",
-  notFound: "Anki 里没有",
-  failed: "失败",
+  added: tr("新增"),
+  updated: tr("追加例句"),
+  alreadyComplete: tr("已是最新"),
+  skipped: tr("已有，跳过"),
+  noExamples: tr("无例句"),
+  refreshed: tr("已刷新"),
+  notFound: tr("Anki 里没有"),
+  failed: tr("失败"),
 };
 
 /** 已有这个词时：追加新例句 / 跳过 */

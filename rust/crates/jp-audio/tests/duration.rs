@@ -49,7 +49,7 @@ macro_rules! reference_or_skip {
     () => {
         match reference() {
             Some(r) => r,
-            None => return,
+            None => panic!("未满足 ignore 中声明的测试前置条件"),
         }
     };
 }
@@ -59,6 +59,7 @@ macro_rules! reference_or_skip {
 const TOLERANCE_SEC: f64 = 0.2;
 
 #[test]
+#[ignore = "需要 benchmark/durations_mutagen.json 及其中对应音频"]
 fn rust_durations_match_mutagen() {
     let reference = reference_or_skip!();
     let mut compared = 0usize;
@@ -99,6 +100,7 @@ fn rust_durations_match_mutagen() {
 }
 
 #[test]
+#[ignore = "需要 benchmark/durations_mutagen.json 及其中对应音频"]
 fn durations_are_plausible_for_pop_songs() {
     let reference = reference_or_skip!();
     // 量纲错了的话这条最先炸：秒当成毫秒会得到几十万，反过来会得到零点几
@@ -115,10 +117,11 @@ fn durations_are_plausible_for_pop_songs() {
 }
 
 #[test]
+#[ignore = "需要 benchmark/durations_mutagen.json 及其中对应音频"]
 fn probing_is_repeatable() {
     let reference = reference_or_skip!();
     let Some(track) = reference.tracks.first() else {
-        return;
+        panic!("未满足 ignore 中声明的测试前置条件");
     };
     let path = Path::new(&track.path);
     let first = probe(path);

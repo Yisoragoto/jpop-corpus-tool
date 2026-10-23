@@ -13,6 +13,7 @@ import { rolesOf } from "../libraryIndex";
 import { Avatar } from "./Avatar";
 import { ROLE_COLORS, type DirectoryData } from "./LibraryBrowser";
 import { RelationGraph } from "./RelationGraph";
+import { tr } from "../i18n";
 
 const ROLES = ["performer", "composer", "lyricist", "arranger"] as const;
 
@@ -56,7 +57,7 @@ export function GraphView({ data, initialFocus, onOpenPerson }: Props) {
       return next;
     });
 
-  if (graph === null) return <p className="muted pad">加载中…</p>;
+  if (graph === null) return <p className="muted pad">{tr("加载中…")}</p>;
 
   return (
     <div className="graph-view">
@@ -70,7 +71,7 @@ export function GraphView({ data, initialFocus, onOpenPerson }: Props) {
       />
 
       <div className="graph-controls glass">
-        <input className="search" placeholder="找一个人" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input className="search" placeholder={tr("找一个人")} value={query} onChange={(e) => setQuery(e.target.value)} />
         <div className="role-chips">
           {ROLES.map((r) => (
             <button key={r} className={`chip ${roles.has(r) ? "on" : ""}`} onClick={() => toggleRole(r)}>
@@ -80,19 +81,17 @@ export function GraphView({ data, initialFocus, onOpenPerson }: Props) {
           ))}
         </div>
         <label className="graph-slider">
-          <span>至少一起 {minShared} 首</span>
+          <span>{tr("至少一起 {minShared} 首", { minShared })}</span>
           <input type="range" min={1} max={6} value={minShared} onChange={(e) => setMinShared(Number(e.target.value))} />
         </label>
-        <p className="muted small graph-tip">
-          {graph.nodes.length} 人 · {graph.links.length} 条关系。拖动节点、拖空白处平移、滚轮缩放，双击打开档案
-        </p>
+        <p className="muted small graph-tip">{tr("{length} 人 · {length2} 条关系。拖动节点、拖空白处平移、滚轮缩放，双击打开档案", { length: graph.nodes.length, length2: graph.links.length })}</p>
       </div>
 
       <div className="graph-legend glass" aria-hidden="true">
-        <span><i className="dot" style={{ background: ROLE_COLORS.performer }} />演唱</span>
-        <span><i className="ring" />乐队</span>
-        <span><i className="line" />一起署名</span>
-        <span><i className="line dashed" />成员</span>
+        <span><i className="dot" style={{ background: ROLE_COLORS.performer }} />{tr("演唱")}</span>
+        <span><i className="ring" />{tr("乐队")}</span>
+        <span><i className="line" />{tr("一起署名")}</span>
+        <span><i className="line dashed" />{tr("成员")}</span>
       </div>
 
       {person !== undefined && (
@@ -105,19 +104,15 @@ export function GraphView({ data, initialFocus, onOpenPerson }: Props) {
                 .map((r) => `${ROLE_LABELS[r] ?? r} ${person[r]}`)
                 .join(" · ")}
             </small>
-            <small>
-              {degree} 位合作者
-              {bands.length > 0 && ` · ${bands.map((b) => (b.leftAt ? `曾属 ${b.bandName}` : `${b.bandName} 成员`)).join("、")}`}
+            <small>{tr("{degree} 位合作者", { degree })}{bands.length > 0 && ` · ${bands.map((b) => (b.leftAt ? tr("曾属 {bandName}", { bandName: b.bandName }) : tr("{bandName} 成员", { bandName: b.bandName }))).join(tr("、"))}`}
             </small>
           </div>
           <div className="graph-card-actions">
-            <button className="primary" onClick={() => onOpenPerson(person.id)}>
-              打开档案
-            </button>
+            <button className="primary" onClick={() => onOpenPerson(person.id)}>{tr("打开档案")}</button>
             {around === person.id ? (
-              <button className="btn" onClick={() => setAround(null)}>看全部</button>
+              <button className="btn" onClick={() => setAround(null)}>{tr("看全部")}</button>
             ) : (
-              <button className="btn" onClick={() => setAround(person.id)}>只看附近</button>
+              <button className="btn" onClick={() => setAround(person.id)}>{tr("只看附近")}</button>
             )}
           </div>
         </div>

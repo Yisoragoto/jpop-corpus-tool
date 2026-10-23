@@ -40,6 +40,17 @@ describe("pickLine", () => {
     expect(pickLine(timed, 21)).toBe(3);
   });
 
+  it("invalid or backwards line timestamps do not become highlighted lines", () => {
+    expect(timedLines(lines(-1, NaN, Infinity, 10, 9, null, 20))).toEqual([{ idx: 3, time: 10 }, { idx: 6, time: 20 }]);
+    for (const position of [NaN, Infinity, -1]) expect(pickLine(timedLines(lines(0, 10)), position)).toBe(-1);
+  });
+
+  it("repeated timestamps and repeated choruses keep their original row order", () => {
+    const timed = timedLines(lines(10, 10, 20, 30));
+    expect(pickLine(timed, 10)).toBe(1);
+    expect(pickLine(timed, 30)).toBe(3);
+  });
+
   /**
    * 换歌的一瞬间：歌词已经是新歌的，播放位置还是上一首的（轮询 10Hz，最多差一拍）。
    * 拿旧位置去二分新歌词，找到的是新歌的**末尾**，跟随滚动于是把歌词整个滚到最下面。

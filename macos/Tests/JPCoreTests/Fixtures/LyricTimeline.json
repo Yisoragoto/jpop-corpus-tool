@@ -1,0 +1,593 @@
+[
+  {
+    "name": "unicode-words-with-rest",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 2,
+        "endSec": 2.4,
+        "source": "lrc"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "karaoke",
+      "units": [
+        {
+          "charStart": 0,
+          "charEnd": 2,
+          "startSec": 1,
+          "endSec": 1.4,
+          "source": "lrc"
+        },
+        {
+          "charStart": 2,
+          "charEnd": 5,
+          "startSec": 2,
+          "endSec": 2.4,
+          "source": "lrc"
+        }
+      ]
+    }
+  },
+  {
+    "name": "algorithm-rows-ignored",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 2,
+        "endSec": 2.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": -1,
+        "charEnd": 999,
+        "startSec": -1,
+        "endSec": null,
+        "source": "algorithm"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "karaoke",
+      "units": [
+        {
+          "charStart": 0,
+          "charEnd": 2,
+          "startSec": 1,
+          "endSec": 1.4,
+          "source": "lrc"
+        },
+        {
+          "charStart": 2,
+          "charEnd": 5,
+          "startSec": 2,
+          "endSec": 2.4,
+          "source": "lrc"
+        }
+      ]
+    }
+  },
+  {
+    "name": "manual-onset-is-seek-only",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 2,
+        "endSec": 2.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1.1,
+        "endSec": null,
+        "source": "manual"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "karaoke",
+      "units": [
+        {
+          "charStart": 0,
+          "charEnd": 2,
+          "startSec": 1,
+          "endSec": 1.4,
+          "source": "lrc"
+        },
+        {
+          "charStart": 2,
+          "charEnd": 5,
+          "startSec": 2,
+          "endSec": 2.4,
+          "source": "lrc"
+        }
+      ]
+    }
+  },
+  {
+    "name": "complete-manual-overrides-same-range",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 2,
+        "endSec": 2.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1.1,
+        "endSec": 1.5,
+        "source": "manual"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "karaoke",
+      "units": [
+        {
+          "charStart": 0,
+          "charEnd": 2,
+          "startSec": 1.1,
+          "endSec": 1.5,
+          "source": "manual"
+        },
+        {
+          "charStart": 2,
+          "charEnd": 5,
+          "startSec": 2,
+          "endSec": 2.4,
+          "source": "lrc"
+        }
+      ]
+    }
+  },
+  {
+    "name": "only-manual-anchor-is-not-coverage",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 5,
+        "startSec": 1,
+        "endSec": null,
+        "source": "manual"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "lineSynced",
+      "units": []
+    }
+  },
+  {
+    "name": "only-unknown-source-is-not-coverage",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 5,
+        "startSec": 1,
+        "endSec": 2.4,
+        "source": "unknown"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "lineSynced",
+      "units": []
+    }
+  },
+  {
+    "name": "partial-native-coverage",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "lineSynced",
+      "units": []
+    }
+  },
+  {
+    "name": "missing-native-end",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 2,
+        "endSec": null,
+        "source": "lrc"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "lineSynced",
+      "units": []
+    }
+  },
+  {
+    "name": "backward-native-intervals",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 1.3,
+        "endSec": 2.4,
+        "source": "lrc"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "lineSynced",
+      "units": []
+    }
+  },
+  {
+    "name": "out-of-bounds-unit",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 2.3,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 2,
+        "endSec": 2.4,
+        "source": "lrc"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "lineSynced",
+      "units": []
+    }
+  },
+  {
+    "name": "other-utterance-never-supplies-coverage",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 92,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 92,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 2,
+        "endSec": 2.4,
+        "source": "lrc"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "lineSynced",
+      "units": []
+    }
+  },
+  {
+    "name": "untimed-space-is-not-filled",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "青 空",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 1,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 3,
+        "startSec": 2,
+        "endSec": 2.4,
+        "source": "lrc"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "lineSynced",
+      "units": []
+    }
+  },
+  {
+    "name": "plain-without-any-time",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": null,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "plain",
+      "units": []
+    }
+  },
+  {
+    "name": "actual-units-without-line-onset",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": null,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": 1.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 2,
+        "endSec": 2.4,
+        "source": "lrc"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "karaoke",
+      "units": [
+        {
+          "charStart": 0,
+          "charEnd": 2,
+          "startSec": 1,
+          "endSec": 1.4,
+          "source": "lrc"
+        },
+        {
+          "charStart": 2,
+          "charEnd": 5,
+          "startSec": 2,
+          "endSec": 2.4,
+          "source": "lrc"
+        }
+      ]
+    }
+  },
+  {
+    "name": "explicit-manual-repairs-missing-native-end",
+    "line": {
+      "utteranceId": 91,
+      "lineIdx": 0,
+      "timeSec": 1,
+      "text": "𠮷😀が光",
+      "tokens": []
+    },
+    "endSec": 4,
+    "timings": [
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1,
+        "endSec": null,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 2,
+        "charEnd": 5,
+        "startSec": 2,
+        "endSec": 2.4,
+        "source": "lrc"
+      },
+      {
+        "utteranceId": 91,
+        "charStart": 0,
+        "charEnd": 2,
+        "startSec": 1.1,
+        "endSec": 1.5,
+        "source": "manual"
+      }
+    ],
+    "expected": {
+      "utteranceId": 91,
+      "mode": "karaoke",
+      "units": [
+        {
+          "charStart": 0,
+          "charEnd": 2,
+          "startSec": 1.1,
+          "endSec": 1.5,
+          "source": "manual"
+        },
+        {
+          "charStart": 2,
+          "charEnd": 5,
+          "startSec": 2,
+          "endSec": 2.4,
+          "source": "lrc"
+        }
+      ]
+    }
+  }
+]

@@ -85,14 +85,24 @@ pub fn track_file_for(conn: &rusqlite::Connection, song_id: &str) -> Result<Opti
             },
         )
         .optional()?;
-    let Some(track) = row else { return Ok(None) };
+    let Some(mut track) = row else { return Ok(None) };
 
     // 有原始元数据就用原始的
     let store = ScrapeStore::new(conn);
     if !track.path.is_empty()
         && let Ok(Some(original)) = store.original_metadata(&track.path)
     {
-        return Ok(Some(original));
+        track = original;
+    }
+    // ISRC / MusicBrainz 录音 id 库里没存，从音频标签读
+    if !track.path.is_empty() && (track.isrc.is_empty() || track.recording_mbid.is_empty()) {
+        let tags = jp_import::scan::scan_file(std::path::Path::new(&track.path));
+        if track.isrc.is_empty() {
+            track.isrc = tags.isrc;
+        }
+        if track.recording_mbid.is_empty() {
+            track.recording_mbid = tags.recording_mbid;
+        }
     }
     Ok(Some(track))
 }
@@ -192,64 +202,16 @@ fn apply_candidate(
     candidate: &jp_scraper::ScrapeCandidate,
     confidence: Option<f64>,
 ) -> Result<usize> {
-    // 先看哪几个字段是空的。
-    //
-    // **不能用 `execute` 的返回值当「填了几个」**：那是受影响的行数，
-    // UPDATE 永远命中这一行，所以恒为 1，不管 CASE 里有没有真的改动。
-    let (album, year, genre): (String, String, String) = conn.query_row(
-        "SELECT COALESCE(album,''), COALESCE(year,''), COALESCE(genre,'')
-         FROM songs WHERE id=?1",
-        rusqlite::params![song_id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    )?;
-    let filled = [
-        (album.is_empty(), &candidate.album),
-        (year.is_empty(), &candidate.year),
-        (genre.is_empty(), &candidate.genre),
-    ]
-    .iter()
-    .filter(|(empty, value)| *empty && !value.is_empty())
-    .count();
-    let provenance = |field: &str| {
-        jp_corpus::lineage::set_provenance(conn, "song", song_id, field, &candidate.provider, &candidate.provider_id, confidence)
-    };
-    for (field, empty, value) in [
-        ("album", album.is_empty(), &candidate.album),
-        ("year", year.is_empty(), &candidate.year),
-        ("genre", genre.is_empty(), &candidate.genre),
-    ] {
-        if empty && !value.is_empty() {
-            provenance(field)?;
-        }
-    }
-
-    conn.execute(
-        "UPDATE songs SET
-            album = CASE WHEN COALESCE(album,'')='' THEN ?1 ELSE album END,
-            year  = CASE WHEN COALESCE(year,'')=''  THEN ?2 ELSE year  END,
-            genre = CASE WHEN COALESCE(genre,'')='' THEN ?3 ELSE genre END
-         WHERE id=?4",
-        rusqlite::params![candidate.album, candidate.year, candidate.genre, song_id],
-    )
-    .context("写 songs 失败")?;
-
-    // 完整发行日期（时间轴按月份排要用）。同样只补空的；
-    // 而且**年份对得上才补**：本地文件写的是 2019、候选说 2020-03-04，那这个日期不是这首歌的
-    let date = &candidate.release_date;
-    if !date.is_empty() {
-        let written = conn
-            .execute(
-                "UPDATE songs SET release_date = ?1
-                 WHERE id = ?2 AND COALESCE(release_date,'') = ''
-                   AND (COALESCE(year,'') = '' OR substr(year,1,4) = substr(?1,1,4))",
-                rusqlite::params![date, song_id],
-            )
-            .context("写发行日期失败")?;
-        if written > 0 {
-            provenance("release_date")?;
-        }
-    }
-    Ok(filled)
+    jp_corpus::enrichment::fill_missing(conn, song_id, &jp_corpus::enrichment::Metadata {
+        extra: &candidate.extra,
+        album: &candidate.album,
+        year: &candidate.year,
+        genre: &candidate.genre,
+        release_date: &candidate.release_date,
+        provider: &candidate.provider,
+        provider_id: &candidate.provider_id,
+        confidence,
+    })
 }
 
 /// 下封面到盘上。**不碰数据库**，所以能在任意线程里跑。
@@ -460,6 +422,7 @@ pub fn run_batch(
     db_path: &std::path::Path,
     covers_dir: &std::path::Path,
     song_ids: &[String],
+    apple: Option<(&str, &str)>,
     cancelled: &dyn Fn() -> bool,
     progress: &mut dyn FnMut(ScrapeProgress),
 ) -> Result<bool> {
@@ -468,7 +431,7 @@ pub fn run_batch(
     let conn = rusqlite::Connection::open(db_path)?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
     conn.busy_timeout(std::time::Duration::from_secs(30))?;
-    let resolver = jp_scraper::default_resolver(false)?;
+    let resolver = jp_scraper::net::resolver_with_apple(false, apple)?;
 
     // 两级并发。都是量出来的，不是猜的：
     //
@@ -550,6 +513,97 @@ pub fn run_batch(
 
     // 循环结束，等剩下的封面下完
     drain_covers(&conn, &mut covers, true);
+    Ok(false)
+}
+
+// ────────────────────────── 补专辑信息 ──────────────────────────
+
+/// 专辑信息（发行类型、整张碟曲目数）还不全的专辑里的歌。按专辑排好，每张专辑的歌挨着，
+/// 补齐一张后同专辑剩下的歌就不用再查了。
+pub fn album_fill_targets(conn: &rusqlite::Connection) -> Result<Vec<(i64, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, s.id FROM albums a JOIN songs s ON s.album_id = a.id
+         WHERE COALESCE(a.album_type,'') = '' OR a.track_count IS NULL
+         ORDER BY a.id, s.id",
+    )?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+fn album_complete(conn: &rusqlite::Connection, album_id: i64) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(album_type,'') <> '' AND track_count IS NOT NULL FROM albums WHERE id = ?1",
+        [album_id],
+        |r| r.get(0),
+    )?)
+}
+
+/// 给已经识别过的歌补专辑层面的数据（发行类型、曲目数、厂牌……），在调用方的线程上跑完才返回。
+///
+/// 和 [`run_batch`] 用同一个匹配流程，但**不动刮削状态**：已经成功的歌这次没匹配上，
+/// 也不会被打回「待复核」。只有自动采纳的候选才写，而且只补空字段（见 [`apply_candidate`]）。
+/// 进度的 `kind` 是 "album"，`matched` 为 "filled" 表示这张专辑补齐了。
+pub fn run_album_fill(
+    db_path: &std::path::Path,
+    targets: Vec<(i64, String)>,
+    cancelled: &dyn Fn() -> bool,
+    progress: &mut dyn FnMut(ScrapeProgress),
+) -> Result<bool> {
+    let total = targets.len();
+    let mut done = 0usize;
+    let conn = rusqlite::Connection::open(db_path)?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+    conn.busy_timeout(std::time::Duration::from_secs(10))?;
+    let resolver = std::sync::Arc::new(jp_scraper::net::resolver_with_apple(false, None)?);
+    const IN_FLIGHT: usize = 4;
+    type Flying = (i64, String, String, std::thread::JoinHandle<jp_scraper::ResolvedTrack>);
+    let mut queue: std::collections::VecDeque<(i64, String)> = targets.into();
+    let mut flying: std::collections::VecDeque<Flying> = Default::default();
+    loop {
+        if cancelled() {
+            return Ok(true);
+        }
+        while flying.len() < IN_FLIGHT {
+            let Some((album_id, song_id)) = queue.pop_front() else { break };
+            // 同专辑前面的歌已经补齐了：这首直接算处理过
+            if album_complete(&conn, album_id)? {
+                done += 1;
+                continue;
+            }
+            let Some(track) = track_file_for(&conn, &song_id)? else {
+                done += 1;
+                continue;
+            };
+            let resolver = resolver.clone();
+            let title = track.title().to_string();
+            flying.push_back((album_id, song_id, title, std::thread::spawn(move || resolver.resolve(&track))));
+        }
+        let Some((album_id, song_id, title, handle)) = flying.pop_front() else { break };
+        let result = handle.join().map_err(|_| anyhow::anyhow!("匹配线程崩了"))?;
+        let mut status = result.status.as_str().to_string();
+        if result.status == ScrapeStatus::Success
+            && let Some(candidate) = &result.candidate
+            && let Err(err) = apply_candidate(&conn, &song_id, candidate, Some(result.confidence))
+        {
+            log_warn(format!("补专辑信息 {song_id} 失败: {err:#}"));
+            status = "failed".into();
+        }
+        let filled = album_complete(&conn, album_id).unwrap_or(false);
+        done += 1;
+        progress(ScrapeProgress {
+            kind: "album".into(),
+            done,
+            total,
+            song_id,
+            title,
+            status,
+            confidence: result.confidence,
+            matched: if filled { "filled".into() } else { String::new() },
+            ..Default::default()
+        });
+    }
     Ok(false)
 }
 
@@ -1349,12 +1403,18 @@ pub fn songs_to_scrape(conn: &rusqlite::Connection, only_missing: bool, limit: i
     Ok(ids)
 }
 
-/// 刮一首（同步，一两秒）。单首的封面就地下——一张图十几秒，用户点一首歌等得起
-pub fn scrape_track(conn: &rusqlite::Connection, covers_dir: &std::path::Path, song_id: &str) -> Result<jp_scraper::ScrapeSummary> {
+/// 刮一首（同步，一两秒）。单首的封面就地下——一张图十几秒，用户点一首歌等得起。
+/// `apple` 是 Apple Music 的（地区, 开发者令牌），不用就传 None
+pub fn scrape_track(
+    conn: &rusqlite::Connection,
+    covers_dir: &std::path::Path,
+    song_id: &str,
+    apple: Option<(&str, &str)>,
+) -> Result<jp_scraper::ScrapeSummary> {
     let Some(track) = track_file_for(conn, song_id)? else {
         anyhow::bail!("库里没有 id={song_id} 这首歌");
     };
-    let resolver = jp_scraper::default_resolver(false)?;
+    let resolver = jp_scraper::net::resolver_with_apple(false, apple)?;
     let outcome = scrape_one(conn, &resolver, song_id, &track)?;
     if let Some(candidate) = outcome.accepted
         && let Some(path) = download_cover(covers_dir, song_id, &outcome.artist, &candidate)

@@ -1,3 +1,4 @@
+import JPCorpusModel
 import AppKit
 import JPCore
 import SwiftUI
@@ -6,7 +7,8 @@ import SwiftUI
 @MainActor
 struct JPCorpusApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var app = AppModel()
+    @State private var app = AppModel(defaults:
+        SmokeRun.isEnabled ? UserDefaults(suiteName: "JPCorpusSmoke-\(UUID().uuidString)")! : .standard)
 
     init() {
         // `swift run` 起来的是裸可执行文件，不是 .app：不设这一句窗口不会到前台、菜单栏也不出来

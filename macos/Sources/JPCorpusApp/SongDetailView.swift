@@ -1,5 +1,6 @@
 import JPCore
 import SwiftUI
+import JPCorpusModel
 
 /// 歌曲详情：谁唱谁写、这首歌的语料画像、歌词从哪来（来源追踪）。
 /// 和 Windows 版曲库右栏是同一批数据：trackCredits / songProfile / songLineage
@@ -39,7 +40,7 @@ struct SongDetailView: View {
     }
 
     private func load() async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         do {
             track = try await app.track(songId)
             async let c = client.trackCredits(songId)
@@ -50,7 +51,7 @@ struct SongDetailView: View {
             favorite = (try? await f) ?? false
             // 没歌词的歌算不出画像，不算错
             if (track?.lineCount ?? 0) > 0 {
-                profile = try? await client.songProfile(songId)
+                profile = try? await client.songProfile(songId, limit: 12)
             } else {
                 profile = nil
             }
@@ -60,7 +61,7 @@ struct SongDetailView: View {
     }
 
     private func scrapeThis(_ t: Track) async {
-        guard let client = app.client else { return }
+        guard let client = app.core else { return }
         scraping = true
         defer { scraping = false }
         do {
@@ -93,7 +94,7 @@ struct SongDetailView: View {
                     .buttonStyle(.borderedProminent)
                     Button {
                         Task {
-                            if let now = try? await app.client?.toggleFavorite(song: t.id) {
+                            if let now = try? await app.core?.toggleFavorite(song: t.id) {
                                 favorite = now
                                 app.homeVersion += 1
                             }
@@ -115,7 +116,7 @@ struct SongDetailView: View {
                     if let albumId = t.albumId {
                         Button("去专辑") {
                             Task {
-                                if let album = try? await app.client?.albums().first(where: { $0.id == albumId }) {
+                                if let album = try? await app.core?.albums().first(where: { $0.id == albumId }) {
                                     app.libraryPath.append(.album(album))
                                 }
                             }

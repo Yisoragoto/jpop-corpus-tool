@@ -1,3 +1,4 @@
+import JPCorpusModel
 import JPCore
 import SwiftUI
 
@@ -122,7 +123,7 @@ private struct FrequencyPane: View {
                 Spacer()
                 ArchiveButton(archived: $archived) {
                     let label = "词频 · \(scopeName) · \(pos.isEmpty ? "全部词性" : (posLabels[pos] ?? pos))"
-                    return try await app.client?.archiveFrequency(query, label: label)
+                    return try await app.core?.archiveFrequency(query, label: label)
                 }
             }
             .controlSize(.small)
@@ -160,7 +161,7 @@ private struct FrequencyPane: View {
         .task(id: query) {
             archived = nil
             do {
-                result = try await app.client?.frequency(query)
+                result = try await app.core?.frequency(query)
             } catch {
                 app.errorMessage = error.localizedDescription
             }
@@ -241,7 +242,7 @@ private struct KeynessPane: View {
                 Spacer()
                 if result != nil, let q = query {
                     ArchiveButton(archived: $archived) {
-                        try await app.client?.archiveKeyness(q, label: "对比 · \(scopeName)")
+                        try await app.core?.archiveKeyness(q, label: "对比 · \(scopeName)")
                     }
                 }
             }
@@ -297,7 +298,7 @@ private struct KeynessPane: View {
         defer { busy = false }
         archived = nil
         do {
-            result = try await app.client?.keyness(query)
+            result = try await app.core?.keyness(query)
         } catch {
             app.errorMessage = error.localizedDescription
         }
@@ -367,14 +368,14 @@ private struct ArchivePane: View {
 
     private func load() async {
         do {
-            runs = try await app.client?.analysisList() ?? []
+            runs = try await app.core?.analysisList() ?? []
         } catch {
             app.errorMessage = error.localizedDescription
         }
     }
 
     private func rerun(_ id: Int64? = nil) async {
-        guard let id = id ?? selection.first, let client = app.client else { return }
+        guard let id = id ?? selection.first, let client = app.core else { return }
         busy = true
         defer { busy = false }
         do {
@@ -387,7 +388,7 @@ private struct ArchivePane: View {
 
     private func compare() async {
         let ids = selection.sorted()
-        guard ids.count == 2, let client = app.client else { return }
+        guard ids.count == 2, let client = app.core else { return }
         do {
             comparison = try await client.analysisCompare(before: ids[0], after: ids[1])
         } catch {
@@ -397,7 +398,7 @@ private struct ArchivePane: View {
 
     private func delete(_ id: Int64) async {
         do {
-            try await app.client?.analysisDelete(id)
+            try await app.core?.analysisDelete(id)
             selection.remove(id)
             await load()
         } catch {
@@ -531,7 +532,7 @@ private struct QualityPane: View {
         .clearScrollBackground()
         .task {
             do {
-                q = try await app.client?.qualityOverview()
+                q = try await app.core?.qualityOverview()
             } catch {
                 app.errorMessage = error.localizedDescription
             }

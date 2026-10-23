@@ -1,5 +1,6 @@
 import JPCore
 import SwiftUI
+import JPCorpusModel
 
 /// ⌘K 全库搜索：歌、专辑、人、词、歌词一起搜（Windows 版的 Ctrl K 面板，同一个 quickSearch）。
 /// 回车选第一条；每种结果落到它该去的地方
@@ -74,7 +75,7 @@ struct QuickSearchView: View {
             // 打字时别每个键都查
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
-            results = try? await app.client?.quickSearch(q)
+            results = try? await app.core?.quickSearch(q)
         }
     }
 
@@ -117,7 +118,7 @@ struct QuickSearchView: View {
             app.show(.song(songId))
         case let .album(albumId, _, _, _):
             Task {
-                if let album = try? await app.client?.albums().first(where: { $0.id == albumId }) {
+                if let album = try? await app.core?.albums().first(where: { $0.id == albumId }) {
                     app.show(.album(album))
                 }
             }

@@ -1,6 +1,7 @@
 import AppKit
 import JPCore
 import SwiftUI
+import JPCorpusModel
 
 /// 全屏歌词。对应 Windows 版的 `LyricsStage`（照 Spotify / Apple Music 的全屏歌词）：
 ///

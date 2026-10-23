@@ -6,6 +6,8 @@
  */
 
 /** 上限的可选值（MB）。默认 1536，和后端的默认一致 */
+import { tr } from "./i18n";
+
 export const PITCH_CACHE_LIMITS_MB = [512, 1024, 1536, 2048, 3072, 5120, 10240, 20480] as const;
 
 /** 后端肯收的范围，和 `commands.rs` 的 `PITCH_CACHE_LIMIT_MB` 一致 */
@@ -28,6 +30,6 @@ export function sizeLabel(bytes: number): string {
 
 /** 卡片右边那一小句：「已用 312 MB · 7 个」。一个缓存文件是一首歌的一个调 */
 export function usageLabel(status: { files: number; bytes: number }): string {
-  if (status.files === 0) return "还没有缓存";
-  return `已用 ${sizeLabel(status.bytes)} · ${status.files} 个`;
+  if (status.files === 0) return tr("还没有缓存");
+  return tr("已用 {bytes} · {files} 个", { bytes: sizeLabel(status.bytes), files: status.files });
 }

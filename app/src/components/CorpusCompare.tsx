@@ -24,6 +24,7 @@ import {
 import { ANALYSIS_ARCHIVED, isWholeCorpus, qualityApi, type AnalysisSpec } from "../corpusQuality";
 import { mergeSubcorpus, useSubcorpora, type ActiveScope } from "../subcorpusScope";
 import { PerformerPicker } from "./PerformerPicker";
+import { tr } from "../i18n";
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -38,7 +39,7 @@ function ArchiveButton({ spec, label, onError }: { spec: AnalysisSpec; label: st
     <button
       className="ghost"
       disabled={state !== "idle"}
-      title="存进下面的「分析记录」，之后可以原样重跑、对比"
+      title={tr("存进下面的「分析记录」，之后可以原样重跑、对比")}
       onClick={async () => {
         setState("busy");
         try {
@@ -51,7 +52,7 @@ function ArchiveButton({ spec, label, onError }: { spec: AnalysisSpec; label: st
         }
       }}
     >
-      {state === "done" ? "已存档" : state === "busy" ? "存档中…" : "存档"}
+      {state === "done" ? tr("已存档") : state === "busy" ? tr("存档中…") : tr("存档")}
     </button>
   );
 }
@@ -60,11 +61,8 @@ export function ProvenanceLine({ p }: { p: Provenance }) {
   return (
     <p
       className="provenance muted small"
-      title={`规则 ${p.rules} · 库指纹 ${p.snapshot.fingerprint} · 结构版本 ${p.snapshot.schemaVersion}`}
-    >
-      {p.scope} · {p.songs} 首 / {p.tokens.toLocaleString()} 词（
-      {p.unit === "distinctLines" ? "重复行只算一次" : "全部词次"}）· 指纹 {p.snapshot.fingerprint.slice(0, 8)}
-    </p>
+      title={tr("规则 {rules} · 库指纹 {fingerprint} · 结构版本 {schemaVersion}", { rules: p.rules, fingerprint: p.snapshot.fingerprint, schemaVersion: p.snapshot.schemaVersion })}
+    >{tr("{scope} · {songs} 首 / {tokens} 词（", { scope: p.scope, songs: p.songs, tokens: p.tokens.toLocaleString() })}{p.unit === "distinctLines" ? tr("重复行只算一次") : tr("全部词次")}{tr("）· 指纹 {slice}", { slice: p.snapshot.fingerprint.slice(0, 8) })}</p>
   );
 }
 
@@ -121,30 +119,25 @@ export function RepeatEffectCard({
   return (
     <section className="card">
       <div className="card-head">
-        <h2>副歌对词频的影响</h2>
+        <h2>{tr("副歌对词频的影响")}</h2>
         <div className="card-tools">
           <ArchiveButton
             spec={{ kind: "corpusFrequency", query: { scope: { subcorpus, unit: "distinctLines", jpOnly }, pos: null, limit: 500 } }}
-            label="副歌效应（去重词频）"
+            label={tr("副歌效应（去重词频）")}
             onError={onError}
           />
         </div>
       </div>
-      <p className="muted small">
-        歌词里的副歌会原样唱好几遍。同一首歌里重复出现的行占了全部词次的{" "}
-        <strong>{(share * 100).toFixed(1)}%</strong>（{raw.provenance.tokens.toLocaleString()} →{" "}
-        {distinct.provenance.tokens.toLocaleString()} 词）。下面这些词的频次大半来自重复行：
-        按「唱了几遍」数和按「写了几次」数，排名会很不一样。
-      </p>
+      <p className="muted small">{tr("歌词里的副歌会原样唱好几遍。同一首歌里重复出现的行占了全部词次的{v}", { v: " " })}<strong>{(share * 100).toFixed(1)}%</strong>{tr("（{tokens} →{v}{tokens2} 词）。下面这些词的频次大半来自重复行： 按「唱了几遍」数和按「写了几次」数，排名会很不一样。", { tokens: raw.provenance.tokens.toLocaleString(), v: " ", tokens2: distinct.provenance.tokens.toLocaleString() })}</p>
       <table className="data">
         <thead>
           <tr>
-            <th>词元</th>
-            <th>词性</th>
-            <th className="num" title="唱几遍算几遍">全部词次</th>
-            <th className="num" title="同一首歌里重复的行只算一次">去重后</th>
-            <th className="num">来自重复行</th>
-            <th className="num">曲数</th>
+            <th>{tr("词元")}</th>
+            <th>{tr("词性")}</th>
+            <th className="num" title={tr("唱几遍算几遍")}>{tr("全部词次")}</th>
+            <th className="num" title={tr("同一首歌里重复的行只算一次")}>{tr("去重后")}</th>
+            <th className="num">{tr("来自重复行")}</th>
+            <th className="num">{tr("曲数")}</th>
             <th />
           </tr>
         </thead>
@@ -162,9 +155,7 @@ export function RepeatEffectCard({
               </td>
               <td className="num">{w.songs}</td>
               <td className="row-actions">
-                <button className="link-btn" onClick={() => onSearchWord(w.lemma)}>
-                  检索
-                </button>
+                <button className="link-btn" onClick={() => onSearchWord(w.lemma)}>{tr("检索")}</button>
               </td>
             </tr>
           ))}
@@ -220,9 +211,9 @@ function SidePicker({
             const pick = saved.find((x) => String(x.id) === e.target.value);
             onChange({ ...side, saved: pick ? { id: pick.id, name: pick.name, filter: pick.filter } : null });
           }}
-          title="存过的子语料"
+          title={tr("存过的子语料")}
         >
-          <option value="">（不用子语料）</option>
+          <option value="">{tr("（不用子语料）")}</option>
           {saved.map((x) => (
             <option key={x.id} value={x.id}>
               {x.name}
@@ -239,8 +230,8 @@ function SidePicker({
         <input
           className="year-input"
           inputMode="numeric"
-          placeholder="年份"
-          aria-label={`${label}起始年份`}
+          placeholder={tr("年份")}
+          aria-label={tr("{label}起始年份", { label })}
           value={side.yearFrom}
           onChange={(e) => onChange({ ...side, yearFrom: e.target.value })}
         />
@@ -248,8 +239,8 @@ function SidePicker({
         <input
           className="year-input"
           inputMode="numeric"
-          placeholder="年份"
-          aria-label={`${label}结束年份`}
+          placeholder={tr("年份")}
+          aria-label={tr("{label}结束年份", { label })}
           value={side.yearTo}
           onChange={(e) => onChange({ ...side, yearTo: e.target.value })}
         />
@@ -262,21 +253,21 @@ function KeyTable({ title, items, onSearchWord }: { title: string; items: KeyIte
   return (
     <div className="key-col">
       <h3>{title}</h3>
-      {items.length === 0 && <p className="muted small">没有显著的词</p>}
+      {items.length === 0 && <p className="muted small">{tr("没有显著的词")}</p>}
       {items.length > 0 && (
         <table className="data">
           <thead>
             <tr>
-              <th>词元</th>
-              <th className="num" title="每万词">目标</th>
-              <th className="num" title="每万词">参照</th>
-              <th className="num" title="对数似然（显著性）">LL</th>
+              <th>{tr("词元")}</th>
+              <th className="num" title={tr("每万词")}>{tr("目标")}</th>
+              <th className="num" title={tr("每万词")}>{tr("参照")}</th>
+              <th className="num" title={tr("对数似然（显著性）")}>LL</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {items.map((k) => (
-              <tr key={`${k.lemma}:${k.pos}`} title={`${POS_LABELS[k.pos] ?? k.pos} · 目标 ${k.targetFreq} 次 / 参照 ${k.referenceFreq} 次 · log ratio ${k.logRatio.toFixed(2)}`}>
+              <tr key={`${k.lemma}:${k.pos}`} title={tr("{v} · 目标 {targetFreq} 次 / 参照 {referenceFreq} 次 · log ratio {logRatio}", { v: POS_LABELS[k.pos] ?? k.pos, targetFreq: k.targetFreq, referenceFreq: k.referenceFreq, logRatio: k.logRatio.toFixed(2) })}>
                 <td>
                   {k.lemma} <span className="muted small">{POS_LABELS[k.pos] ?? k.pos}</span>
                 </td>
@@ -284,9 +275,7 @@ function KeyTable({ title, items, onSearchWord }: { title: string; items: KeyIte
                 <td className="num">{k.referencePer10k.toFixed(1)}</td>
                 <td className="num">{Math.abs(k.logLikelihood).toFixed(1)}</td>
                 <td className="row-actions">
-                  <button className="link-btn" onClick={() => onSearchWord(k.lemma)}>
-                    检索
-                  </button>
+                  <button className="link-btn" onClick={() => onSearchWord(k.lemma)}>{tr("检索")}</button>
                 </td>
               </tr>
             ))}
@@ -315,7 +304,7 @@ export function KeynessCard({
 
   const run = async () => {
     if (isEmpty(target)) {
-      onError("先给「目标」选一个范围（歌手或年份）");
+      onError(tr("先给「目标」选一个范围（歌手或年份）"));
       return;
     }
     setBusy(true);
@@ -340,45 +329,38 @@ export function KeynessCard({
   return (
     <section className="card">
       <div className="card-head">
-        <h2>子语料对比</h2>
+        <h2>{tr("子语料对比")}</h2>
         <div className="card-tools">
-          {result && lastQuery && <ArchiveButton spec={{ kind: "keyness", query: lastQuery }} label="子语料对比" onError={onError} />}
+          {result && lastQuery && <ArchiveButton spec={{ kind: "keyness", query: lastQuery }} label={tr("子语料对比")} onError={onError} />}
         </div>
       </div>
-      <p className="muted small">
-        选两批歌（存过的子语料，或者按歌手、年份），看哪些词在「目标」里明显偏多、偏少。参照不选就是语料库里其余的歌。
-        按对数似然排序，两边合计少于 5 次的词不列出。
-      </p>
+      <p className="muted small">{tr("选两批歌（存过的子语料，或者按歌手、年份），看哪些词在「目标」里明显偏多、偏少。参照不选就是语料库里其余的歌。 按对数似然排序，两边合计少于 5 次的词不列出。")}</p>
       <div className="compare-form">
-        <SidePicker label="目标" side={target} onChange={setTarget} onError={onError} />
-        <SidePicker label="参照" side={reference} onChange={setReference} onError={onError} />
+        <SidePicker label={tr("目标")} side={target} onChange={setTarget} onError={onError} />
+        <SidePicker label={tr("参照")} side={reference} onChange={setReference} onError={onError} />
         <div className="compare-side">
           <div className="segmented">
             <button
               className={unit === "distinctLines" ? "on" : ""}
               onClick={() => setUnit("distinctLines")}
-              title="同一首歌里重复的行只算一次"
-            >
-              去掉重复行
-            </button>
-            <button className={unit === "tokens" ? "on" : ""} onClick={() => setUnit("tokens")} title="唱几遍算几遍">
-              全部词次
-            </button>
+              title={tr("同一首歌里重复的行只算一次")}
+            >{tr("去掉重复行")}</button>
+            <button className={unit === "tokens" ? "on" : ""} onClick={() => setUnit("tokens")} title={tr("唱几遍算几遍")}>{tr("全部词次")}</button>
           </div>
           <button className="primary" disabled={busy} onClick={() => void run()}>
-            {busy ? "计算中…" : "对比"}
+            {busy ? tr("计算中…") : tr("对比")}
           </button>
         </div>
       </div>
       {result && (
         <>
           <div className="key-cols">
-            <KeyTable title="目标里偏多" items={result.over} onSearchWord={onSearchWord} />
-            <KeyTable title="目标里偏少" items={result.under} onSearchWord={onSearchWord} />
+            <KeyTable title={tr("目标里偏多")} items={result.over} onSearchWord={onSearchWord} />
+            <KeyTable title={tr("目标里偏少")} items={result.under} onSearchWord={onSearchWord} />
           </div>
-          <p className="muted small">目标</p>
+          <p className="muted small">{tr("目标")}</p>
           <ProvenanceLine p={result.target} />
-          <p className="muted small">参照</p>
+          <p className="muted small">{tr("参照")}</p>
           <ProvenanceLine p={result.reference} />
         </>
       )}

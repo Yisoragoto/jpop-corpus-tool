@@ -26,14 +26,15 @@ import {
 } from "../libraryIndex";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
+import { tr } from "../i18n";
 
 export type BrowseMode = "artists" | "behind" | "albums" | "songs";
 
 const MODES: { key: BrowseMode; label: string }[] = [
-  { key: "artists", label: "音乐人" },
-  { key: "behind", label: "幕后" },
-  { key: "albums", label: "专辑" },
-  { key: "songs", label: "歌曲" },
+  { key: "artists", label: tr("音乐人") },
+  { key: "behind", label: tr("幕后") },
+  { key: "albums", label: tr("专辑") },
+  { key: "songs", label: tr("歌曲") },
 ];
 
 const MODE_KEY = "jp.library.mode";
@@ -88,7 +89,7 @@ export function useDirectory(version: number, onError: (message: string) => void
       })
       .catch((err: unknown) => {
         if (!alive) return;
-        onError(`读不出音乐人列表：${messageOf(err)}`);
+        onError(tr("读不出音乐人列表：{err}", { err: messageOf(err) }));
         setData({ dir: buildDirectory([], []), albums: [], memberships: [], edges: [], entries: [] });
       });
     return () => {
@@ -171,41 +172,19 @@ export function LibraryBrowser({
 
   const modeIndex = MODES.findIndex((m) => m.key === mode);
   const placeholder =
-    mode === "albums" ? "筛选专辑 / 歌手" : mode === "songs" ? "筛选歌名 / 歌手" : "筛选名字";
+    mode === "albums" ? tr("筛选专辑 / 歌手") : mode === "songs" ? tr("筛选歌名 / 歌手") : tr("筛选名字");
 
   return (
     <aside className="pane library browser">
       {banner}
       <div className="browser-head">
-        <button className="btn browser-view-btn browser-hide" onClick={onHide} title="收起左栏" aria-label="收起左栏">
+        <button className="btn browser-view-btn browser-hide" onClick={onHide} title={tr("收起左栏")} aria-label={tr("收起左栏")}>
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
             <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
             <path d="M9 4.5v15M15 10l-2 2 2 2" />
           </svg>
         </button>
         <input className="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
-        <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "graph" ? "on" : ""}`} onClick={onOpenGraph} title="关系网：所有人和他们的合作" aria-label="关系网">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-            <circle cx="6" cy="7" r="2.4" />
-            <circle cx="18" cy="6" r="2" />
-            <circle cx="12" cy="17" r="2.8" />
-            <path d="m8 8.4 2.6 6.4M16.4 7.5 13.6 14.6M8.3 6.7 16 6.1" />
-          </svg>
-        </button>
-        <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "cloud" ? "on" : ""}`} onClick={onOpenCloud} title="词云：歌词里最常出现的词" aria-label="词云">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-            <text x="1" y="12" fontSize="10" fontWeight="700">あ</text>
-            <text x="11" y="10" fontSize="7">夢</text>
-            <text x="9" y="21" fontSize="9" fontWeight="700">君</text>
-            <text x="2" y="20" fontSize="5.5" opacity=".6">空</text>
-          </svg>
-        </button>
-        {onOpenTimeline && <button className={`btn icon-btn-ctl browser-view-btn ${view.kind === "timeline" ? "on" : ""}`} onClick={onOpenTimeline} title="时间轴：谁在哪年发了什么" aria-label="时间轴">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-            <path d="M3 6h18M3 12h18M3 18h18" opacity=".35" />
-            <path d="M5 6h7M9 12h10M4 18h5" strokeWidth="3" />
-          </svg>
-        </button>}
       </div>
       <div className="segmented seg-slide browse-modes" style={{ ["--seg-i" as string]: modeIndex, ["--seg-n" as string]: MODES.length }}>
         <span className="seg-thumb" aria-hidden="true" />
@@ -227,7 +206,7 @@ export function LibraryBrowser({
       )}
 
       <div className="list browse-list" ref={listRef} key={mode}>
-        {data === null && mode !== "songs" && <p className="muted pad">加载中…</p>}
+        {data === null && mode !== "songs" && <p className="muted pad">{tr("加载中…")}</p>}
         {data !== null && mode === "artists" && (
           <ArtistItems
             data={data}
@@ -249,6 +228,36 @@ export function LibraryBrowser({
           <SongItems tracks={tracks} query={query} selectedSongId={view.kind === "song" ? selectedSongId : null} missingIds={missingIds} onOpen={onOpenTrack} />
         )}
       </div>
+
+      <nav className="browser-views" aria-label={tr("整个资料库")}>
+        <button className={view.kind === "graph" ? "on" : ""} onClick={onOpenGraph} title={tr("关系网：所有人和他们的合作")}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+            <circle cx="6" cy="7" r="2.4" />
+            <circle cx="18" cy="6" r="2" />
+            <circle cx="12" cy="17" r="2.8" />
+            <path d="m8 8.4 2.6 6.4M16.4 7.5 13.6 14.6M8.3 6.7 16 6.1" />
+          </svg>
+          {tr("关系网")}
+        </button>
+        {onOpenTimeline && (
+          <button className={view.kind === "timeline" ? "on" : ""} onClick={onOpenTimeline} title={tr("时间轴：谁在哪年发了什么")}>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+              <path d="M3 6h18M3 12h18M3 18h18" opacity=".35" />
+              <path d="M5 6h7M9 12h10M4 18h5" strokeWidth="3" />
+            </svg>
+            {tr("时间轴")}
+          </button>
+        )}
+        <button className={view.kind === "cloud" ? "on" : ""} onClick={onOpenCloud} title={tr("词云：歌词里最常出现的词")}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+            <text x="1" y="12" fontSize="10" fontWeight="700">あ</text>
+            <text x="11" y="10" fontSize="7">夢</text>
+            <text x="9" y="21" fontSize="9" fontWeight="700">君</text>
+            <text x="2" y="20" fontSize="5.5" opacity=".6">空</text>
+          </svg>
+          {tr("词云")}
+        </button>
+      </nav>
     </aside>
   );
 }
@@ -275,7 +284,7 @@ function ArtistItems({
 }) {
   const hits = filterMusicians(data.dir.musicians, query);
   if (hits.length === 0) {
-    return <p className="muted pad">{query ? "没有匹配的音乐人" : "还没有演唱署名。导入带歌手信息的歌之后这里就有了"}</p>;
+    return <p className="muted pad">{query ? tr("没有匹配的音乐人") : tr("还没有演唱署名。导入带歌手信息的歌之后这里就有了")}</p>;
   }
   return (
     <>
@@ -299,11 +308,10 @@ function ArtistItems({
               <button
                 className={`chip member-toggle ${expanded ? "open" : ""}`}
                 onClick={() => onToggle(id)}
-                title={expanded ? "收起成员" : "展开成员"}
+                title={expanded ? tr("收起成员") : tr("展开成员")}
                 aria-expanded={expanded}
               >
-                <span className="chev" aria-hidden="true">›</span> {row.members.length} 人
-              </button>
+                <span className="chev" aria-hidden="true">›</span>{"  "}{tr("{length} 人", { length: row.members.length })}</button>
             )}
             {expanded &&
               row.members.map((m, j) => (
@@ -338,7 +346,7 @@ function BehindItems({
   personId: number | null;
   onOpen: (id: number, from?: HTMLElement) => void;
 }) {
-  if (entries.length === 0) return <p className="muted pad">没有匹配的人</p>;
+  if (entries.length === 0) return <p className="muted pad">{tr("没有匹配的人")}</p>;
   return (
     <>
       {entries.map((e, i) => (
@@ -379,7 +387,7 @@ function AlbumItems({
   const list = albums
     .filter((a) => q === "" || a.title.toLowerCase().includes(q) || a.albumArtist.toLowerCase().includes(q))
     .sort((a, b) => b.year.localeCompare(a.year) || a.title.localeCompare(b.title, "ja"));
-  if (list.length === 0) return <p className="muted pad">{q ? "没有匹配的专辑" : "还没有专辑信息"}</p>;
+  if (list.length === 0) return <p className="muted pad">{q ? tr("没有匹配的专辑") : tr("还没有专辑信息")}</p>;
   const current =
     view.kind === "album" ? view.albumId : view.kind === "person" ? (view.albumId ?? null) : null;
   return (
@@ -388,9 +396,9 @@ function AlbumItems({
         <button key={a.id} className={`browse-item ${current === a.id ? "on" : ""}`} style={stagger(i)} onClick={() => onOpen(a)}>
           <Cover path={a.artworkPath} size={34} rounded={6} />
           <span className="browse-text">
-            <b>{a.title || "（无题）"}</b>
+            <b>{a.title || tr("（无题）")}</b>
             <small>
-              {albumOwner(a.albumArtist) || "未知歌手"}
+              {albumOwner(a.albumArtist) || tr("未知歌手")}
               {a.year && ` · ${a.year.slice(0, 4)}`}
             </small>
           </span>
@@ -422,7 +430,7 @@ function SongItems({
         .sort((a, b) => a.title.localeCompare(b.title, "ja")),
     [tracks, q],
   );
-  if (list.length === 0) return <p className="muted pad">{q ? "没有匹配的歌" : "曲库是空的，先去「导入」"}</p>;
+  if (list.length === 0) return <p className="muted pad">{q ? tr("没有匹配的歌") : tr("曲库是空的，先去「导入」")}</p>;
   return (
     <>
       {list.map((t, i) => (
@@ -437,8 +445,8 @@ function SongItems({
             <b>{t.title}</b>
             <small>
               {t.artist}
-              {t.lineCount === 0 && <span className="warn"> · 无歌词</span>}
-              {missingIds.has(t.id) && <span className="warn"> · 音频丢失</span>}
+              {t.lineCount === 0 && <span className="warn">{" "}{tr("· 无歌词")}</span>}
+              {missingIds.has(t.id) && <span className="warn">{" "}{tr("· 音频丢失")}</span>}
             </small>
           </span>
           <em className="browse-count">{t.durationSec !== null ? formatDuration(t.durationSec) : ""}</em>

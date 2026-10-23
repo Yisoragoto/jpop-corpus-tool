@@ -21,8 +21,8 @@ export interface AppSettings {
   spectrum: boolean;
   /** 启动时问一次 GitHub Releases 有没有新版 */
   autoCheckUpdates: boolean;
-  /** 自动检查发现新版时，直接下载并装上（**会关掉应用**）。默认关：装更新要由人决定什么时候 */
-  autoInstallUpdates: boolean;
+  /** 启动检查时弹窗里点了「跳过这个版本」的那一版：这一版不再提醒，更新的版本照样提醒 */
+  skippedUpdateVersion: string;
   /** 变调缓存最多占多少 MB，超了从最久没放的清起。启动时和改动时报给后端（见 `pitchCache.ts`） */
   pitchCacheLimitMb: number;
   /** 启动时看一眼语料库的文件夹里有没有还没导入的音频（只读，发现了只提示） */
@@ -33,6 +33,14 @@ export interface AppSettings {
   wordCloudFont: string;
   /** 词云放多少个词 */
   wordCloudCount: number;
+  /** 词云去掉虚词：单个假名的碎片（僕「ら」、一「つ」）、形式名词（こと・もの・まま）、纯符号 */
+  wordCloudHideFunctionWords: boolean;
+  /** 自己从词云里拿掉的词（词元） */
+  wordCloudHidden: string[];
+  /** 词云按词性上色（名词、动词、形容词……各一种颜色）；关着时按名次、前几名染照片的颜色 */
+  wordCloudColorByPos: boolean;
+  /** 只对完整有效的真实单位时间启用卡拉 OK；其余逐行显示，纯文本不高亮。 */
+  karaokeLyrics: boolean;
 }
 
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
@@ -44,13 +52,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   stageBlurRadius: 64,
   spectrum: true,
   autoCheckUpdates: true,
-  autoInstallUpdates: false,
+  skippedUpdateVersion: "",
   pitchCacheLimitMb: 1536,
   autoCheckNewSongs: true,
   dailyGoalMinutes: 30,
   // 自带的手写风格字体，装好就有
   wordCloudFont: "Klee One",
   wordCloudCount: 120,
+  wordCloudHideFunctionWords: true,
+  wordCloudHidden: [],
+  wordCloudColorByPos: false,
+  karaokeLyrics: true,
 };
 
 const STORAGE_KEY = "jp.app.settings";
@@ -71,8 +83,10 @@ export function parseSettings(raw: string | null): AppSettings {
       spectrum: typeof parsed.spectrum === "boolean" ? parsed.spectrum : d.spectrum,
       autoCheckUpdates:
         typeof parsed.autoCheckUpdates === "boolean" ? parsed.autoCheckUpdates : d.autoCheckUpdates,
-      autoInstallUpdates:
-        typeof parsed.autoInstallUpdates === "boolean" ? parsed.autoInstallUpdates : d.autoInstallUpdates,
+      skippedUpdateVersion:
+        typeof parsed.skippedUpdateVersion === "string" && parsed.skippedUpdateVersion.length <= 64
+          ? parsed.skippedUpdateVersion
+          : d.skippedUpdateVersion,
       pitchCacheLimitMb: clamp(parsed.pitchCacheLimitMb, PITCH_CACHE_LIMIT_RANGE, d.pitchCacheLimitMb),
       autoCheckNewSongs:
         typeof parsed.autoCheckNewSongs === "boolean" ? parsed.autoCheckNewSongs : d.autoCheckNewSongs,
@@ -82,6 +96,16 @@ export function parseSettings(raw: string | null): AppSettings {
           ? parsed.wordCloudFont.trim()
           : d.wordCloudFont,
       wordCloudCount: clamp(parsed.wordCloudCount, WORD_CLOUD_COUNT_LIMITS, d.wordCloudCount),
+      wordCloudHideFunctionWords:
+        typeof parsed.wordCloudHideFunctionWords === "boolean"
+          ? parsed.wordCloudHideFunctionWords
+          : d.wordCloudHideFunctionWords,
+      wordCloudColorByPos:
+        typeof parsed.wordCloudColorByPos === "boolean" ? parsed.wordCloudColorByPos : d.wordCloudColorByPos,
+      karaokeLyrics: typeof parsed.karaokeLyrics === "boolean" ? parsed.karaokeLyrics : d.karaokeLyrics,
+      wordCloudHidden: Array.isArray(parsed.wordCloudHidden)
+        ? [...new Set(parsed.wordCloudHidden.filter((w): w is string => typeof w === "string" && w.length > 0 && w.length <= 64))].slice(0, 2000)
+        : d.wordCloudHidden,
     };
   } catch {
     return DEFAULT_SETTINGS;

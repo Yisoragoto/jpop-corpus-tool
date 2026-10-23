@@ -343,6 +343,79 @@ pub struct FontCatalog {
     pub problems: Vec<String>,
 }
 
+/// 文件名里 Windows 不让用的字符换掉；空了就叫 font
+fn safe_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| if c.is_control() || r#"<>:"/\|?*"#.contains(c) { '_' } else { c })
+        .collect();
+    let trimmed = cleaned.trim().trim_end_matches(['.', ' ']);
+    if trimmed.is_empty() { "font".to_string() } else { trimmed.to_string() }
+}
+
+/// 压缩包里的这一项是不是要解出来的字体：看扩展名，跳过目录和 macOS 打包时带的 `__MACOSX/`、`._xxx`
+fn is_font_entry(name: &str) -> bool {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    !name.ends_with('/')
+        && !name.starts_with("__MACOSX/")
+        && !base.starts_with("._")
+        && is_font_file(Path::new(base))
+}
+
+/// 字体压缩包（下载的字体大多是 zip）：把里面的 ttf / otf / ttc 解到 `dest_root/<包名>/`，返回解出来的文件。
+///
+/// 导入字体平时只记住文件位置；zip 里的字体界面没法直接加载，只能先解出来。
+/// 解出来读不出字体名的（损坏、其实不是字体）删掉不留；一个都用不了就报错。
+pub fn extract_font_archive(archive: &Path, dest_root: &Path) -> Result<Vec<PathBuf>> {
+    let mut zip = jp_dict::zip::ZipArchive::open(archive)
+        .with_context(|| format!("打不开字体压缩包 {}", archive.display()))?;
+    let names: Vec<String> = zip
+        .entries()
+        .iter()
+        .map(|e| e.name.clone())
+        .filter(|n| is_font_entry(n))
+        .collect();
+    if names.is_empty() {
+        bail!("{} 里没有 ttf / otf / ttc 字体文件", archive.display());
+    }
+    let stem = archive
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dest = dest_root.join(safe_file_name(&stem));
+    std::fs::create_dir_all(&dest)
+        .with_context(|| format!("建不了目录 {}", dest.display()))?;
+
+    let mut extracted: Vec<PathBuf> = Vec::new();
+    for name in names {
+        let bytes = zip
+            .read(&name)
+            .with_context(|| format!("字体压缩包 {} 里的 {name} 解不出来", archive.display()))?;
+        let base = safe_file_name(name.rsplit(['/', '\\']).next().unwrap_or(&name));
+        // 不同子目录里可能有同名文件（static/ 和 variable/ 各一份）
+        let mut path = dest.join(&base);
+        let mut n = 2;
+        while extracted.contains(&path) {
+            let p = Path::new(&base);
+            let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let ext = p.extension().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            path = dest.join(format!("{stem}-{n}.{ext}"));
+            n += 1;
+        }
+        std::fs::write(&path, &bytes).with_context(|| format!("写不了 {}", path.display()))?;
+        match font_families(&path) {
+            Ok(families) if !families.is_empty() => extracted.push(path),
+            _ => {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+    if extracted.is_empty() {
+        bail!("{} 里的字体文件都读不出字体名，可能已损坏", archive.display());
+    }
+    Ok(extracted)
+}
+
 /// 项目自带的字体文件（`assets/fonts`）+ 用户导入的文件
 pub fn font_files(bundled_dir: &Path, imported: &[String]) -> (Vec<FontFile>, Vec<String>) {
     let mut files = Vec::new();
@@ -384,6 +457,129 @@ pub fn font_files(bundled_dir: &Path, imported: &[String]) -> (Vec<FontFile>, Ve
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 只有一张 name 表的最小字体文件
+    fn tiny_font(family: &str) -> Vec<u8> {
+        let name = utf16(family);
+        let table = name_table(&[(3, 1, 0x0409, 1, &name)]);
+        let mut font = Vec::new();
+        font.extend_from_slice(&[0, 1, 0, 0]);
+        font.extend_from_slice(&1u16.to_be_bytes());
+        font.extend_from_slice(&[0; 6]);
+        font.extend_from_slice(b"name");
+        font.extend_from_slice(&0u32.to_be_bytes());
+        font.extend_from_slice(&28u32.to_be_bytes());
+        font.extend_from_slice(&(table.len() as u32).to_be_bytes());
+        font.extend_from_slice(&table);
+        font
+    }
+
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = !0u32;
+        for &b in data {
+            crc ^= u32::from(b);
+            for _ in 0..8 {
+                crc = if crc & 1 == 1 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            }
+        }
+        !crc
+    }
+
+    /// 不压缩（stored）的 zip，文件名按 UTF-8 标
+    fn stored_zip(items: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut central = Vec::new();
+        for (name, data) in items {
+            let offset = out.len() as u32;
+            let crc = crc32(data);
+            let head = |sig: u32, central: bool| {
+                let mut h = Vec::new();
+                h.extend_from_slice(&sig.to_le_bytes());
+                if central {
+                    h.extend_from_slice(&20u16.to_le_bytes());
+                }
+                h.extend_from_slice(&20u16.to_le_bytes());
+                h.extend_from_slice(&0x0800u16.to_le_bytes());
+                h.extend_from_slice(&0u16.to_le_bytes());
+                h.extend_from_slice(&[0; 4]);
+                h.extend_from_slice(&crc.to_le_bytes());
+                h.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                h.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                h.extend_from_slice(&(name.len() as u16).to_le_bytes());
+                h.extend_from_slice(&0u16.to_le_bytes());
+                if central {
+                    h.extend_from_slice(&[0; 10]);
+                    h.extend_from_slice(&offset.to_le_bytes());
+                }
+                h.extend_from_slice(name.as_bytes());
+                h
+            };
+            out.extend(head(0x0403_4b50, false));
+            out.extend_from_slice(data);
+            central.extend(head(0x0201_4b50, true));
+        }
+        let at = out.len() as u32;
+        out.extend_from_slice(&central);
+        out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        out.extend_from_slice(&[0; 4]);
+        out.extend_from_slice(&(items.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(items.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+        out.extend_from_slice(&at.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out
+    }
+
+    #[test]
+    fn fonts_inside_a_zip_are_extracted_and_junk_is_left_out() {
+        let dir = std::env::temp_dir().join(format!("jp-font-zip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let regular = tiny_font("LXGW WenKai");
+        let bold = tiny_font("LXGW WenKai Bold");
+        let zip = stored_zip(&[
+            ("LXGWWenKai-v1.5/", b""),
+            ("LXGWWenKai-v1.5/LXGWWenKai-Regular.ttf", &regular),
+            ("LXGWWenKai-v1.5/static/LXGWWenKai-Bold.ttf", &bold),
+            ("LXGWWenKai-v1.5/variable/LXGWWenKai-Bold.ttf", &bold),
+            ("__MACOSX/LXGWWenKai-v1.5/._LXGWWenKai-Regular.ttf", b"junk"),
+            ("LXGWWenKai-v1.5/OFL.txt", b"license"),
+            ("LXGWWenKai-v1.5/broken.otf", b"not a font"),
+        ]);
+        let archive = dir.join("LXGWWenKai-v1.5.zip");
+        std::fs::write(&archive, zip).unwrap();
+
+        let out = extract_font_archive(&archive, &dir.join("fonts")).unwrap();
+        let names: Vec<String> = out
+            .iter()
+            .map(|p| p.strip_prefix(dir.join("fonts")).unwrap().display().to_string().replace('\\', "/"))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "LXGWWenKai-v1.5/LXGWWenKai-Regular.ttf",
+                "LXGWWenKai-v1.5/LXGWWenKai-Bold.ttf",
+                "LXGWWenKai-v1.5/LXGWWenKai-Bold-2.ttf"
+            ]
+        );
+        assert_eq!(font_families(&out[0]).unwrap(), ["LXGW WenKai"]);
+        assert!(!dir.join("fonts/LXGWWenKai-v1.5/broken.otf").exists(), "读不出字体名的不留");
+
+        let empty = dir.join("readme.zip");
+        std::fs::write(&empty, stored_zip(&[("readme.txt", b"hi")])).unwrap();
+        let err = extract_font_archive(&empty, &dir.join("fonts")).unwrap_err();
+        assert!(format!("{err:#}").contains("没有 ttf / otf / ttc"), "{err:#}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unsafe_characters_in_names_are_replaced() {
+        assert_eq!(safe_file_name("a:b?.ttf"), "a_b_.ttf");
+        assert_eq!(safe_file_name(" .. "), "font");
+        assert!(is_font_entry("Fonts/Klee One.OTF"));
+        assert!(!is_font_entry("__MACOSX/Fonts/._Klee.otf"));
+        assert!(!is_font_entry("Fonts/"));
+    }
 
     /// 拼一个最小的 name 表
     fn name_table(records: &[(u16, u16, u16, u16, &[u8])]) -> Vec<u8> {
@@ -466,10 +662,7 @@ mod tests {
     #[test]
     fn bundled_fonts_are_read() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../assets/fonts");
-        if !dir.is_dir() {
-            eprintln!("跳过：没有 assets/fonts");
-            return;
-        }
+        assert!(dir.is_dir(), "发布资源 assets/fonts 必须随源码存在");
         let (files, problems) = font_files(&dir, &["不存在的字体.ttf".to_owned()]);
         let families: Vec<&str> = files.iter().map(|f| f.family.as_str()).collect();
         assert!(families.contains(&"Klee One"), "{families:?}");
@@ -521,11 +714,11 @@ mod tests {
     /// `same_names_are_listed_once_and_localized_names_are_used_when_there_is_no_english`
     /// 已经覆盖了。
     #[test]
+    #[ignore = "需要可枚举的系统字体（Windows DirectWrite）"]
     fn installed_fonts_are_listed_once_each_and_sorted() {
         let fonts = installed_fonts().unwrap();
         if fonts.is_empty() {
-            eprintln!("[skip] 这台机器列不出任何系统字体");
-            return;
+            panic!("需要可枚举的系统字体");
         }
         let names: Vec<&str> = fonts.iter().map(|f| f.name.as_str()).collect();
 

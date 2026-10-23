@@ -1,4 +1,21 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=JPOP_BUILD_ID");
+    println!("cargo:rerun-if-changed=src");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap();
+    let safe = format!("safe.directory={}", root.display().to_string().replace('\\', "/"));
+    // worktree 里 `.git` 是个文件，`.git/HEAD` 不存在——盯一个不存在的路径，cargo 每次都会重跑
+    // 构建脚本，构建编号的分钟一变 jp-app 就整个重编。问 git 真正的位置，只盯存在的文件。
+    for path in git_watch_paths(root, &safe) {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+    let build_id = std::env::var("JPOP_BUILD_ID").unwrap_or_else(|_| {
+        let sha = std::process::Command::new("git").args(["-c", &safe, "rev-parse", "--short=12", "HEAD"])
+            .current_dir(root).output().ok().filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_else(|| "local".into());
+        format!("{sha}-{}", utc_minute())
+    });
+    assert!(!build_id.is_empty() && build_id.len() <= 128 && build_id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_')), "JPOP_BUILD_ID 必须是非空构建编号");
+    println!("cargo:rustc-env=JPOP_BUILD_ID={build_id}");
     // 集成测试的可执行文件也要声明 ComCtl32 v6 依赖。
     //
     // `tauri-plugin-dialog` → `rfd` 打开了 `common-controls-v6`，链进来的
@@ -17,4 +34,44 @@ fn main() {
         );
     }
     tauri_build::build()
+}
+
+fn utc_minute() -> String {
+    // 标准库没有日期格式化；按 Gregorian civil-from-days 算 UTC，避免为构建编号增加 chrono。
+    let seconds = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let days = (seconds / 86400) as i64 + 719468;
+    let era = days / 146097;
+    let doe = days - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let mut year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    format!("{year:04}{month:02}{day:02}{:02}{:02}", seconds / 3600 % 24, seconds / 60 % 60)
+}
+
+/// HEAD 本身（换分支）、它指向的那个 ref（提交）和 packed-refs。不在 git 里、或者 git 不可用时一个都不盯。
+fn git_watch_paths(root: &std::path::Path, safe: &str) -> Vec<std::path::PathBuf> {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git").arg("-c").arg(safe).args(args).current_dir(root).output().ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
+    let mut paths = Vec::new();
+    if let Some(head) = git(&["rev-parse", "--path-format=absolute", "--git-path", "HEAD"]) {
+        paths.push(std::path::PathBuf::from(head));
+    }
+    if let Some(name) = git(&["symbolic-ref", "-q", "HEAD"])
+        && let Some(reference) = git(&["rev-parse", "--path-format=absolute", "--git-path", &name])
+    {
+        paths.push(std::path::PathBuf::from(reference));
+    }
+    if let Some(packed) = git(&["rev-parse", "--path-format=absolute", "--git-path", "packed-refs"]) {
+        paths.push(std::path::PathBuf::from(packed));
+    }
+    paths.retain(|p| p.exists());
+    paths
 }

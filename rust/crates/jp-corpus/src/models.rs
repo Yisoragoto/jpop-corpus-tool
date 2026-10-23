@@ -77,6 +77,13 @@ pub struct Album {
     pub artwork_path: String,
     pub track_count: i64,
     pub total_duration_sec: f64,
+    /// 发行类型，刮削来源原样：Single / EP / Album（MusicBrainz、iTunes），single / ep / album / compile（Deezer）。
+    /// 还没补到时是空串
+    #[serde(default)]
+    pub release_type: String,
+    /// 整张碟的曲目数（`track_count` 是库里收了几首）
+    #[serde(default)]
+    pub release_track_count: Option<i64>,
 }
 
 /// 一个人（歌手 / 作词 / 作曲 / 编曲 统一实体）。

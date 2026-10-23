@@ -16,6 +16,8 @@ pub mod job;
 pub mod library_admin;
 pub mod log;
 pub mod lyrics;
+pub mod timed_lyrics;
+pub mod lyric_upgrade;
 pub mod maintenance;
 pub mod migrate;
 /// 断点续传下载。和 Tauri 无关，在 `jp-setup` 里，macOS 客户端也用它
@@ -33,16 +35,21 @@ pub mod update;
 use state::AppState;
 
 pub mod library_root;
+pub mod e2e;
 
 /// 注册全部 command。
 ///
 /// 抽出来是为了让集成测试用 `tauri::test::mock_builder()` 装配**同一份清单**——
 /// 测试和生产各写一份的话，测试通过也证明不了生产注册对了。
 pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    builder
-        .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![
+    macro_rules! handler {
+        ($builder:expr $(, $extra:path)*) => {
+            $builder.invoke_handler(tauri::generate_handler![
+                $($extra,)*
             commands::health,
+            commands::update_preferences,
+            commands::update_set_channel,
+            commands::update_skip,
             commands::library_root,
             commands::set_library_root,
             // 曲库
@@ -95,7 +102,12 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::pitch_cache_status,
             commands::pitch_cache_set_limit,
             commands::lyrics_furigana,
+            commands::lemma_forms,
+            commands::word_timings,
+            commands::word_time_set,
+            commands::word_time_clear,
             commands::fonts_catalog,
+            commands::fonts_import_archive,
             commands::library_edit_song,
             commands::library_delete_song,
             commands::library_missing_audio,
@@ -141,6 +153,14 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::lyrics_fill_cancel,
             commands::lyrics_fill_running,
             commands::lyrics_fill_one,
+            commands::lyrics_upgrade_start,
+            commands::lyrics_upgrade_status,
+            commands::lyrics_upgrade_cancel,
+            commands::lyrics_timed_targets,
+            commands::lyrics_timed_search,
+            commands::lyrics_timed_apply,
+            commands::lyrics_sources_get,
+            commands::lyrics_sources_set,
             commands::lyrics_import_file,
             // 语料质量与来源追踪
             commands::quality_overview,
@@ -177,6 +197,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::scrape_attempts,
             commands::scrape_track,
             commands::scrape_start,
+            commands::scrape_album_fill_start,
             commands::scrape_cancel,
             commands::scrape_is_running,
             commands::scrape_accept,
@@ -220,7 +241,15 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::anki_mine_check,
             commands::anki_browse_notes,
             commands::anki_model_names,
-        ])
+            ])
+        };
+    }
+    let builder = builder.plugin(tauri_plugin_dialog::init());
+    if e2e::enabled(std::env::var("JPOP_E2E").ok().as_deref()) {
+        handler!(builder, e2e::e2e_state, e2e::e2e_scan_folder)
+    } else {
+        handler!(builder)
+    }
 }
 
 pub fn run() {

@@ -23,6 +23,26 @@ use super::{ArtistInfo, MetadataProvider, as_f64, as_i64, as_str, date_of, year_
 const RECORDING_URL: &str = "https://musicbrainz.org/ws/2/recording";
 const ARTIST_URL: &str = "https://musicbrainz.org/ws/2/artist";
 
+fn recording_identity(value: &serde_json::Value, extra: &mut std::collections::BTreeMap<String,String>) {
+    if let Some(id) = value["id"].as_str().filter(|s|!s.is_empty()) { extra.insert("recording_mbid".into(),id.into()); }
+    if let Some(isrc) = value["isrcs"].as_array().and_then(|v|v.first()).and_then(|v|v.as_str()) { extra.insert("isrc".into(),isrc.into()); }
+}
+
+fn release_identity(value: &serde_json::Value, extra: &mut std::collections::BTreeMap<String,String>) {
+    for (field,value) in [
+        ("album_title",value["title"].as_str()),
+        ("release_group_mbid",value["release-group"]["id"].as_str()),
+        ("album_type",value["release-group"]["primary-type"].as_str()),
+        ("barcode",value["barcode"].as_str()),
+        ("label",value["label-info"].as_array().and_then(|v|v.first()).and_then(|v|v["label"]["name"].as_str())),
+    ] {
+        if let Some(value) = value.filter(|s|!s.is_empty()) { extra.insert(field.into(),value.into()); }
+    }
+    let media: Vec<_> = value["media"].as_array().into_iter().flatten().collect();
+    let counts: Option<Vec<u64>> = media.iter().map(|m|m["track-count"].as_u64()).collect();
+    if let Some(counts) = counts && !counts.is_empty() { extra.insert("track_count".into(),counts.iter().sum::<u64>().to_string()); }
+}
+
 /// MusicBrainz 要求带上能联系到人的 UA，否则会被拒。
 pub const DEFAULT_UA: &str =
     "jpop-corpus-tool/1.0 ( https://github.com/Yisoragoto/jpop-corpus-tool )";
@@ -93,6 +113,7 @@ impl MusicBrainzProvider {
     }
 
     fn to_candidate(&self, item: &serde_json::Value) -> Option<ScrapeCandidate> {
+        let original = item;
         let item = item.as_object()?;
 
         // artist-credit 是「A feat. B」这种拼接结构，joinphrase 是连接词
@@ -137,8 +158,14 @@ impl MusicBrainzProvider {
             .and_then(|a| a.iter().find(|t| t.is_object()));
 
         let mut extra = std::collections::BTreeMap::new();
+        if let Some(values)=item.get("isrcs").and_then(|v|v.as_array())
+            && let Some(isrc)=values.iter().find_map(|v|v.as_str()) {
+            extra.insert("isrc".into(),isrc.into());
+        }
+        recording_identity(original, &mut extra);
         let release_id = release.map(|r| as_str(r.get("id"))).unwrap_or_default();
         if let Some(r) = release {
+            release_identity(r, &mut extra);
             extra.insert("release_id".to_string(), release_id.clone());
             extra.insert(
                 "release_group".to_string(),
@@ -182,15 +209,47 @@ impl MetadataProvider for MusicBrainzProvider {
         1.0
     }
 
+    fn enrich(&self, candidate: &ScrapeCandidate) -> Result<ScrapeCandidate, ProviderError> {
+        let mut candidate = candidate.clone();
+        let Some(id) = candidate.extra.get("release_id").filter(|id| is_mbid(id)) else { return Ok(candidate) };
+        // Search 不支持 inc；发行详情一次同时拿录音 ISRC、发行组、厂牌和介质曲数。
+        // release-group 在 API 的 includes 中实际叫 release-groups，不能照计划中的单数发无效请求。
+        let url = self.http.build_url(&format!("https://musicbrainz.org/ws/2/release/{id}"), &[
+            ("inc","recordings+isrcs+release-groups+labels+artist-credits+media".into()),("fmt","json".into()),
+        ]);
+        let release = self.http.get_json(&url)?;
+        if release.get("id").and_then(|v|v.as_str()) != Some(id) {
+            return Err(ProviderError::invalid_response("发行详情编号不匹配").with_provider("musicbrainz"));
+        }
+        release_identity(&release,&mut candidate.extra);
+        if candidate.release_date.is_empty() {
+            candidate.release_date = date_of(release["date"].as_str().unwrap_or(""));
+            candidate.year = year_of(&candidate.release_date);
+        }
+        for medium in release["media"].as_array().into_iter().flatten() {
+            for track in medium["tracks"].as_array().into_iter().flatten() {
+                let recording = &track["recording"];
+                if recording["id"].as_str() == Some(&candidate.provider_id) { recording_identity(recording,&mut candidate.extra); }
+            }
+        }
+        Ok(candidate)
+    }
+
     fn search_tracks(
         &self,
         query: &SearchQuery,
         limit: usize,
     ) -> Result<Vec<ScrapeCandidate>, ProviderError> {
+        if !query.recording_mbid.is_empty() && is_mbid(&query.recording_mbid) {
+            return Ok(self.get_track(&query.recording_mbid)?.into_iter().collect());
+        }
+        if let Some(id)=query.provider_ids.get("musicbrainz").filter(|id| is_mbid(id)) {
+            return Ok(self.get_track(id)?.into_iter().collect());
+        }
         if query.title.trim().is_empty() {
             return Ok(Vec::new());
         }
-        let mut clauses = vec![format!(r#"recording:"{}""#, lucene_escape(&query.title))];
+        let mut clauses = if query.isrc.is_empty() { vec![format!(r#"recording:"{}""#, lucene_escape(&query.title))] } else { vec![format!(r#"isrc:"{}""#,lucene_escape(&query.isrc))] };
         if !query.artist.trim().is_empty() {
             clauses.push(format!(r#"artist:"{}""#, lucene_escape(&query.artist)));
         }

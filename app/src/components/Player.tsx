@@ -21,6 +21,7 @@ import { api, formatDuration, PITCH_STEPS, pitchLabel, RATE_STEPS, type Playback
 import { useCoverTint } from "../coverColor";
 import { Cover } from "./Cover";
 import { useSpectrum } from "../usePlayback";
+import { tr } from "../i18n";
 
 /** 前进 / 后退一步的秒数。听写歌词时反复倒回来的那一小段 */
 const STEP_SEC = 5;
@@ -148,14 +149,14 @@ export function Player({
                 .catch(() => undefined)
                 .finally(() => setScrubbing(null));
             }}
-            aria-label="播放进度"
+            aria-label={tr("播放进度")}
           />
         </span>
         {/* 右边默认显示剩余时长（照 Apple Music），点一下换成总长。拿不到时长的格式显示占位 */}
         <button
           className="time time-toggle"
           onClick={() => setShowRemaining((v) => !v)}
-          title={showRemaining ? "显示总时长" : "显示剩余时长"}
+          title={showRemaining ? tr("显示总时长") : tr("显示剩余时长")}
           disabled={duration === null}
         >
           {duration === null ? "—:—" : showRemaining ? `-${formatDuration(Math.max(0, duration - position))}` : formatDuration(duration)}
@@ -167,7 +168,7 @@ export function Player({
           className={`player-now ${onOpenStage ? "clickable" : ""}`}
           role={onOpenStage ? "button" : undefined}
           tabIndex={onOpenStage ? 0 : undefined}
-          title={onOpenStage ? "打开全屏歌词" : undefined}
+          title={onOpenStage ? tr("打开全屏歌词") : undefined}
           onClick={() => onOpenStage?.()}
           onKeyDown={(e) => {
             if (onOpenStage && (e.key === "Enter" || e.key === " ")) {
@@ -192,8 +193,8 @@ export function Player({
             className="glyph-btn nudge-back"
             onClick={() => step(-STEP_SEC)}
             disabled={disabled || idle}
-            title={`后退 ${STEP_SEC} 秒 (←)`}
-            aria-label={`后退 ${STEP_SEC} 秒`}
+            title={tr("后退 {STEP_SEC} 秒 (←)", { STEP_SEC })}
+            aria-label={tr("后退 {STEP_SEC} 秒", { STEP_SEC })}
           >
             <IconSkip back />
           </button>
@@ -202,8 +203,8 @@ export function Player({
             onClick={() => void api.audioToggle()}
             // 等变调渲染时引擎还是空的，但播放键照样能按（记到渲染好之后）
             disabled={disabled || idle}
-            title={playing ? "暂停 (空格)" : "播放 (空格)"}
-            aria-label={playing ? "暂停" : "播放"}
+            title={playing ? tr("暂停 (空格)") : tr("播放 (空格)")}
+            aria-label={playing ? tr("暂停") : tr("播放")}
           >
             {/* 两个图标叠着，靠 class 切换：播放 ↔ 暂停是一次旋转 + 缩放的交叉淡入，不是硬切 */}
             <span className="play-icon icon-play">
@@ -217,25 +218,25 @@ export function Player({
             className="glyph-btn nudge-forward"
             onClick={() => step(STEP_SEC)}
             disabled={disabled || idle}
-            title={`前进 ${STEP_SEC} 秒 (→)`}
-            aria-label={`前进 ${STEP_SEC} 秒`}
+            title={tr("前进 {STEP_SEC} 秒 (→)", { STEP_SEC })}
+            aria-label={tr("前进 {STEP_SEC} 秒", { STEP_SEC })}
           >
             <IconSkip />
           </button>
         </div>
 
         <div className="player-tools">
-          {state.pitchRendering && <span className="pitch-busy">生成 {pitchLabel(state.pitchSemitones)} 音频…</span>}
+          {state.pitchRendering && <span className="pitch-busy">{tr("生成 {pitchSemitones} 音频…", { pitchSemitones: pitchLabel(state.pitchSemitones) })}</span>}
           <button
             className={`glyph-btn small ${state.loopRegion ? "on" : ""}`}
             onClick={() => void api.audioSetLoop()}
             disabled={disabled || !state.loopRegion}
             title={
               state.loopRegion
-                ? `单句循环 ${formatDuration(state.loopRegion.startSec)}–${formatDuration(state.loopRegion.endSec)}，点击取消`
-                : "单句循环：在歌词里选一句开启"
+                ? tr("单句循环 {startSec}–{endSec}，点击取消", { startSec: formatDuration(state.loopRegion.startSec), endSec: formatDuration(state.loopRegion.endSec) })
+                : tr("单句循环：在歌词里选一句开启")
             }
-            aria-label="单句循环"
+            aria-label={tr("单句循环")}
           >
             <IconLoop />
           </button>
@@ -243,13 +244,13 @@ export function Player({
             className="glyph-btn small"
             onClick={() => onOpenStage?.()}
             disabled={!onOpenStage}
-            title="全屏歌词"
-            aria-label="全屏歌词"
+            title={tr("全屏歌词")}
+            aria-label={tr("全屏歌词")}
           >
             <IconLyrics />
           </button>
           <TunePanel state={state} disabled={disabled} onError={onError} />
-          <span className="volume-wrap" title="音量">
+          <span className="volume-wrap" title={tr("音量")}>
             <button
               className="glyph-btn tiny"
               onClick={() => {
@@ -260,7 +261,7 @@ export function Player({
                 } else void api.audioSetVolume(lastVolume.current || 1);
               }}
               disabled={disabled}
-              aria-label={state.volume === 0 ? "取消静音" : "静音"}
+              aria-label={state.volume === 0 ? tr("取消静音") : tr("静音")}
             >
               <IconVolume level={0} muted={state.volume === 0} />
             </button>
@@ -274,7 +275,7 @@ export function Player({
               disabled={disabled}
               onChange={(e) => void api.audioSetVolume(Number(e.target.value))}
               style={{ ["--played" as string]: `${state.volume * 100}%` }}
-              aria-label="音量"
+              aria-label={tr("音量")}
             />
             <span className="volume-max" aria-hidden="true">
               <IconVolume level={2} muted={false} />
@@ -335,18 +336,18 @@ function TunePanel({
         className={`glyph-btn small ${changed ? "on" : ""} ${open ? "open" : ""}`}
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
-        title="速度和音调"
-        aria-label="速度和音调"
+        title={tr("速度和音调")}
+        aria-label={tr("速度和音调")}
         aria-expanded={open}
       >
         <IconTune />
         {badge && <span className="tune-badge">{badge}</span>}
       </button>
       {open && (
-        <div className="flyout-panel tune-panel" role="dialog" aria-label="速度和音调">
+        <div className="flyout-panel tune-panel" role="dialog" aria-label={tr("速度和音调")}>
           <div className="tune-head">
-            <b>速度</b>
-            <span>不改变音高</span>
+            <b>{tr("速度")}</b>
+            <span>{tr("不改变音高")}</span>
           </div>
           <div className="tune-chips">
             {RATE_STEPS.map((r) => (
@@ -356,13 +357,13 @@ function TunePanel({
             ))}
           </div>
           <div className="tune-head">
-            <b>音调</b>
-            <span>没用过的调要先生成几秒，之后有缓存</span>
+            <b>{tr("音调")}</b>
+            <span>{tr("没用过的调要先生成几秒，之后有缓存")}</span>
           </div>
           <div className="tune-chips pitch">
             {PITCH_STEPS.map((n) => (
               <button key={n} className={n === state.pitchSemitones ? "on" : ""} onClick={() => n !== state.pitchSemitones && setPitch(n)}>
-                {n === 0 ? "原调" : `${n > 0 ? "+" : ""}${n}`}
+                {n === 0 ? tr("原调") : `${n > 0 ? "+" : ""}${n}`}
               </button>
             ))}
           </div>
@@ -373,9 +374,7 @@ function TunePanel({
                 if (state.rate !== 1) void api.audioSetRate(1);
                 if (state.pitchSemitones !== 0) setPitch(0);
               }}
-            >
-              恢复原速原调
-            </button>
+            >{tr("恢复原速原调")}</button>
           )}
         </div>
       )}

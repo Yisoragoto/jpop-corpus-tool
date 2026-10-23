@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import type { LyricLine } from "../api";
 import { qualityApi } from "../corpusQuality";
 import { formatStamp, parseStamp, summarizeEdit, type EditRow } from "../lyricEdit";
+import { tr } from "../i18n";
 
 interface Props {
   songId: string;
@@ -39,7 +40,7 @@ export function LyricsEditor({ songId, lines, onSaved, onCancel, onError }: Prop
   const badRows = parsed.flatMap((p, i) => (p === undefined ? [i] : []));
   const after: EditRow[] = rows.map((r, i) => ({ timeSec: parsed[i] ?? null, text: r.text }));
   const summary = summarizeEdit(original, after);
-  const unchanged = summary === "没有改动";
+  const unchanged = summary === tr("没有改动");
 
   const update = (i: number, patch: Partial<Draft>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const insertAfter = (i: number) =>
@@ -57,7 +58,7 @@ export function LyricsEditor({ songId, lines, onSaved, onCancel, onError }: Prop
         after.filter((r) => r.text.trim() !== ""),
         note,
       );
-      onSaved(`歌词存成了新的一版：${done.lyricLines} 行${done.correctionsRestored ? `，套回 ${done.correctionsRestored} 行分词校正` : ""}`);
+      onSaved(tr("歌词存成了新的一版：{lyricLines} 行{v}", { lyricLines: done.lyricLines, v: done.correctionsRestored ? tr("，套回 {correctionsRestored} 行分词校正", { correctionsRestored: done.correctionsRestored }) : "" }));
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -68,13 +69,10 @@ export function LyricsEditor({ songId, lines, onSaved, onCancel, onError }: Prop
   return (
     <section className="lyrics-editor">
       <div className="card-head">
-        <h3>逐行编辑歌词</h3>
+        <h3>{tr("逐行编辑歌词")}</h3>
         <span className="muted small">{summary}</span>
       </div>
-      <p className="muted small">
-        时间写成 <code>1:02.50</code>，留空表示这一行没有时间；文字留空的行会被去掉。
-        存下来是新的一版，旧版能在「来源与校验」里恢复。
-      </p>
+      <p className="muted small">{tr("时间写成")}{" "}<code>1:02.50</code>{tr("，留空表示这一行没有时间；文字留空的行会被去掉。 存下来是新的一版，旧版能在「来源与校验」里恢复。")}</p>
       <div className="lyrics-editor-rows">
         {rows.map((r, i) => (
           <div key={r.key} className={`lyrics-editor-row${parsed[i] === undefined ? " bad" : ""}`}>
@@ -83,39 +81,35 @@ export function LyricsEditor({ songId, lines, onSaved, onCancel, onError }: Prop
               type="text"
               className="stamp"
               value={r.stamp}
-              placeholder="无"
-              aria-label={`第 ${i + 1} 行的时间`}
+              placeholder={tr("无")}
+              aria-label={tr("第 {v} 行的时间", { v: i + 1 })}
               onChange={(e) => update(i, { stamp: e.target.value })}
             />
             <input
               type="text"
               className="line-text"
               value={r.text}
-              aria-label={`第 ${i + 1} 行`}
+              aria-label={tr("第 {v} 行", { v: i + 1 })}
               onChange={(e) => update(i, { text: e.target.value })}
             />
-            <button className="link-btn" title="在下面插一行" onClick={() => insertAfter(i)}>
+            <button className="link-btn" title={tr("在下面插一行")} onClick={() => insertAfter(i)}>
               ＋
             </button>
-            <button className="link-btn danger" title="删掉这一行" onClick={() => remove(i)}>
+            <button className="link-btn danger" title={tr("删掉这一行")} onClick={() => remove(i)}>
               ✕
             </button>
           </div>
         ))}
         {rows.length === 0 && (
-          <button className="link-btn" onClick={() => setRows([draftOf(null, "")])}>
-            加一行
-          </button>
+          <button className="link-btn" onClick={() => setRows([draftOf(null, "")])}>{tr("加一行")}</button>
         )}
       </div>
-      {badRows.length > 0 && <p className="warn small">第 {badRows.map((i) => i + 1).join("、")} 行的时间认不出来</p>}
+      {badRows.length > 0 && <p className="warn small">{tr("第 {map} 行的时间认不出来", { map: badRows.map((i) => i + 1).join(tr("、")) })}</p>}
       <div className="lyrics-editor-actions">
-        <input type="text" placeholder="改了什么（可不填，记进修订历史）" value={note} onChange={(e) => setNote(e.target.value)} />
-        <button className="ghost" onClick={onCancel} disabled={saving}>
-          取消
-        </button>
+        <input type="text" placeholder={tr("改了什么（可不填，记进修订历史）")} value={note} onChange={(e) => setNote(e.target.value)} />
+        <button className="ghost" onClick={onCancel} disabled={saving}>{tr("取消")}</button>
         <button className="primary" onClick={() => void save()} disabled={saving || unchanged || badRows.length > 0}>
-          {saving ? "保存中…" : "存成新的一版"}
+          {saving ? tr("保存中…") : tr("存成新的一版")}
         </button>
       </div>
     </section>

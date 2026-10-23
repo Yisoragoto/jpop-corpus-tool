@@ -1,0 +1,5 @@
+{
+  "search": {"data": [{"id": 42, "title": "雨の歌", "duration": 215, "artist": {"name": "Akari"}, "album": {"id": 7, "title": "Rain Notes", "cover_xl": "https://example.test/cover.jpg"}}]},
+  "track": {"id": 42, "isrc": "JPTEST000042", "release_date": "2023-04-05", "album": {"id": 7, "title": "Rain Notes"}},
+  "album": {"id": 7, "title": "Rain Notes", "label": "Fixture Deezer Label", "nb_tracks": 9, "release_date": "2023-04-05", "record_type": "album", "upc": "1234567890000"}
+}
