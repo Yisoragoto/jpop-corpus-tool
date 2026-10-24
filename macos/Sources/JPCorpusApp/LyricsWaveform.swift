@@ -21,11 +21,18 @@ struct LyricsWaveform: View {
     var body: some View {
         GeometryReader { geo in
             TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !ready || !app.player.isPlaying)) { _ in
+                // Snapshot on the main actor each frame; the renderer and its helpers use only values.
+                let visibleRange = range
+                let visibleLine = line
+                let peaks = model.peaks
+                let selectedUnit = model.selectedUnit
+                let position = app.player.timingPosition
+                let isReady = ready
                 Canvas { context, size in
                     let width = size.width, height = size.height
-                    func x(_ sec: Double) -> CGFloat { CGFloat((sec - range.from) / (range.to - range.from)) * width }
-                    func seconds(_ px: CGFloat) -> Double { range.from + Double(px / width) * (range.to - range.from) }
-                    if let peaks = model.peaks, !peaks.isEmpty {
+                    func x(_ sec: Double) -> CGFloat { CGFloat((sec - visibleRange.from) / (visibleRange.to - visibleRange.from)) * width }
+                    func seconds(_ px: CGFloat) -> Double { visibleRange.from + Double(px / width) * (visibleRange.to - visibleRange.from) }
+                    if let peaks, !peaks.isEmpty {
                         for px in stride(from: CGFloat(0), to: width, by: 2) {
                             let a = max(0, min(peaks.count, Int(floor(seconds(px) * 100))))
                             let b = max(a, min(peaks.count, max(a + 1, Int(floor(seconds(px + 2) * 100)))))
@@ -34,17 +41,16 @@ struct LyricsWaveform: View {
                             context.fill(Path(CGRect(x: px, y: height / 2 - h / 2, width: 1.5, height: max(1, h))), with: .color(.secondary.opacity(0.6)))
                         }
                     }
-                    for (ui, unit) in line.units.enumerated() {
+                    for (ui, unit) in visibleLine.units.enumerated() {
                         guard let start = unit.start else { continue }
                         let x0 = x(start), x1 = unit.end.map { x($0) } ?? x0 + 3
-                        context.fill(Path(CGRect(x: x0, y: 0, width: max(2, x1 - x0), height: height)), with: .color(.accentColor.opacity(ui == model.selectedUnit ? 0.4 : 0.2)))
+                        context.fill(Path(CGRect(x: x0, y: 0, width: max(2, x1 - x0), height: height)), with: .color(.accentColor.opacity(ui == selectedUnit ? 0.4 : 0.2)))
                         context.fill(Path(CGRect(x: x0, y: 0, width: 1.5, height: height)), with: .color(.accentColor))
                         if unit.end != nil { context.fill(Path(CGRect(x: x1 - 1.5, y: 0, width: 1.5, height: height)), with: .color(.accentColor)) }
-                        context.draw(Text(Karaoke.unitText(line, unit)).font(.system(size: 14)), at: CGPoint(x: x0 + 4, y: 4), anchor: .topLeading)
+                        context.draw(Text(Karaoke.unitText(visibleLine, unit)).font(.system(size: 14)), at: CGPoint(x: x0 + 4, y: 4), anchor: .topLeading)
                     }
-                    let pos = app.player.timingPosition
-                    if ready && pos >= range.from && pos <= range.to {
-                        context.fill(Path(CGRect(x: x(pos) - 1, y: 0, width: 2, height: height)), with: .color(.red))
+                    if isReady && position >= visibleRange.from && position <= visibleRange.to {
+                        context.fill(Path(CGRect(x: x(position) - 1, y: 0, width: 2, height: height)), with: .color(.red))
                     }
                 }
             }

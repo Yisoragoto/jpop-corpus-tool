@@ -1,10 +1,10 @@
 import AppKit
 import JPCore
+import JPCorpusModel
 import SwiftUI
 
 /// One native text button per actual source unit. Masking expresses progress
 /// only inside that unit's own interval, never between units or by character.
-@MainActor
 @MainActor
 struct TimedLyricText: View {
     @Environment(AppModel.self) private var app
