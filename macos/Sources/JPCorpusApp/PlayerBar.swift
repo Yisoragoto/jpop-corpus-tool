@@ -5,55 +5,68 @@ import SwiftUI
 
 @MainActor
 struct PlayerBar: View {
+    static let height: CGFloat = 76
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var cover: NSImage?
     @State private var colors = ArtworkColors()
+    @State private var compactToolsOpen = false
 
     var body: some View {
-        VStack(spacing: 4) {
-            if app.player.spectrumEnabled { PlayerSpectrum().frame(height: 18) }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 16) {
-                    PlayerTransport(tint: colors.highlight)
-                    song.frame(minWidth: 160, maxWidth: .infinity)
-                    PlayerTools()
-                    PlayerVolume().frame(width: 110)
-                }
-                VStack(spacing: 6) {
-                    HStack(spacing: 10) {
-                        PlayerTransport(tint: colors.highlight)
-                        song.frame(minWidth: 90, maxWidth: .infinity)
-                    }
-                    ViewThatFits(in: .horizontal) {
-                        HStack {
-                            PlayerTools()
-                            Spacer(minLength: 8)
-                            PlayerVolume().frame(width: 90)
-                        }
-                        VStack(alignment: .trailing, spacing: 6) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+                PlayerTransport(tint: colors.highlight)
+                song().frame(minWidth: 160, maxWidth: .infinity)
+                PlayerTools()
+                PlayerVolume().frame(width: 110)
+            }
+            HStack(spacing: 10) {
+                PlayerTransport(tint: colors.highlight)
+                song(compact: true).frame(minWidth: 60, maxWidth: .infinity)
+                Button { compactToolsOpen.toggle() } label: { Image(systemName: "ellipsis") }
+                    .buttonStyle(PlayerGlyphStyle())
+                    .help("播放工具与音量").accessibilityLabel("播放工具与音量")
+                    .popover(isPresented: $compactToolsOpen, arrowEdge: .top) {
+                        HStack(spacing: 12) {
                             PlayerTools()
                             PlayerVolume().frame(width: 110)
-                        }.frame(maxWidth: .infinity, alignment: .trailing)
+                        }.padding(12)
                     }
-                }
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .frame(height: Self.height)
         .background {
-            ZStack {
-                GlassBackground(material: .hudWindow, blending: .withinWindow)
-                colors.backdrop.opacity(0.5)
-                if let cover {
-                    Image(nsImage: cover).resizable().scaledToFill()
-                        .blur(radius: 50).saturation(1.6).opacity(0.3)
-                        .transition(.opacity)
+            // Background geometry receives the bar's fixed bounds; artwork cannot propose its aspect-ratio height.
+            GeometryReader { geo in
+                ZStack {
+                    GlassBackground(material: .hudWindow, blending: .withinWindow)
+                    colors.backdrop.opacity(0.5)
+                    if let cover {
+                        Image(nsImage: cover).resizable().scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .blur(radius: 50).saturation(1.6).opacity(0.3)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.8), value: colors.highlight)
+            }
+        }
+        .overlay(alignment: .top) {
+            if app.player.spectrumEnabled {
+                PlayerSpectrum().frame(height: 10).padding(.horizontal, 14)
+                    .allowsHitTesting(false)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .background {
+            if SmokeRun.isEnabled {
+                GeometryReader { geo in
+                    Color.clear.preference(key: PlayerBarHeightKey.self, value: geo.size.height)
                 }
             }
-            .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.8), value: colors.highlight)
         }
         .overlay(alignment: .top) {
             LinearGradient(colors: [.clear, colors.highlight.opacity(0.5), .clear], startPoint: .leading, endPoint: .trailing)
@@ -68,28 +81,39 @@ struct PlayerBar: View {
         }
     }
 
-    private var song: some View {
-        VStack(spacing: 2) {
-            Button { app.showStage = true } label: {
-                HStack(spacing: 9) {
+    private func song(compact: Bool = false) -> some View {
+        HStack(spacing: 9) {
+            if !compact {
+                Button { app.showStage = true } label: {
                     PlayerCover(image: cover).frame(width: 38, height: 38)
+                }
+                .buttonStyle(.plain).disabled(app.player.track == nil)
+                .help("打开全屏歌词（⇧⌘F）").accessibilityLabel("打开全屏歌词")
+            }
+            VStack(spacing: 0) {
+                Button { app.showStage = true } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(app.player.track?.title ?? "未在播放").font(.callout.weight(.semibold)).lineLimit(1)
                         Text(app.player.track?.artist ?? "选择一首歌开始播放").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .id(app.player.track?.id)
+                    .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
                 }
-                .id(app.player.track?.id)
-                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                .buttonStyle(.plain)
+                .disabled(app.player.track == nil)
+                .help("打开全屏歌词（⇧⌘F）")
+                .clipped()
+                .animation(reduceMotion ? nil : .spring(duration: 0.45), value: app.player.track?.id)
+                PlayerProgress()
             }
-            .buttonStyle(.plain)
-            .disabled(app.player.track == nil)
-            .help("打开全屏歌词（⇧⌘F）")
-            .clipped()
-            .animation(reduceMotion ? nil : .spring(duration: 0.45), value: app.player.track?.id)
-            PlayerProgress()
         }
     }
+}
+
+struct PlayerBarHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 @MainActor
@@ -315,20 +339,22 @@ struct PlayerSpectrum: View {
 struct PlayerGlyphStyle: ButtonStyle {
     var diameter: CGFloat = 32
     func makeBody(configuration: Configuration) -> some View {
-        GlyphBody(configuration: configuration, diameter: diameter)
+        configuration.label.modifier(PlayerGlyphSurface(diameter: diameter, pressed: configuration.isPressed))
     }
-    private struct GlyphBody: View {
-        let configuration: Configuration
-        let diameter: CGFloat
-        @State private var hover = false
-        @Environment(\.isEnabled) private var enabled
-        var body: some View {
-            configuration.label.frame(width: diameter, height: diameter)
-                .background {
-                    if hover || configuration.isPressed { Circle().fill(.ultraThinMaterial) }
-                }
-                .contentShape(Circle()).onHover { hover = $0 }
-                .opacity(enabled ? (configuration.isPressed ? 0.65 : 1) : 0.35)
-        }
+}
+
+/// Menus and ordinary buttons share the same hover surface without inheriting native menu chrome.
+struct PlayerGlyphSurface: ViewModifier {
+    var diameter: CGFloat = 32
+    var pressed = false
+    @State private var hover = false
+    @Environment(\.isEnabled) private var enabled
+    func body(content: Content) -> some View {
+        content.frame(width: diameter, height: diameter)
+            .background {
+                if hover || pressed { Circle().fill(.ultraThinMaterial) }
+            }
+            .contentShape(Circle()).onHover { hover = $0 }
+            .opacity(enabled ? (pressed ? 0.65 : 1) : 0.35)
     }
 }

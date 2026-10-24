@@ -13,7 +13,9 @@ public protocol PlaybackEngine: AnyObject {
     var volume: Float { get set }
     var spectrumEnabled: Bool { get set }
     var spectrum: [Float] { get }
+    var lastError: String? { get }
     var onTick: ((Double) -> Void)? { get set }
+    var onStateChange: (() -> Void)? { get set }
     func load(_ url: URL) throws
     func unload()
     func play() throws
@@ -33,8 +35,12 @@ public final class NativePlaybackEngine: PlaybackEngine {
     private var generation: UInt64 = 0
     private var scheduled = false
     private var tapped = false
+    private var reconnectRequired = false
     private var timer: Timer?
+    private var configurationObserver: NSObjectProtocol?
     public var onTick: ((Double) -> Void)?
+    public var onStateChange: (() -> Void)?
+    public private(set) var lastError: String?
     public private(set) var isPlaying = false
     public var isLoaded: Bool { file != nil }
     public var duration: Double { file.map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0 }
@@ -45,7 +51,7 @@ public final class NativePlaybackEngine: PlaybackEngine {
     public var spectrum: [Float] { isPlaying && spectrumEnabled ? analyzer.snapshot() : Array(repeating: 0, count: 48) }
 
     public var position: Double {
-        guard isPlaying, let time = node.lastRenderTime,
+        guard isPlaying, engine.isRunning, node.isPlaying, let time = node.lastRenderTime,
               let sourceTime = node.playerTime(forNodeTime: time), sourceTime.sampleRate > 0 else { return heldPosition }
         // playerTime 位于 TimePitch 之前，已是源音频帧；不能再乘 rate。
         return min(duration, max(origin, origin + Double(sourceTime.sampleTime) / sourceTime.sampleRate))
@@ -54,17 +60,30 @@ public final class NativePlaybackEngine: PlaybackEngine {
     public init() {
         engine.attach(node)
         engine.attach(timePitch)
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            // Leave the audio engine's notification stack before mutating its graph on the main thread.
+            Task { @MainActor [weak self] in self?.configurationChanged() }
+        }
         let ticker = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.onTick?(self.position)
+                if self.isPlaying && !self.engine.isRunning { self.configurationChanged() }
+                let seconds = self.position
+                // The render clock can disappear when the device stops. Keep the last source position (within one tick).
+                self.heldPosition = seconds
+                self.onTick?(seconds)
             }
         }
         RunLoop.main.add(ticker, forMode: .common)
         timer = ticker
     }
 
-    deinit { timer?.invalidate() }
+    deinit {
+        timer?.invalidate()
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+    }
 
     public func load(_ url: URL) throws {
         unload()
@@ -87,16 +106,20 @@ public final class NativePlaybackEngine: PlaybackEngine {
         engine.disconnectNodeOutput(node)
         engine.disconnectNodeOutput(timePitch)
         file = nil
+        lastError = nil
+        reconnectRequired = false
         origin = 0; heldPosition = 0; scheduled = false
     }
 
     public func play() throws {
         guard isLoaded, !isPlaying else { return }
+        if reconnectRequired { try rebuildConnections(at: heldPosition) }
         if heldPosition >= duration { seek(to: 0) }
         if !scheduled { schedule() }
         if !engine.isRunning { engine.prepare(); try engine.start() }
         node.play()
         isPlaying = true
+        lastError = nil
     }
 
     public func pause() {
@@ -133,7 +156,7 @@ public final class NativePlaybackEngine: PlaybackEngine {
         node.scheduleSegment(file, startingFrame: frame, frameCount: count, at: nil,
                              completionCallbackType: .dataPlayedBack) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.generation == request else { return }
+                guard let self, self.generation == request, self.engine.isRunning else { return }
                 self.heldPosition = min(self.duration, segmentEnd)
                 self.scheduled = false
                 if self.heldPosition < self.duration {
@@ -145,6 +168,59 @@ public final class NativePlaybackEngine: PlaybackEngine {
                 }
             }
         }
+    }
+
+    private func configurationChanged() {
+        // Hardware changes stop AVAudioEngine. Ignore stale notifications once it has already recovered.
+        guard isLoaded, !engine.isRunning else { return }
+        let resume = isPlaying
+        let seconds = position
+        isPlaying = false
+        do {
+            try rebuildConnections(at: seconds)
+            if resume && heldPosition < duration { try play() }
+            lastError = nil
+        } catch {
+            reconnectRequired = true
+            generation &+= 1
+            node.stop()
+            engine.stop()
+            removeTap()
+            scheduled = false
+            isPlaying = false
+            lastError = "音频输出设备变化后无法恢复播放：\(error.localizedDescription)"
+        }
+        onStateChange?()
+    }
+
+    private func rebuildConnections(at seconds: Double) throws {
+        guard let file else { return }
+        reconnectRequired = true
+        generation &+= 1 // Discard completions from the device's discarded schedule.
+        isPlaying = false
+        node.stop()
+        engine.stop()
+        removeTap()
+        scheduled = false
+        heldPosition = seconds
+        origin = seconds
+        engine.disconnectNodeOutput(node)
+        engine.disconnectNodeOutput(timePitch)
+        engine.disconnectNodeOutput(engine.mainMixerNode)
+        engine.reset()
+        let outputFormat = engine.outputNode.inputFormat(forBus: 0)
+        guard outputFormat.sampleRate > 0, outputFormat.channelCount > 0 else {
+            throw NSError(domain: "Playback", code: 2, userInfo: [NSLocalizedDescriptionKey: "没有可用的音频输出设备"])
+        }
+        engine.connect(node, to: timePitch, format: file.processingFormat)
+        engine.connect(timePitch, to: engine.mainMixerNode, format: file.processingFormat)
+        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: outputFormat)
+        timePitch.rate = rate
+        timePitch.pitch = Float(pitch * 100)
+        engine.mainMixerNode.outputVolume = volume
+        updateTap()
+        seek(to: seconds)
+        reconnectRequired = false
     }
 
     private func updateTap() {

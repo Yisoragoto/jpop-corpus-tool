@@ -39,6 +39,7 @@ enum SmokeRun {
     }
 
     private static var started = false
+    static var playerBarHeight: CGFloat = 0
 
     static func run(_ app: AppModel) async {
         guard let out = outputDirectory, !started else { return }
@@ -54,6 +55,10 @@ enum SmokeRun {
         func require(_ condition: Bool, _ name: String, _ values: String) throws {
             note("[step] \(name) \(values) status=\(condition ? "pass" : "fail")")
             if !condition { throw SmokeFailure.step(name) }
+        }
+        func requirePlayerBarHeight() throws {
+            let height = playerBarHeight
+            try require(height.isFinite && height > 0 && height <= 120, "player-bar", "height=\(height)")
         }
 
         do {
@@ -78,6 +83,7 @@ enum SmokeRun {
                 await settle(1.5)
                 let p = app.player
                 try require(p.isPlaying && p.lastError == nil, "audition", "playing=\(p.isPlaying) song=\(p.track?.id ?? "none")")
+                try requirePlayerBarHeight()
                 shot("03-audition", into: out, note: note)
                 let wait = max(0, (hit.endSec ?? 0) - p.position) + 1
                 await settle(min(wait, 12))
@@ -97,6 +103,21 @@ enum SmokeRun {
                 player.pause()
                 player.resetTuning()
             } else { throw SmokeFailure.step("playback-tuning-missing-track") }
+
+            // Exercise the compact layout with the lyrics inspector still open, and without spectrum.
+            if let window = NSApplication.shared.windows.first(where: { $0.isVisible && $0.contentView != nil }) {
+                let originalFrame = window.frame
+                window.setContentSize(NSSize(width: 960, height: 600))
+                await settle(0.8)
+                try requirePlayerBarHeight()
+                shot("03a-compact-player", into: out, note: note)
+                app.player.spectrumEnabled = false
+                await settle(0.3)
+                try requirePlayerBarHeight()
+                app.player.spectrumEnabled = true
+                window.setFrame(originalFrame, display: true)
+                await settle(0.8)
+            }
 
             // 振假名要分词词典：CI 把缓存的那份目录传进来，装进示例库（和导入页「选已有的词典」同一条路）
             if let sudachi = ProcessInfo.processInfo.environment["JPCORPUS_SMOKE_SUDACHI"], !sudachi.isEmpty, let client = app.core {
@@ -123,6 +144,7 @@ enum SmokeRun {
             // 首页：刚才那次试听到行尾自动暂停，播放记录里有了，「继续听」应该是这首
             app.section = .home
             await settle(2)
+            try requirePlayerBarHeight()
             shot("04a-home", into: out, note: note)
 
             // 曲库三种看法
@@ -143,6 +165,7 @@ enum SmokeRun {
             app.libraryPath = []
             app.show(.song("004"))
             await settle(2)
+            try requirePlayerBarHeight()
             shot("04f-song", into: out, note: note)
 
             // ⌘K 全库搜索

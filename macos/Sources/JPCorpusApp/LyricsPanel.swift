@@ -27,14 +27,17 @@ struct LyricsPanel: View {
             if let track = player.track {
                 header(track)
                 ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        LyricsToolsButton(songId: track.id)
+                    HStack(spacing: 4) {
+                        LyricsToolsButton(songId: track.id, iconOnly: true)
                         FuriganaMenu()
                         LyricsDisplayButton()
-                        Button("卡拉 OK") { app.stageKaraoke = true; app.showStage = true }
-                    }.font(.caption)
+                        Button { app.stageKaraoke = true; app.showStage = true } label: { Image(systemName: "music.mic") }
+                            .help("打开卡拉 OK").accessibilityLabel("打开卡拉 OK")
+                    }
+                    .buttonStyle(PlayerGlyphStyle()).font(.system(size: 15, weight: .semibold))
                 }
-                .frame(height: 30)
+                .scrollIndicators(.never)
+                .frame(height: 34)
                 .padding(.horizontal, 14)
                 .padding(.bottom, 6)
                 ScrollViewReader { proxy in
@@ -301,13 +304,16 @@ struct FuriganaMenu: View {
             }
             .pickerStyle(.inline)
         } label: {
-            Text("あ")
+            Image(systemName: app.showFurigana ? "character.bubble.fill" : "character.bubble")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(app.showFurigana ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .foregroundStyle(.primary.opacity(app.showFurigana ? 1 : 0.6))
+                .modifier(PlayerGlyphSurface())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .buttonStyle(.plain)
         .fixedSize()
+        .accessibilityLabel(app.showFurigana ? "振假名：已开启" : "振假名：已关闭")
         .help("振假名（⇧⌘R）。读音来自分词词典，和 Windows 版同一套规则")
     }
 }

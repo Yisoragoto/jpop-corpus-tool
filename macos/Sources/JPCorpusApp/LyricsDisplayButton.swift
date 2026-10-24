@@ -22,7 +22,9 @@ struct LyricsDisplayButton: View {
         return names.filter { seen.insert($0).inserted }
     }
     var body: some View {
-        Button("显示") { open.toggle() }
+        Button { open.toggle() } label: { Image(systemName: "textformat.size") }
+            .buttonStyle(PlayerGlyphStyle())
+            .help("歌词显示：字体、字号与间距").accessibilityLabel("歌词显示")
             .popover(isPresented: $open, arrowEdge: .bottom) { controls.padding(14).frame(width: 420) }
             .task(id: app.libraryURL) { await refresh() }
             .fileImporter(isPresented: $importing, allowedContentTypes: ["ttf", "otf", "ttc", "zip"].map { UTType(filenameExtension: $0) ?? UTType(importedAs: "org.jpcorpus.font.\($0)") }, allowsMultipleSelection: true) { result in
@@ -56,7 +58,7 @@ struct LyricsDisplayButton: View {
             Button("恢复默认") { app.lyricsDisplay = LyricsDisplay(); app.furiganaMode = .kanji }
             ForEach(problems, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
             if let error { Text(error).font(.caption).foregroundStyle(.orange) }
-        }
+        }.buttonStyle(.automatic)
     }
     private func fontPicker(_ title: String, selection: Binding<String>) -> some View {
         Picker(title, selection: selection) {

@@ -9,12 +9,19 @@ struct LyricsToolsButton: View {
     let songId: String
     var timing = false
     var onDismiss: (() -> Void)? = nil
+    var iconOnly = false
     @State private var showing = false
     var body: some View {
-        Button(timing ? "打轴" : "歌词管理") { showing = true }
+        Button { showing = true } label: {
+            if iconOnly { Image(systemName: timing ? "waveform.badge.plus" : "square.and.pencil") }
+            else { Text(timing ? "打轴" : "歌词管理") }
+        }
+            .help(timing ? "卡拉 OK 打轴" : "歌词管理")
+            .accessibilityLabel(timing ? "卡拉 OK 打轴" : "歌词管理")
             .sheet(isPresented: $showing, onDismiss: { onDismiss?() }) {
                 LyricsManagementView(songId: songId, timing: timing)
                     .id(songId)
+                    .buttonStyle(.automatic)
             }
     }
 }

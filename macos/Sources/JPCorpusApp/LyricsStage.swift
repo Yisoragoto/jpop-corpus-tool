@@ -29,7 +29,7 @@ struct LyricsStage: View {
 
     /// 顶栏和播放条的高度。写死而不是让它们自己撑：中间那一栏拿剩下的，绝不会把播放条挤出窗口
     private static let topHeight: CGFloat = 56
-    private static let barHeight: CGFloat = 160
+    private static let barHeight: CGFloat = PlayerBar.height + 16
 
     var body: some View {
         let player = app.player
@@ -131,21 +131,25 @@ struct LyricsStage: View {
                 Text(track.title).font(.headline).lineLimit(1)
             }
             if let track = app.player.track {
-                Button(karaoke ? "滚动歌词" : "卡拉 OK") { karaoke.toggle() }
-                LyricsToolsButton(songId: track.id, timing: true)
+                Button { karaoke.toggle() } label: { Image(systemName: karaoke ? "quote.bubble" : "music.mic") }
+                    .help(karaoke ? "切换为滚动歌词" : "切换为卡拉 OK")
+                    .accessibilityLabel(karaoke ? "滚动歌词" : "卡拉 OK")
+                LyricsToolsButton(songId: track.id, timing: true, iconOnly: true)
             }
             FuriganaMenu()
             LyricsDisplayButton()
-            Button("窗口全屏") { window?.toggleFullScreen(nil) }
+            Button { window?.toggleFullScreen(nil) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                .help("切换窗口全屏").accessibilityLabel("窗口全屏")
             Button {
                 close()
             } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
                     .font(.title3)
             }
-            .buttonStyle(.borderless)
             .help("退出全屏歌词（Esc）")
+            .accessibilityLabel("退出全屏歌词")
         }
+        .buttonStyle(PlayerGlyphStyle()).font(.system(size: 15, weight: .semibold))
         .foregroundStyle(.white.opacity(0.8))
         .padding(.horizontal, 24)
         .padding(.top, 18)
@@ -167,7 +171,10 @@ struct LyricsStage: View {
             .frame(width: width, height: width)
             .layoutPriority(1)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: .black.opacity(0.45), radius: 30, y: 14)
+            // Flatten the clipped artwork before shadowing; never shadow the column's rectangular backing.
+            .compositingGroup()
+            .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+            .padding(.bottom, 4)
             Text(track.title)
                 .font(.system(size: 26, weight: .bold))
                 .foregroundStyle(.white)

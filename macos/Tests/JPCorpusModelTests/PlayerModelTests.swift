@@ -15,6 +15,8 @@ private final class FakePlaybackEngine: PlaybackEngine {
     var spectrumEnabled = true
     var spectrum = [Float](repeating: 0, count: 48)
     var onTick: ((Double) -> Void)?
+    var onStateChange: (() -> Void)?
+    var lastError: String?
     var failPlay = false
     var seeks: [Double] = []
     func load(_ url: URL) throws { isLoaded = true; position = 0 }
@@ -29,6 +31,13 @@ private final class FakePlaybackEngine: PlaybackEngine {
         position = seconds
         if ended { isPlaying = false }
         onTick?(seconds)
+    }
+    func configurationChanged(recoverySucceeds: Bool) {
+        let resume = isPlaying
+        isPlaying = false // Simulate AVAudioEngine being stopped by the system.
+        lastError = recoverySucceeds ? nil : "音频输出设备变化后无法恢复播放：测试错误"
+        if recoverySucceeds { isPlaying = resume }
+        onStateChange?()
     }
 }
 
@@ -52,6 +61,53 @@ final class PlayerModelTests: XCTestCase {
         XCTAssertNil(app.player.lastError)
         XCTAssertTrue(app.player.canPlay)
         return (app, engine, corpus, defaults)
+    }
+
+    @MainActor
+    func testDeviceChangePreservesPositionTuningAndPlaybackIntent() async throws {
+        let (app, engine, _, _) = try await fixture()
+        let player = app.player
+        player.setRate(1.25); player.setPitch(2); player.setVolume(0.37)
+        await player.seek(to: 7.5)
+        player.play()
+        engine.configurationChanged(recoverySucceeds: true)
+        XCTAssertTrue(engine.isPlaying); XCTAssertTrue(player.isPlaying)
+        XCTAssertEqual(player.position, 7.5)
+        XCTAssertEqual(engine.rate, 1.25); XCTAssertEqual(engine.pitch, 2)
+        XCTAssertEqual(engine.volume, 0.37, accuracy: 0.0001)
+        XCTAssertNil(player.lastError)
+        player.pause()
+        engine.configurationChanged(recoverySucceeds: true)
+        XCTAssertFalse(engine.isPlaying); XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(player.position, 7.5)
+        XCTAssertNil(player.lastError)
+    }
+
+    @MainActor
+    func testDeviceChangeFailureStopsModelImmediatelyAndDoesNotRestartLoop() async throws {
+        let (app, engine, _, _) = try await fixture()
+        let player = app.player
+        await player.toggleLoop(1)
+        engine.emit(4.99)
+        engine.configurationChanged(recoverySucceeds: false)
+        XCTAssertFalse(engine.isPlaying); XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(player.position, 4.99)
+        XCTAssertEqual(player.lastError, engine.lastError)
+        XCTAssertNotNil(player.lastError)
+        engine.emit(5.01)
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertFalse(engine.isPlaying); XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(engine.seeks, [2])
+    }
+
+    @MainActor
+    func testUnexpectedEngineStopCannotLeaveModelPlaying() async throws {
+        let (app, engine, _, _) = try await fixture()
+        app.player.play()
+        engine.emit(7.5, ended: true)
+        XCTAssertFalse(app.player.isPlaying)
+        XCTAssertEqual(app.player.position, 7.5)
+        XCTAssertNotNil(app.player.lastError)
     }
 
     @MainActor

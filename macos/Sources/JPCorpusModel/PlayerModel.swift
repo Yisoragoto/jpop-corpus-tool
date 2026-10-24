@@ -71,6 +71,14 @@ public final class PlayerModel {
         audio.volume = volume
         audio.spectrumEnabled = spectrumEnabled
         audio.onTick = { [weak self] seconds in self?.tick(seconds) }
+        audio.onStateChange = { [weak self] in
+            guard let self else { return }
+            self.position = self.engine.position
+            self.isPlaying = self.engine.isPlaying
+            self.lastTick = nil
+            if let error = self.engine.lastError { self.lastError = error }
+            if !self.isPlaying { self.flushHistory() }
+        }
     }
 
     /// 当前唱到哪一行：最后一个时间不晚于当前位置的行
@@ -230,6 +238,7 @@ public final class PlayerModel {
         do {
             try engine.play()
             isPlaying = engine.isPlaying
+            lastError = nil
             lastTick = nil
         } catch {
             isPlaying = false
@@ -345,6 +354,15 @@ public final class PlayerModel {
     private func tick(_ seconds: Double) {
         guard seconds.isFinite else { return }
         position = seconds
+        // A stopped engine must not leave the UI playing, even if it did not send a state callback.
+        // Natural EOF still goes through the loop/completion paths below.
+        if isPlaying, !engine.isPlaying, engine.lastError != nil || seconds < duration - 0.05 {
+            isPlaying = false
+            lastTick = nil
+            lastError = engine.lastError ?? "音频引擎意外停止，请重新播放"
+            flushHistory()
+            return
+        }
         if isPlaying {
             if let last = lastTick, seconds > last, seconds - last < 1 { listened += (seconds - last) / Double(rate) }
             lastTick = seconds

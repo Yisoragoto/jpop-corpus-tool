@@ -164,6 +164,7 @@ jobs:
           grep -Eq '^\[step\] folder plan.new=[1-9][0-9]* status=pass$' "$out/smoke.txt"
           grep -Eq '^\[step\] import tracks.before=[0-9]+ tracks.after=[0-9]+ added=[1-9][0-9]* status=pass$' "$out/smoke.txt"
           grep -q '^\[step\] playback-tuning pitch=2 rate=1.25 advanced=true status=pass$' "$out/smoke.txt"
+          grep -Eq '^\[step\] player-bar height=[0-9]+(\.[0-9]+)? status=pass$' "$out/smoke.txt"
           grep -q '^\[step\] complete status=pass$' "$out/smoke.txt"
 
       - name: Print smoke diagnostics (including failures)
