@@ -58,6 +58,9 @@ struct AnalysisView: View {
     private var scopeBar: some View {
         HStack(spacing: 6) {
             Text("范围").foregroundStyle(.secondary)
+            PerformerPicker(selected: Binding(get: { app.analysisScope?.performerIds ?? [] }, set: { ids in
+                app.analysisScope = ids.isEmpty ? nil : ScopeRequest(name: "\(ids.count) 位歌手", performerIds: ids)
+            }))
             if let s = app.analysisScope {
                 HStack(spacing: 4) {
                     Image(systemName: "person.fill").font(.caption)

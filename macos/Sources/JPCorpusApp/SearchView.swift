@@ -19,6 +19,7 @@ struct SearchView: View {
     @State private var crossLine = false
     @State private var yearFrom = ""
     @State private var yearTo = ""
+    @State private var performerIds: [Int64] = []
     @State private var near: NearFilter?
     @State private var rows: [HitRow] = []
     @State private var searched: (query: String, field: MatchField)?
@@ -33,7 +34,7 @@ struct SearchView: View {
     }
 
     private var subcorpus: Subcorpus {
-        Subcorpus(yearFrom: Int(yearFrom.trimmingCharacters(in: .whitespaces)), yearTo: Int(yearTo.trimmingCharacters(in: .whitespaces)))
+        Subcorpus(performerIds: performerIds, yearFrom: Int(yearFrom.trimmingCharacters(in: .whitespaces)), yearTo: Int(yearTo.trimmingCharacters(in: .whitespaces)))
     }
 
     /// 搭配只对单个词有意义
@@ -70,6 +71,9 @@ struct SearchView: View {
             }
         }
         .navigationTitle("检索")
+        .onChange(of: app.library.version) { _, _ in
+            if let searched { Task { await run(searched.query, searched.field) } }
+        }
         .onChange(of: app.searchRequest) { _, request in
             guard let request else { return }
             text = request.keyword
@@ -108,6 +112,7 @@ struct SearchView: View {
                     .disabled(busy || text.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             HStack(spacing: 14) {
+                PerformerPicker(selected: $performerIds)
                 Toggle("去重", isOn: $dedup).help("同一首歌里重复的相同歌词行折叠成一条；搭配也只算第一次")
                 Toggle("仅日文", isOn: $jpOnly)
                 Toggle("跨行语境", isOn: $crossLine)

@@ -125,3 +125,90 @@ actor OpenRecorder {
     let corpus = FakeCorpus()
     func open(_ url: URL) -> any CorpusCalling { urls.append(url); return corpus }
 }
+
+extension FakeCorpus: LibraryCalling {
+    func libraryEditSong(_ songId: String, edit: SongEdit) async throws -> EditReport {
+        return try lyricValue("libraryEditSong", arguments: [String(decoding: try JSONEncoder().encode(songId), as: UTF8.self), String(decoding: try JSONEncoder().encode(edit), as: UTF8.self)])
+    }
+    func libraryDeleteSong(_ songId: String) async throws -> DeleteResult {
+        return try lyricValue("libraryDeleteSong", arguments: [String(decoding: try JSONEncoder().encode(songId), as: UTF8.self)])
+    }
+    func libraryMissingAudio() async throws -> [MissingAudio] {
+        return try lyricValue("libraryMissingAudio", arguments: [])
+    }
+    func librarySuggestRelinks(_ folder: String) async throws -> [RelinkSuggestion] {
+        return try lyricValue("librarySuggestRelinks", arguments: [String(decoding: try JSONEncoder().encode(folder), as: UTF8.self)])
+    }
+    func libraryRelinkAudio(_ links: [RelinkRequest]) async throws -> RelinkBatch {
+        return try lyricValue("libraryRelinkAudio", arguments: [String(decoding: try JSONEncoder().encode(links), as: UTF8.self)])
+    }
+    func libraryNewAudio(ignoredFolders: [String], ignoredFiles: [String]) async throws -> NewAudio {
+        return try lyricValue("libraryNewAudio", arguments: [String(decoding: try JSONEncoder().encode(ignoredFolders), as: UTF8.self), String(decoding: try JSONEncoder().encode(ignoredFiles), as: UTF8.self)])
+    }
+    func artistImageSet(_ name: String, path: String) async throws -> String {
+        return try lyricValue("artistImageSet", arguments: [String(decoding: try JSONEncoder().encode(name), as: UTF8.self), String(decoding: try JSONEncoder().encode(path), as: UTF8.self)])
+    }
+    func artistImageReset(_ name: String) async throws -> String {
+        return try lyricValue("artistImageReset", arguments: [String(decoding: try JSONEncoder().encode(name), as: UTF8.self)])
+    }
+    func artistRoster() async throws -> [ArtistRow] {
+        return try lyricValue("artistRoster", arguments: [])
+    }
+    func memberships() async throws -> [Membership] {
+        return try lyricValue("memberships", arguments: [])
+    }
+    func bandMembers(_ personId: Int64) async throws -> [Membership] {
+        return try lyricValue("bandMembers", arguments: [String(decoding: try JSONEncoder().encode(personId), as: UTF8.self)])
+    }
+    func bandsOf(_ personId: Int64) async throws -> [Membership] {
+        return try lyricValue("bandsOf", arguments: [String(decoding: try JSONEncoder().encode(personId), as: UTF8.self)])
+    }
+    func membershipSuggestions() async throws -> [MembershipSuggestion] {
+        return try lyricValue("membershipSuggestions", arguments: [])
+    }
+    func membershipPut(_ input: MembershipInput) async throws -> MembershipPutOutcome {
+        return try lyricValue("membershipPut", arguments: [String(decoding: try JSONEncoder().encode(input.bandId), as: UTF8.self), String(decoding: try JSONEncoder().encode(input.memberId), as: UTF8.self), String(decoding: try JSONEncoder().encode(input.memberName), as: UTF8.self), String(decoding: try JSONEncoder().encode(input.part), as: UTF8.self), String(decoding: try JSONEncoder().encode(input.joined), as: UTF8.self), String(decoding: try JSONEncoder().encode(input.leftAt), as: UTF8.self)])
+    }
+    func membershipConfirm(bandId: Int64, memberId: Int64) async throws -> MembershipPutOutcome {
+        return try lyricValue("membershipConfirm", arguments: [String(decoding: try JSONEncoder().encode(bandId), as: UTF8.self), String(decoding: try JSONEncoder().encode(memberId), as: UTF8.self)])
+    }
+    func membershipReject(bandId: Int64, memberId: Int64) async throws {
+        let _: Bool = try lyricValue("membershipReject", arguments: [String(decoding: try JSONEncoder().encode(bandId), as: UTF8.self), String(decoding: try JSONEncoder().encode(memberId), as: UTF8.self)])
+    }
+    func tokenCorrection(_ utteranceId: Int64) async throws -> CorrectionView? {
+        return try lyricValue("tokenCorrection", arguments: [String(decoding: try JSONEncoder().encode(utteranceId), as: UTF8.self)])
+    }
+    func saveTokenCorrection(_ utteranceId: Int64, tokens: [TokenEdit]) async throws {
+        let _: Bool = try lyricValue("saveTokenCorrection", arguments: [String(decoding: try JSONEncoder().encode(utteranceId), as: UTF8.self), String(decoding: try JSONEncoder().encode(tokens), as: UTF8.self)])
+    }
+    func revertTokenCorrection(_ utteranceId: Int64) async throws -> Bool {
+        return try lyricValue("revertTokenCorrection", arguments: [String(decoding: try JSONEncoder().encode(utteranceId), as: UTF8.self)])
+    }
+    func peopleByRole(_ role: String, limit: Int) async throws -> [PersonSummary] {
+        return try lyricValue("peopleByRole", arguments: [String(decoding: try JSONEncoder().encode(role), as: UTF8.self), String(decoding: try JSONEncoder().encode(limit), as: UTF8.self)])
+    }
+    func worksByPerson(_ personId: Int64) async throws -> [Track] {
+        return try lyricValue("worksByPerson", arguments: [String(decoding: try JSONEncoder().encode(personId), as: UTF8.self)])
+    }
+    func mostPlayed(minListenedSec: Double, limit: Int) async throws -> [PlayedTrack] {
+        return try lyricValue("mostPlayed", arguments: [String(decoding: try JSONEncoder().encode(minListenedSec), as: UTF8.self), String(decoding: try JSONEncoder().encode(limit), as: UTF8.self)])
+    }
+    func recentlyPlayed(limit: Int) async throws -> [PlayedTrack] {
+        return try lyricValue("recentlyPlayed", arguments: [String(decoding: try JSONEncoder().encode(limit), as: UTF8.self)])
+    }
+    func migratePlan(_ path: String) async throws -> MigratePlan {
+        return try lyricValue("migratePlan", arguments: [String(decoding: try JSONEncoder().encode(path), as: UTF8.self)])
+    }
+    func migrateRun(_ path: String, options: MigrateOptions) async throws {
+        let _: Bool = try lyricValue("migrateRun", arguments: [String(decoding: try JSONEncoder().encode(path), as: UTF8.self), String(decoding: try JSONEncoder().encode(options), as: UTF8.self)])
+    }
+    func backfillDurations() async throws {
+        let _: Bool = try lyricValue("backfillDurations", arguments: [])
+    }
+    func fillAlbumArtwork() async throws {
+        let _: Bool = try lyricValue("fillAlbumArtwork", arguments: [])
+    }
+    func libraryProgress() async throws -> JobProgress<LibraryJobResult> {
+        return try lyricValue("libraryProgress", arguments: [])
+    }
+}

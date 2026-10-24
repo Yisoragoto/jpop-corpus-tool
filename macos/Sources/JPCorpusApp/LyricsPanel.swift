@@ -14,6 +14,7 @@ struct LyricsPanel: View {
     /// 正在查的那段文字（从点的词开始到行尾，Yomitan 式从开头查）
     @State private var lookup: LookupRequest?
     /// 右键「选择原文」打开的那一行
+    @State private var correcting: Int64?
     @State private var selectionLine: LyricLine?
 
     private static let contentPOS: Set<String> = ["NOUN", "PROPN", "VERB", "ADJ", "ADV"]
@@ -100,6 +101,9 @@ struct LyricsPanel: View {
             }
         }
         .background { backdrop }
+        .sheet(isPresented: Binding(get: { correcting != nil }, set: { if !$0 { correcting = nil } })) {
+            if let id = correcting { TokenCorrectionView(utteranceId: id) }
+        }
         .popover(item: $selectionLine) { line in
             LyricSelectionView(text: line.text) { selected in
                 lookup = LookupRequest(text: selected, songId: player.track?.id, utteranceId: line.utteranceId, tokenIndex: nil)
@@ -222,6 +226,7 @@ struct LyricsPanel: View {
                 .disabled(lineTime == nil)
             Button(looping ? "取消循环" : "循环这一句") { Task { await player.toggleLoop(line.utteranceId) } }
                 .disabled(lineTime == nil)
+            Button("分词校正…") { correcting = line.utteranceId }
             Button("选择原文 / 查选中文本") { selectionLine = line }
             let words = line.tokens.filter { Self.contentPOS.contains($0.pos) }
             if !words.isEmpty {

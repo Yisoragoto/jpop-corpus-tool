@@ -105,8 +105,12 @@ public final class ImportModel {
                 errorMessage = error
             }
             lastResult = importJob?.result
+            if let problem = LibraryAdmin.csvProblem(lastResult?.csv) { errorMessage = problem }
             plan = nil
             await app.reloadTracks()
+            app.library.version += 1
+            app.homeVersion += 1
+            await app.library.checkNewAudio()
             await refresh(client)
         } catch {
             errorMessage = error.localizedDescription

@@ -29,6 +29,7 @@ struct ScrapeView: View {
                 if let job, job.running { progress(job) }
                 if let lastBatch, !lastBatch.items.isEmpty { results(lastBatch) }
                 reviewSection
+                ArtistRosterView()
             }
             .padding(24)
             .frame(maxWidth: 960, alignment: .leading)
@@ -222,6 +223,7 @@ struct ScrapeView: View {
             }
             job = nil
             await app.reloadTracks()
+            app.library.version += 1
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription
@@ -237,6 +239,7 @@ struct ScrapeView: View {
             message = "检查了 \(r.checked) 首没有封面的：补上 \(r.filled)，没有候选 \(r.noCandidate)，下不下来 \(r.failed)。"
             lastBatch = nil
             await app.reloadTracks()
+            app.library.version += 1
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription
@@ -262,6 +265,7 @@ struct ScrapeView: View {
             let r = try await client.scrapeAccept(filePath: item.filePath, candidateIndex: index)
             message = "「\(item.localTitle)」补了 \(r.fieldsFilled) 个字段" + (r.coverPath != nil ? "，下到了封面" : "")
             await app.reloadTracks()
+            app.library.version += 1
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription

@@ -27,3 +27,5 @@ jp-dict = { path = "../jp-dict" }
 jp-anki = { path = "../jp-anki" }
 # 刮削元数据、封面、歌手照片：和 Tauri 客户端同一份 jp-scrape
 jp-scrape = { path = "../jp-scrape" }
+
+jp-library = { path = "../jp-library" }

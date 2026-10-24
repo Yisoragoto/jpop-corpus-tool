@@ -388,11 +388,29 @@ public final class PlayerModel {
     }
 
     /// 把这一首的收听记进播放历史。听不到 2 秒的不记
+    @ObservationIgnored private var historyWrite: Task<Void, Never>?
+
+    public func prepareDeletion(_ songId: String) async {
+        if track?.id == songId {
+            pause(); engine.unload(); track = nil; lines = []; isPlaying = false; loadSequence += 1
+            canPlay = false; position = 0; duration = 0; loop = nil; stopAt = nil; focusUtterance = nil
+            spans = [:]; timelines = [:]; loadedClientID = nil
+        }
+        await historyWrite?.value
+        historyWrite = nil
+    }
+
+    public func refreshMetadata(_ tracks: [Track]) {
+        if let id = track?.id, let updated = tracks.first(where: { $0.id == id }) { track = updated }
+    }
+
     private func flushHistory(completed: Bool = false) {
         guard let track, listened >= 2, let client = app?.client else { return }
         let event = PlayEvent(songId: track.id, listenedSec: listened, positionSec: position, completed: completed, source: source)
         listened = 0
-        Task {
+        let previous = historyWrite
+        historyWrite = Task<Void, Never> {
+            await previous?.value
             try? await client.recordPlay(event)
             app?.homeVersion += 1
         }

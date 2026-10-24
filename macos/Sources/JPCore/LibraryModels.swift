@@ -87,6 +87,8 @@ public struct DirectoryEntry: Codable, Hashable, Identifiable, Sendable {
     public var name: String
     public var imagePath: String
     public var artistType: String
+    public var ended: String
+    public var imageManual: Bool
     public var performer: Int64
     public var composer: Int64
     public var lyricist: Int64
@@ -108,13 +110,16 @@ public struct DirectoryEntry: Codable, Hashable, Identifiable, Sendable {
 public struct PersonWork: Decodable, Hashable, Identifiable, Sendable {
     public var track: Track
     public var roles: [String]
+    public var performerIds: [Int64]
     public var id: String { track.id }
 
-    private enum Keys: String, CodingKey { case roles }
+    private enum Keys: String, CodingKey { case roles, performerIds }
 
     public init(from decoder: Decoder) throws {
         track = try Track(from: decoder)
-        roles = try decoder.container(keyedBy: Keys.self).decode([String].self, forKey: .roles)
+        let c = try decoder.container(keyedBy: Keys.self)
+        roles = try c.decode([String].self, forKey: .roles)
+        performerIds = try c.decode([Int64].self, forKey: .performerIds)
     }
 }
 

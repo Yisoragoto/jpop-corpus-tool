@@ -26,6 +26,9 @@ struct SettingsView: View {
             Section("歌词") {
                 Button("歌词来源、批量补全与逐首预览") { lyricsOpen = true }.disabled(app.core == nil)
             }
+            Section("资料库管理") {
+                HStack { Text("歌曲、音频、成员、维护与迁移"); Spacer(); LibraryManageButton() }.disabled(app.core == nil)
+            }
             Section("语料库") {
                 LabeledContent("文件夹") {
                     Text(app.isDemo ? "示例语料库" : (app.libraryURL?.path ?? "未选择"))

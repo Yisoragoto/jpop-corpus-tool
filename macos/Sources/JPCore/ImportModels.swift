@@ -108,6 +108,7 @@ public struct ImportResult: Codable, Hashable, Sendable {
     public var failed: Int
     public var lyricLines: Int
     public var tokens: Int
+    public var csv: String?
 }
 
 /// `runImport` 的立即返回：这一批会不会带分词

@@ -158,14 +158,7 @@ pub fn membership_put(
     joined: String,
     left_at: String,
 ) -> CmdResult<jp_corpus::members::PutOutcome> {
-    let corpus = state.corpus();
-    let conn = corpus.connection();
-    let member = match (member_id, member_name) {
-        (Some(id), _) => id,
-        (None, Some(name)) => jp_corpus::members::ensure_person(conn, &name)?,
-        (None, None) => return Err(anyhow::anyhow!("没给成员").into()),
-    };
-    Ok(jp_corpus::members::put(conn, band_id, member, &part, &joined, &left_at, "manual")?)
+    Ok(jp_library::people::membership_put(state.corpus().connection(), band_id, member_id, member_name, &part, &joined, &left_at)?)
 }
 
 /// 确认一条推测
@@ -1470,30 +1463,7 @@ fn review(
 }
 
 /// 去看的一个文件夹，和在里面找到了多少。
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WatchedFolderView {
-    pub path: String,
-    pub reason: jp_import::WatchReason,
-    /// 往下看几层。1 是只看直接放在这里的文件
-    pub depth: usize,
-    /// 库里有多少首歌在它下面
-    pub songs: usize,
-    /// 里面库里没有的音频文件数
-    pub unknown: usize,
-    /// 其中会被当成新歌导入的（其余是疑似重复、放不了的格式、读不出曲名）
-    pub new: usize,
-}
-
-/// 语料库文件夹里还没导入的音频（`library_new_audio`）。
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NewAudio {
-    /// 去看了哪些文件夹。要原样端给界面——「为什么这个文件没被发现」只能靠它回答
-    pub folders: Vec<WatchedFolderView>,
-    /// 库里没有的那些文件的计划，和导入页扫出来的是同一种东西
-    pub scan: ScanResult,
-}
+pub use jp_library::discovery::{WatchedFolderView, NewAudio};
 
 /// 看看语料库的文件夹里有没有还没导入的音频：库里的歌所在的那些文件夹，加上语料库目录自己
 /// （范围怎么定见 `jp_import::watch`）。启动时界面调一次，导入页上也能手动再查。
@@ -1510,68 +1480,10 @@ pub async fn library_new_audio<R: tauri::Runtime>(
     ignored_files: Option<Vec<String>>,
 ) -> CmdResult<NewAudio> {
     blocking(app, move |state| {
-        // 库的锁只在读这两样的时候拿着：翻目录、读 tag 可能要好几秒，期间别的查询不该排队
-        let (index, audio_paths) = {
-            let corpus = state.corpus();
-            let index = jp_import::LibraryIndex::from_corpus(&corpus)?;
-            let mut stmt = corpus
-                .connection()
-                .prepare("SELECT audio_path FROM songs WHERE audio_path IS NOT NULL AND audio_path <> ''")?;
-            let paths = stmt
-                .query_map([], |row| row.get::<_, String>(0))?
-                .collect::<Result<Vec<_>, _>>()?;
-            (index, paths)
-        };
-
-        let ignored_folders = ignored_folders.unwrap_or_default();
-        let folders = jp_import::watched_folders(&state.project_root(), &audio_paths, &ignored_folders);
-        let unknown = jp_import::unknown_audio(
-            &folders,
-            &index,
-            &ignored_files.unwrap_or_default(),
-            &ignored_folders,
-        );
-
-        let mut tracks: Vec<jp_import::ScannedTrack> =
-            unknown.iter().map(|file| jp_import::scan_file(&file.path)).collect();
-        tracks.sort_by(|a, b| a.path.cmp(&b.path));
-        let scan = review(state, &tracks, &index, Vec::new());
-
-        // 每个文件夹里有几个、其中几个是新歌。计划里的路径是 `scan_file` 统一过分隔符的，
-        // 所以这边也拿同一个函数算键，不直接比 `file.path`
-        let folder_of: std::collections::HashMap<String, usize> = unknown
-            .iter()
-            .map(|file| (jp_import::scan_file_path(&file.path), file.folder))
-            .collect();
-        let mut views: Vec<WatchedFolderView> = folders
-            .iter()
-            .map(|folder| WatchedFolderView {
-                // 分隔符统一成一种：界面拿它和计划里的路径比前缀，也原样显示给用户
-                path: jp_import::scan_file_path(&folder.path),
-                reason: folder.reason,
-                depth: folder.depth,
-                songs: folder.songs,
-                unknown: 0,
-                new: 0,
-            })
-            .collect();
-        for item in &scan.items {
-            if let Some(view) = folder_of.get(&item.path).and_then(|at| views.get_mut(*at)) {
-                view.unknown += 1;
-                if item.action.writes() {
-                    view.new += 1;
-                }
-            }
-        }
-
-        // 只记数：日志里不放路径和歌名
-        crate::log::info(format!(
-            "查新歌：看了 {} 个文件夹，{} 个文件不在库里，其中 {} 首会当成新歌",
-            views.len(),
-            scan.summary.total,
-            scan.summary.new
-        ));
-        Ok(NewAudio { folders: views, scan })
+        // 扫目录、读标签期间不占会话锁。
+        let corpus = jp_corpus::Corpus::open(&state.db_path)?;
+        jp_library::discovery::new_audio(&corpus, &state.project_root(),
+            &ignored_folders.unwrap_or_default(), &ignored_files.unwrap_or_default(), state.analyzer().is_some())
     })
     .await
 }
@@ -2276,20 +2188,7 @@ pub fn scrape_retry_failed(state: State<'_, AppState>) -> CmdResult<usize> {
 // ────────────────────────── 歌手 / 专辑封面 ──────────────────────────
 
 /// `artists` 表的一行 + 照片在不在。
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtistRow {
-    pub name: String,
-    pub image_path: String,
-    pub artist_type: String,
-    pub country: String,
-    pub formed: String,
-    pub updated_at: String,
-    /// 库里有这个歌手的曲目数
-    pub track_count: i64,
-    /// 照片文件是不是真的在盘上。库里记了路径但文件被删了也算没有。
-    pub has_image: bool,
-}
+pub use jp_library::people::ArtistRow;
 
 /// 库里的歌手，连同已经刮到的资料。
 /// 库的完整度：识别、曲目封面、专辑封面、歌词、时长各齐了多少。刮削页一行一行列出来。
@@ -2301,50 +2200,7 @@ pub fn library_completeness(state: State<'_, AppState>) -> CmdResult<jp_corpus::
 
 #[tauri::command(async)]
 pub fn artist_roster(state: State<'_, AppState>) -> CmdResult<Vec<ArtistRow>> {
-    use rusqlite::OptionalExtension;
-    let corpus = state.corpus();
-    let conn = corpus.connection();
-    let names = crate::scrape::library_artists(conn, false)?;
-
-    let mut out = Vec::with_capacity(names.len());
-    for name in names {
-        let row = conn
-            .query_row(
-                "SELECT COALESCE(image_path,''), COALESCE(artist_type,''),
-                        COALESCE(country,''), COALESCE(formed,''), COALESCE(updated_at,'')
-                 FROM artists WHERE name=?1",
-                rusqlite::params![name],
-                |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
-                        r.get::<_, String>(4)?,
-                    ))
-                },
-            )
-            .optional()?
-            .unwrap_or_default();
-        let track_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM songs WHERE artist = ?1 OR artist LIKE ?1 || '/%'
-                 OR artist LIKE '%/' || ?1 OR artist LIKE '%/' || ?1 || '/%'",
-            rusqlite::params![name],
-            |r| r.get(0),
-        )?;
-        let has_image = !row.0.is_empty() && std::path::Path::new(&row.0).is_file();
-        out.push(ArtistRow {
-            name,
-            image_path: row.0,
-            artist_type: row.1,
-            country: row.2,
-            formed: row.3,
-            updated_at: row.4,
-            track_count,
-            has_image,
-        });
-    }
-    Ok(out)
+    Ok(jp_library::people::artist_roster(state.corpus().connection())?)
 }
 
 /// 刮一个歌手。同步，两三秒（MusicBrainz 限每秒一次）。

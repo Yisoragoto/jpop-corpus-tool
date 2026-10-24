@@ -123,6 +123,7 @@ public final class AppModel {
     }
     /// Shared with ImportView so smoke exercises the model actually displayed in the window.
     public private(set) var importer = ImportModel()
+    public private(set) var library: LibraryModel
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let openClient: @Sendable (URL) async throws -> any CorpusCalling
@@ -161,6 +162,7 @@ public final class AppModel {
     ) {
         self.defaults = defaults
         self.client = client
+        library = LibraryModel(client: client as? any LibraryCalling, defaults: defaults)
         self.openClient = openClient
         player = PlayerModel(engine: playbackEngine, defaults: defaults)
         stageCoverBlur = defaults.object(forKey: "player-stage-cover-blur") as? Bool ?? true
@@ -235,11 +237,13 @@ public final class AppModel {
             try await next.setAudioRoots(audioRoots)
             let fetched = try await next.tracks()
             client = next
+            library = LibraryModel(client: next as? any LibraryCalling, defaults: defaults)
             libraryURL = folder
             importer = ImportModel()
             updateTracks(fetched)
             isDemo = false
             defaults.set(folder.path, forKey: Keys.library)
+            if library.client != nil { Task { await library.checkNewAudio() } }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -271,6 +275,7 @@ public final class AppModel {
     private func updateTracks(_ tracks: [Track]) {
         self.tracks = tracks
         tracksById = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        player.refreshMetadata(tracks)
     }
 
     public func track(_ id: String) async throws -> Track? {

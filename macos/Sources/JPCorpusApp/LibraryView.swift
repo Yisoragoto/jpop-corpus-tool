@@ -56,7 +56,9 @@ private struct LibraryRoot: View {
             case .artists: ArtistGrid(filter: filter)
             }
         }
+        .safeAreaInset(edge: .top) { NewSongsNotice().padding(.horizontal, 20) }
         .toolbar {
+            ToolbarItem { LibraryManageButton() }
             ToolbarItem(placement: .principal) {
                 Picker("", selection: $mode) {
                     ForEach(LibraryMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -158,7 +160,7 @@ private struct AlbumGrid: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 180), spacing: 18)], alignment: .leading, spacing: 22) {
                 ForEach(rows) { album in
                     CoverTile(coverPath: album.artworkPath, title: album.title,
-                              subtitle: [album.albumArtist, album.year].filter { !$0.isEmpty }.joined(separator: " · "),
+                              subtitle: [LibraryIndex.albumOwner(album.albumArtist), album.year].filter { !$0.isEmpty }.joined(separator: " · "),
                               size: 150, placeholder: "square.stack") {
                         app.libraryPath.append(.album(album))
                     }
@@ -170,7 +172,7 @@ private struct AlbumGrid: View {
         .overlay {
             if albums.isEmpty { ContentUnavailableView("还没有专辑", systemImage: "square.stack") }
         }
-        .task(id: app.tracks.count) {
+        .task(id: "\(app.tracks.count)-\(app.library.version)") {
             do {
                 albums = try await app.core?.albums() ?? []
             } catch {
@@ -214,7 +216,7 @@ struct AlbumDetailView: View {
         }
         .clearScrollBackground()
         .navigationTitle(album.title)
-        .task {
+        .task(id: app.library.version) {
             do {
                 tracks = try await app.core?.albumTracks(album.id) ?? []
             } catch {
@@ -276,39 +278,41 @@ private struct ArtistGrid: View {
     @Environment(AppModel.self) private var app
     let filter: String
     @State private var people: [DirectoryEntry] = []
-    @AppStorage("artistsPerformersOnly") private var performersOnly = true
-
-    private var rows: [DirectoryEntry] {
-        let needle = filter.trimmingCharacters(in: .whitespaces)
-        return people.filter { p in
-            (!performersOnly || p.performer > 0) && (needle.isEmpty || p.name.localizedCaseInsensitiveContains(needle))
-        }
-    }
-
+    @State private var memberships: [Membership] = []
+    @State private var behind = false
+    @State private var role: BehindRole = .all
+    @State private var open: Set<Int64> = []
+    private var directory: LibraryDirectory { LibraryIndex.buildDirectory(people, memberships) }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle("只看演唱者（不含只作词作曲的人）", isOn: $performersOnly)
-                    .toggleStyle(.checkbox)
-                    .font(.callout)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130, maximum: 150), spacing: 18)], spacing: 22) {
-                    ForEach(rows) { p in
-                        CoverTile(coverPath: p.imagePath, title: p.name, subtitle: p.roleSummary, size: 120, circle: true, placeholder: "person.fill") {
-                            app.libraryPath.append(.person(p.id))
+            VStack(alignment: .leading, spacing: 14) {
+                Picker("目录", selection: $behind) { Text("音乐人").tag(false); Text("幕后").tag(true) }.pickerStyle(.segmented)
+                if behind {
+                    Picker("角色", selection: $role) { ForEach(BehindRole.allCases, id: \.self) { Text($0 == .all ? "全部" : (roleLabels[$0.rawValue] ?? $0.rawValue)).tag($0) } }
+                    ForEach(LibraryIndex.filterBehind(directory.behind, role, filter)) { person in
+                        Button("\(person.name) · \(person.roleSummary)") { app.show(.person(person.id)) }.buttonStyle(.plain)
+                    }
+                } else {
+                    ForEach(LibraryIndex.filterMusicians(directory.musicians, filter), id: \.row.entry.id) { hit in
+                        HStack {
+                            if !hit.row.members.isEmpty { Button { if open.contains(hit.row.entry.id) { open.remove(hit.row.entry.id) } else { open.insert(hit.row.entry.id) } } label: { Image(systemName: open.contains(hit.row.entry.id) || hit.memberHit ? "chevron.down" : "chevron.right") }.buttonStyle(.borderless) }
+                            Button { app.show(.person(hit.row.entry.id)) } label: {
+                                HStack { CoverImage(path: hit.row.entry.imagePath, size: 54, circle: true, placeholder: "person.fill", identity: hit.row.entry.name); VStack(alignment: .leading) { Text(hit.row.entry.name).font(.headline); Text(LibraryIndex.musicianSubtitle(hit.row)).font(.caption).foregroundStyle(.secondary) } }
+                            }.buttonStyle(.plain)
+                        }
+                        if open.contains(hit.row.entry.id) || hit.memberHit {
+                            ForEach(hit.row.members, id: \.membership.memberId) { member in
+                                Button("\(member.membership.memberName) · \(LibraryIndex.memberSubtitle(member))") { app.show(.person(member.membership.memberId)) }.buttonStyle(.plain).padding(.leading, 76)
+                            }
                         }
                     }
                 }
+            }.padding(20)
+        }.clearScrollBackground()
+            .task(id: "\(app.library.version)-\(app.tracks.count)") {
+                do { people = try await app.core?.peopleDirectory() ?? []; memberships = try await app.library.client?.memberships() ?? [] }
+                catch { app.errorMessage = error.localizedDescription }
             }
-            .padding(20)
-        }
-        .clearScrollBackground()
-        .task(id: app.tracks.count) {
-            do {
-                people = try await app.core?.peopleDirectory() ?? []
-            } catch {
-                app.errorMessage = error.localizedDescription
-            }
-        }
     }
 }
 
@@ -320,6 +324,7 @@ struct PersonDetailView: View {
     @State private var works: [PersonWork] = []
     @State private var collaborators: [Collaborator] = []
     @State private var role = ""
+    @State private var bands: [Membership] = []
 
     private var shown: [PersonWork] {
         role.isEmpty ? works : works.filter { $0.roles.contains(role) }
@@ -333,7 +338,7 @@ struct PersonDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .center, spacing: 22) {
-                    CoverImage(path: person?.imagePath ?? "", size: 150, circle: true, placeholder: "person.fill")
+                    CoverImage(path: person?.imagePath ?? "", size: 150, circle: true, placeholder: "person.fill", identity: person?.name ?? "")
                         .shadow(color: .black.opacity(0.2), radius: 12, y: 5)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(person?.artistType == "Group" ? "组合" : "歌手").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -362,23 +367,14 @@ struct PersonDetailView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        SectionHeader(title: "作品", detail: "\(shown.count) 首")
-                        if roles.count > 1 {
-                            Picker("", selection: $role) {
-                                Text("全部").tag("")
-                                ForEach(roles, id: \.self) { Text(roleLabels[$0] ?? $0).tag($0) }
-                            }
-                            .pickerStyle(.segmented)
-                            .fixedSize()
-                        }
-                    }
-                    TrackList(tracks: shown.map(\.track), showArtist: true) { t in
-                        let r = works.first { $0.track.id == t.id }?.roles ?? []
-                        return ([t.year] + r.filter { $0 != "performer" }.map { roleLabels[$0] ?? $0 }).filter { !$0.isEmpty }.joined(separator: " · ")
+                if let person { PersonAdminView(personId: personId, name: person.name, isBand: person.artistType == "Group") }
+                HStack {
+                    SectionHeader(title: "作品", detail: "\(shown.count) 首")
+                    if roles.count > 1 {
+                        Picker("角色", selection: $role) { Text("全部").tag(""); ForEach(roles, id: \.self) { Text(roleLabels[$0] ?? $0).tag($0) } }.pickerStyle(.segmented).fixedSize()
                     }
                 }
+                ForEach(LibraryIndex.sectionWorks(personId, shown, bands)) { section in PersonWorkSection(section: section) }
 
                 if !collaborators.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -403,7 +399,7 @@ struct PersonDetailView: View {
         }
         .clearScrollBackground()
         .navigationTitle(person?.name ?? "歌手")
-        .task(id: personId) {
+        .task(id: "\(personId)-\(app.library.version)") {
             guard let client = app.core else { return }
             do {
                 async let dir = client.peopleDirectory()
@@ -412,6 +408,7 @@ struct PersonDetailView: View {
                 person = try await dir.first { $0.id == personId }
                 works = try await w
                 collaborators = try await c
+                bands = try await app.library.client?.bandsOf(personId) ?? []
             } catch {
                 app.errorMessage = error.localizedDescription
             }
@@ -423,6 +420,22 @@ struct PersonDetailView: View {
         case (false, false): return p.firstYear == p.lastYear ? p.firstYear : "\(p.firstYear)–\(p.lastYear)"
         case (false, true): return p.firstYear
         default: return ""
+        }
+    }
+}
+
+@MainActor
+private struct PersonWorkSection: View {
+    let section: WorkSection
+    @State private var expanded: Bool
+    init(section: WorkSection) { self.section = section; _expanded = State(initialValue: !section.collapsed) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !section.title.isEmpty { Button { expanded.toggle() } label: { Label(section.title, systemImage: expanded ? "chevron.down" : "chevron.right") }.buttonStyle(.plain).font(.headline) }
+            if expanded {
+                if !section.note.isEmpty { Text(section.note).font(.caption).foregroundStyle(.secondary) }
+                TrackList(tracks: section.works.map(\.track), showArtist: true)
+            }
         }
     }
 }

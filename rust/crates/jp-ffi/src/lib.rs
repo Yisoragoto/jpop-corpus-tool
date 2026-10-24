@@ -26,6 +26,9 @@
 
 pub mod jobs;
 mod lyrics;
+mod library;
+#[cfg(test)]
+mod library_tests;
 #[cfg(test)]
 mod lyrics_tests;
 #[cfg(test)]
@@ -68,6 +71,7 @@ pub struct Session {
     /// 批量刮削（曲目、歌手共用：两边都排 MusicBrainz 的队，同时跑只会互相拖慢）
     scrape_job: Arc<Job>,
     lyrics_job: Arc<Job>,
+    library_job: Arc<Job>,
     lyric_batch: Arc<jp_lyrics::lyric_upgrade::Batch>,
     lyric_sources: OnceLock<Mutex<jp_lyrics::timed_lyrics::Session>>,
     /// Yomitan 词典库 `dictionaries.db`，和 corpus.db 同一目录、分开存。没导入过就一直是 None
@@ -138,6 +142,7 @@ impl Session {
             dict_job: Arc::default(),
             scrape_job: Arc::default(),
             lyrics_job: Arc::default(),
+            library_job: Arc::default(),
             lyric_batch: Arc::default(),
             lyric_sources: OnceLock::new(),
             dictionaries: Mutex::new(None),
@@ -449,6 +454,9 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
 /// 它们不拿语料库的锁，所以导入跑着（或者 207MB 的词典正在复制）的时候，界面照样能问进度、能检索。
 /// 不是这一组的方法返回 `Ok(None)`，交给 [`dispatch`] 里拿着锁的那一组。
 fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Option<Value>> {
+    if let Some(value) = library::dispatch(session, method, args)? {
+        return Ok(Some(value));
+    }
     if let Some(value) = lyrics::dispatch(session, method, args)? {
         return Ok(Some(value));
     }
@@ -751,9 +759,15 @@ fn run_import(session: &Session, tokenize: bool) -> Result<Value> {
             |track, done, _| job.report(done as u64, total, track.title.clone()),
             &|| job.cancelled(),
         )?;
+        let root = db_path.parent().unwrap_or(Path::new("."));
+        jp_scrape::save_imported_covers(corpus.connection(), &root.join("raw/covers"), &report);
+        let csv = jp_library::admin::sync_imported(&jp_library::admin::Library {
+            corpus: &mut corpus, db_path: &db_path, covers_dir: &root.join("raw/covers"), pitch_cache: &root.join("cache/pitch"),
+        }, &report);
         // 导完就清掉，避免同一批被点两次
         pending.lock().unwrap_or_else(|e| e.into_inner()).clear();
         let mut result = serde_json::to_value(&report)?;
+        result["csv"] = json!(csv);
         result["imported"] = json!(report.imported());
         result["failed"] = json!(report.failed());
         result["lyricLines"] = json!(report.lyric_lines());
@@ -967,7 +981,7 @@ pub unsafe extern "C" fn jp_write_fixture(dir: *const c_char) -> *mut c_char {
 mod tests {
     use super::*;
 
-    fn session() -> (Session, PathBuf) {
+    pub(super) fn session() -> (Session, PathBuf) {
         let dir = std::env::temp_dir().join(format!("jp-ffi-{}-{}", std::process::id(), rand_suffix()));
         std::fs::create_dir_all(&dir).unwrap();
         let db = jp_corpus::fixture::write_to(&dir).unwrap();

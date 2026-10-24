@@ -45,6 +45,21 @@ final class PlayerModelTests: XCTestCase {
     private let trackJSON = #"{"id":"001","title":"試験曲","artist":"歌手","album":"","year":"","genre":"","audioPath":"tone.flac","coverPath":"","durationSec":99,"lineCount":2}"#
 
     @MainActor
+    func testDeletingCurrentSongStopsAndClearsPlaybackBeforeDatabaseWrite() async throws {
+        let (app, engine, _, _) = try await fixture()
+        await app.player.toggleLoop(1)
+        await app.player.prepareDeletion("another-song")
+        XCTAssertNotNil(app.player.track)
+        await app.player.prepareDeletion("001")
+        XCTAssertNil(app.player.track); XCTAssertFalse(app.player.isPlaying); XCTAssertFalse(app.player.canPlay)
+        XCTAssertFalse(engine.isLoaded); XCTAssertTrue(app.player.lines.isEmpty); XCTAssertTrue(app.player.spans.isEmpty)
+        XCTAssertNil(app.player.loop); XCTAssertNil(app.player.stopAt); XCTAssertNil(app.player.focusUtterance)
+        engine.emit(5)
+        for _ in 0..<5 { await Task.yield() }
+        XCTAssertFalse(engine.isPlaying)
+    }
+
+    @MainActor
     private func fixture() async throws -> (AppModel, FakePlaybackEngine, FakeCorpus, UserDefaults) {
         let suite = "PlayerModelTests-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

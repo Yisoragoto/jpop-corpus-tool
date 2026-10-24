@@ -1923,6 +1923,7 @@ dependencies = [
  "jp-dict",
  "jp-fonts",
  "jp-import",
+ "jp-library",
  "jp-lyrics",
  "jp-normalize",
  "jp-scrape",
@@ -2005,6 +2006,7 @@ dependencies = [
  "jp-dict",
  "jp-fonts",
  "jp-import",
+ "jp-library",
  "jp-lyrics",
  "jp-scrape",
  "jp-setup",
@@ -2037,6 +2039,20 @@ dependencies = [
  "serde",
  "serde_json",
  "unicode-normalization",
+]
+
+[[package]]
+name = "jp-library"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-audio",
+ "jp-corpus",
+ "jp-import",
+ "jp-scrape",
+ "jp-setup",
+ "rusqlite",
+ "serde",
 ]
 
 [[package]]

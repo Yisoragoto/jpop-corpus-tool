@@ -65,6 +65,8 @@ jp-normalize = { path = "../jp-normalize" }
 rusqlite = { version = "0.40", features = ["bundled"] }
 jp-tokenizer = { path = "../jp-tokenizer" }
 
+jp-library = { path = "../jp-library" }
+
 [target.'cfg(windows)'.dependencies]
 # 列本机字体用 DirectWrite：WebView2 就是用它按名字找字体的，列出来的名字 CSS 一定认。
 # WindowsAndMessaging 是启动失败时弹 MessageBox 用的——GUI 程序没有控制台，

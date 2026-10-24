@@ -58,7 +58,7 @@ jobs:
 
       - name: Rust core (jp-ffi) tests
         working-directory: rust
-        run: cargo test -p jp-ffi -p jp-corpus -p jp-setup -p jp-scrape -p jp-lyrics --lib --no-fail-fast
+        run: cargo test -p jp-ffi -p jp-corpus -p jp-setup -p jp-scrape -p jp-lyrics -p jp-library --lib --no-fail-fast
 
       - name: Build libjp_ffi.a
         run: ./macos/scripts/build-rust.sh
@@ -165,6 +165,7 @@ jobs:
           grep -Eq '^\[step\] import tracks.before=[0-9]+ tracks.after=[0-9]+ added=[1-9][0-9]* status=pass$' "$out/smoke.txt"
           grep -q '^\[step\] playback-tuning pitch=2 rate=1.25 advanced=true status=pass$' "$out/smoke.txt"
           grep -Eq '^\[step\] player-bar height=[0-9]+(\.[0-9]+)? status=pass$' "$out/smoke.txt"
+          grep -q '^\[step\] library-edit readback=true status=pass$' "$out/smoke.txt"
           grep -q '^\[step\] complete status=pass$' "$out/smoke.txt"
 
       - name: Print smoke diagnostics (including failures)

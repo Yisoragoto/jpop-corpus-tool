@@ -7,7 +7,7 @@
 ```text
                  jp-corpus（SQL、检索、分析、行区间、迁移）
                  jp-normalize
-                 jp-import / jp-scrape / jp-anki / jp-lyrics（共享应用层）
+                 jp-import / jp-scrape / jp-anki / jp-lyrics / jp-library（共享应用层）
                      │
         ┌────────────┴─────────────┐
    jp-app（Tauri command）      jp-ffi（C ABI，JSON 进出）
@@ -137,8 +137,24 @@ Swift 编译与运行由 CI 的 macOS job 验证，本机 Windows 不具备 Swif
 | 卡拉 OK 与打轴 | 部分 | LyricsModelTests、LyricsBridgeTests、Rust 时间轴测试 | 两行交替、倒数、真实时间高亮、按住/点按、起止编辑、拆分合并、撤销重做与版本保存；无波形拖拽和完整 Windows 打轴快捷键 |
 | 分析存档、来源与语料质量 | 可用 | CoreBridgeTests、LibraryBridgeTests、smoke | 已有存档、重跑、比较、删除及来源/质量入口 |
 | 完整子语料管理 | 部分 | CoreBridgeTests 基础筛选 | 保存/管理完整条件的原生界面仍未接入 |
-| 导入内嵌封面、追加 metadata/songs.csv | 部分 | 导入主体有模型/真 FFI/smoke；这两项未覆盖 | 对应代码仍在 jp-app/src/scrape.rs 与 library_admin.rs |
+| 资料库管理（第 3 阶段） | 可用 | LibraryModelTests、MembersModelTests、LibraryAdminBridgeTests、38 个 TS 移植用例、jp-ffi、smoke 编辑读回 | 歌曲编辑/删除、音频修复、新歌/文件夹、照片/成员、分词校正、迁移/维护；Swift 待 macOS CI |
+| 导入内嵌封面、追加 metadata/songs.csv | 可用 | jp-app fixture_flows、jp-ffi CSV 与封面边界测试；Swift 真 FFI 导入 | 两端共用 jp-scrape::save_imported_covers 与 jp-library::admin::sync_imported，清单不存在不创建 |
 | 词级定位、跨行/句法搭配 | 部分 | CoreBridgeTests、LyricTimelineTests | 歌词面板可定位真实时间单位；KWIC 仍按行，搭配仍按行内窗口，跨行/句法未接入 |
+
+## 共享资料库业务层与 FFI（第 3 阶段）
+
+`jp-library` 是依赖语料库、导入器和本地文件的共享应用层：从 `jp-app` 抽出编辑/删除/重新关联的事务与 CSV/封面/缓存收尾、
+发现新歌、时长回填、迁移文件复制、成员输入与歌手名录。`jp-app` 保留播放器和事件适配，command 签名、返回形状及 `app/` 均不变。
+导入封面保存移入现有 `jp-scrape`，Tauri 和 FFI 导入后都调用它，再同步已有的 `metadata/songs.csv`。
+
+新增 29 个 camelCase FFI 方法及与 serde 字段对应的 JPCore Codable 模型，完整清单和逐项差异见 [资料库管理](macos-status.md#资料库管理)。
+`backfillDurations`、`fillAlbumArtwork`、`migrateRun` 共用 `libraryProgress` 作业槽，工作线程自开连接，不占会话锁。
+原生选库继续使用 AppModel/Settings、Application Support 与既有 UserDefaults；Windows 安装目录定位不适用于 macOS，未新增对应设置 FFI。
+
+`LibraryModel` / `MembersModel` 承接可测试状态；35 个公开 TS 纯函数移为 Swift，38 个原 TS 用例全部移植。
+FakeCorpus 覆盖确认、部分失败、日期校验、持久化、校正和进度；真 FFI 测试检查管理写入与读回、照片、成员、校正及三种作业报告。
+SmokeRun 真改歌曲标题、读回并恢复，CI 检查 `[step] library-edit readback=true status=pass`，Rust 核心测试列表加入 `jp-library`。
+本机 Windows 仅执行 Rust 与静态检查；新增 Swift 编译、测试及真窗口交互须由 macOS 14 CI 确认。
 
 ## 共享歌词业务层与 FFI（第 1 阶段）
 

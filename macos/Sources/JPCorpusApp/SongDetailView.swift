@@ -92,6 +92,7 @@ struct SongDetailView: View {
                         Label("播放", systemImage: "play.fill")
                     }
                     .buttonStyle(.borderedProminent)
+                    SongAdminButton(track: t, onChanged: { Task { await load() } })
                     LyricsToolsButton(songId: t.id, onDismiss: { Task { await load() } })
                     Button {
                         Task {
