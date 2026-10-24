@@ -1,0 +1,35 @@
+{
+  "name": "@applemusic-like-lyrics/core",
+  "version": "0.6.0-jpop.1",
+  "description": "AMLL 的纯 JS 核心组件框架，包括歌词显示组件和背景组件等其它可以复用的组件（JPOP Corpus Tool 打过补丁的副本，见 PATCHES.md）",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "url": "https://github.com/amll-dev/applemusic-like-lyrics.git",
+    "directory": "packages/core",
+    "type": "git"
+  },
+  "type": "module",
+  "module": "./dist/amll-core.mjs",
+  "types": "./dist/amll-core.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/amll-core.d.mts",
+      "default": "./dist/amll-core.mjs"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "dependencies": {
+    "@ungap/structured-clone": "^1.3.3",
+    "bezier-easing": "^3.0.1",
+    "gl-matrix": "4.0.0-beta.2"
+  },
+  "peerDependencies": {
+    "@pixi/app": "^7.4.3",
+    "@pixi/core": "^7.4.3",
+    "@pixi/display": "^7.4.3",
+    "@pixi/filter-blur": "^7.4.3",
+    "@pixi/filter-bulge-pinch": "^5.1.1",
+    "@pixi/filter-color-matrix": "^7.4.3",
+    "@pixi/sprite": "^7.4.3"
+  }
+}

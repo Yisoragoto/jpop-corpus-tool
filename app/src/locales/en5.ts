@@ -509,4 +509,11 @@ export const en5: Record<string, string> = {
   "这一行的波形和每个字的时间": "Waveform of this line with syllable timings",
   "正在读取波形…": "Loading waveform…",
   "手动打轴": "Manual timing",
+
+  // AmllLyrics.tsx / SettingsPage.tsx：AMLL
+  "全屏歌词用 Apple Music 风格（AMLL）": "Apple Music–style full-screen lyrics (AMLL)",
+  "逐字发光、弹簧滚动、振假名跟着唱。点词照样查词，点空白处跳到那一句。关掉回到原来的全屏歌词（分词校正在那边）。": "Glowing word-by-word lyrics, spring scrolling and furigana that follows the singing. Click a word to look it up; click elsewhere on a line to jump there. Turn off for the classic view (token corrections live there).",
+  "流动封面背景（AMLL）": "Flowing cover background (AMLL)",
+  "全屏歌词和卡拉 OK 的背景用封面颜色缓慢流动（WebGL）。关掉用下面的封面虚化或纯色，更省显卡。": "Full-screen lyrics and karaoke use slowly flowing cover colors as the background (WebGL). Turn off to use the blurred cover or a solid color below, which is lighter on the GPU.",
+  "歌词（点词查词，点空白处跳到那一句）": "Lyrics (click a word to look it up, click elsewhere to jump to that line)",
 };

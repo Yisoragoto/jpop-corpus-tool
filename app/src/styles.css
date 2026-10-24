@@ -3181,3 +3181,14 @@ table.data tr.current td { background: var(--accent-soft); }
 .te-edge-input { width: 92px; text-align: center; font-variant-numeric: tabular-nums; }
 .te-keys { margin: 0; font-size: 11px; color: var(--muted); }
 
+/* ── AMLL（Apple Music 风格歌词、流动封面背景）──
+   背景是 AMLL 自己的 canvas，铺满所在的那一层；歌词用我们设置里的歌词字体。查过的词描一圈。 */
+.amll-bg { position: absolute; inset: 0; overflow: hidden; isolation: isolate; }
+.amll-bg canvas { position: absolute; inset: 0; z-index: 0 !important; }
+.stage-amll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.amll-lyrics { width: 100%; height: 100%; font-family: var(--lyric-font); }
+.amll-lyrics .amll-lyric-player { cursor: default; }
+.amll-lyrics [data-char-start] { cursor: pointer; }
+/* AMLL 给字加了 mask、整层又是 plus-lighter 混合，描框和下划线都会被吃掉；字本身的颜色不受影响，查过的词染成强调色 */
+.amll-lyrics .amll-picked, .amll-lyrics .amll-picked * { color: var(--accent); }
+

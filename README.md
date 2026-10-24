@@ -363,6 +363,7 @@ raw/           本地音频和歌词目录，Git 默认忽略内容
 |---|---|
 | [Tauri 2](https://tauri.app/) | Apache-2.0 / MIT |
 | [React 19](https://react.dev/) | MIT |
+| [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)（改过的副本，见 `app/vendor/amll-core/PATCHES.md`）· [PixiJS 7](https://pixijs.com/) | AGPL-3.0-only · MIT |
 | [rodio](https://github.com/RustAudio/rodio) · [rodio-wsola](https://crates.io/crates/rodio-wsola) | MIT / Apache-2.0 · Apache-2.0 |
 | [Symphonia](https://github.com/pdeljanov/Symphonia)（解码） | MPL-2.0 |
 | [sudachi.rs](https://github.com/WorksApplications/sudachi.rs) | Apache-2.0 |

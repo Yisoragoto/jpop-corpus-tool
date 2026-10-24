@@ -24,6 +24,9 @@ import { useAppSettings } from "../settings";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import { LyricsTools } from "./LyricsTools";
+import { AmllBackground } from "./AmllBackground";
+import { AmllLyrics } from "./AmllLyrics";
+import type { KeyedAmllLine } from "../amllLines";
 import { ColumnSplitter, usePaneWidth } from "./ColumnSplitter";
 import { tr } from "../i18n";
 
@@ -52,6 +55,17 @@ interface Props {
   onClose: () => void;
   /** 从全屏歌词进卡拉 OK */
   onKaraoke?: () => void;
+  /** 给了就用 AMLL（Apple Music 风格）显示歌词，点词查词照旧 */
+  amll?: AmllStageProps | null;
+}
+
+export interface AmllStageProps {
+  lines: KeyedAmllLine[];
+  positionSec: number;
+  playing: boolean;
+  rate: number;
+  onWord: (lineKey: number, charIndex: number) => [number, number] | null;
+  onLine: (lineKey: number) => void;
 }
 
 /** 当前行停在可视高度的这个位置（Python 版是 0.48） */
@@ -72,7 +86,12 @@ export function LyricsStage(props: Props) {
   // 封面读不出来时退回纯色。换歌要把失败状态清掉，否则一次读不到就再也不显示了
   const [bgBroken, setBgBroken] = useState(false);
   useEffect(() => setBgBroken(false), [props.coverPath]);
-  const blurCover = settings.stageCoverBlur && !bgBroken && Boolean(props.coverPath);
+  // AMLL 的流动背景 / 歌词起不来（WebGL 不可用之类）就退回原来的
+  const [amllBgFailed, setAmllBgFailed] = useState(false);
+  const [amllLyricsFailed, setAmllLyricsFailed] = useState(false);
+  const flowingBg = settings.amllBackground && !amllBgFailed && Boolean(props.coverPath);
+  const amll = props.amll && !amllLyricsFailed ? props.amll : null;
+  const blurCover = !flowingBg && settings.stageCoverBlur && !bgBroken && Boolean(props.coverPath);
 
   // Esc 退出；「显示」面板开着时那一下留给面板
   useEffect(() => {
@@ -95,7 +114,7 @@ export function LyricsStage(props: Props) {
 
   return (
     <div
-      className={`stage ${props.withFurigana ? "with-furigana" : ""} ${blurCover ? "with-cover-bg" : ""}`}
+      className={`stage ${props.withFurigana ? "with-furigana" : ""} ${blurCover || flowingBg ? "with-cover-bg" : ""} ${amll ? "with-amll" : ""}`}
       style={{
         ...props.style,
         // 铺到窗口底边（播放条盖在上面），内容再按播放条的高度让开
@@ -106,6 +125,11 @@ export function LyricsStage(props: Props) {
       role="dialog"
       aria-label={tr("全屏歌词")}
     >
+      {flowingBg && (
+        <div className="stage-bg" aria-hidden="true">
+          <AmllBackground coverPath={props.coverPath as string} playing={props.amll?.playing ?? true} onFail={() => setAmllBgFailed(true)} />
+        </div>
+      )}
       {blurCover && (
         <div className="stage-bg" aria-hidden="true">
           <img
@@ -128,6 +152,19 @@ export function LyricsStage(props: Props) {
         </button>
       </header>
       <div className="stage-body" ref={side.container}>
+        {amll !== null ? (
+          <div className="stage-amll">
+            <AmllLyrics
+              lines={amll.lines}
+              positionSec={amll.positionSec}
+              playing={amll.playing}
+              rate={amll.rate}
+              onWord={amll.onWord}
+              onLine={amll.onLine}
+              onFail={() => setAmllLyricsFailed(true)}
+            />
+          </div>
+        ) : (
         <div className="stage-lyrics" ref={scroller}>
           {lines.length === 0 && <p className="muted stage-empty">{tr("这首歌还没有歌词")}</p>}
           {lines.map((line, idx) => (
@@ -142,6 +179,7 @@ export function LyricsStage(props: Props) {
             </p>
           ))}
         </div>
+        )}
         <ColumnSplitter
           edge="right"
           label={tr("查词栏宽度")}

@@ -14,6 +14,10 @@ import { PITCH_CACHE_LIMIT_RANGE } from "./pitchCache";
 
 export interface AppSettings {
   /** 全屏歌词的背景：封面虚化铺满，而不是从封面取一个纯色 */
+  /** 全屏歌词用 AMLL（Apple Music 风格）显示；点词查词照样能用 */
+  stageAmllLyrics: boolean;
+  /** 全屏歌词和卡拉 OK 的背景用 AMLL 的流动封面 */
+  amllBackground: boolean;
   stageCoverBlur: boolean;
   /** 虚化强度，px */
   stageBlurRadius: number;
@@ -48,6 +52,8 @@ export const DAILY_GOAL_LIMITS = [5, 180] as const;
 export const WORD_CLOUD_COUNT_LIMITS = [30, 250] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  stageAmllLyrics: true,
+  amllBackground: true,
   stageCoverBlur: true,
   stageBlurRadius: 64,
   spectrum: true,
@@ -78,6 +84,8 @@ export function parseSettings(raw: string | null): AppSettings {
     const parsed = JSON.parse(raw) as Partial<Record<keyof AppSettings, unknown>>;
     const d = DEFAULT_SETTINGS;
     return {
+      stageAmllLyrics: typeof parsed.stageAmllLyrics === "boolean" ? parsed.stageAmllLyrics : d.stageAmllLyrics,
+      amllBackground: typeof parsed.amllBackground === "boolean" ? parsed.amllBackground : d.amllBackground,
       stageCoverBlur: typeof parsed.stageCoverBlur === "boolean" ? parsed.stageCoverBlur : d.stageCoverBlur,
       stageBlurRadius: clamp(parsed.stageBlurRadius, STAGE_BLUR_LIMITS, d.stageBlurRadius),
       spectrum: typeof parsed.spectrum === "boolean" ? parsed.spectrum : d.spectrum,

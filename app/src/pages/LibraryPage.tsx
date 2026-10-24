@@ -31,6 +31,7 @@ import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
 import { LyricsStage } from "../components/LyricsStage";
 import { KaraokeStage } from "../components/KaraokeStage";
+import { tokenAtChar, toAmllLines } from "../amllLines";
 import { SongEditor } from "../components/SongEditor";
 import { LyricsEditor } from "../components/LyricsEditor";
 import { SongLineagePanel } from "../components/SongLineagePanel";
@@ -391,6 +392,14 @@ export function LibraryPage({
   })), [lyrics, timelines]);
   const currentLine = useCurrentLine(syncedLyrics, playback.positionSec, lyricsArePlaying);
   const karaoke = karaokeEnabled && lyricsArePlaying ? timelines[currentLine] ?? null : null;
+  // 全屏歌词的 AMLL 版（设置里可以关）。只在全屏开着时算
+  const amllEnabled = useAppSettings().stageAmllLyrics;
+  const amllLines = useMemo(
+    () => (stageOpen && amllEnabled
+      ? toAmllLines(lyrics, timelines, lineSegments, display.furigana && furigana !== null, selected?.durationSec ?? null)
+      : null),
+    [stageOpen, amllEnabled, lyrics, timelines, lineSegments, display.furigana, furigana, selected?.durationSec],
+  );
   useKaraoke(
     karaoke,
     playback.positionSec,
@@ -446,11 +455,20 @@ export function LibraryPage({
     currentLineRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [currentLine, playback.playState, lyricsArePlaying]);
 
+  /** 查第 idx 行的第 i 个词：从这个词起到行尾交给词典做最长匹配，实词顺便打开词条。经典视图和 AMLL 共用 */
+  const lookupTokenAt = (idx: number, i: number) => {
+    const line = lyrics[idx];
+    const token = line?.tokens[i];
+    if (line === undefined || token === undefined || selected === null) return;
+    if (CONTENT_POS.has(token.pos)) void actions.openWord(token.lemma);
+    lookUp(line.tokens.slice(i).map((t) => t.surface).join(""), { songId: selected.id, utteranceId: line.utteranceId, tokenIndex: i });
+    setStageSide(true);
+  };
+
   /** 一行歌词：词之间的原文 + 可点的词（里面带振假名）。普通视图和全屏共用 */
   const renderLineText = (idx: number): ReactNode => {
     const line = lyrics[idx];
     if (line === undefined || selected === null) return null;
-    const songId = selected.id;
     // 逐字点亮的那一行：每个字包一层 span（`data-c` 是字符下标），按渲染顺序数下去
     const karaokeLine = karaoke !== null && idx === currentLine;
     // 只有当前行拆成一个个字：其余行原样输出，播放轮询每秒重渲染 10 次，整首都拆开太重
@@ -478,14 +496,7 @@ export function LibraryPage({
               const token = line.tokens[i];
               if (token === undefined) return null;
               // 分词对不齐原文时（拆分结果是 null）退回只显示词
-              // 从这个词起到行尾，交给词典做最长匹配
-              const rest = () => line.tokens.slice(i).map((t) => t.surface).join("");
-              const context = { songId, utteranceId: line.utteranceId, tokenIndex: i };
-              const lookupToken = () => {
-                if (CONTENT_POS.has(token.pos)) void actions.openWord(token.lemma);
-                lookUp(rest(), context);
-                setStageSide(true);
-              };
+              const lookupToken = () => lookupTokenAt(idx, i);
               const content = segment.pieces.length > 0 ? pieces(segment.pieces) : chars(token.surface);
               return CONTENT_POS.has(token.pos) ? (
                 <button
@@ -1285,6 +1296,23 @@ export function LibraryPage({
           onError={onAudioError}
           onClose={closeStage}
           onKaraoke={openKaraoke}
+          amll={amllLines === null ? null : {
+            lines: amllLines,
+            positionSec: lyricsArePlaying ? playback.positionSec : 0,
+            playing: lyricsArePlaying && playback.playState === "playing",
+            rate: playback.rate,
+            onWord: (lineKey, charIndex) => {
+              const line = lyrics[lineKey];
+              const hit = line === undefined ? null : tokenAtChar(line.text, line.tokens, charIndex);
+              if (hit === null) return null;
+              lookupTokenAt(lineKey, hit.index);
+              return hit.span;
+            },
+            onLine: (lineKey) => {
+              const time = syncedLyrics[lineKey]?.timeSec ?? null;
+              if (audioReady && validLyricTime(time)) void api.audioSeek(time);
+            },
+          }}
         />
       )}
 
