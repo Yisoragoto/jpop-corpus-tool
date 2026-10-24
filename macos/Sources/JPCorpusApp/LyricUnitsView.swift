@@ -12,6 +12,7 @@ struct TimedLyricText: View {
     let units: [LyricTimingUnit]
     let position: Double
     var size: CGFloat = 15
+    var highlight: Color = .accentColor
     let seek: (LyricTimingUnit) -> Void
 
     var body: some View {
@@ -23,7 +24,7 @@ struct TimedLyricText: View {
                         .foregroundStyle(.secondary)
                         .overlay(alignment: .leading) {
                             Text(label)
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(highlight)
                                 .mask {
                                     GeometryReader { geometry in
                                         Rectangle()

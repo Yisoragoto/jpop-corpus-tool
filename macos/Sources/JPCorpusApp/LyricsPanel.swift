@@ -187,7 +187,7 @@ struct LyricsPanel: View {
         let hint = units != nil ? "真实逐字时间 · 点单位从词首放，右键选择原文 / 查词 / 循环"
             : lineTime.map { formatTime($0) + " · 点一下从这里放，右键检索 / 查词 / 循环" } ?? "纯文本 · 右键选择原文 / 查词"
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if let units {
+            if app.karaokeLyrics, let units {
                 TimedLyricText(text: line.text, units: units, position: player.position) { unit in
                     Task { await player.playUnit(unit, in: line) }
                 }
@@ -198,7 +198,7 @@ struct LyricsPanel: View {
                     .opacity(mode == .plain ? 0.65 : (current ? 1 : 0.5))
                     .scaleEffect(current ? 1.0 : 0.97, anchor: .leading)
                     .fixedSize(horizontal: false, vertical: true)
-                    .onTapGesture { if mode == .lineSynced { Task { await player.playLine(line) } } }
+                    .onTapGesture { if mode != .plain { Task { await player.playLine(line) } } }
             }
             if looping {
                 Image(systemName: "repeat").font(.callout.weight(.semibold)).foregroundStyle(.tint)
@@ -282,108 +282,6 @@ struct ProfileView: View {
         .frame(width: 320)
         .task {
             profile = try? await app.client?.songProfile(songId)
-        }
-    }
-}
-
-/// 底部播放条
-@MainActor
-struct PlayerBar: View {
-    @Environment(AppModel.self) private var app
-    @State private var scrubbing: Double?
-
-    var body: some View {
-        let player = app.player
-        HStack(spacing: 14) {
-            HStack(spacing: 6) {
-                Button { Task { await player.step(-1) } } label: { Image(systemName: "backward.end.fill") }
-                    .help("上一行")
-                Button { player.toggle() } label: {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").frame(width: 18)
-                }
-                .help("播放 / 暂停（⌥空格）")
-                Button { Task { await player.step(1) } } label: { Image(systemName: "forward.end.fill") }
-                    .help("下一行")
-            }
-            .buttonStyle(.borderless)
-            .font(.title3)
-            .disabled(player.track == nil)
-
-            BarCover(track: player.track)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(player.track?.title ?? "—").font(.callout.weight(.medium)).lineLimit(1)
-                Text(player.track?.artist ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .frame(width: 180, alignment: .leading)
-
-            Text(formatTime(scrubbing ?? player.position)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-            Slider(
-                value: Binding(get: { scrubbing ?? player.position }, set: { scrubbing = $0 }),
-                in: 0...max(player.duration, 1),
-                onEditingChanged: { editing in
-                    if !editing, let target = scrubbing {
-                        Task {
-                            await player.seek(to: target)
-                            scrubbing = nil
-                        }
-                    }
-                }
-            )
-            .disabled(player.track == nil)
-            Text(formatTime(player.duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-
-            Button {
-                Task { await player.toggleLoop(nil) }
-            } label: {
-                Image(systemName: "repeat.1")
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(player.loop != nil ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-            .help(player.loop.map { "单句循环 \(formatTime($0.startSec))–\(formatTime($0.endSec))，点击取消" } ?? "循环当前这一行（⌘L）")
-            .disabled(player.track == nil)
-
-            Menu {
-                ForEach([0.5, 0.75, 0.9, 1.0, 1.25], id: \.self) { r in
-                    Button("\(String(format: "%g", r))×") { app.player.rate = Float(r) }
-                }
-            } label: {
-                Text("\(String(format: "%g", player.rate))×").monospacedDigit()
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("倍速（音高不变）")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .glassCard(cornerRadius: 16)
-    }
-}
-
-/// 播放条上的小封面
-@MainActor
-private struct BarCover: View {
-    @Environment(AppModel.self) private var app
-    let track: Track?
-    @State private var image: NSImage?
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
-            } else {
-                ZStack {
-                    Rectangle().fill(.quaternary)
-                    Image(systemName: "music.note").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(width: 36, height: 36)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .task(id: track?.id) {
-            image = nil
-            guard let track, !track.coverPath.isEmpty, let client = app.client else { return }
-            image = loadImage(atPath: (try? await client.resolveMedia(track.coverPath)) ?? nil)
         }
     }
 }

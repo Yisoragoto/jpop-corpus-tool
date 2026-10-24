@@ -14,6 +14,15 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("播放") {
+                Toggle("逐字点亮当前行", isOn: Binding(get: { app.karaokeLyrics }, set: { app.karaokeLyrics = $0 }))
+                Toggle("显示频谱", isOn: Binding(get: { app.player.spectrumEnabled }, set: { app.player.spectrumEnabled = $0 }))
+                Toggle("全屏歌词使用虚化封面", isOn: Binding(get: { app.stageCoverBlur }, set: { app.stageCoverBlur = $0 }))
+                LabeledContent("封面模糊") {
+                    Slider(value: Binding(get: { app.stageBlurRadius }, set: { app.stageBlurRadius = $0 }), in: 20...120, step: 1)
+                    Text("\(Int(app.stageBlurRadius))").monospacedDigit().frame(width: 28)
+                }.disabled(!app.stageCoverBlur)
+            }
             Section("歌词") {
                 Button("歌词来源、批量补全与逐首预览") { lyricsOpen = true }.disabled(app.core == nil)
             }

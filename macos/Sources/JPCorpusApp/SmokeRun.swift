@@ -84,6 +84,20 @@ enum SmokeRun {
                 try require(!p.isPlaying, "audition-stopped", "playing=\(p.isPlaying)")
             }
 
+            // 真 FLAC 经 TimePitch 播放：调整时不重载、不跳回起点。
+            if let track = app.player.track {
+                let player = app.player
+                await player.open(track, at: 0, autoplay: true)
+                player.setPitch(2)
+                player.setRate(1.25)
+                let before = player.position
+                await settle(1.2)
+                try require(player.isPlaying && player.pitch == 2 && player.rate == 1.25 && player.position > before + 0.5 && player.lastError == nil,
+                            "playback-tuning", "pitch=\(player.pitch) rate=\(player.rate) advanced=\(player.position > before + 0.5)")
+                player.pause()
+                player.resetTuning()
+            } else { throw SmokeFailure.step("playback-tuning-missing-track") }
+
             // 振假名要分词词典：CI 把缓存的那份目录传进来，装进示例库（和导入页「选已有的词典」同一条路）
             if let sudachi = ProcessInfo.processInfo.environment["JPCORPUS_SMOKE_SUDACHI"], !sudachi.isEmpty, let client = app.core {
                 do {

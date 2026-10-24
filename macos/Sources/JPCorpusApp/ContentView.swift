@@ -66,6 +66,7 @@ struct ContentView: View {
             }
         }
         .background(GlassWindowConfigurator())
+        .background(PlaybackKeyboard(app: app))
         // 全屏歌词是单独一个窗口（JPCorpusApp 里的 Window("stage")）：盖在主窗口上做的话，
         // 主窗口的标题栏和工具栏总会露一条出来
         .onChange(of: app.showStage) { _, on in

@@ -111,7 +111,16 @@ public final class AppModel {
     public var errorMessage: String?
     public private(set) var isDemo = false
     public var pendingCreationURL: URL?
-    public let player = PlayerModel()
+    public let player: PlayerModel
+    public var stageCoverBlur: Bool {
+        didSet { defaults.set(stageCoverBlur, forKey: "player-stage-cover-blur") }
+    }
+    public var stageBlurRadius: Double {
+        didSet { defaults.set(stageBlurRadius, forKey: "player-stage-blur-radius") }
+    }
+    public var karaokeLyrics: Bool {
+        didSet { defaults.set(karaokeLyrics, forKey: "player-karaoke-lyrics") }
+    }
     /// Shared with ImportView so smoke exercises the model actually displayed in the window.
     public private(set) var importer = ImportModel()
 
@@ -144,6 +153,7 @@ public final class AppModel {
     public init(
         defaults: UserDefaults = .standard,
         client: (any CorpusCalling)? = nil,
+        playbackEngine: (any PlaybackEngine)? = nil,
         openClient: @escaping @Sendable (URL) async throws -> any CorpusCalling = { db in
             let core = try await Task.detached { try CorpusCore(databaseURL: db) }.value
             return CorpusClient(core: core)
@@ -152,6 +162,12 @@ public final class AppModel {
         self.defaults = defaults
         self.client = client
         self.openClient = openClient
+        player = PlayerModel(engine: playbackEngine, defaults: defaults)
+        stageCoverBlur = defaults.object(forKey: "player-stage-cover-blur") as? Bool ?? true
+        let blur = defaults.object(forKey: "player-stage-blur-radius") as? NSNumber
+        let radius = blur?.doubleValue ?? 64
+        stageBlurRadius = radius.isFinite ? min(120, max(20, radius)) : 64
+        karaokeLyrics = defaults.object(forKey: "player-karaoke-lyrics") as? Bool ?? true
         audioRoots = defaults.stringArray(forKey: Keys.audioRoots) ?? []
         showFurigana = defaults.bool(forKey: Keys.furigana)
         furiganaMode = FuriganaMode(rawValue: defaults.string(forKey: Keys.furiganaMode) ?? "") ?? .kanji

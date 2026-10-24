@@ -23,7 +23,7 @@ struct LyricsTimingEditor: View {
                     Text("按住").tag(TimingTapMode.hold); Text("点按").tag(TimingTapMode.tap)
                 }.frame(width: 130)
                 ForEach([Float(0.5), 0.75, 1], id: \.self) { rate in
-                    Button("\(rate, specifier: "%g")×") { app.player.rate = rate }
+                    Button("\(rate, specifier: "%g")×") { app.player.setRate(rate) }
                         .tint(app.player.rate == rate ? .accentColor : .secondary)
                 }
                 Text("按键提前量")

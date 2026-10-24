@@ -16,33 +16,51 @@ struct LyricsStage: View {
     @State private var cover: NSImage?
     @State private var karaoke = false
     @State private var credits: [Credit] = []
+    @State private var colors = ArtworkColors()
+    @State private var lookup: LookupRequest?
+    @State private var selectionLine: LyricLine?
+    @State private var manualScroll: Date?
+    @AppStorage("stage-side-width") private var sideWidth = 340.0
+    @State private var sideDragStart: Double?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// 当前行停在可视高度的这个位置（和 Windows 版一样）
     private static let anchor = UnitPoint(x: 0.5, y: 0.45)
 
     /// 顶栏和播放条的高度。写死而不是让它们自己撑：中间那一栏拿剩下的，绝不会把播放条挤出窗口
     private static let topHeight: CGFloat = 56
-    private static let barHeight: CGFloat = 92
+    private static let barHeight: CGFloat = 160
 
     var body: some View {
         let player = app.player
         GeometryReader { geo in
-            let middle = max(geo.size.height - Self.topHeight - Self.barHeight, 160)
+            let wide = geo.size.width > 900
+            let hasBar = !wide || lookup != nil
+            let middle = max(geo.size.height - Self.topHeight - (hasBar ? Self.barHeight : 0), 160)
+            let lookupWidth = min(max(260, sideWidth), max(260, min(720, Double(geo.size.width) - (wide ? 128 : 56) - 420 - (wide ? 104 : 48))))
             VStack(spacing: 0) {
                 topBar
                     .frame(height: Self.topHeight)
-                HStack(alignment: .center, spacing: 48) {
-                    if geo.size.width > 900, let track = player.track {
-                        nowPlaying(track, width: min(geo.size.width * 0.28, middle * 0.7, 420))
+                HStack(alignment: .center, spacing: wide ? 48 : 20) {
+                    if wide, lookup == nil, let track = player.track {
+                        ScrollView {
+                            nowPlaying(track, width: min(geo.size.width * 0.28, middle * 0.48, 380))
+                                .padding(.vertical, 24)
+                        }.scrollIndicators(.never).frame(width: min(geo.size.width * 0.28, middle * 0.48, 380))
                     }
                     if karaoke { karaokeLyrics } else { lyrics }
+                    if let lookup {
+                        lookupDivider(width: lookupWidth, height: middle)
+                        LookupPane(request: lookup) { self.lookup = nil }
+                            .frame(width: CGFloat(lookupWidth))
+                            .glassCard().padding(.vertical, 20)
+                    }
                 }
                 .padding(.horizontal, geo.size.width > 900 ? 64 : 28)
                 .frame(height: middle)
-                PlayerBar()
-                    .padding(.horizontal, 24)
-                    .frame(maxWidth: 1100)
-                    .frame(height: Self.barHeight)
+                if hasBar {
+                    PlayerBar().padding(.horizontal, 24).frame(height: Self.barHeight)
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .onAppear {
@@ -52,20 +70,27 @@ struct LyricsStage: View {
         .background { backdrop.ignoresSafeArea() }
         .environment(\.colorScheme, .dark)
         .onAppear { karaoke = app.stageKaraoke }
-        .onChange(of: karaoke) { _, value in app.stageKaraoke = value }
-        .onExitCommand { close() }
-        .task(id: player.track?.id) {
-            cover = nil
-            credits = (try? await app.core?.trackCredits(player.track?.id ?? "")) ?? []
-            guard let track = player.track, !track.coverPath.isEmpty, let client = app.client else { return }
-            cover = loadImage(atPath: (try? await client.resolveMedia(track.coverPath)) ?? nil)
+        .onChange(of: karaoke) { _, value in app.stageKaraoke = value; lookup = nil }
+        .onExitCommand { if selectionLine != nil { selectionLine = nil } else { close() } }
+        .popover(item: $selectionLine) { line in
+            LyricSelectionView(text: line.text) { selected in
+                lookup = LookupRequest(text: selected, songId: player.track?.id, utteranceId: line.utteranceId, tokenIndex: nil)
+                selectionLine = nil
+            }
         }
-        .background(LyricsKeyboard { event in
-            guard event.type == .keyDown else { return false }
-            if event.keyCode == 53 { close(); return true }
-            if event.keyCode == 49 { if !event.isARepeat { app.player.toggle() }; return true }
-            return false
-        })
+        .task(id: "\(player.track?.id ?? "")|\(player.track?.coverPath ?? "")") {
+            cover = nil; colors = ArtworkColors()
+            let track = player.track
+            let fetchedCredits = (try? await app.core?.trackCredits(track?.id ?? "")) ?? []
+            guard !Task.isCancelled else { return }
+            credits = fetchedCredits
+            guard let track, !track.coverPath.isEmpty, let client = app.client else { return }
+            let path = (try? await client.resolveMedia(track.coverPath)) ?? nil
+            guard !Task.isCancelled else { return }
+            cover = loadImage(atPath: path)
+            colors = ArtworkColors(image: cover)
+        }
+        .background(PlaybackKeyboard(app: app, exit: { close() }))
         .background(WindowReader { window = $0 })
         .onChange(of: window) { _, w in enterFullScreen(w) }
         // 窗口被关掉（红色按钮、⇧⌘F、Esc）都会走到这里：把状态收回来
@@ -75,25 +100,36 @@ struct LyricsStage: View {
     // MARK: - 各块
 
     private var backdrop: some View {
-        ZStack {
-            LinearGradient(colors: [Color(white: 0.12), Color(white: 0.04)], startPoint: .top, endPoint: .bottom)
-            if let cover {
-                Image(nsImage: cover)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .blur(radius: 90, opaque: true)
-                    .saturation(1.5)
-                    .clipped()
-                    .transition(.opacity)
-                Color.black.opacity(0.42)
+        StageBackdrop(cover: cover, colors: colors, blurCover: app.stageCoverBlur, radius: app.stageBlurRadius)
+    }
+
+    private func lookupDivider(width: Double, height: CGFloat) -> some View {
+        Capsule().fill(.white.opacity(0.16)).frame(width: 4, height: 56)
+            .frame(width: 8, height: height)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if sideDragStart == nil { sideDragStart = width }
+                    sideWidth = min(720, max(260, (sideDragStart ?? width) - Double(value.translation.width)))
+                }
+                .onEnded { _ in sideDragStart = nil })
+            .onTapGesture(count: 2) { sideWidth = 340 }
+            .accessibilityElement().accessibilityLabel("查词栏宽度")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: sideWidth = min(720, sideWidth + 20)
+                case .decrement: sideWidth = max(260, sideWidth - 20)
+                @unknown default: break
+                }
             }
-        }
-        .animation(.easeInOut(duration: 0.8), value: cover != nil)
     }
 
     private var topBar: some View {
         HStack(spacing: 14) {
             Spacer()
+            if let track = app.player.track, (window?.frame.width ?? 1280) <= 900 {
+                Text(track.title).font(.headline).lineLimit(1)
+            }
             if let track = app.player.track {
                 Button(karaoke ? "滚动歌词" : "卡拉 OK") { karaoke.toggle() }
                 LyricsToolsButton(songId: track.id, timing: true)
@@ -108,7 +144,6 @@ struct LyricsStage: View {
                     .font(.title3)
             }
             .buttonStyle(.borderless)
-            .keyboardShortcut(.cancelAction)
             .help("退出全屏歌词（Esc）")
         }
         .foregroundStyle(.white.opacity(0.8))
@@ -141,6 +176,29 @@ struct LyricsStage: View {
                 .font(.title3)
                 .foregroundStyle(.white.opacity(0.65))
                 .lineLimit(2)
+            if app.player.spectrumEnabled { PlayerSpectrum().frame(height: 18) }
+            PlayerProgress(alwaysShowTime: true)
+            PlayerTransport(tint: colors.highlight, large: true).frame(maxWidth: .infinity)
+            if width >= 270 {
+                HStack {
+                    PlayerTools()
+                    Spacer(minLength: 8)
+                    PlayerVolume().frame(width: 110)
+                }
+            } else {
+                PlayerTools()
+                PlayerVolume().frame(width: width)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(["performer", "lyricist", "composer", "arranger"], id: \.self) { role in
+                    let names = credits.filter { $0.role == role }.map(\.name)
+                    if !names.isEmpty {
+                        Text("\(roleLabels[role] ?? role)：\(names.joined(separator: " / "))").font(.caption)
+                    }
+                }
+                if !track.genre.isEmpty { Text("流派：\(track.genre)").font(.caption) }
+                Text("\(app.player.lines.count) 行歌词 · \(formatTime(app.player.duration))").font(.caption)
+            }.foregroundStyle(.white.opacity(0.55)).padding(.top, 8)
         }
         .frame(width: width)
     }
@@ -161,6 +219,7 @@ struct LyricsStage: View {
                 .padding(.horizontal, 8)
             }
             .scrollIndicators(.never)
+            .background(StageScrollObserver { manualScroll = Date() })
             .mask(
                 LinearGradient(stops: [
                     .init(color: .clear, location: 0),
@@ -170,8 +229,25 @@ struct LyricsStage: View {
                 ], startPoint: .top, endPoint: .bottom)
             )
             .onChange(of: player.currentUtterance) { _, id in
-                guard let id else { return }
-                withAnimation(.spring(duration: 0.55)) { proxy.scrollTo(id, anchor: Self.anchor) }
+                guard manualScroll == nil, let id else { return }
+                withAnimation(reduceMotion ? nil : .spring(duration: 0.55)) { proxy.scrollTo(id, anchor: Self.anchor) }
+            }
+            .task(id: manualScroll) {
+                guard manualScroll != nil else { return }
+                do { try await Task.sleep(for: .seconds(4)) } catch { return }
+                manualScroll = nil
+                if let id = player.currentUtterance {
+                    withAnimation(reduceMotion ? nil : .spring(duration: 0.55)) { proxy.scrollTo(id, anchor: Self.anchor) }
+                }
+            }
+            .onChange(of: player.track?.id) { _, _ in
+                manualScroll = nil
+                if let id = player.currentUtterance { proxy.scrollTo(id, anchor: Self.anchor) }
+            }
+            .task(id: "\(app.lyricsDisplay.fontSize)|\(app.lyricsDisplay.lineGap)|\(app.showFurigana)") {
+                await Task.yield()
+                guard manualScroll == nil, let id = player.currentUtterance else { return }
+                proxy.scrollTo(id, anchor: Self.anchor)
             }
             .onAppear {
                 if let id = player.currentUtterance ?? player.focusUtterance {
@@ -188,24 +264,42 @@ struct LyricsStage: View {
     }
 
     private func stageLine(_ line: LyricLine, current: Bool) -> some View {
-        Group {
-            if let units = app.player.timingUnits(for: line) {
-                TimedLyricText(text: line.text, units: units, position: app.player.position, size: 34) { unit in
+        let active = app.player.lines.firstIndex { $0.utteranceId == app.player.currentUtterance } ?? 0
+        let index = app.player.lines.firstIndex { $0.utteranceId == line.utteranceId } ?? 0
+        let distance = min(5, abs(index - active))
+        return Group {
+            if app.karaokeLyrics, let units = app.player.timingUnits(for: line) {
+                TimedLyricText(text: line.text, units: units, position: app.player.position, size: 34, highlight: .white) { unit in
                     Task { await app.player.playUnit(unit, in: line) }
                 }
             } else {
                 FuriganaText(text: line.text, rubies: app.furigana[line.utteranceId] ?? [], size: 34, weight: .bold)
+                    .contentShape(Rectangle())
+                    .onTapGesture { Task { await app.player.playLine(line) } }
             }
         }
             .foregroundStyle(.white)
-            .opacity(current ? 1 : (line.timeSec == nil ? 0.25 : 0.38))
+            .opacity(current ? 1 : max(0.22, 0.65 - Double(distance) * 0.09))
             .scaleEffect(current ? 1 : 0.94, anchor: .leading)
-            .blur(radius: current ? 0 : 0.6)
-            .animation(.easeInOut(duration: 0.35), value: current)
+            .blur(radius: current ? 0 : Double(distance) * 0.35)
+            .animation(reduceMotion ? nil : .spring(duration: 0.4), value: current)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .onTapGesture { Task { await app.player.playLine(line) } }
             .help(line.timeSec.map { "点一下从 \(formatTime($0)) 放" } ?? "这一行没有时间戳")
+            .contextMenu {
+                Button("从这里放") { Task { await app.player.playLine(line) } }.disabled(line.timeSec == nil)
+                Button(app.player.loop?.utteranceId == line.utteranceId ? "取消循环" : "循环这一句") {
+                    Task { await app.player.toggleLoop(line.utteranceId) }
+                }.disabled(app.player.spans[line.utteranceId] == nil)
+                Button("选择原文 / 查选中文本") { selectionLine = line }
+                ForEach(Array(line.tokens.enumerated()).filter { ["NOUN", "PROPN", "VERB", "ADJ", "ADV"].contains($0.element.pos) }, id: \.offset) { index, token in
+                    Button("查词「\(token.surface)」") {
+                        lookup = LookupRequest(text: line.tokens[index...].map(\.surface).joined(), songId: app.player.track?.id,
+                                               utteranceId: line.utteranceId, tokenIndex: index)
+                    }
+                    Button("检索「\(token.lemma)」") { app.search(token.lemma) }
+                }
+            }
     }
 
     private var karaokeLyrics: some View {
@@ -266,6 +360,70 @@ struct LyricsStage: View {
 
     private func close() {
         app.showStage = false
+    }
+}
+
+@MainActor
+private struct StageBackdrop: View {
+    let cover: NSImage?
+    let colors: ArtworkColors
+    let blurCover: Bool
+    let radius: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: reduceMotion)) { timeline in
+            let phase = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate / 14
+            GeometryReader { geo in
+                ZStack {
+                    colors.backdrop
+                    if blurCover, let cover {
+                        Image(nsImage: cover).resizable().scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .blur(radius: radius).saturation(1.4).opacity(0.6)
+                    }
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle().fill(RadialGradient(colors: [index == 1 ? colors.secondary : colors.highlight, .clear],
+                                                     center: .center, startRadius: 0, endRadius: geo.size.width * 0.38))
+                            .frame(width: geo.size.width * 0.8, height: geo.size.width * 0.8)
+                            .blur(radius: 80).opacity(0.3)
+                            .position(x: geo.size.width * CGFloat(0.5 + 0.35 * sin(phase + Double(index) * 2)),
+                                      y: geo.size.height * CGFloat(0.5 + 0.35 * cos(phase * 0.8 + Double(index) * 2)))
+                    }
+                    Color.black.opacity(0.28)
+                }.frame(width: geo.size.width, height: geo.size.height).clipped()
+            }
+        }.allowsHitTesting(false).accessibilityHidden(true)
+    }
+}
+
+@MainActor
+private struct StageScrollObserver: NSViewRepresentable {
+    let scrolled: () -> Void
+    func makeCoordinator() -> Coordinator { Coordinator(scrolled) }
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
+        context.coordinator.install()
+        return view
+    }
+    func updateNSView(_ view: NSView, context: Context) { context.coordinator.scrolled = scrolled }
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.remove() }
+    @MainActor
+    final class Coordinator {
+        weak var view: NSView?
+        var scrolled: () -> Void
+        var monitor: Any?
+        init(_ scrolled: @escaping () -> Void) { self.scrolled = scrolled }
+        func install() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                MainActor.assumeIsolated {
+                    if let self, let view = self.view, event.window === view.window,
+                       view.bounds.contains(view.convert(event.locationInWindow, from: nil)) { self.scrolled() }
+                    return event
+                }
+            }
+        }
+        func remove() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
     }
 }
 

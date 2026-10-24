@@ -13,6 +13,7 @@ struct JPCorpusApp: App {
     init() {
         // `swift run` 起来的是裸可执行文件，不是 .app：不设这一句窗口不会到前台、菜单栏也不出来
         NSApplication.shared.setActivationPolicy(.regular)
+        PlaybackInputProtection.install()
         if SmokeRun.isEnabled { SmokeRun.markLaunched() }
     }
 
@@ -34,7 +35,18 @@ struct JPCorpusApp: App {
         .commands {
             CommandMenu("播放") {
                 Button(app.player.isPlaying ? "暂停" : "播放") { app.player.toggle() }
+                    .keyboardShortcut(.space, modifiers: [])
+                Button("播放 / 暂停（备用）") { app.player.toggle() }
                     .keyboardShortcut(.space, modifiers: [.option])
+                Button("后退 5 秒") { Task { await app.player.nudge(-5) } }
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                Button("前进 5 秒") { Task { await app.player.nudge(5) } }
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                Button("增加音量") { app.player.setVolume(app.player.volume + 0.05) }
+                    .keyboardShortcut(.upArrow, modifiers: [])
+                Button("减小音量") { app.player.setVolume(app.player.volume - 0.05) }
+                    .keyboardShortcut(.downArrow, modifiers: [])
+                Divider()
                 Button("上一行") { Task { await app.player.step(-1) } }
                     .keyboardShortcut(.upArrow, modifiers: [.option, .command])
                 Button("下一行") { Task { await app.player.step(1) } }
@@ -51,6 +63,8 @@ struct JPCorpusApp: App {
                     .disabled(app.player.track == nil)
                 Toggle("振假名", isOn: Binding(get: { app.showFurigana }, set: { app.showFurigana = $0 }))
                     .keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("窗口全屏") { NSApplication.shared.keyWindow?.toggleFullScreen(nil) }
+                    .keyboardShortcut(KeyEquivalent("\u{F70E}"), modifiers: [])
             }
             CommandGroup(after: .textEditing) {
                 Button("全库搜索…") { app.showQuickSearch = true }

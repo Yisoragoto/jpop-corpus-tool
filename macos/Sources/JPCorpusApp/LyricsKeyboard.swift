@@ -25,7 +25,13 @@ struct LyricsKeyboard: NSViewRepresentable {
                 MainActor.assumeIsolated {
                     guard let self, let window = self.view?.window, event.window === window,
                           window.attachedSheet == nil else { return event }
-                    if let input = window.firstResponder as? NSTextView, input.isEditable { return event }
+                    if let input = window.firstResponder as? NSTextView, input.isEditable {
+                        if event.type == .keyDown, PlaybackKeyboard.isPlaybackKey(event) {
+                            input.keyDown(with: event)
+                            return nil
+                        }
+                        return event
+                    }
                     return self.action(event) ? nil : event
                 }
             }

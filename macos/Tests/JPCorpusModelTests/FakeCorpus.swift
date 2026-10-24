@@ -58,12 +58,19 @@ actor FakeCorpus: CorpusCalling {
         return try decoded(DictionaryReady.self, #"{"bytes":1,"dir":"/tmp/sudachi","tokenized":{"songs":0,"lines":0,"tokens":0,"correctionsRestored":0},"tokenizeError":""}"#)
     }
     func tokenizeMissing() async throws -> Tokenized { throw FakeError.unexpected("tokenizeMissing") }
-    func track(_ songId: String) async throws -> Track? { throw FakeError.unexpected("track") }
+    func track(_ songId: String) async throws -> Track? { try lyricValue("track", arguments: [songId]) }
     func lyrics(_ songId: String) async throws -> [LyricLine] { try lyricValue("lyrics", arguments: [songId]) }
-    func lineSpans(_ songId: String) async throws -> [LineSpan] { throw FakeError.unexpected("lineSpans") }
-    func listenWindow(_ utteranceId: Int64, before: Int, after: Int) async throws -> ListenWindow? { throw FakeError.unexpected("listenWindow") }
-    func resolveMedia(_ stored: String) async throws -> String? { throw FakeError.unexpected("resolveMedia") }
-    func recordPlay(_ event: PlayEvent) async throws { throw FakeError.unexpected("recordPlay") }
+    func lyricTimeline(_ songId: String) async throws -> [LineTimeline] {
+        guard lyricResponses["lyricTimeline"] != nil else { return [] }
+        return try lyricValue("lyricTimeline", arguments: [songId])
+    }
+    func lineSpans(_ songId: String) async throws -> [LineSpan] { try lyricValue("lineSpans", arguments: [songId]) }
+    func listenWindow(_ utteranceId: Int64, before: Int, after: Int) async throws -> ListenWindow? {
+        try lyricValue("listenWindow", arguments: [String(utteranceId), String(before), String(after)])
+    }
+    func resolveMedia(_ stored: String) async throws -> String? { try lyricValue("resolveMedia", arguments: [stored]) }
+    private(set) var recordedPlays: [PlayEvent] = []
+    func recordPlay(_ event: PlayEvent) async throws { recordedPlays.append(event) }
     func kwic(_ query: KwicQuery) async throws -> [KwicHit] { throw FakeError.unexpected("kwic") }
     func frequency(_ query: FrequencyQuery) async throws -> FrequencyResult { throw FakeError.unexpected("frequency") }
     func collocations(_ query: CollocationQuery) async throws -> CollocationResult { throw FakeError.unexpected("collocations") }
