@@ -92,6 +92,7 @@ struct SongDetailView: View {
                         Label("播放", systemImage: "play.fill")
                     }
                     .buttonStyle(.borderedProminent)
+                    LyricsToolsButton(songId: t.id, onDismiss: { Task { await load() } })
                     Button {
                         Task {
                             if let now = try? await app.core?.toggleFavorite(song: t.id) {

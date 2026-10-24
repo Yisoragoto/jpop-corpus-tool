@@ -2,7 +2,7 @@
 //!
 //! ## 为什么是「一个入口 + JSON」
 //!
-//! 业务逻辑全在 `jp-corpus`，Tauri 客户端经 command 调它，这里给 Swift 开同样的口子。
+//! 业务逻辑在共享 Rust crate，Tauri 经 command 调用，这里给 Swift 开同样的口子。
 //! 没有逐个函数导出 C 签名，也没用 UniFFI 之类的代码生成：
 //!
 //! - **两个客户端看到的是同一份数据形状。** 参数和返回值都是 serde 序列化的 JSON，
@@ -19,12 +19,15 @@
 //! - [`jp_call`] 返回 `{"ok": <结果>}` 或 `{"error": "<一句人话>"}`，**从不返回 NULL**（内存分配失败除外）。
 //! - 一个会话一个 SQLite 连接，内部加锁；Swift 可以从任意线程调，用到这条连接的调用是串行的。
 //!   不碰这条连接的方法（作业进度、分词词典、查词、扫描目录）不拿这把锁，导入跑着时照样能问进度。
-//! - 长作业（导入、下载分词词典）在后台线程上跑，用自己的连接，界面轮询进度（见 [`jobs`]）。
+//! - 长作业（导入、词典、刮削、歌词）在后台线程上跑，用自己的连接，界面轮询进度（见 [`jobs`]）。
 //! - panic 不会跨过 FFI 边界：被接住，变成一条 error。
 //!
 //! 头文件在 `include/jp_ffi.h`，手写，和这里的五个函数一一对应。
 
 pub mod jobs;
+mod lyrics;
+#[cfg(test)]
+mod lyrics_tests;
 #[cfg(test)]
 mod import_tests;
 
@@ -64,6 +67,9 @@ pub struct Session {
     dict_job: Arc<Job>,
     /// 批量刮削（曲目、歌手共用：两边都排 MusicBrainz 的队，同时跑只会互相拖慢）
     scrape_job: Arc<Job>,
+    lyrics_job: Arc<Job>,
+    lyric_batch: Arc<jp_lyrics::lyric_upgrade::Batch>,
+    lyric_sources: Mutex<jp_lyrics::timed_lyrics::Session>,
     /// Yomitan 词典库 `dictionaries.db`，和 corpus.db 同一目录、分开存。没导入过就一直是 None
     dictionaries: Mutex<Option<jp_dict::store::DictionaryStore>>,
     translator: jp_dict::translator::Translator,
@@ -120,6 +126,7 @@ impl Session {
         // 和 Tauri 客户端启动时一样：来源追踪之前导进来的歌补登记一版歌词（docs/provenance.md）。
         // 补不上不影响打开，质量清单里那些歌只是没有版本记录
         let _ = corpus.backfill_lineage();
+        let lyric_sources = jp_lyrics::timed_lyrics::Session::load(path.parent().unwrap_or(Path::new(".")));
         Ok(Self {
             corpus: Mutex::new(corpus),
             root: path.parent().map(PathBuf::from),
@@ -131,6 +138,9 @@ impl Session {
             tokenizer_job: Arc::default(),
             dict_job: Arc::default(),
             scrape_job: Arc::default(),
+            lyrics_job: Arc::default(),
+            lyric_batch: Arc::default(),
+            lyric_sources: Mutex::new(lyric_sources),
             dictionaries: Mutex::new(None),
             translator: jp_dict::translator::Translator::new(),
         })
@@ -434,6 +444,9 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
 /// 它们不拿语料库的锁，所以导入跑着（或者 207MB 的词典正在复制）的时候，界面照样能问进度、能检索。
 /// 不是这一组的方法返回 `Ok(None)`，交给 [`dispatch`] 里拿着锁的那一组。
 fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Option<Value>> {
+    if let Some(value) = lyrics::dispatch(session, method, args)? {
+        return Ok(Some(value));
+    }
     let v = match method {
         // ── 导入：扫描 → 计划（只读）→ 后台写库 ──
         "scanFolder" => {

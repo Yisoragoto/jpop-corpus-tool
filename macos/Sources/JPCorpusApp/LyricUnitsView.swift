@@ -9,6 +9,7 @@ struct TimedLyricText: View {
     let text: String
     let units: [LyricTimingUnit]
     let position: Double
+    var size: CGFloat = 19
     let seek: (LyricTimingUnit) -> Void
 
     var body: some View {
@@ -38,7 +39,7 @@ struct TimedLyricText: View {
                 .accessibilityLabel("从「\(label)」开始播放")
             }
         }
-        .font(.system(size: 19, weight: .bold))
+        .font(.system(size: size, weight: .bold))
         .animation(nil, value: position)
     }
 }

@@ -14,6 +14,7 @@ import JPCorpusModel
 struct LyricsStage: View {
     @Environment(AppModel.self) private var app
     @State private var cover: NSImage?
+    @State private var karaoke = false
 
     /// 当前行停在可视高度的这个位置（和 Windows 版一样）
     private static let anchor = UnitPoint(x: 0.5, y: 0.45)
@@ -33,7 +34,7 @@ struct LyricsStage: View {
                     if geo.size.width > 900, let track = player.track {
                         nowPlaying(track, width: min(geo.size.width * 0.28, middle * 0.7, 420))
                     }
-                    lyrics
+                    if karaoke { karaokeLyrics } else { lyrics }
                 }
                 .padding(.horizontal, geo.size.width > 900 ? 64 : 28)
                 .frame(height: middle)
@@ -83,6 +84,10 @@ struct LyricsStage: View {
     private var topBar: some View {
         HStack(spacing: 14) {
             Spacer()
+            if let track = app.player.track {
+                Button(karaoke ? "滚动歌词" : "卡拉 OK") { karaoke.toggle() }
+                LyricsToolsButton(songId: track.id, timing: true)
+            }
             FuriganaMenu()
             Button {
                 close()
@@ -171,7 +176,15 @@ struct LyricsStage: View {
     }
 
     private func stageLine(_ line: LyricLine, current: Bool) -> some View {
-        FuriganaText(text: line.text, rubies: app.furigana[line.utteranceId] ?? [], size: 34, weight: .bold)
+        Group {
+            if let units = app.player.timingUnits(for: line) {
+                TimedLyricText(text: line.text, units: units, position: app.player.position, size: 34) { unit in
+                    Task { await app.player.playUnit(unit, in: line) }
+                }
+            } else {
+                FuriganaText(text: line.text, rubies: app.furigana[line.utteranceId] ?? [], size: 34, weight: .bold)
+            }
+        }
             .foregroundStyle(.white)
             .opacity(current ? 1 : (line.timeSec == nil ? 0.25 : 0.38))
             .scaleEffect(current ? 1 : 0.94, anchor: .leading)
@@ -181,6 +194,47 @@ struct LyricsStage: View {
             .contentShape(Rectangle())
             .onTapGesture { Task { await app.player.playLine(line) } }
             .help(line.timeSec.map { "点一下从 \(formatTime($0)) 放" } ?? "这一行没有时间戳")
+    }
+
+    /// KTV 两行交替，逐字精度仍取自同一条经过验证的时间轴。
+    private var karaokeLyrics: some View {
+        let player = app.player
+        let lines = player.lines.filter { player.displayMode(for: $0) != .plain }
+        let current = lines.lastIndex { line in
+            let start = line.timeSec ?? player.timingUnits(for: line)?.first?.startSec
+            return start.map { $0 <= player.position } ?? false
+        }
+        let index = current ?? 0
+        let top = index.isMultiple(of: 2) ? index : index + 1
+        let bottom = index.isMultiple(of: 2) ? index + 1 : index
+        let upcomingIndex = lines.firstIndex { line in
+            let start = line.timeSec ?? player.timingUnits(for: line)?.first?.startSec
+            return start.map { $0 > player.position } ?? false
+        }
+        let upcoming = upcomingIndex.map { lines[$0] }
+        let start = upcoming.flatMap { $0.timeSec ?? player.timingUnits(for: $0)?.first?.startSec }
+        let previousEnd: Double? = upcomingIndex.flatMap { index in
+            guard index > 0 else { return nil }
+            return player.timingUnits(for: lines[index - 1])?.last?.endSec
+        }
+        let countdown = upcomingIndex == 0 || (start.flatMap { next in previousEnd.map { next - $0 >= 4 } } ?? false)
+        return VStack(alignment: .leading, spacing: 24) {
+            Spacer()
+            if countdown, let start, start - player.position <= 3, start > player.position {
+                Text(String(repeating: "●", count: min(3, max(1, Int((start - player.position).rounded(.up))))))
+                    .font(.title2).foregroundStyle(.white.opacity(0.7))
+            }
+            if lines.indices.contains(top) {
+                stageLine(lines[top], current: current == top)
+            }
+            if lines.indices.contains(bottom) {
+                stageLine(lines[bottom], current: current == bottom)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            if lines.isEmpty { Text("没有带时间的歌词，可先导入或打轴").foregroundStyle(.secondary) }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - 窗口

@@ -81,6 +81,29 @@ public final class PlayerModel {
 
     // MARK: - 加载
 
+    /// 打点时直接读取引擎时钟，避免使用界面刷新前的旧位置。
+    public var timingPosition: Double {
+        let seconds = player.currentTime().seconds
+        return seconds.isFinite ? seconds : position
+    }
+
+    /// 换歌词后清理旧行 ID 与循环区间，保持音频播放位置。
+    public func refreshLyrics(songId: String) async {
+        guard track?.id == songId, let client = app?.client else { return }
+        let request = loadSequence
+        do {
+            async let l = client.lyrics(songId)
+            async let s = client.lineSpans(songId)
+            async let t = client.lyricTimeline(songId)
+            let (newLines, newSpans, newTimelines) = try await (l, s, t)
+            guard request == loadSequence, track?.id == songId, app?.client === client else { return }
+            lines = newLines
+            spans = Dictionary(uniqueKeysWithValues: newSpans.map { ($0.utteranceId, $0) })
+            timelines = Dictionary(newTimelines.map { ($0.utteranceId, $0) }, uniquingKeysWith: { first, _ in first })
+            loop = nil; stopAt = nil; focusUtterance = nil
+        } catch { lastError = error.localizedDescription }
+    }
+
     /// 打开一首歌。`at` 有值就跳过去，`autoplay` 决定放不放
     public func open(_ track: Track, at: Double? = nil, autoplay: Bool = true, focus: Int64? = nil, source: String = "library") async {
         guard let client = app?.client else { return }

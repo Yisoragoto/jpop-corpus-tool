@@ -58,7 +58,7 @@ jobs:
 
       - name: Rust core (jp-ffi) tests
         working-directory: rust
-        run: cargo test -p jp-ffi -p jp-corpus -p jp-setup -p jp-scrape --lib --no-fail-fast
+        run: cargo test -p jp-ffi -p jp-corpus -p jp-setup -p jp-scrape -p jp-lyrics --lib --no-fail-fast
 
       - name: Build libjp_ffi.a
         run: ./macos/scripts/build-rust.sh

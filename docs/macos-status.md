@@ -11,18 +11,40 @@
 | 建库、打开已有库 | 可用 | AppModelTests；ImportTests 真 FFI 建库；smoke 打开示例库 | 默认目录可直接建库；选其他无 corpus.db 的目录须先确认；openExisting 不创建库 |
 | 导入音频与歌词 | 可用 | ImportModelTests 路由/错误；SourceGuardTests；ImportTests；smoke 真写库 | 文件夹、单文件、多文件、混选统一 scanFiles；显示计划后导入，可停止；内嵌封面与 songs.csv 尚未接入 |
 | Sudachi 分词 | 可用 | ImportTests 下载外的安装/补分词/KWIC 链路；ImportModelTests 词典选择路由 | 提供下载/从目录复制；真实网络中断和下载按钮交互没有自动化覆盖 |
-| 歌词显示 | 部分 | CoreBridgeTests 解码；smoke 窗口截图 | 随播放高亮；换歌词、逐行编辑、恢复旧版尚无界面 |
+| 歌词显示与管理（第 1 阶段） | 可用 | LyricsModelTests（FakeCorpus）、LyricsBridgeTests（真 FFI）、jp-ffi/jp-lyrics 测试 | 详情页/歌词面板/全屏歌词共用管理面板：逐行编辑、增删行、导入 .lrc、版本原文与恢复、重新校验；Swift 新增测试待 macOS CI 执行 |
+| 在线补歌词与时间歌词候选 | 可用 | LyricsModelTests、LyricsBridgeTests、Rust 离线队列与候选保护测试 | 单首/批量缺失补齐、全库逐字升级、进度与取消、来源开关、逐行/逐字搜索预览并采用；网络覆盖依赖来源，不以离线测试宣称网络可用 |
+| 卡拉 OK 与打轴 | 部分 | LyricsModelTests、LyricsBridgeTests、共享核心时间轴/保存测试 | 全屏两行交替与倒数、真实单位高亮；选单位、空格按住/点按、直接填时间、拆分/合并、撤销/重做、起点校准及清除、保存为新版本；尚无 Windows 的波形拖拽和完整打轴快捷键 |
 | 播放 | 部分 | CoreBridgeTests 行区间；smoke 试听及行尾自动停 | AVFoundation、单句循环、倍速；smoke 不判断声卡是否实际有声，不覆盖全部控制按钮 |
 | 检索 | 可用 | CoreBridgeTests；smoke 检索截图 | 关键词、辞书形与写法、多词表达、附近词过滤 |
-| KWIC 定位与试听 | 可用 | CoreBridgeTests；smoke 真窗口试听 | LRC 行级定位，尚无词级时间戳 |
-| 分析 | 部分 | CoreBridgeTests 词频/搭配/对比；smoke 分析截图 | 重复感知词频、搭配、子语料对比、歌曲画像；来源/质量面板与分析存档尚无原生界面 |
+| KWIC 定位与试听 | 可用 | CoreBridgeTests；smoke 真窗口试听；LyricTimelineTests | 行级试听；歌词面板可按经过验证的真实单位起点播放，没有单位则回退到行 |
+| 首页、曲库与详情 | 可用 | LibraryBridgeTests、smoke 截图 | 首页各分区、三栏曲库、歌曲/专辑/人物详情、收藏和快速搜索已接入 |
+| 分析、分析存档、来源与语料质量 | 可用 | CoreBridgeTests、LibraryBridgeTests、smoke 分析截图 | 词频/搭配/对比/画像、保存/重跑/比较/删除分析、来源与质量面板已有原生入口 |
 | 子语料 | 部分 | CoreBridgeTests 指定歌曲筛选 | 原生界面主要按歌手、年份选择；保存/管理完整条件的界面未接入 |
-| 查词（只读） | 部分 | ImportTests 无词典返回；jp-dict/jp-ffi 另有词典查询测试 | 读取同目录的 dictionaries.db，纯文本释义；需先在 Windows 导好再复制；原生查词弹窗未做交互测试 |
-| 刮削 | 未实现 | 无原生界面覆盖 | Rust 核心存在，Mac 尚无入口 |
-| Yomitan 词典导入 | 未实现 | 无原生界面覆盖 | 区别于已可用的 Sudachi 分词词典安装 |
-| Anki 制卡 | 未实现 | 无原生界面覆盖 | 尚无原生入口 |
-| 资料库关系网、时间轴、词云 | 未实现 | 无原生界面覆盖 | Mac 只有曲目表，不等同于 Windows 的资料库 |
+| 查词 | 可用 | ImportTests、MiningBridgeTests、jp-dict/jp-ffi 查询测试 | 原生纯文本释义、原文选择；读取同目录 dictionaries.db；查词弹窗本身未做完整交互测试 |
+| 刮削 | 可用 | ScrapeBridgeTests、jp-ffi 离线记账测试、smoke 刮削页 | 曲目/歌手批量与单首、复核、补封面、取消；共享 jp-scrape，真实网络另行验证 |
+| Yomitan 词典导入 | 可用 | ImportTests、jp-ffi 词典导入/启用/排序/删除测试 | 原生词典页支持 zip 导入与管理；独立于 Sudachi |
+| Anki 一键制卡 | 可用 | MiningBridgeTests、jp-anki、jp-ffi 制卡准备测试 | 查词面板与设置已有入口，共用 jp_anki::lyric_mine；发送需要本机 AnkiConnect |
+| 资料库关系网、时间轴、词云 | 未实现 | 无原生界面覆盖 | 现有首页和曲库详情已实现；这些可视化仍未接入 |
 | 自动更新 | 未实现 | 无原生界面覆盖 | 从新源码重建；Windows 更新器不适用于此客户端 |
+
+## 歌词管理第 1 阶段
+
+业务层从 `jp-app/src/lyrics.rs`、`timed_lyrics.rs`、`lyric_upgrade.rs` 抽到 `jp-lyrics`，
+Tauri 的 command 签名、JSON 返回与事件名保持不变；版本/原文归档、文件与事务一致性、
+人工修改保护、候选过期和并发校验均由同一份 Rust 代码负责。
+新 crate 是依赖语料库与导入器的应用层，不能放进不认识语料库的 `jp-scraper`。
+
+FFI 的补齐和升级共用一个 `jobs::Job`，在工作线程同步调用共享 `run_batch`，队列自己开 SQLite 连接；
+进度仍是 `running / finished / cancelled / done / total / stage / result / error`。
+`lyricsFillProgress` 与 `lyricsUpgradeProgress` 是该作业的两个轮询入口；`lyricsUpgradeStatus` 维持 Tauri 的详细进度形状。
+单首按钮也进入同一后台队列，离开面板继续运行，再次打开可恢复进度。
+
+`LyricsModel` 负责可测试的草稿、选择完成/失败、候选选择、作业恢复、错误与打点状态，
+JPCore 的 `LyricsClient.swift` 只封装方法和 Codable 形状。字符范围按 Unicode scalar（Rust `char`）计数。
+来源提供的多字符单位不拆成伪时间；新切分的单位只有手工打点后才有时间。
+本阶段 UI 的文件选择只开放 .lrc/纯文本，其他原生格式仍可经共享核心/FFI 导入。
+Apple 目录凭据管理、波形编辑和完整 Windows 打轴快捷键暂未提供原生界面。
+新增 Swift 代码已逐文件静态复查，**尚未在本机编译或执行测试**，以 macOS 14 CI 为最终证据。
 
 ## 本次修复与任务书评审
 

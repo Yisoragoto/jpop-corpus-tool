@@ -41,6 +41,7 @@ tauri = { version = "2", default-features = false, features = [
 tauri-plugin-dialog = "2"
 jp-audio = { path = "../jp-audio" }
 jp-corpus = { path = "../jp-corpus" }
+jp-lyrics = { path = "../jp-lyrics" }
 jp-import = { path = "../jp-import" }
 # 检查更新：问 GitHub Releases、下安装包、校验哈希。三个都已经在依赖树里。
 # win-system-proxy：没设 HTTPS_PROXY 时读 Windows 的系统代理（Clash 之类「系统代理」开关写的注册表）。

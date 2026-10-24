@@ -22,6 +22,13 @@ actor FakeCorpus: CorpusCalling {
     struct Call: Equatable { let name: String; let arguments: [String] }
     private(set) var calls: [Call] = []
     var failScan = false
+    var lyricResponses: [String: String] = [:]
+    func respondToLyrics(_ method: String, json: String) { lyricResponses[method] = json }
+    func lyricValue<T: Decodable>(_ method: String, arguments: [String] = []) throws -> T {
+        calls.append(Call(name: method, arguments: arguments))
+        guard let json = lyricResponses[method] else { throw FakeError.unexpected(method) }
+        return try decoded(T.self, json)
+    }
     func failScanning() { failScan = true }
 
     func scanFiles(_ paths: [String]) async throws -> ScanResult {
@@ -52,7 +59,7 @@ actor FakeCorpus: CorpusCalling {
     }
     func tokenizeMissing() async throws -> Tokenized { throw FakeError.unexpected("tokenizeMissing") }
     func track(_ songId: String) async throws -> Track? { throw FakeError.unexpected("track") }
-    func lyrics(_ songId: String) async throws -> [LyricLine] { throw FakeError.unexpected("lyrics") }
+    func lyrics(_ songId: String) async throws -> [LyricLine] { try lyricValue("lyrics", arguments: [songId]) }
     func lineSpans(_ songId: String) async throws -> [LineSpan] { throw FakeError.unexpected("lineSpans") }
     func listenWindow(_ utteranceId: Int64, before: Int, after: Int) async throws -> ListenWindow? { throw FakeError.unexpected("listenWindow") }
     func resolveMedia(_ stored: String) async throws -> String? { throw FakeError.unexpected("resolveMedia") }
@@ -66,6 +73,38 @@ actor FakeCorpus: CorpusCalling {
     func overview() async throws -> Overview { throw FakeError.unexpected("overview") }
     func dictionaries() async throws -> [DictionaryInfo] { throw FakeError.unexpected("dictionaries") }
     func lookup(_ text: String) async throws -> LookupText { throw FakeError.unexpected("lookup") }
+}
+
+extension FakeCorpus: LyricsCalling {
+    func songLineage(_ songId: String) async throws -> SongLineage { try lyricValue("songLineage", arguments: [songId]) }
+    func lyricVersionRaw(_ versionId: Int64) async throws -> String? { try lyricValue("lyricVersionRaw", arguments: [String(versionId)]) }
+    func wordTimings(_ utteranceIds: [Int64]) async throws -> [WordTiming] { try lyricValue("wordTimings", arguments: utteranceIds.map { String($0) }) }
+    func lyricsSaveLines(_ songId: String, lines: [EditedLyricLine], note: String) async throws -> LyricsAttached {
+        let json = String(decoding: try JSONEncoder().encode(lines), as: UTF8.self)
+        return try lyricValue("lyricsSaveLines", arguments: [songId, note, json])
+    }
+    func lyricsSaveTiming(_ songId: String, lines: [TimedEditLine], note: String) async throws -> LyricsAttached {
+        let json = String(decoding: try JSONEncoder().encode(lines), as: UTF8.self)
+        return try lyricValue("lyricsSaveTiming", arguments: [songId, note, json])
+    }
+    func lyricsRestoreVersion(_ songId: String, versionId: Int64) async throws -> LyricsAttached { try lyricValue("lyricsRestoreVersion", arguments: [songId, String(versionId)]) }
+    func lyricsImportFile(_ songId: String, path: String) async throws -> LyricsAttached { try lyricValue("lyricsImportFile", arguments: [songId, path]) }
+    func lyricsRevalidate(_ songId: String?) async throws -> Int { try lyricValue("lyricsRevalidate", arguments: [songId ?? "*"]) }
+    func lyricsSourcesGet() async throws -> LyricsSources { try lyricValue("lyricsSourcesGet") }
+    func lyricsSourcesSet(_ config: LyricsSources) async throws -> LyricsSources { try lyricValue("lyricsSourcesSet") }
+    func lyricsMissing() async throws -> [MissingLyrics] { try lyricValue("lyricsMissing") }
+    func lyricsFillStart(songIds: [String]?) async throws { calls.append(Call(name: "lyricsFillStart", arguments: songIds ?? ["*"])) }
+    func lyricsFillProgress() async throws -> JobProgress<LyricsUpgradeProgress> { try lyricValue("lyricsFillProgress") }
+    func lyricsFillCancel() async throws { calls.append(Call(name: "lyricsFillCancel", arguments: [])) }
+    func lyricsUpgradeStart() async throws { calls.append(Call(name: "lyricsUpgradeStart", arguments: [])) }
+    func lyricsTimedSearch(_ songId: String) async throws -> TimedLyricsSearch { try lyricValue("lyricsTimedSearch", arguments: [songId]) }
+    func lyricsTimedApply(_ songId: String, candidateId: String) async throws -> LyricsAttached { try lyricValue("lyricsTimedApply", arguments: [songId, candidateId]) }
+    func wordTimeSet(utteranceId: Int64, charStart: Int, charEnd: Int, startSec: Double) async throws {
+        calls.append(Call(name: "wordTimeSet", arguments: [String(utteranceId), String(charStart), String(charEnd), String(startSec)]))
+    }
+    func wordTimeClear(utteranceId: Int64, charStart: Int) async throws {
+        calls.append(Call(name: "wordTimeClear", arguments: [String(utteranceId), String(charStart)]))
+    }
 }
 
 actor OpenRecorder {

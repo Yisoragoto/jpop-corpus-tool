@@ -1,0 +1,181 @@
+import Foundation
+import JPCore
+import XCTest
+@testable import JPCorpusModel
+
+final class LyricsModelTests: XCTestCase {
+    private let attached = #"{"songId":"001","source":"edited","matched":"","lyricLines":1,"tokens":0,"credits":0,"correctionsRestored":0,"lrcPath":"/tmp/001.lrc"}"#
+    private let idle = #"{"running":false,"finished":false,"cancelled":false,"done":0,"total":0,"stage":"","result":null,"error":null}"#
+    private let running = #"{"running":true,"finished":false,"cancelled":false,"done":0,"total":2,"stage":"試験曲","result":null,"error":null}"#
+
+    @MainActor
+    private func fixture() async -> FakeCorpus {
+        let fake = FakeCorpus()
+        await fake.respondToLyrics("lyrics", json: #"[{"utteranceId":1,"lineIdx":0,"timeSec":1,"text":"きゃ 空","tokens":[]}]"#)
+        await fake.respondToLyrics("wordTimings", json: "[]")
+        await fake.respondToLyrics("songLineage", json: #"{"songId":"001","language":"ja","versions":[],"provenance":[]}"#)
+        let config = String(decoding: try! JSONEncoder().encode(LyricsSources()), as: UTF8.self)
+        await fake.respondToLyrics("lyricsSourcesGet", json: config)
+        await fake.respondToLyrics("lyricsMissing", json: "[]")
+        await fake.respondToLyrics("lyricsFillProgress", json: idle)
+        return fake
+    }
+
+    @MainActor
+    func testLineSaveParsesTimesAndKeepsDraftAfterFailure() async throws {
+        let fake = await fixture()
+        let model = LyricsModel(songId: "001")
+        await model.load(fake)
+        XCTAssertNil(model.errorMessage)
+        model.edits[0].time = "1:23.456"
+        model.edits[0].text = "あの空"
+        model.note = "修正"
+        await model.saveLines(fake) // 未配置写入响应：注入错误。
+        XCTAssertTrue(model.dirty)
+        XCTAssertEqual(model.edits[0].text, "あの空")
+        XCTAssertNotNil(model.errorMessage)
+        let calls = await fake.calls
+        let saved = try XCTUnwrap(calls.last { $0.name == "lyricsSaveLines" })
+        XCTAssertEqual(Array(saved.arguments.prefix(2)), ["001", "修正"])
+        let lines = try decoded([EditedLyricLine].self, saved.arguments[2])
+        XCTAssertEqual(lines[0].timeSec ?? 0, 83.456, accuracy: 0.0001)
+        await fake.respondToLyrics("lyricsSaveLines", json: attached)
+        await model.saveLines(fake)
+        XCTAssertFalse(model.dirty)
+        XCTAssertEqual(model.revision, 1)
+    }
+
+    @MainActor
+    func testInvalidTimeAndPickerFailureAreVisible() async {
+        let fake = await fixture()
+        let model = LyricsModel(songId: "001")
+        await model.load(fake)
+        model.edits[0].time = "1:99"
+        await model.saveLines(fake)
+        XCTAssertTrue(model.errorMessage?.contains("时间格式") == true)
+        let calls = await fake.calls
+        XCTAssertFalse(calls.contains { $0.name == "lyricsSaveLines" })
+        await model.importSelection(.failure(FakeError.injected), client: fake)
+        XCTAssertTrue(model.errorMessage?.contains("没有读取权限") == true)
+    }
+
+    @MainActor
+    func testImportRestoreAndSearchApplyUseTheSelectedIdentifiers() async {
+        let fake = await fixture()
+        for method in ["lyricsImportFile", "lyricsRestoreVersion", "lyricsTimedApply"] {
+            await fake.respondToLyrics(method, json: attached)
+        }
+        await fake.respondToLyrics("lyricsTimedSearch", json: #"{"songId":"001","title":"試験曲","currentLines":1,"currentTimedLines":0,"candidates":[],"warnings":[]}"#)
+        let model = LyricsModel(songId: "001")
+        await model.load(fake)
+        await model.importSelection(.success([URL(fileURLWithPath: "/tmp/test.lrc")]), client: fake)
+        await model.restore(42, client: fake)
+        await model.search(fake)
+        XCTAssertNotNil(model.searchResult)
+        await model.apply("selected", client: fake)
+        XCTAssertNil(model.searchResult)
+        let calls = await fake.calls
+        XCTAssertTrue(calls.contains(.init(name: "lyricsImportFile", arguments: ["001", "/tmp/test.lrc"])))
+        XCTAssertTrue(calls.contains(.init(name: "lyricsRestoreVersion", arguments: ["001", "42"])))
+        XCTAssertTrue(calls.contains(.init(name: "lyricsTimedApply", arguments: ["001", "selected"])))
+    }
+
+    @MainActor
+    func testSavingSourcesClearsCandidatesInvalidatedByTheCore() async throws {
+        let fake = await fixture()
+        let model = LyricsModel(songId: "001")
+        await model.load(fake)
+        await fake.respondToLyrics("lyricsTimedSearch", json: #"{"songId":"001","title":"試験曲","currentLines":1,"currentTimedLines":0,"candidates":[],"warnings":[]}"#)
+        await model.search(fake)
+        XCTAssertNotNil(model.searchResult)
+        model.sources.qq = false
+        let json = String(decoding: try JSONEncoder().encode(model.sources), as: UTF8.self)
+        await fake.respondToLyrics("lyricsSourcesSet", json: json)
+        await model.saveSources(fake)
+        XCTAssertFalse(model.sources.qq)
+        XCTAssertNil(model.searchResult)
+        XCTAssertFalse(model.busy)
+    }
+
+    @MainActor
+    func testJobsResumeCancelAndPreserveDraftOnCompletion() async {
+        let fake = await fixture()
+        let model = LyricsModel(songId: "001")
+        await model.load(fake)
+        await fake.respondToLyrics("lyricsFillProgress", json: running)
+        await model.start(fake, all: false)
+        XCTAssertTrue(model.running)
+        await model.start(fake, all: true) // 重复启动不能抹掉运行中的任务。
+        await model.cancel(fake)
+        model.edits[0].text = "草稿"
+        await fake.respondToLyrics("lyricsFillProgress", json: #"{"running":false,"finished":true,"cancelled":true,"done":1,"total":2,"stage":"","result":null,"error":null}"#)
+        await model.poll(fake)
+        XCTAssertFalse(model.running)
+        XCTAssertEqual(model.edits[0].text, "草稿")
+        XCTAssertTrue(model.dirty)
+        let calls = await fake.calls
+        XCTAssertEqual(calls.filter { $0.name == "lyricsFillStart" }.count, 1)
+        XCTAssertTrue(calls.contains(.init(name: "lyricsFillStart", arguments: ["001"])))
+        XCTAssertTrue(calls.contains(.init(name: "lyricsFillCancel", arguments: [])))
+        let reopened = LyricsModel(songId: "001")
+        await fake.respondToLyrics("lyricsFillProgress", json: running)
+        await reopened.load(fake)
+        XCTAssertTrue(reopened.running)
+    }
+
+    @MainActor
+    func testTimingUsesScalarUnitsOnlyRecordsUserClocksAndSupportsUndo() async throws {
+        let fake = await fixture()
+        let model = LyricsModel(songId: "001")
+        await model.load(fake)
+        XCTAssertEqual(model.timing[0].units.map { LyricsModel.unitText(model.timing[0].text, unit: $0) }, ["きゃ ", "空"])
+        XCTAssertTrue(model.timing[0].units.allSatisfy { $0.start == nil && $0.end == nil })
+        model.stampStart(at: 2.0)
+        model.stampEnd(at: 2.6)
+        XCTAssertEqual(model.timing[0].units[0].start ?? 0, 1.85, accuracy: 0.0001)
+        model.undo()
+        XCTAssertNil(model.timing[0].units[0].end)
+        model.redo()
+        XCTAssertEqual(model.timing[0].units[0].end ?? 0, 2.45, accuracy: 0.0001)
+        await fake.respondToLyrics("lyricsSaveTiming", json: attached)
+        await model.saveTiming(fake)
+        let calls = await fake.calls
+        let saved = try XCTUnwrap(calls.last { $0.name == "lyricsSaveTiming" })
+        let lines = try decoded([TimedEditLine].self, saved.arguments[2])
+        XCTAssertEqual(lines[0].units.count, 1, "未打点的单位不能生成时间")
+        XCTAssertEqual(lines[0].text, "きゃ 空")
+    }
+
+    @MainActor
+    func testTapModeUsesTheNextPressAndLastReleaseAsRealEnds() async {
+        let fake = await fixture()
+        let model = LyricsModel(songId: "001")
+        await model.load(fake)
+        model.tapMode = .tap
+        model.keyDown(at: 2)
+        model.keyUp(at: 2.1)
+        XCTAssertEqual(model.selectedUnit, 1)
+        XCTAssertNil(model.timing[0].units[0].end)
+        model.keyDown(at: 2.5)
+        XCTAssertEqual(model.timing[0].units[0].end ?? 0, 2.35, accuracy: 0.0001)
+        model.keyUp(at: 3)
+        XCTAssertEqual(model.timing[0].units[1].end ?? 0, 2.85, accuracy: 0.0001)
+    }
+
+    @MainActor
+    func testTimingPreservesSourceGroupsAndCalibrationUsesScalarRange() async throws {
+        let fake = await fixture()
+        await fake.respondToLyrics("wordTimings", json: #"[{"utteranceId":1,"charStart":0,"charEnd":3,"startSec":1.2,"endSec":1.8,"source":"lrc"}]"#)
+        let model = LyricsModel(songId: "001")
+        await model.load(fake)
+        XCTAssertEqual(model.timing[0].units[0].charEnd, 3)
+        XCTAssertEqual(model.timing[0].units[0].end, 1.8)
+        await model.calibrate(fake, position: 1.25, clear: false)
+        await model.calibrate(fake, position: 0, clear: true)
+        let calls = await fake.calls
+        XCTAssertTrue(calls.contains(.init(name: "wordTimeSet", arguments: ["1", "0", "3", "1.25"])))
+        XCTAssertTrue(calls.contains(.init(name: "wordTimeClear", arguments: ["1", "0"])))
+        model.splitUnit()
+        XCTAssertNil(model.timing[0].units[0].start, "拆开后不能在源单位内插值生成时间")
+    }
+}

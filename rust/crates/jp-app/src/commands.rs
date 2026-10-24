@@ -967,24 +967,7 @@ pub async fn lyrics_timed_search<R: tauri::Runtime>(app: tauri::AppHandle<R>, so
     blocking(app, move |state| {
         let before = crate::timed_lyrics::snapshot(state.corpus().connection(), &song_id)?;
         let (options, ticket) = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).begin_search(&song_id);
-        // The DB and session locks are both released throughout all network calls.
-        use jp_scraper::providers::LyricsProvider;
-        let mut lyric_options = options.clone();
-        // Apple is configured for the official metadata resolver only.
-        lyric_options.apple = false;
-        let provider = jp_scraper::providers::ConfiguredLyricsProvider(lyric_options);
-        let mut found = provider.search_lyrics(&jp_scraper::SearchQuery {title:before.title.clone(),artist:before.artist.clone(),duration_sec:before.duration,..Default::default()});
-        found.candidates.extend(found.fallback.drain(..).filter_map(crate::timed_lyrics::from_basic));
-        let mut accepted = Vec::new();
-        for candidate in found.candidates {
-            if crate::timed_lyrics::compatible(&before, &candidate) { accepted.push(candidate); }
-            else { found.warnings.push(jp_scraper::timed_sources::SourceWarning { source: candidate.source, message: "有结果，但正文差异过大、没有真实逐字时间或时间轴超出本地音频，未采用".into() }); }
-        }
-        for warning in &mut found.warnings { warning.message = crate::timed_lyrics::redact(&warning.message, &options); }
-        let current_lines = before.line_count();
-        let current_timed_lines = before.timed_lines();
-        let candidates = state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).finish_search(ticket, &before, accepted)?;
-        Ok(crate::timed_lyrics::SearchView { song_id, title: before.title, current_lines, current_timed_lines, candidates, warnings: found.warnings })
+        jp_lyrics::management::search(&state.timed_lyrics, before, options, ticket)
     }).await
 }
 
@@ -1869,20 +1852,7 @@ pub async fn lyrics_save_timing<R: tauri::Runtime>(
 pub async fn lyrics_revalidate<R: tauri::Runtime>(app: tauri::AppHandle<R>, song_id: Option<String>) -> CmdResult<usize> {
     blocking(app, move |state| {
         let mut corpus = state.corpus();
-        let tx = corpus.connection_mut().transaction()?;
-        let ids: Vec<String> = match song_id {
-            Some(id) => vec![id],
-            None => {
-                let mut stmt = tx.prepare("SELECT DISTINCT song_id FROM lyric_versions WHERE is_current=1")?;
-                stmt.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?
-            }
-        };
-        let mut n = 0;
-        for id in &ids {
-            n += usize::from(jp_corpus::lineage::revalidate(&tx, id)?);
-        }
-        tx.commit()?;
-        Ok(n)
+        jp_lyrics::management::revalidate(corpus.connection_mut(), song_id)
     })
     .await
 }

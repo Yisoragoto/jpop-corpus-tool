@@ -26,6 +26,9 @@ struct LyricsPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             if let track = player.track {
                 header(track)
+                LyricsToolsButton(songId: track.id)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 4) {

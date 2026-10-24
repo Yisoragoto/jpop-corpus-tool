@@ -1922,6 +1922,7 @@ dependencies = [
  "jp-corpus",
  "jp-dict",
  "jp-import",
+ "jp-lyrics",
  "jp-normalize",
  "jp-scrape",
  "jp-scraper",
@@ -2001,6 +2002,7 @@ dependencies = [
  "jp-corpus",
  "jp-dict",
  "jp-import",
+ "jp-lyrics",
  "jp-scrape",
  "jp-setup",
  "jp-tokenizer",
@@ -2022,6 +2024,23 @@ dependencies = [
  "serde",
  "serde_json",
  "unicode-normalization",
+]
+
+[[package]]
+name = "jp-lyrics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "encoding_rs",
+ "jp-corpus",
+ "jp-import",
+ "jp-normalize",
+ "jp-scraper",
+ "jp-tokenizer",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
