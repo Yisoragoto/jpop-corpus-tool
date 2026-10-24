@@ -3,32 +3,63 @@ import JPCore
 import Observation
 
 public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case search, library, analysis, importer
+    case home, search, library, analysis, dictionaries, scrape, importer
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
+        case .home: return "首页"
         case .search: return "检索"
         case .library: return "曲库"
         case .analysis: return "分析"
+        case .dictionaries: return "词典"
+        case .scrape: return "刮削"
         case .importer: return "导入"
         }
     }
 
     public var symbol: String {
         switch self {
+        case .home: return "house"
         case .search: return "text.magnifyingglass"
         case .library: return "music.note.list"
         case .analysis: return "chart.bar.xaxis"
+        case .dictionaries: return "character.book.closed"
+        case .scrape: return "wand.and.stars"
         case .importer: return "square.and.arrow.down"
         }
     }
 }
 
+/// 曲库页里能推进去的详情页。首页、全库搜索、歌词面板也往这里推
+public enum LibraryRoute: Hashable {
+    case song(String)
+    case album(Album)
+    case person(Int64)
+}
+
+/// 别处要求分析页只看一部分歌（歌手页的「分析这个人的歌」）
+public struct ScopeRequest: Equatable {
+    public var name: String
+    public var performerIds: [Int64]
+    public var nonce = UUID()
+
+    public init(name: String, performerIds: [Int64]) {
+        self.name = name
+        self.performerIds = performerIds
+    }
+}
+
+/// 别处要求检索页查一个词（分析页、歌词面板）。nonce 让同一个词点两次也会再查
 public struct SearchRequest: Equatable {
     public var keyword: String
     public var field: MatchField
     public var nonce = UUID()
+
+    public init(keyword: String, field: MatchField) {
+        self.keyword = keyword
+        self.field = field
+    }
 }
 
 @MainActor
@@ -38,7 +69,36 @@ public final class AppModel {
     public private(set) var libraryURL: URL?
     public private(set) var tracks: [Track] = []
     private var tracksById: [String: Track] = [:]
-    public var section: SidebarItem = .search
+    public var section: SidebarItem = .home
+    /// 曲库页的导航栈
+    public var libraryPath: [LibraryRoute] = []
+    /// 分析页的范围（nil = 整个语料库）
+    public var analysisScope: ScopeRequest?
+    /// ⌘K 全库搜索
+    public var showQuickSearch = false
+    /// 全屏歌词
+    public var showStage = false
+
+    /// 振假名开关和注法。存在偏好里，歌词面板和全屏歌词共用
+    public var showFurigana: Bool {
+        didSet { defaults.set(showFurigana, forKey: Keys.furigana) }
+    }
+    public var furiganaMode: FuriganaMode {
+        didSet { defaults.set(furiganaMode.rawValue, forKey: Keys.furiganaMode) }
+    }
+    /// 当前这首每行的注音（utteranceId → 注音段）。开关关着、或者没有分词词典时是空的
+    public private(set) var furigana: [Int64: [Ruby]] = [:]
+    /// 振假名取不到的原因（多半是没有分词词典）
+    public private(set) var furiganaError: String?
+
+    /// 词典页的「试查」预先填进去的字（冒烟截图用）
+    public var lookupSeed = ""
+    /// 词典库被别处改过（冒烟导入），词典页据此重读
+    public var dictionaryVersion = 0
+    /// 打开 ⌘K 时预先填进去的字（冒烟截图用）
+    public var quickSearchSeed = ""
+    /// 收藏、播放记录变了就加一，首页据此重读
+    public var homeVersion = 0
     public var showLyrics = true
     public var searchRequest: SearchRequest?
     public var errorMessage: String?
@@ -66,7 +126,13 @@ public final class AppModel {
     private enum Keys {
         static let library = "libraryFolder"
         static let audioRoots = "audioRoots"
+        static let furigana = "furigana"
+        static let furiganaMode = "furiganaMode"
     }
+
+    /// 具体的 Rust 客户端。首页、词典、刮削、分析存档这些只有真库才有的功能走它；
+    /// 能替换成测试替身的那部分走 `client`（`CorpusCalling`）
+    public var core: CorpusClient? { client as? CorpusClient }
 
     public init(
         defaults: UserDefaults = .standard,
@@ -80,6 +146,8 @@ public final class AppModel {
         self.client = client
         self.openClient = openClient
         audioRoots = defaults.stringArray(forKey: Keys.audioRoots) ?? []
+        showFurigana = defaults.bool(forKey: Keys.furigana)
+        furiganaMode = FuriganaMode(rawValue: defaults.string(forKey: Keys.furiganaMode) ?? "") ?? .kanji
         player.app = self
     }
 
@@ -183,6 +251,40 @@ public final class AppModel {
         return try await client?.track(id)
     }
 
+    /// 读当前这首的振假名。换歌、开关、换注法时调（ContentView 里按这三样做 task 的 id）
+    public func loadFurigana() async {
+        furigana = [:]
+        furiganaError = nil
+        guard showFurigana, let songId = player.track?.id, let core else { return }
+        do {
+            let lines = try await core.lyricsFurigana(songId, mode: furiganaMode)
+            furigana = Dictionary(lines.map { ($0.utteranceId, $0.rubies) }, uniquingKeysWith: { a, _ in a })
+        } catch {
+            furiganaError = error.localizedDescription
+        }
+    }
+
+    /// 去曲库页的某个详情页（从别处来时先清掉原来的栈）
+    public func show(_ route: LibraryRoute) {
+        if section != .library {
+            libraryPath = []
+            section = .library
+        }
+        if libraryPath.last != route { libraryPath.append(route) }
+    }
+
+    /// 按 id 放一首歌（首页、搜索结果只有 id）
+    public func play(songId: String, at: Double? = nil, source: String = "library") async {
+        do {
+            guard let track = try await track(songId) else { return }
+            showLyrics = true
+            await player.open(track, at: at, autoplay: true, source: source)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 跳到检索页查一个词
     public func search(_ keyword: String, field: MatchField = .lemma) {
         searchRequest = SearchRequest(keyword: keyword, field: field)
         section = .search

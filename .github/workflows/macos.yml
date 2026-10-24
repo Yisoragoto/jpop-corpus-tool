@@ -58,7 +58,7 @@ jobs:
 
       - name: Rust core (jp-ffi) tests
         working-directory: rust
-        run: cargo test -p jp-ffi -p jp-corpus -p jp-setup --lib --no-fail-fast
+        run: cargo test -p jp-ffi -p jp-corpus -p jp-setup -p jp-scrape --lib --no-fail-fast
 
       - name: Build libjp_ffi.a
         run: ./macos/scripts/build-rust.sh
@@ -96,7 +96,8 @@ jobs:
         working-directory: macos
         run: ./scripts/bundle.sh
 
-      # 冒烟：真的把 .app 跑起来走一遍「检索 → KWIC → 试听 → 曲库 → 分析 → 导入」，窗口自己截图（不需要录屏权限）。
+      # 冒烟：真的把 .app 跑起来走一遍「检索 → KWIC → 试听 → 振假名 → 全屏歌词 → 首页 → 曲库 → 分析 → 词典 → 刮削 → 导入」，
+      # 窗口自己截图（不需要录屏权限）。振假名用上面缓存的那份 Sudachi 词典（JPCORPUS_SMOKE_SUDACHI）。
       # 示例库的歌指向 E:/music/00x.flac，这里生成同名的 FLAC（440Hz 正弦，afconvert 是系统自带的），播放那条路也走到。
       # 截图和 smoke.txt 传成 artifact：没有 Mac 也能看到真实界面。
       - name: Smoke run (screenshots)
@@ -139,11 +140,11 @@ jobs:
           app="$PWD/build/JPOP Corpus.app"
           set +e
           # 先直接跑可执行文件（stderr 里有 [smoke] 生命周期日志）
-          JPCORPUS_SMOKE="$out" JPCORPUS_SMOKE_AUDIO="$audio" perl -e 'alarm shift; exec @ARGV' 180 "$app/Contents/MacOS/JPCorpus"
+          JPCORPUS_SMOKE="$out" JPCORPUS_SMOKE_AUDIO="$audio" JPCORPUS_SMOKE_SUDACHI="$JP_SUDACHI_SOURCE" perl -e 'alarm shift; exec @ARGV' 180 "$app/Contents/MacOS/JPCorpus"
           echo "direct exit=$?"
           # 没出截图就经 LaunchServices 再开一次：GUI 应用通常要这样才拿得到窗口服务器的会话
           if [ ! -f "$out/smoke.txt" ] || ! grep -q '^\[step\] complete status=' "$out/smoke.txt"; then
-            open -W -n --env JPCORPUS_SMOKE="$out" --env JPCORPUS_SMOKE_AUDIO="$audio" \
+            open -W -n --env JPCORPUS_SMOKE="$out" --env JPCORPUS_SMOKE_AUDIO="$audio" --env JPCORPUS_SMOKE_SUDACHI="$JP_SUDACHI_SOURCE" \
               --stdout "$out/stdout.txt" --stderr "$out/stderr.txt" "$app" &
             pid=$!
             ( sleep 180; kill "$pid" 2>/dev/null; pkill -f "JPOP Corpus.app" ) & watchdog=$!

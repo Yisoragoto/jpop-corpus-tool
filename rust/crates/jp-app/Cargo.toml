@@ -57,6 +57,7 @@ encoding_rs = "0.8"
 jp-anki = { path = "../jp-anki" }
 jp-dict = { path = "../jp-dict" }
 jp-scraper = { path = "../jp-scraper" }
+jp-scrape = { path = "../jp-scrape" }
 jp-normalize = { path = "../jp-normalize" }
 # 刮削作业要自己开一条连接，不能占着 UI 那条
 rusqlite = { version = "0.40", features = ["bundled"] }

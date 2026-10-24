@@ -1,0 +1,24 @@
+[package]
+name = "jp-scrape"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Writes scraped metadata, covers and artist facts into a JPOP Corpus library; shared by the Tauri and macOS clients"
+
+# 原来写在 jp-app/src/scrape.rs。打分、请求外部服务在 jp-scraper；这里是它和曲库之间的接线：
+# 写 songs / artists / 来源追踪（jp-corpus），补封面时先看音频里内嵌的（jp-import）。
+# 不放进 jp-scraper：那个 crate 不认识语料库，关掉 network 特性后完全不碰网络，保持这样。
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+jp-scraper = { path = "../jp-scraper" }
+jp-corpus = { path = "../jp-corpus" }
+jp-import = { path = "../jp-import" }
+jp-normalize = { path = "../jp-normalize" }
+
+[dev-dependencies]
+# 测试里往音频文件写一张内嵌封面
+lofty = "0.25"

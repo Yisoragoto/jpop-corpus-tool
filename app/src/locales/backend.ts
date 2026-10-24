@@ -6,7 +6,6 @@
  * 新加的中文没有英文、或者这里有 Rust 里已经删掉的句子，都会报出来。
  */
 export const backendEn: Record<string, string> = {
-  "补专辑信息的后台线程崩了，详情见日志": "The album details job crashed. See the log for details.",
   "匹配线程崩了": "A matching thread crashed",
   "歌词批量任务意外中断，请重试": "The lyrics batch stopped unexpectedly. Please retry.",
   "歌词批量任务正在结束，请稍后重试": "The lyrics batch is finishing. Please retry shortly.",
@@ -341,6 +340,9 @@ export const backendEn: Record<string, string> = {
   "写发行日期失败": "Couldn't write the release date",
   "刮削的后台线程崩了，详情见日志": "The metadata thread crashed; see the log for details",
   "已经有一个刮削作业在跑": "A metadata job is already running",
+  "刮削作业中断": "The metadata job stopped",
+  "补专辑信息中断": "The album details job stopped",
+  "歌手刮削作业中断": "The artist metadata job stopped",
   "写 artists 失败": "Couldn't write artists",
   "没有歌手名": "No artist name",
   "读不了 {0}": "Couldn't read {0}",

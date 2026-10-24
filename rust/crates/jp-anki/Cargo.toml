@@ -19,6 +19,8 @@ rusqlite = { version = "0.40", features = ["bundled", "collation"] }
 jp-scraper = { path = "../jp-scraper" }
 # 一键制卡：查词结果和 Yomitan 格式的卡片字段
 jp-dict = { path = "../jp-dict" }
+# 从歌词制卡（lyric_mine）：取那一行和同一首歌里的其他例句
+jp-corpus = { path = "../jp-corpus" }
 # 例句音频片段：解码和播放用同一个解码器，切出来的时间才和播放时听到的一致
 jp-audio = { path = "../jp-audio" }
 # 片段编成 MP3。里面是 LAME 3.100 的源码，Windows 上用 cc + MSVC 编（和 bundled SQLite 一样），

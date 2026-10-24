@@ -7,8 +7,9 @@ import JPCore
 /// 冒烟模式：没有 Mac 的人也能看到真实界面。
 ///
 /// 设了环境变量 `JPCORPUS_SMOKE=<目录>` 启动时，应用不读上次的库，而是：
-/// 打开示例语料库 → 检索 → KWIC → 试听第一条 → 曲库 → 分析 → 导入，
-/// 每一步把**自己的窗口**画成 PNG，扫描单文件、扫描文件夹并真导入；即时写 `smoke.txt`，断言失败以非零退出。
+/// 打开示例语料库 → 检索 → KWIC → 试听第一条 → 振假名 → 全屏歌词 → 首页 → 曲库（歌曲 / 专辑 / 歌手 / 详情）→ ⌘K
+/// → 分析（含存档、质量）→ 词典 → 刮削 → 导入（扫描单文件、扫描文件夹并真导入），
+/// 每一步把**自己的窗口**画成 PNG；即时写 `smoke.txt`，断言失败以非零退出。
 ///
 /// 截图用 `cacheDisplay` 让窗口自己渲染，不需要「屏幕录制」权限，所以在 CI 的 macOS 机器上也能跑
 /// （`.github/workflows/macos.yml` 把截图作为 artifact 传上去）。
@@ -83,11 +84,129 @@ enum SmokeRun {
                 try require(!p.isPlaying, "audition-stopped", "playing=\(p.isPlaying)")
             }
 
-            for (name, section) in [("04-library", SidebarItem.library), ("05-analysis", .analysis), ("06-import", .importer)] {
-                app.section = section
-                await settle(2)
+            // 振假名要分词词典：CI 把缓存的那份目录传进来，装进示例库（和导入页「选已有的词典」同一条路）
+            if let sudachi = ProcessInfo.processInfo.environment["JPCORPUS_SMOKE_SUDACHI"], !sudachi.isEmpty, let client = app.core {
+                do {
+                    _ = try await client.tokenizerInstall(from: sudachi)
+                    note("分词词典：装好了")
+                } catch {
+                    note("分词词典装不上：\(error.localizedDescription)")
+                }
+            }
+            app.showFurigana = true
+            await settle(2)
+            let rubyCount = app.furigana.values.map { $0.count }.reduce(0, +)
+            note("振假名：\(rubyCount) 段，错误：\(app.furiganaError ?? "无")")
+            shot("03b-furigana", into: out, note: note)
+
+            // 全屏歌词
+            app.showStage = true
+            await settle(2)
+            shot("03c-stage", into: out, note: note)
+            app.showStage = false
+            await settle(1)
+
+            // 首页：刚才那次试听到行尾自动暂停，播放记录里有了，「继续听」应该是这首
+            app.section = .home
+            await settle(2)
+            shot("04a-home", into: out, note: note)
+
+            // 曲库三种看法
+            app.section = .library
+            for (name, mode) in [("04b-library-songs", "歌曲"), ("04c-library-albums", "专辑"), ("04d-library-artists", "歌手")] {
+                UserDefaults.standard.set(mode, forKey: "libraryMode")
+                await settle(1.5)
                 shot(name, into: out, note: note)
             }
+            UserDefaults.standard.set("歌曲", forKey: "libraryMode")
+
+            // 歌手详情、歌曲详情
+            if let person = try? await app.core?.peopleDirectory().first(where: { $0.performer > 0 }) {
+                app.show(.person(person.id))
+                await settle(2)
+                shot("04e-person", into: out, note: note)
+            }
+            app.libraryPath = []
+            app.show(.song("004"))
+            await settle(2)
+            shot("04f-song", into: out, note: note)
+
+            // ⌘K 全库搜索
+            app.quickSearchSeed = "夜"
+            app.showQuickSearch = true
+            await settle(2)
+            shot("04g-quick-search", into: out, note: note)
+            app.showQuickSearch = false
+            await settle(0.8)
+
+            // 分析：词频 → 存一条档并重跑 → 存档页 → 语料质量
+            app.section = .analysis
+            UserDefaults.standard.set(0, forKey: "analysisTab")
+            await settle(2)
+            shot("05a-analysis", into: out, note: note)
+            do {
+                let q = FrequencyQuery(scope: AnalysisScope(unit: .distinctLines, jpOnly: true), pos: "NOUN", limit: 50)
+                if let run = try await app.core?.archiveFrequency(q, label: "冒烟 · 名词") {
+                    let cmp = try await app.core?.analysisRerun(run.id)
+                    note("存档 #\(run.id)，重跑结果相同：\(cmp?.resultIdentical == true)")
+                }
+            } catch {
+                note("存档失败：\(error.localizedDescription)")
+            }
+            UserDefaults.standard.set(2, forKey: "analysisTab")
+            await settle(1.5)
+            shot("05b-archive", into: out, note: note)
+            UserDefaults.standard.set(3, forKey: "analysisTab")
+            await settle(1.5)
+            shot("05c-quality", into: out, note: note)
+            UserDefaults.standard.set(0, forKey: "analysisTab")
+
+            // 词典：现做一本只有一个词条的 Yomitan 词典（解开的目录），经界面那条路导入，再试查「夜」
+            app.section = .dictionaries
+            do {
+                let dict = FileManager.default.temporaryDirectory.appendingPathComponent("JPCorpusSmokeDict", isDirectory: true)
+                try? FileManager.default.removeItem(at: dict)
+                try FileManager.default.createDirectory(at: dict, withIntermediateDirectories: true)
+                try #"{"title":"冒烟辞書","revision":"1","format":3,"author":"smoke"}"#.write(to: dict.appendingPathComponent("index.json"), atomically: true, encoding: .utf8)
+                try #"[["夜","よる","n","",0,["日が沈んでから昇るまでの間"],1,""]]"#.write(to: dict.appendingPathComponent("term_bank_1.json"), atomically: true, encoding: .utf8)
+                if let client = app.core {
+                    try await client.dictImport([dict.path])
+                    var progress = try await client.dictImportProgress()
+                    while !progress.finished {
+                        await settle(0.3)
+                        progress = try await client.dictImportProgress()
+                    }
+                    var lines: [String] = []
+                    for r in progress.result?.results ?? [] {
+                        if let summary = r.summary {
+                            lines.append("\(summary.title) \(summary.terms) 条")
+                        } else {
+                            lines.append(r.error ?? "?")
+                        }
+                    }
+                    note("词典导入：" + lines.joined(separator: "；") + "，错误：" + (progress.error ?? "无"))
+                    let anki = try await client.ankiStatus()
+                    note("Anki：\(anki.connected ? "连上了" : "连不上（\(anki.message)）")")
+                }
+            } catch {
+                note("词典失败：\(error.localizedDescription)")
+            }
+            app.lookupSeed = "夜に"
+            app.dictionaryVersion += 1
+            await settle(2.5)
+            shot("06a-dictionaries", into: out, note: note)
+
+            // 刮削页：只打开看看，不点（CI 上别去打 MusicBrainz）
+            app.section = .scrape
+            await settle(2)
+            shot("06b-scrape", into: out, note: note)
+
+            app.section = .importer
+            await settle(2)
+            shot("06c-import", into: out, note: note)
+
+            // 导入之后看曲库列表，不要停在上面推进去的详情页
+            app.libraryPath = []
 
             let folder = URL(fileURLWithPath: audioPath, isDirectory: true).appendingPathComponent("import", isDirectory: true)
             let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
