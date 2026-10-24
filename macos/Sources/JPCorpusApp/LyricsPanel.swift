@@ -26,12 +26,20 @@ struct LyricsPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             if let track = player.track {
                 header(track)
-                LyricsToolsButton(songId: track.id)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 6)
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        LyricsToolsButton(songId: track.id)
+                        FuriganaMenu()
+                        LyricsDisplayButton()
+                        Button("卡拉 OK") { app.stageKaraoke = true; app.showStage = true }
+                    }.font(.caption)
+                }
+                .frame(height: 30)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 6)
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 4) {
+                        LazyVStack(alignment: .leading, spacing: app.lyricsDisplay.lineGap) {
                             ForEach(player.lines) { line in
                                 row(line, current: line.utteranceId == player.currentUtterance)
                                     .id(line.utteranceId)
@@ -145,8 +153,8 @@ struct LyricsPanel: View {
                     .lineLimit(1)
             }
             Spacer()
-            FuriganaMenu()
             Button {
+                app.stageKaraoke = false
                 app.showStage = true
             } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")

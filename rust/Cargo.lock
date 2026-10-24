@@ -1921,6 +1921,7 @@ dependencies = [
  "jp-audio",
  "jp-corpus",
  "jp-dict",
+ "jp-fonts",
  "jp-import",
  "jp-lyrics",
  "jp-normalize",
@@ -1999,8 +2000,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "jp-anki",
+ "jp-audio",
  "jp-corpus",
  "jp-dict",
+ "jp-fonts",
  "jp-import",
  "jp-lyrics",
  "jp-scrape",
@@ -2008,6 +2011,16 @@ dependencies = [
  "jp-tokenizer",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "jp-fonts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-dict",
+ "serde",
+ "windows",
 ]
 
 [[package]]

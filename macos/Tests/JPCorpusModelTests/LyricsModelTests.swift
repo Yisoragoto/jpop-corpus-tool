@@ -4,6 +4,43 @@ import XCTest
 @testable import JPCorpusModel
 
 final class LyricsModelTests: XCTestCase {
+    @MainActor
+    func testSecretInputsAreWriteOnlyClearedOnFailureAndNeverEchoed() async throws {
+        let fake = await fixture()
+        let model = LyricsModel(songId: "001")
+        await model.load(fake)
+        model.developerToken = "secret-developer"; model.musicUserToken = "secret-user"
+        await model.saveSources(fake)
+        XCTAssertEqual(model.developerToken, ""); XCTAssertEqual(model.musicUserToken, "")
+        XCTAssertEqual(model.errorMessage, "保存歌词来源失败；令牌输入已清空，请重试。")
+        let calls = await fake.calls
+        let saved = try XCTUnwrap(calls.last { $0.name == "lyricsSourcesSet" })
+        let config = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(saved.arguments[0].utf8)) as? [String: Any])
+        XCTAssertEqual(config["appleDeveloperToken"] as? String, "secret-developer")
+        XCTAssertNil(config["appleDeveloperTokenSet"])
+    }
+    @MainActor
+    func testPeaksBoundaryAndTimingNavigation() async throws {
+        let fake = await fixture()
+        await fake.respondToLyrics("audioPeaks", json: "[0,128,255]")
+        let model = LyricsModel(songId: "001")
+        await model.load(fake); await model.loadPeaks(fake)
+        XCTAssertEqual(model.peaks, [0, 128, 255])
+        model.select(line: 0, unit: 0)
+        model.keyDown(at: 10); model.keyUp(at: 10.5)
+        model.keyDown(at: 10.6); model.keyUp(at: 11)
+        model.select(line: 0, unit: 1)
+        model.nudge(.start, delta: -5)
+        XCTAssertEqual(model.timing[0].units[1].start, 10.5)
+        model.undo()
+        XCTAssertEqual(model.cursor, .init(line: 0, unit: 1), "撤销不重置光标")
+        XCTAssertEqual(model.timing[0].units[1].start, 10.6)
+        model.clearLine()
+        XCTAssertEqual(Karaoke.lineStatus(model.timing, 0, nil).status, "empty")
+        XCTAssertEqual(model.selectedUnit, 0)
+        let calls = await fake.calls
+        XCTAssertTrue(calls.contains(.init(name: "audioPeaks", arguments: ["001", "100"])))
+    }
     private let attached = #"{"songId":"001","source":"edited","matched":"","lyricLines":1,"tokens":0,"credits":0,"correctionsRestored":0,"lrcPath":"/tmp/001.lrc"}"#
     private let idle = #"{"running":false,"finished":false,"cancelled":false,"done":0,"total":0,"stage":"","result":null,"error":null}"#
     private let running = #"{"running":true,"finished":false,"cancelled":false,"done":0,"total":2,"stage":"試験曲","result":null,"error":null}"#
@@ -38,7 +75,7 @@ final class LyricsModelTests: XCTestCase {
         let saved = try XCTUnwrap(calls.last { $0.name == "lyricsSaveLines" })
         XCTAssertEqual(Array(saved.arguments.prefix(2)), ["001", "修正"])
         let lines = try decoded([EditedLyricLine].self, saved.arguments[2])
-        XCTAssertEqual(lines[0].timeSec ?? 0, 83.456, accuracy: 0.0001)
+        XCTAssertEqual(lines[0].timeSec ?? 0, 83.46, accuracy: 0.0001)
         await fake.respondToLyrics("lyricsSaveLines", json: attached)
         await model.saveLines(fake)
         XCTAssertFalse(model.dirty)
@@ -130,11 +167,12 @@ final class LyricsModelTests: XCTestCase {
         await model.load(fake)
         XCTAssertEqual(model.timing[0].units.map { LyricsModel.unitText(model.timing[0].text, unit: $0) }, ["きゃ ", "空"])
         XCTAssertTrue(model.timing[0].units.allSatisfy { $0.start == nil && $0.end == nil })
-        model.stampStart(at: 2.0)
-        model.stampEnd(at: 2.6)
+        model.keyDown(at: 1.85)
+        model.keyUp(at: 2.45)
         XCTAssertEqual(model.timing[0].units[0].start ?? 0, 1.85, accuracy: 0.0001)
         model.undo()
         XCTAssertNil(model.timing[0].units[0].end)
+        XCTAssertNil(model.timing[0].units[0].start, "按下和松开合为一步撤销")
         model.redo()
         XCTAssertEqual(model.timing[0].units[0].end ?? 0, 2.45, accuracy: 0.0001)
         await fake.respondToLyrics("lyricsSaveTiming", json: attached)
@@ -152,13 +190,13 @@ final class LyricsModelTests: XCTestCase {
         let model = LyricsModel(songId: "001")
         await model.load(fake)
         model.tapMode = .tap
-        model.keyDown(at: 2)
-        model.keyUp(at: 2.1)
+        model.keyDown(at: 1.85)
+        model.keyUp(at: 1.95)
         XCTAssertEqual(model.selectedUnit, 1)
         XCTAssertNil(model.timing[0].units[0].end)
-        model.keyDown(at: 2.5)
+        model.keyDown(at: 2.35)
         XCTAssertEqual(model.timing[0].units[0].end ?? 0, 2.35, accuracy: 0.0001)
-        model.keyUp(at: 3)
+        model.keyUp(at: 2.85)
         XCTAssertEqual(model.timing[0].units[1].end ?? 0, 2.85, accuracy: 0.0001)
     }
 
@@ -176,6 +214,7 @@ final class LyricsModelTests: XCTestCase {
         XCTAssertTrue(calls.contains(.init(name: "wordTimeSet", arguments: ["1", "0", "3", "1.25"])))
         XCTAssertTrue(calls.contains(.init(name: "wordTimeClear", arguments: ["1", "0"])))
         model.splitUnit()
-        XCTAssertNil(model.timing[0].units[0].start, "拆开后不能在源单位内插值生成时间")
+        XCTAssertEqual(model.timing[0].units[0].start, 1.2, "Windows 拆分保留起点，以插值边界供继续调整")
+        XCTAssertEqual(model.timing[0].units[0].end ?? 0, 1.4, accuracy: 0.0001)
     }
 }

@@ -5,11 +5,13 @@ import SwiftUI
 /// One native text button per actual source unit. Masking expresses progress
 /// only inside that unit's own interval, never between units or by character.
 @MainActor
+@MainActor
 struct TimedLyricText: View {
+    @Environment(AppModel.self) private var app
     let text: String
     let units: [LyricTimingUnit]
     let position: Double
-    var size: CGFloat = 19
+    var size: CGFloat = 15
     let seek: (LyricTimingUnit) -> Void
 
     var body: some View {
@@ -39,7 +41,8 @@ struct TimedLyricText: View {
                 .accessibilityLabel("从「\(label)」开始播放")
             }
         }
-        .font(.system(size: size, weight: .bold))
+        .font(lyricFont(app.lyricsDisplay, size: Double(size) * app.lyricsDisplay.fontSize / 15))
+        .kerning(app.lyricsDisplay.letterSpacing)
         .animation(nil, value: position)
     }
 }

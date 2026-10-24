@@ -259,6 +259,10 @@ pub fn run() {
     // 日志先开：下面任何一步出事都要留下痕迹，尤其是「启动失败」那一条——
     // 用户那边只看得到一个对话框，我这边只有这个文件
     crate::log::init(&root);
+    jp_lyrics::set_logger(|level, message| match level {
+        jp_lyrics::LogLevel::Warn => crate::log::warn(message),
+        jp_lyrics::LogLevel::Error => crate::log::error(message),
+    });
     crate::scrape::connect_log();
     crate::log::info(format!(
         "启动 {} · 语料库目录：{}（来自 {source:?}）",

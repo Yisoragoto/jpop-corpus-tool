@@ -11,9 +11,9 @@
 | 建库、打开已有库 | 可用 | AppModelTests；ImportTests 真 FFI 建库；smoke 打开示例库 | 默认目录可直接建库；选其他无 corpus.db 的目录须先确认；openExisting 不创建库 |
 | 导入音频与歌词 | 可用 | ImportModelTests 路由/错误；SourceGuardTests；ImportTests；smoke 真写库 | 文件夹、单文件、多文件、混选统一 scanFiles；显示计划后导入，可停止；内嵌封面与 songs.csv 尚未接入 |
 | Sudachi 分词 | 可用 | ImportTests 下载外的安装/补分词/KWIC 链路；ImportModelTests 词典选择路由 | 提供下载/从目录复制；真实网络中断和下载按钮交互没有自动化覆盖 |
-| 歌词显示与管理（第 1 阶段） | 可用 | LyricsModelTests（FakeCorpus）、LyricsBridgeTests（真 FFI）、jp-ffi/jp-lyrics 测试 | 详情页/歌词面板/全屏歌词共用管理面板：逐行编辑、增删行、导入 .lrc、版本原文与恢复、重新校验；Swift 新增测试待 macOS CI 执行 |
-| 在线补歌词与时间歌词候选 | 可用 | LyricsModelTests、LyricsBridgeTests、Rust 离线队列与候选保护测试 | 单首/批量缺失补齐、全库逐字升级、进度与取消、来源开关、逐行/逐字搜索预览并采用；网络覆盖依赖来源，不以离线测试宣称网络可用 |
-| 卡拉 OK 与打轴 | 部分 | LyricsModelTests、LyricsBridgeTests、共享核心时间轴/保存测试 | 全屏两行交替与倒数、真实单位高亮；选单位、空格按住/点按、直接填时间、拆分/合并、撤销/重做、起点校准及清除、保存为新版本；尚无 Windows 的波形拖拽和完整打轴快捷键 |
+| 歌词显示与管理（第 1 阶段） | 可用 | LyricEditTests（Windows 全部 6 例）、LyricsModelTests、LyricsBridgeTests、jp-ffi/jp-lyrics/jp-fonts | 时间戳解析、改动摘要、行后插入/删除、空行过滤；lrc/txt/yrc/qrc/krc/ttml 导入；校验问题、语言、分词器、字段来源、修订历史、版本原文与恢复；显示面板提供字体/备用字体、字体与 zip 导入、字号/注音字号/间距；Swift 待 macOS CI 验证 |
+| 在线补歌词与时间歌词候选 | 可用 | LyricsModelTests、LyricsBridgeTests、Rust 离线队列与候选保护测试 | 单首在线补齐、批量缺失补齐、全库逐字升级、进度/取消/错误、全库待补名单；来源开关、候选精度与预览、采用失败清候选；Apple 地区与只写令牌（留空保留、显式清除、只显示已设置）；真实网络与 Swift 界面待另行验证 |
+| 卡拉 OK 与打轴 | 可用 | KaraokeTests（Windows 全部 17 例）、LyricsModelTests、LyricsBridgeTests、Rust 波形/保存测试 | Karaoke.swift 逐函数移植；按结束时间换行、按有时间行序号交替、前奏歌名/署名与倒数；完整打轴快捷键、按住/点按共用撤销步骤、200 步历史、速度/提前量记忆、行状态、波形与边界拖动/选择/定位、拆并/清行、保存前检查与离开保护；Swift 编译与交互待 macOS CI 验证 |
 | 播放 | 部分 | CoreBridgeTests 行区间；smoke 试听及行尾自动停 | AVFoundation、单句循环、倍速；smoke 不判断声卡是否实际有声，不覆盖全部控制按钮 |
 | 检索 | 可用 | CoreBridgeTests；smoke 检索截图 | 关键词、辞书形与写法、多词表达、附近词过滤 |
 | KWIC 定位与试听 | 可用 | CoreBridgeTests；smoke 真窗口试听；LyricTimelineTests | 行级试听；歌词面板可按经过验证的真实单位起点播放，没有单位则回退到行 |
@@ -34,17 +34,27 @@ Tauri 的 command 签名、JSON 返回与事件名保持不变；版本/原文�
 人工修改保护、候选过期和并发校验均由同一份 Rust 代码负责。
 新 crate 是依赖语料库与导入器的应用层，不能放进不认识语料库的 `jp-scraper`。
 
-FFI 的补齐和升级共用一个 `jobs::Job`，在工作线程同步调用共享 `run_batch`，队列自己开 SQLite 连接；
+FFI 的批量补齐和升级共用一个 `jobs::Job`，在工作线程同步调用共享 `run_batch`，队列自己开 SQLite 连接；
 进度仍是 `running / finished / cancelled / done / total / stage / result / error`。
 `lyricsFillProgress` 与 `lyricsUpgradeProgress` 是该作业的两个轮询入口；`lyricsUpgradeStatus` 维持 Tauri 的详细进度形状。
-单首按钮也进入同一后台队列，离开面板继续运行，再次打开可恢复进度。
+单首在线补齐使用与 Windows 相同的 `lyricsFillOne`；批量任务离开面板继续运行，再次打开可恢复进度。
 
 `LyricsModel` 负责可测试的草稿、选择完成/失败、候选选择、作业恢复、错误与打点状态，
 JPCore 的 `LyricsClient.swift` 只封装方法和 Codable 形状。字符范围按 Unicode scalar（Rust `char`）计数。
 来源提供的多字符单位不拆成伪时间；新切分的单位只有手工打点后才有时间。
-本阶段 UI 的文件选择只开放 .lrc/纯文本，其他原生格式仍可经共享核心/FFI 导入。
-Apple 目录凭据管理、波形编辑和完整 Windows 打轴快捷键暂未提供原生界面。
+字符单位已核对 `jp-corpus` 的 word_timings、`jp-lyrics::save_timed_lines` 和 Windows `karaoke.ts`：
+Rust `chars()` 与 JS `[...text]` 都按码点计数；Swift 使用 Unicode scalar，同样把 `𠮷` 算一个，不使用 UTF-16 下标或字素簇下标。
+`Karaoke.swift` 的 19 个公开函数及 MIN_UNIT_SEC / COUNTDOWN_GAP / INTRO_LEAD 常量逐项对应 Windows；
+`LyricEdit.swift` 移植 formatStamp、parseStamp、summarizeEdit，全部 23 个原始用例的输入和断言值保持一致。
+新增 `audioPeaks(songId, perSec)` 复用 jp_audio::decode_all / decode::peaks，每秒格数钳在 1–1000，Swift 请求 100。
+FFI 此前已通过 jp-anki 引入同一份 jp-audio 和 CoreAudio/Rubber Band 链接配置，本轮没有引入新的设备依赖，未另拆 feature。
+新增 `songSetLanguage`、`fontsCatalog`、`fontsImportArchive`；字体解析和压缩包导入原样抽到 jp-fonts，两端共用。
+Apple SettingsInput 与 SettingsView 分开建模，不把只读的 `*TokenSet` 字段编码进输入；令牌不落盘、不回显，失败用固定文案。
+jp-lyrics 的 warn/error 钩子接入 Tauri 日志，panic 日志恢复；FFI 默认 stderr。
+来源配置统一从 session.library_root() 加载。
 新增 Swift 代码已逐文件静态复查，**尚未在本机编译或执行测试**，以 macOS 14 CI 为最终证据。
+表中的「可用」表示代码已有完整功能入口，不表示这次新增 Swift 已通过 CI；原生字体枚举使用 CoreText/AppKit，
+字体选择结果与系统字体集合有关，窗口排版和系统文件选择面板的交互仍需 Mac 实机确认。
 
 ## 本次修复与任务书评审
 

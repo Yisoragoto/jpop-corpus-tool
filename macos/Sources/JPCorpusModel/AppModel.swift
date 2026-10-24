@@ -78,6 +78,13 @@ public final class AppModel {
     public var showQuickSearch = false
     /// 全屏歌词
     public var showStage = false
+    public var stageKaraoke = false
+    public var lyricsDisplay = LyricsDisplay() {
+        didSet { if let data = try? JSONEncoder().encode(lyricsDisplay) { defaults.set(data, forKey: "lyrics-display") } }
+    }
+    public var importedLyricFonts: [String] = [] {
+        didSet { defaults.set(importedLyricFonts, forKey: "lyrics-imported-fonts") }
+    }
 
     /// 振假名开关和注法。存在偏好里，歌词面板和全屏歌词共用
     public var showFurigana: Bool {
@@ -148,6 +155,10 @@ public final class AppModel {
         audioRoots = defaults.stringArray(forKey: Keys.audioRoots) ?? []
         showFurigana = defaults.bool(forKey: Keys.furigana)
         furiganaMode = FuriganaMode(rawValue: defaults.string(forKey: Keys.furiganaMode) ?? "") ?? .kanji
+        if let data = defaults.data(forKey: "lyrics-display"), var display = try? JSONDecoder().decode(LyricsDisplay.self, from: data) {
+            display.normalize(); lyricsDisplay = display
+        }
+        importedLyricFonts = defaults.stringArray(forKey: "lyrics-imported-fonts") ?? []
         player.app = self
     }
 

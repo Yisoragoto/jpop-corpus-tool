@@ -76,6 +76,8 @@ actor FakeCorpus: CorpusCalling {
 }
 
 extension FakeCorpus: LyricsCalling {
+    func songSetLanguage(_ songId: String, language: String) async throws { calls.append(Call(name: "songSetLanguage", arguments: [songId, language])) }
+    func audioPeaks(_ songId: String, perSec: UInt32) async throws -> [UInt8] { try lyricValue("audioPeaks", arguments: [songId, String(perSec)]) }
     func songLineage(_ songId: String) async throws -> SongLineage { try lyricValue("songLineage", arguments: [songId]) }
     func lyricVersionRaw(_ versionId: Int64) async throws -> String? { try lyricValue("lyricVersionRaw", arguments: [String(versionId)]) }
     func wordTimings(_ utteranceIds: [Int64]) async throws -> [WordTiming] { try lyricValue("wordTimings", arguments: utteranceIds.map { String($0) }) }
@@ -91,7 +93,11 @@ extension FakeCorpus: LyricsCalling {
     func lyricsImportFile(_ songId: String, path: String) async throws -> LyricsAttached { try lyricValue("lyricsImportFile", arguments: [songId, path]) }
     func lyricsRevalidate(_ songId: String?) async throws -> Int { try lyricValue("lyricsRevalidate", arguments: [songId ?? "*"]) }
     func lyricsSourcesGet() async throws -> LyricsSources { try lyricValue("lyricsSourcesGet") }
-    func lyricsSourcesSet(_ config: LyricsSources) async throws -> LyricsSources { try lyricValue("lyricsSourcesSet") }
+    func lyricsSourcesSet(_ config: LyricsSourcesInput) async throws -> LyricsSources {
+        let json = String(decoding: try JSONEncoder().encode(config), as: UTF8.self)
+        return try lyricValue("lyricsSourcesSet", arguments: [json])
+    }
+    func lyricsFillOne(_ songId: String) async throws -> LyricsAttached? { try lyricValue("lyricsFillOne", arguments: [songId]) }
     func lyricsMissing() async throws -> [MissingLyrics] { try lyricValue("lyricsMissing") }
     func lyricsFillStart(songIds: [String]?) async throws { calls.append(Call(name: "lyricsFillStart", arguments: songIds ?? ["*"])) }
     func lyricsFillProgress() async throws -> JobProgress<LyricsUpgradeProgress> { try lyricValue("lyricsFillProgress") }

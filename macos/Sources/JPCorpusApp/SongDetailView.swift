@@ -234,7 +234,7 @@ struct SongDetailView: View {
                     .font(.caption)
                 }
             }
-            Text("歌词换版本、逐行修改目前只在 Windows 版里做。")
+            Text("歌词管理可编辑、导入、校验及恢复旧版歌词。")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .padding(.top, 4)

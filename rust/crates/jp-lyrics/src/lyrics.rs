@@ -852,7 +852,7 @@ pub fn spawn_fill(
             let analyzer = jp_tokenizer::locate_sudachipy(&project_root)
                 .and_then(|(res, dict)| jp_tokenizer::Analyzer::from_sudachipy(&res, &dict).ok());
             if analyzer.is_none() {
-                eprintln!("补齐歌词：没有分词器，歌词会入库但不分词");
+                crate::log_warn("补齐歌词：没有分词器，歌词会入库但不分词");
             }
             let provider = provider();
 
@@ -915,7 +915,7 @@ pub fn spawn_fill(
         let (cancelled, error) = match outcome {
             Ok(cancelled) => (cancelled, String::new()),
             Err(err) => {
-                eprintln!("补齐歌词作业中断: {err:#}");
+                crate::log_error(format!("补齐歌词作业中断: {err:#}"));
                 // 整批断了要说出来，不能只是悄悄「完成」
                 (false, format!("{err:#}"))
             }

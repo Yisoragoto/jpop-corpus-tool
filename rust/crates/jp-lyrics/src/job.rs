@@ -86,10 +86,9 @@ pub struct Guard {
 impl Drop for Guard {
     fn drop(&mut self) {
         self.job.running.store(false, Ordering::SeqCst);
-        if std::thread::panicking()
-            && let Some(on_panic) = self.on_panic.take()
-        {
-            on_panic();
+        if std::thread::panicking() {
+            crate::log_error("后台作业线程 panic 了，运行标志已经放开");
+            if let Some(on_panic) = self.on_panic.take() { on_panic(); }
         }
     }
 }

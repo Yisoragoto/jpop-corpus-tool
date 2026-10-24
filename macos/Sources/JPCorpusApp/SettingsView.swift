@@ -9,10 +9,14 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     private enum PickKind { case library, audio }
     @State private var pick = FilePickState<PickKind>()
+    @State private var lyricsOpen = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Form {
+            Section("歌词") {
+                Button("歌词来源、批量补全与逐首预览") { lyricsOpen = true }.disabled(app.core == nil)
+            }
             Section("语料库") {
                 LabeledContent("文件夹") {
                     Text(app.isDemo ? "示例语料库" : (app.libraryURL?.path ?? "未选择"))
@@ -62,6 +66,7 @@ struct SettingsView: View {
         .clearScrollBackground()
         .glass(.sidebar)
         .frame(width: 560, height: 460)
+        .sheet(isPresented: $lyricsOpen) { LyricsLibraryView() }
         .fileImporter(isPresented: $pick.isPresented, allowedContentTypes: [.folder]) { result in
             let kind = pick.finish()
             switch result {

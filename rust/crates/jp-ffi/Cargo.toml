@@ -16,6 +16,8 @@ serde.workspace = true
 serde_json.workspace = true
 jp-corpus = { path = "../jp-corpus" }
 jp-lyrics = { path = "../jp-lyrics" }
+jp-fonts = { path = "../jp-fonts" }
+jp-audio = { path = "../jp-audio" }
 # 导入（扫描 → 计划 → 写库）、分词、分词词典的下载和定位、查词：和 Tauri 客户端是同一份代码
 jp-import = { path = "../jp-import" }
 jp-tokenizer = { path = "../jp-tokenizer" }

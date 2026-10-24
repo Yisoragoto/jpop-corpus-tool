@@ -4,6 +4,22 @@ import XCTest
 
 /// 真静态库：编辑、历史、打轴与离线队列的 JSON 形状。
 final class LyricsBridgeTests: XCTestCase {
+    func testSourceInputOmitsReadOnlyFlagsAndDistinguishesKeepSetAndClear() throws {
+        var view = LyricsSources()
+        view.appleDeveloperTokenSet = true; view.appleMusicUserTokenSet = true
+        func object(_ input: LyricsSourcesInput) throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any])
+        }
+        let keep = try object(LyricsSourcesInput(view))
+        XCTAssertNil(keep["appleDeveloperTokenSet"]); XCTAssertNil(keep["appleMusicUserTokenSet"])
+        XCTAssertNil(keep["appleDeveloperToken"]); XCTAssertNil(keep["appleMusicUserToken"])
+        let set = try object(LyricsSourcesInput(view, developerToken: "developer", musicUserToken: "user"))
+        XCTAssertEqual(set["appleDeveloperToken"] as? String, "developer")
+        XCTAssertEqual(set["appleMusicUserToken"] as? String, "user")
+        let clear = try object(LyricsSourcesInput(view, developerToken: "", musicUserToken: ""))
+        XCTAssertEqual(clear["appleDeveloperToken"] as? String, "")
+        XCTAssertEqual(clear["appleMusicUserToken"] as? String, "")
+    }
     private var dir: URL!
     private var client: CorpusClient!
     override func setUpWithError() throws {
@@ -55,7 +71,7 @@ final class LyricsBridgeTests: XCTestCase {
         var settings = try await client.lyricsSourcesGet()
         settings.netease = false; settings.qq = false; settings.kugou = false
         settings.amll = false; settings.lrclib = false; settings.apple = false
-        let saved = try await client.lyricsSourcesSet(settings)
+        let saved = try await client.lyricsSourcesSet(LyricsSourcesInput(settings))
         XCTAssertFalse(saved.qq)
         let candidates = try await client.lyricsTimedSearch("001")
         XCTAssertEqual(candidates.songId, "001")

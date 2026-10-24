@@ -33,7 +33,7 @@ mod import_tests;
 
 use std::ffi::{CStr, CString, c_char};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, ensure};
@@ -69,7 +69,7 @@ pub struct Session {
     scrape_job: Arc<Job>,
     lyrics_job: Arc<Job>,
     lyric_batch: Arc<jp_lyrics::lyric_upgrade::Batch>,
-    lyric_sources: Mutex<jp_lyrics::timed_lyrics::Session>,
+    lyric_sources: OnceLock<Mutex<jp_lyrics::timed_lyrics::Session>>,
     /// Yomitan 词典库 `dictionaries.db`，和 corpus.db 同一目录、分开存。没导入过就一直是 None
     dictionaries: Mutex<Option<jp_dict::store::DictionaryStore>>,
     translator: jp_dict::translator::Translator,
@@ -126,8 +126,7 @@ impl Session {
         // 和 Tauri 客户端启动时一样：来源追踪之前导进来的歌补登记一版歌词（docs/provenance.md）。
         // 补不上不影响打开，质量清单里那些歌只是没有版本记录
         let _ = corpus.backfill_lineage();
-        let lyric_sources = jp_lyrics::timed_lyrics::Session::load(path.parent().unwrap_or(Path::new(".")));
-        Ok(Self {
+        let session = Self {
             corpus: Mutex::new(corpus),
             root: path.parent().map(PathBuf::from),
             db_path: path,
@@ -140,10 +139,12 @@ impl Session {
             scrape_job: Arc::default(),
             lyrics_job: Arc::default(),
             lyric_batch: Arc::default(),
-            lyric_sources: Mutex::new(lyric_sources),
+            lyric_sources: OnceLock::new(),
             dictionaries: Mutex::new(None),
             translator: jp_dict::translator::Translator::new(),
-        })
+        };
+        session.lyric_sources();
+        Ok(session)
     }
 
     /// 语料库目录。分词词典（`sudachi/`）、Yomitan 词典库都在这里
@@ -152,6 +153,10 @@ impl Session {
             Some(root) if !root.as_os_str().is_empty() => root.clone(),
             _ => PathBuf::from("."),
         }
+    }
+
+    fn lyric_sources(&self) -> &Mutex<jp_lyrics::timed_lyrics::Session> {
+        self.lyric_sources.get_or_init(|| Mutex::new(jp_lyrics::timed_lyrics::Session::load(&self.library_root())))
     }
 
     /// 刮下来的封面、歌手照片放哪（和 Windows 版一样：`raw/covers`、`raw/artists`）
@@ -449,6 +454,17 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
     }
     let v = match method {
         // ── 导入：扫描 → 计划（只读）→ 后台写库 ──
+        "audioPeaks" => {
+            let id: String = arg(args, "songId")?;
+            let per_sec: u32 = arg(args, "perSec")?;
+            let track = session.network_connection()?.track(&id)?.ok_or_else(|| anyhow!("找不到曲目 {id}"))?;
+            ensure!(!track.audio_path.trim().is_empty(), "《{}》没有音频文件", track.title);
+            let roots = session.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
+            let path = jp_corpus::media::resolve(&track.audio_path, session.root.as_deref(), &roots)
+                .unwrap_or_else(|| PathBuf::from(&track.audio_path));
+            let pcm = jp_audio::decode_all(&path)?;
+            serde_json::to_value(jp_audio::decode::peaks(&pcm, per_sec.clamp(1, 1000)))?
+        }
         "scanFolder" => {
             let path: String = arg(args, "path")?;
             ensure!(Path::new(&path).exists(), "路径不存在：{path}");

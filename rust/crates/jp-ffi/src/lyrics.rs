@@ -5,8 +5,33 @@ use jp_lyrics::{lyrics, lyric_upgrade, timed_lyrics as timed};
 pub(super) fn dispatch(session: &Session, method: &str, args: &Value) -> Result<Option<Value>> {
     let dir = session.library_root().join("raw/lyrics_lrc");
     let v = match method {
-        "lyricsSourcesGet" => serde_json::to_value(session.lyric_sources.lock().unwrap_or_else(|e| e.into_inner()).view())?,
-        "lyricsSourcesSet" => serde_json::to_value(session.lyric_sources.lock().unwrap_or_else(|e| e.into_inner()).configure(arg(args, "config")?)?)?,
+        "fontsImportArchive" => {
+            let path: String = arg(args, "path")?;
+            let files = jp_fonts::extract_font_archive(Path::new(&path), &session.library_root().join("fonts"))?;
+            json!(files.into_iter().map(|p| p.display().to_string()).collect::<Vec<_>>())
+        }
+        "fontsCatalog" => {
+            let imported: Vec<String> = arg_or(args, "imported", Vec::new())?;
+            let (files, problems) = jp_fonts::font_files(&session.library_root().join("assets/fonts"), &imported);
+            // 本机字体由 Swift 问 CoreText；文件和压缩包规则两端共用。
+            json!({"files": files, "problems": problems})
+        }
+        "songSetLanguage" => {
+            let id: String = arg(args, "songId")?;
+            let input: String = arg(args, "language")?;
+            let language = input.trim();
+            let mut corpus = session.network_connection()?;
+            let tx = corpus.connection_mut().transaction()?;
+            tx.execute("UPDATE songs SET language=NULLIF(?1,'') WHERE id=?2", [language, id.as_str()])?;
+            jp_corpus::lineage::set_provenance(&tx, "song", &id, "language", "manual", "", None)?;
+            jp_corpus::lineage::log(&tx, &jp_corpus::lineage::Revision {
+                song_id: id, kind: "metadata_edited".into(), after: Some(json!({"language": language})), actor: "user".into(), ..Default::default()
+            })?;
+            tx.commit()?;
+            Value::Null
+        }
+        "lyricsSourcesGet" => serde_json::to_value(session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).view())?,
+        "lyricsSourcesSet" => serde_json::to_value(session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).configure(arg(args, "config")?)?)?,
         "lyricsMissing" | "lyricsTimedTargets" => {
             let corpus = session.network_connection()?;
             if method == "lyricsMissing" {
@@ -27,12 +52,12 @@ pub(super) fn dispatch(session: &Session, method: &str, args: &Value) -> Result<
                 "lyricsRestoreVersion" => lyrics::restore_version(conn, &dir, &id, arg(args, "versionId")?, analyzer.as_deref())?,
                 "lyricsImportFile" => lyrics::attach_from_file(conn, &dir, &id, Path::new(&arg::<String>(args, "path")?), analyzer.as_deref())?,
                 _ => {
-                    let pending = session.lyric_sources.lock().unwrap_or_else(|e| e.into_inner())
+                    let pending = session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner())
                         .candidate(&id, &arg::<String>(args, "candidateId")?)?;
                     timed::apply(conn, &dir, &pending, analyzer.as_deref())?
                 }
             };
-            session.lyric_sources.lock().unwrap_or_else(|e| e.into_inner()).forget(&id);
+            session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).forget(&id);
             serde_json::to_value(attached)?
         }
         "lyricsRevalidate" => {
@@ -42,14 +67,14 @@ pub(super) fn dispatch(session: &Session, method: &str, args: &Value) -> Result<
         "lyricsTimedSearch" => {
             let id: String = arg(args, "songId")?;
             let before = timed::snapshot(session.network_connection()?.connection(), &id)?;
-            let (options, ticket) = session.lyric_sources.lock().unwrap_or_else(|e| e.into_inner()).begin_search(&id);
-            serde_json::to_value(jp_lyrics::management::search(&session.lyric_sources, before, options, ticket)?)?
+            let (options, ticket) = session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).begin_search(&id);
+            serde_json::to_value(jp_lyrics::management::search(session.lyric_sources(), before, options, ticket)?)?
         }
         "lyricsFillOne" => {
             let id: String = arg(args, "songId")?;
             let mut corpus = session.network_connection()?;
             ensure!(lyrics::missing(corpus.connection())?.iter().any(|t| t.song_id == id), "{id} 已经有歌词了，先清掉再补，或者直接导入一份文件覆盖");
-            let options = session.lyric_sources.lock().unwrap_or_else(|e| e.into_inner()).options();
+            let options = session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).options();
             serde_json::to_value(lyric_upgrade::fetch_one(corpus.connection_mut(), &dir, &id, &options, session.analyzer().as_deref())?.map(|(attached, _)| attached))?
         }
         "lyricsFillStart" | "lyricsUpgradeStart" => {
@@ -62,7 +87,7 @@ pub(super) fn dispatch(session: &Session, method: &str, args: &Value) -> Result<
             } else {
                 timed::targets(corpus.connection())?.into_iter().map(|t| t.song_id).collect()
             };
-            let options = session.lyric_sources.lock().unwrap_or_else(|e| e.into_inner()).options();
+            let options = session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).options();
             let (db, batch) = (session.db_path.clone(), Arc::clone(&session.lyric_batch));
             let reporter = Arc::clone(&session.lyrics_job);
             session.lyrics_job.spawn("歌词任务", move |job| {

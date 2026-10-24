@@ -27,11 +27,10 @@ struct LyricsManagementView: View {
     @State private var tab: Int
     @State private var importing = false
     @State private var confirmClose = false
-    @FocusState private var timingFocused: Bool
 
-    init(songId: String, timing: Bool = false) {
+    init(songId: String, timing: Bool = false, initialTab: Int? = nil) {
         _model = State(initialValue: LyricsModel(songId: songId))
-        _tab = State(initialValue: timing ? 3 : 0)
+        _tab = State(initialValue: initialTab ?? (timing ? 3 : 0))
     }
 
     var body: some View {
@@ -42,7 +41,7 @@ struct LyricsManagementView: View {
                 if model.dirty { Text("有未保存的改动").font(.caption).foregroundStyle(.orange) }
                 Spacer()
                 if model.busy { ProgressView().controlSize(.small) }
-                Button("关闭") { if model.dirty { confirmClose = true } else { dismiss() } }
+                Button("关闭", action: requestClose)
                     .disabled(model.busy)
             }
             Picker("功能", selection: $tab) {
@@ -52,7 +51,7 @@ struct LyricsManagementView: View {
                 Text("卡拉 OK 打轴").tag(3)
             }
             .pickerStyle(.segmented)
-            .disabled(model.dirty || model.busy)
+            .disabled(model.dirty || model.busy || model.songId.isEmpty)
             if model.dirty {
                 HStack {
                     Text("保存或放弃草稿后可切换功能。旧版保留在版本列表中。").font(.caption).foregroundStyle(.secondary)
@@ -83,18 +82,26 @@ struct LyricsManagementView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut("s", modifiers: .command)
-                    .disabled(model.busy || !model.dirty)
+                    .disabled(model.busy || (tab == 0 ? model.editSummary == "没有改动" || !model.invalidEditRows.isEmpty : !model.dirty))
                 }
             }
         }
         .padding(20)
         .frame(minWidth: 760, idealWidth: 900, minHeight: 580, idealHeight: 720)
         .interactiveDismissDisabled(model.dirty || model.busy)
+        .onExitCommand(perform: requestClose)
         .alert("放弃未保存的改动？", isPresented: $confirmClose) {
             Button("继续编辑", role: .cancel) {}
+            Button("保存并返回") {
+                Task {
+                    guard let client = app.core else { return }
+                    if tab == 3 { await model.saveTiming(client) } else { await model.saveLines(client) }
+                    if !model.dirty { dismiss() }
+                }
+            }
             Button("放弃并关闭", role: .destructive) { dismiss() }
         } message: { Text("库内已保存的版本不受影响。") }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.init(filenameExtension: "lrc") ?? .plainText, .plainText], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $importing, allowedContentTypes: ["lrc", "txt", "yrc", "qrc", "krc", "ttml"].map { UTType(filenameExtension: $0) ?? UTType(importedAs: "org.jpcorpus.lyrics.\($0)") }, allowsMultipleSelection: false) { result in
             switch result {
             case .failure(let error): model.errorMessage = error.localizedDescription
             case .success(let urls):
@@ -127,10 +134,14 @@ struct LyricsManagementView: View {
         @Bindable var model = model
         return VStack(alignment: .leading) {
             HStack {
-                Text("时间可填秒数或 分:秒.毫秒；留空表示纯文本。").font(.caption).foregroundStyle(.secondary)
+                Text("时间写成 1:02.50；留空表示无时间，正文空白的行保存时去掉。").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("导入 .lrc 文件") { importing = true }.disabled(model.busy || model.dirty)
                 Button("添加一行") { model.edits.append(LyricDraft()) }.disabled(model.busy)
+            }
+            Text(model.editSummary).font(.caption).foregroundStyle(.secondary)
+            if !model.invalidEditRows.isEmpty {
+                Text("第 \(model.invalidEditRows.map { String($0 + 1) }.joined(separator: "、")) 行的时间认不出来").foregroundStyle(.orange)
             }
             ScrollView {
                 LazyVStack(spacing: 8) {
@@ -138,6 +149,8 @@ struct LyricsManagementView: View {
                         HStack {
                             TextField("时间", text: $line.time).frame(width: 100).monospacedDigit()
                             TextField("歌词正文", text: $line.text)
+                            Button("＋") { if let index = model.edits.firstIndex(where: { $0.id == line.id }) { model.insertAfter(index) } }
+                                .help("在下面插一行")
                             Button(role: .destructive) { model.edits.removeAll { $0.id == line.id } } label: { Image(systemName: "minus.circle") }
                         }
                     }
@@ -155,17 +168,20 @@ struct LyricsManagementView: View {
             }.disabled(model.busy)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    LyricsLineageDetails(model: model)
                     ForEach(model.versions) { version in
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("第 \(version.versionNo) 版\(version.isCurrent ? " · 当前" : "")").bold()
                                 Text("\(version.sourceType) · \(version.sourceName) · \(version.lineCount) 行 · \(version.importedAt)").font(.caption).foregroundStyle(.secondary)
+                                Text("完整度 \(version.completeness.map { String(format: "%.0f%%", $0 * 100) } ?? "—")").font(.caption)
                                 if !version.note.isEmpty { Text(version.note).font(.caption) }
                             }
                             Spacer()
-                            Button("原文") { Task { if let client = app.core { await model.preview(version.id, client: client) } } }
+                            Button(model.previewingVersion == version.id ? "收起原文" : "原文") { Task { if let client = app.core { await model.preview(version.id, client: client) } } }
+                                .disabled(!version.hasRawText || model.busy)
                             Button("恢复为新版") { Task { if let client = app.core { await model.restore(version.id, client: client) } } }
-                                .disabled(version.isCurrent || model.busy)
+                                .disabled(version.isCurrent || !version.hasRawText || model.busy)
                         }
                         Divider()
                     }
@@ -188,9 +204,10 @@ struct LyricsManagementView: View {
                     Toggle("LRCLIB", isOn: $model.sources.lrclib)
                     Button("保存来源") { Task { if let client = app.core { await model.saveSources(client) } } }
                 }.disabled(model.busy || model.running)
+                appleSettings
                 HStack {
-                    Button("补齐本首") { start(all: false) }
-                        .disabled(!model.missing.contains { $0.songId == model.songId })
+                    Button("补齐本首") { Task { if let client = app.core { await model.fillOne(client) } } }
+                        .disabled(model.songId.isEmpty || !model.timing.isEmpty)
                     Button("批量补齐缺失（\(model.missing.count) 首）") { start(all: true) }
                     Button("全库升级逐字歌词") { start(all: true, upgrade: true) }
                 }.disabled(model.running || model.busy)
@@ -200,12 +217,15 @@ struct LyricsManagementView: View {
                         Text("\(job.done) / \(job.total) · \(job.stage)")
                         Spacer()
                         if job.running {
-                            Button("取消任务") { Task { if let client = app.core { await model.cancel(client) } } }
+                            Button(job.cancelled ? "正在停止…" : "取消任务") { Task { if let client = app.core { await model.cancel(client) } } }
+                                .disabled(job.cancelled)
                         } else {
                             Text(job.cancelled ? "已取消" : "已结束").foregroundStyle(.secondary)
                         }
                     }
+                    if let error = job.error { Text(error).foregroundStyle(.orange) }
                     if let result = job.result {
+                        if !result.error.isEmpty { Text(result.error).foregroundStyle(.orange) }
                         Text("升级 \(result.upgraded) · 补逐行 \(result.lineFilled) · 跳过 \(result.skipped) · 未找到 \(result.notFound) · 失败 \(result.failed)").font(.caption)
                         ForEach(Array(result.results.enumerated()), id: \.offset) { _, item in
                             Text("\(item.title) · \(statusLabel(item.status)) \(item.message)").font(.caption).textSelection(.enabled)
@@ -214,7 +234,7 @@ struct LyricsManagementView: View {
                 }
                 Divider()
                 Button("搜索本首时间歌词（逐行 / 逐字）") { Task { if let client = app.core { await model.search(client) } } }
-                    .disabled(model.busy)
+                    .disabled(model.busy || model.songId.isEmpty)
                 if let result = model.searchResult {
                     if result.candidates.isEmpty { Text("没有找到可采用的候选").foregroundStyle(.secondary) }
                     ForEach(result.warnings, id: \.self) { warning in
@@ -228,12 +248,35 @@ struct LyricsManagementView: View {
                                 Button("采用") { Task { if let client = app.core { await model.apply(candidate.id, client: client) } } }.disabled(model.busy)
                             }
                             Text("\(candidate.title) · \(candidate.artist)")
+                            Text(candidate.precisionLabel).font(.caption)
+                            if candidate.precisionLabel != "含真实逐字时间" { Text("此候选没有真实逐字时间；采用后按逐行或纯文本显示。").font(.caption).foregroundStyle(.secondary) }
                             Text(candidate.matchNote).font(.caption).foregroundStyle(.secondary)
-                            Text(candidate.preview.joined(separator: "\n")).textSelection(.enabled)
+                            Text(candidate.preview.prefix(5).joined(separator: "\n")).textSelection(.enabled)
                         }.padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                     }
                 }
             }.padding(4)
+        }
+    }
+
+    private var appleSettings: some View {
+        @Bindable var model = model
+        return DisclosureGroup("Apple Music 来源设置") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Apple Music（默认关闭）", isOn: $model.sources.apple)
+                Text("Apple Music 官方 API 不提供歌词正文或逐字时间；此开关仅用于普通元数据刮削，不作为歌词来源。").font(.caption).foregroundStyle(.secondary)
+                TextField("商店地区（jp / cn / us）", text: $model.sources.appleStorefront)
+                Text("Developer Token · \(model.clearDeveloperToken ? "保存时清除" : model.sources.appleDeveloperTokenSet ? "已设置" : "未设置")").font(.caption)
+                SecureField("Developer Token（留空保留）", text: $model.developerToken)
+                    .onChange(of: model.developerToken) { _, value in if !value.isEmpty { model.clearDeveloperToken = false } }
+                Button("清除 Developer Token") { model.developerToken = ""; model.clearDeveloperToken = true }
+                Text("Music User Token · \(model.clearMusicUserToken ? "保存时清除" : model.sources.appleMusicUserTokenSet ? "已设置" : "未设置")").font(.caption)
+                SecureField("Music User Token（留空保留）", text: $model.musicUserToken)
+                    .onChange(of: model.musicUserToken) { _, value in if !value.isEmpty { model.clearMusicUserToken = false } }
+                Button("清除 Music User Token") { model.musicUserToken = ""; model.clearMusicUserToken = true }
+                Text("令牌仅保存在后端内存，重启后需重新配置；清除需保存，输入框不回显。").font(.caption).foregroundStyle(.secondary)
+                Button("保存来源设置") { Task { if let client = app.core { await model.saveSources(client) } } }
+            }.padding(8).disabled(model.busy || model.running)
         }
     }
 
@@ -242,84 +285,10 @@ struct LyricsManagementView: View {
     }
 
     private var timingEditor: some View {
-        @Bindable var model = model
-        let ready = app.player.track?.id == model.songId
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button(ready && app.player.isPlaying ? "暂停" : "播放本首") {
-                    Task {
-                        if ready { app.player.toggle() } else { await app.play(songId: model.songId) }
-                    }
-                }
-                Text(formatTime(app.player.position)).monospacedDigit()
-                Picker("打点", selection: $model.tapMode) {
-                    Text("按住").tag(TimingTapMode.hold)
-                    Text("点按").tag(TimingTapMode.tap)
-                }.frame(width: 130)
-                Text("提前量（毫秒）")
-                TextField("150", value: $model.advanceMilliseconds, format: .number).frame(width: 70)
-                Spacer()
-                Button("撤销") { model.undo() }.disabled(!model.canUndo)
-                Button("重做") { model.redo() }.disabled(!model.canRedo)
-            }
-            Text("选单位后用空格打点。按住记起止；点按时前一个单位唱到下一次按下，行尾按住记结尾。拆开后需重新打点。").font(.caption).foregroundStyle(.secondary)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(model.timing.enumerated()), id: \.offset) { lineIndex, line in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("第 \(lineIndex + 1) 行").font(.caption).foregroundStyle(.secondary)
-                                Button("试听") { Task { await app.player.seek(to: max(0, (line.timeSec ?? 0) - 1.5)); app.player.play() } }.disabled(!ready)
-                            }
-                            ScrollView(.horizontal) {
-                                HStack(spacing: 4) {
-                                    ForEach(Array(line.units.enumerated()), id: \.offset) { unitIndex, unit in
-                                        Button {
-                                            model.select(line: lineIndex, unit: unitIndex)
-                                            timingFocused = true
-                                        } label: {
-                                            VStack(spacing: 3) {
-                                                Text(LyricsModel.unitText(line.text, unit: unit)).font(.title3)
-                                                Text(unit.start.map { String(format: "%.2f", $0) } ?? "未打").font(.caption2.monospacedDigit())
-                                                Text(unit.end.map { String(format: "%.2f", $0) } ?? "—").font(.caption2.monospacedDigit())
-                                            }.padding(6)
-                                        }
-                                        .tint(lineIndex == model.selectedLine && unitIndex == model.selectedUnit ? Color.accentColor : Color.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }.padding(4)
-            }
-            HStack {
-                Button("记开始") { model.stampStart(at: app.player.timingPosition) }
-                Button("记结束并前进") { model.stampEnd(at: app.player.timingPosition) }
-                Button("拆开") { model.splitUnit() }
-                Button("和后一个合并") { model.mergeUnit() }
-                Spacer()
-                Button("起点校准") { calibrate(clear: false) }
-                Button("清除校准") { calibrate(clear: true) }
-            }.disabled(!ready || !model.validCursor || model.busy)
-            HStack {
-                TextField("开始时间", text: $model.startText).frame(width: 120)
-                TextField("结束时间", text: $model.endText).frame(width: 120)
-                Button("应用起止") { model.applyFields() }
-                Text("可保存未完成的打轴；播放时由核心校验是否能逐字点亮。").font(.caption).foregroundStyle(.secondary)
-            }.disabled(!model.validCursor || model.busy)
-        }
-        .focusable()
-        .focused($timingFocused)
-        .onKeyPress(.space, phases: [.down, .up, .repeat]) { press in
-            guard ready, model.validCursor, !model.busy else { return .ignored }
-            if press.phase == .down { model.keyDown(at: app.player.timingPosition) }
-            else if press.phase == .up { model.keyUp(at: app.player.timingPosition) }
-            return .handled
-        }
+        LyricsTimingEditor(model: model, leave: requestClose)
     }
-
-    private func calibrate(clear: Bool) {
-        Task { if let client = app.core { await model.calibrate(client, position: app.player.timingPosition, clear: clear) } }
+    private func requestClose() {
+        if model.dirty { confirmClose = true } else { dismiss() }
     }
     private func statusLabel(_ status: String) -> String {
         switch status {

@@ -1,5 +1,47 @@
 use super::*;
 
+#[test]
+fn settings_use_the_library_root_and_language_records_manual_provenance() {
+    let (s, dir) = fixture();
+    s.call("lyricsSourcesSet", json!({"config":{"netease":false,"appleStorefront":"us"}})).unwrap();
+    assert!(s.library_root().join("lyric-sources.json").is_file());
+    s.call("songSetLanguage", json!({"songId":"001","language":" en "})).unwrap();
+    let lineage = s.call("songLineage", json!({"songId":"001"})).unwrap();
+    assert_eq!(lineage["language"], "en");
+    assert!(lineage["provenance"].as_array().unwrap().iter().any(|p| p["field"] == "language" && p["source"] == "manual"));
+    assert!(lineage["revisions"].as_array().unwrap().iter().any(|r| r["kind"] == "metadata_edited" && r["after"]["language"] == "en"));
+    let reopened = Session::open(s.db_path.to_str().unwrap()).unwrap();
+    let settings = reopened.call("lyricsSourcesGet", json!({})).unwrap();
+    assert_eq!(settings["appleStorefront"], "us");
+    assert_eq!(settings["netease"], false);
+    assert!(s.call("fontsCatalog", json!({"imported":[]})).unwrap()["files"].is_array());
+    assert!(s.call("fontsImportArchive", json!({"path":"missing.zip"})).is_err());
+    drop(reopened);
+    drop(s);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn audio_peaks_decode_clamp_resolve_and_errors() {
+    let (s, dir) = fixture();
+    let path = dir.join("wave.wav");
+    let pcm = jp_audio::Pcm { samples: (0..8000).map(|i| if i < 4000 { 0.5 } else { -1.0 }).collect(), channels: 1, rate: 8000 };
+    jp_audio::wav::write_pcm16(&path, &pcm).unwrap();
+    s.corpus.lock().unwrap().connection().execute("UPDATE songs SET audio_path='wave.wav' WHERE id='001'", []).unwrap();
+    let decoded = jp_audio::decode_all(&path).unwrap();
+    for (requested, actual) in [(0, 1), (2, 2), (100, 100), (2000, 1000)] {
+        assert_eq!(s.call("audioPeaks", json!({"songId":"001","perSec":requested})).unwrap(), json!(jp_audio::decode::peaks(&decoded, actual)));
+    }
+    assert!(s.call("audioPeaks", json!({"songId":"missing","perSec":100})).unwrap_err().to_string().contains("找不到曲目"));
+    s.corpus.lock().unwrap().connection().execute("UPDATE songs SET audio_path='' WHERE id='001'", []).unwrap();
+    assert!(s.call("audioPeaks", json!({"songId":"001","perSec":100})).unwrap_err().to_string().contains("没有音频文件"));
+    s.corpus.lock().unwrap().connection().execute("UPDATE songs SET audio_path='bad.wav' WHERE id='001'", []).unwrap();
+    std::fs::write(dir.join("bad.wav"), b"bad").unwrap();
+    assert!(s.call("audioPeaks", json!({"songId":"001","perSec":100})).is_err());
+    drop(s);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 fn fixture() -> (Session, PathBuf) {
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

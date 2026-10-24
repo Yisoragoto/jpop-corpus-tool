@@ -226,6 +226,8 @@ public struct LyricVersion: Decodable, Hashable, Identifiable, Sendable {
     public var completeness: Double?
     public var isCurrent: Bool
     public var note: String
+    public var hasRawText: Bool
+    public var validation: LyricsValidation?
 }
 
 public struct FieldProvenance: Decodable, Hashable, Sendable {
@@ -241,6 +243,10 @@ public struct SongLineage: Decodable, Hashable, Sendable {
     public var language: String?
     public var versions: [LyricVersion]
     public var provenance: [FieldProvenance]
+    public var lines: [LyricLineQuality]?
+    public var tokenStatus: [String: Int]?
+    public var tokenizers: [LyricTokenizerRun]?
+    public var revisions: [LyricRevision]?
 }
 
 public struct SongQuality: Decodable, Hashable, Identifiable, Sendable {

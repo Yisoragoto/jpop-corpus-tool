@@ -15,6 +15,7 @@ struct LyricsStage: View {
     @Environment(AppModel.self) private var app
     @State private var cover: NSImage?
     @State private var karaoke = false
+    @State private var credits: [Credit] = []
 
     /// 当前行停在可视高度的这个位置（和 Windows 版一样）
     private static let anchor = UnitPoint(x: 0.5, y: 0.45)
@@ -50,12 +51,21 @@ struct LyricsStage: View {
         }
         .background { backdrop.ignoresSafeArea() }
         .environment(\.colorScheme, .dark)
+        .onAppear { karaoke = app.stageKaraoke }
+        .onChange(of: karaoke) { _, value in app.stageKaraoke = value }
         .onExitCommand { close() }
         .task(id: player.track?.id) {
             cover = nil
+            credits = (try? await app.core?.trackCredits(player.track?.id ?? "")) ?? []
             guard let track = player.track, !track.coverPath.isEmpty, let client = app.client else { return }
             cover = loadImage(atPath: (try? await client.resolveMedia(track.coverPath)) ?? nil)
         }
+        .background(LyricsKeyboard { event in
+            guard event.type == .keyDown else { return false }
+            if event.keyCode == 53 { close(); return true }
+            if event.keyCode == 49 { if !event.isARepeat { app.player.toggle() }; return true }
+            return false
+        })
         .background(WindowReader { window = $0 })
         .onChange(of: window) { _, w in enterFullScreen(w) }
         // 窗口被关掉（红色按钮、⇧⌘F、Esc）都会走到这里：把状态收回来
@@ -89,6 +99,8 @@ struct LyricsStage: View {
                 LyricsToolsButton(songId: track.id, timing: true)
             }
             FuriganaMenu()
+            LyricsDisplayButton()
+            Button("窗口全屏") { window?.toggleFullScreen(nil) }
             Button {
                 close()
             } label: {
@@ -196,45 +208,50 @@ struct LyricsStage: View {
             .help(line.timeSec.map { "点一下从 \(formatTime($0)) 放" } ?? "这一行没有时间戳")
     }
 
-    /// KTV 两行交替，逐字精度仍取自同一条经过验证的时间轴。
     private var karaokeLyrics: some View {
-        let player = app.player
-        let lines = player.lines.filter { player.displayMode(for: $0) != .plain }
-        let current = lines.lastIndex { line in
-            let start = line.timeSec ?? player.timingUnits(for: line)?.first?.startSec
-            return start.map { $0 <= player.position } ?? false
-        }
-        let index = current ?? 0
-        let top = index.isMultiple(of: 2) ? index : index + 1
-        let bottom = index.isMultiple(of: 2) ? index + 1 : index
-        let upcomingIndex = lines.firstIndex { line in
-            let start = line.timeSec ?? player.timingUnits(for: line)?.first?.startSec
-            return start.map { $0 > player.position } ?? false
-        }
-        let upcoming = upcomingIndex.map { lines[$0] }
-        let start = upcoming.flatMap { $0.timeSec ?? player.timingUnits(for: $0)?.first?.startSec }
-        let previousEnd: Double? = upcomingIndex.flatMap { index in
-            guard index > 0 else { return nil }
-            return player.timingUnits(for: lines[index - 1])?.last?.endSec
-        }
-        let countdown = upcomingIndex == 0 || (start.flatMap { next in previousEnd.map { next - $0 >= 4 } } ?? false)
-        return VStack(alignment: .leading, spacing: 24) {
-            Spacer()
-            if countdown, let start, start - player.position <= 3, start > player.position {
-                Text(String(repeating: "●", count: min(3, max(1, Int((start - player.position).rounded(.up))))))
-                    .font(.title2).foregroundStyle(.white.opacity(0.7))
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !app.player.isPlaying)) { _ in
+            let player = app.player
+            let sec = player.timingPosition
+            let times = player.lines.map { line in
+                KtvLine(start: player.timingUnits(for: line)?.first?.startSec ?? line.timeSec,
+                        end: player.timingUnits(for: line)?.last?.endSec)
             }
-            if lines.indices.contains(top) {
-                stageLine(lines[top], current: current == top)
+            let layout = Karaoke.ktvLayout(times, sec)
+            VStack(spacing: 28) {
+                Spacer()
+                if layout.intro, let track = player.track {
+                    Text(track.title).font(.system(size: 44, weight: .bold))
+                    Text(track.artist).font(.title2)
+                    ForEach(["lyricist", "composer", "arranger"], id: \.self) { role in
+                        let names = credits.filter { $0.role == role }.map(\.name)
+                        if !names.isEmpty { Text("\(roleLabels[role] ?? role)：\(names.joined(separator: " / "))").font(.callout) }
+                    }
+                } else {
+                    ForEach(0..<2, id: \.self) { slot in
+                        HStack {
+                            if slot == 1 { Spacer(minLength: 0) }
+                            if let index = layout.slots[slot] {
+                                if layout.active == index && layout.countdown > 0 {
+                                    Text(String(repeating: "●", count: layout.countdown)).font(.title2)
+                                        .accessibilityLabel("倒数 \(layout.countdown)")
+                                }
+                                ktvLine(player.lines[index], sec: sec)
+                            }
+                            if slot == 0 { Spacer(minLength: 0) }
+                        }.frame(minHeight: 90)
+                    }
+                }
+                if times.allSatisfy({ $0.start == nil }) {
+                    Text(player.lines.isEmpty ? "这首歌还没有歌词" : "这首歌的歌词没有时间轴，卡拉 OK 跟不上")
+                    if let track = player.track { LyricsToolsButton(songId: track.id, timing: true) }
+                }
+                Spacer()
             }
-            if lines.indices.contains(bottom) {
-                stageLine(lines[bottom], current: current == bottom)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            if lines.isEmpty { Text("没有带时间的歌词，可先导入或打轴").foregroundStyle(.secondary) }
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
+        }.frame(maxWidth: .infinity)
+    }
+
+    private func ktvLine(_ line: LyricLine, sec: Double) -> some View {
+        KaraokeLyricText(line: line, units: app.player.timingUnits(for: line), sec: sec)
     }
 
     // MARK: - 窗口

@@ -1,5 +1,15 @@
 import Foundation
 
+public struct LyricsFontFile: Decodable, Hashable, Sendable {
+    public var family: String
+    public var path: String
+    public var bundled: Bool
+}
+public struct LyricsFontCatalog: Decodable, Sendable {
+    public var files: [LyricsFontFile]
+    public var problems: [String]
+}
+
 public struct EditedLyricLine: Codable, Hashable, Sendable {
     public var timeSec: Double?
     public var text: String
@@ -33,6 +43,10 @@ public struct WordTiming: Codable, Hashable, Sendable {
     public var startSec: Double
     public var endSec: Double?
     public var source: String
+    public init(utteranceId: Int64, charStart: Int, charEnd: Int, startSec: Double, endSec: Double?, source: String) {
+        self.utteranceId = utteranceId; self.charStart = charStart; self.charEnd = charEnd
+        self.startSec = startSec; self.endSec = endSec; self.source = source
+    }
 }
 
 public struct LyricsAttached: Codable, Hashable, Sendable {
@@ -69,6 +83,24 @@ public struct LyricsSources: Codable, Hashable, Sendable {
     public init() {}
 }
 
+/// SettingsInput：只编码可写字段；nil 保留旧凭据，空字符串清除。
+public struct LyricsSourcesInput: Encodable, Sendable {
+    public var netease: Bool
+    public var qq: Bool
+    public var kugou: Bool
+    public var amll: Bool
+    public var lrclib: Bool
+    public var apple: Bool
+    public var appleStorefront: String
+    public var appleDeveloperToken: String?
+    public var appleMusicUserToken: String?
+    public init(_ view: LyricsSources, developerToken: String? = nil, musicUserToken: String? = nil) {
+        netease = view.netease; qq = view.qq; kugou = view.kugou; amll = view.amll; lrclib = view.lrclib
+        apple = view.apple; appleStorefront = view.appleStorefront.trimmingCharacters(in: .whitespacesAndNewlines)
+        appleDeveloperToken = developerToken; appleMusicUserToken = musicUserToken
+    }
+}
+
 public struct TimedLyricsTarget: Codable, Hashable, Identifiable, Sendable {
     public var songId: String
     public var title: String
@@ -89,6 +121,13 @@ public struct TimedLyricsCandidate: Codable, Hashable, Identifiable, Sendable {
     public var mode: String
     public var preview: [String]
     public var matchNote: String
+    public var precisionLabel: String {
+        if mode == "plain" { return "纯文本" }
+        if mode == "lineSynced" { return "逐行" }
+        if timedLineCount > 0 { return "含真实逐字时间" }
+        if ["plain", "txt", "text", "plaintext", "plain_text"].contains(format.lowercased()) { return "纯文本" }
+        return format.lowercased() == "lrc" ? "逐行" : "逐行 / 纯文本"
+    }
 }
 
 public struct LyricsSourceWarning: Codable, Hashable, Sendable {
@@ -129,6 +168,18 @@ public struct LyricsUpgradeProgress: Codable, Hashable, Sendable {
 }
 
 extension CorpusClient {
+    public func lyricsFontCatalog(imported: [String]) async throws -> LyricsFontCatalog {
+        try await performDetached { try $0.call("fontsCatalog", ["imported": AnyEncodable(imported)]) }
+    }
+    public func lyricsFontImportArchive(_ path: String) async throws -> [String] {
+        try await performDetached { try $0.call("fontsImportArchive", ["path": AnyEncodable(path)]) }
+    }
+    public func songSetLanguage(_ songId: String, language: String) async throws {
+        try await performDetached { try $0.run("songSetLanguage", ["songId": AnyEncodable(songId), "language": AnyEncodable(language)]) }
+    }
+    public func audioPeaks(_ songId: String, perSec: UInt32) async throws -> [UInt8] {
+        try await performDetached { try $0.call("audioPeaks", ["songId": AnyEncodable(songId), "perSec": AnyEncodable(perSec)]) }
+    }
     public func lyricsSaveLines(_ songId: String, lines: [EditedLyricLine], note: String) async throws -> LyricsAttached {
         try await performDetached { try $0.call("lyricsSaveLines", ["songId": AnyEncodable(songId), "lines": AnyEncodable(lines), "note": AnyEncodable(note)]) }
     }
@@ -150,7 +201,7 @@ extension CorpusClient {
     public func lyricsSourcesGet() async throws -> LyricsSources {
         try await performDetached { try $0.call("lyricsSourcesGet") }
     }
-    public func lyricsSourcesSet(_ config: LyricsSources) async throws -> LyricsSources {
+    public func lyricsSourcesSet(_ config: LyricsSourcesInput) async throws -> LyricsSources {
         try await performDetached { try $0.call("lyricsSourcesSet", ["config": AnyEncodable(config)]) }
     }
     public func lyricsMissing() async throws -> [MissingLyrics] {

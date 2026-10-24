@@ -7,29 +7,33 @@ import JPCorpusModel
 /// 每个不注音的字、每段注了音的字各是一块，交给 [`FlowLayout`] 排：一行放不下就在块之间换行，
 /// 注音永远跟着它的汉字走。不注音的字上面留一样高的空，整行的底线对齐。
 /// 没有注音时直接用一个 `Text`，换行交给系统（比一块一块排更自然）
+@MainActor
 struct FuriganaText: View {
+    @Environment(AppModel.self) private var app
     let text: String
     let rubies: [Ruby]
-    var size: CGFloat = 19
+    var size: CGFloat = 15
     var weight: Font.Weight = .bold
     var alignment: HorizontalAlignment = .leading
 
     var body: some View {
+        let scaled = Double(size) * app.lyricsDisplay.fontSize / 15
         if rubies.isEmpty {
             Text(text)
-                .font(.system(size: size, weight: weight))
+                .font(lyricFont(app.lyricsDisplay, size: scaled))
+                .kerning(app.lyricsDisplay.letterSpacing)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
-            FlowLayout(spacing: 0, lineSpacing: size * 0.15, alignment: alignment) {
+            FlowLayout(spacing: CGFloat(app.lyricsDisplay.letterSpacing), lineSpacing: CGFloat(app.lyricsDisplay.lineGap), alignment: alignment) {
                 ForEach(Array(Self.pieces(text, rubies).enumerated()), id: \.offset) { _, piece in
                     VStack(spacing: 0) {
                         Text(piece.ruby ?? " ")
-                            .font(.system(size: size * 0.5, weight: .medium))
+                            .font(lyricFont(app.lyricsDisplay, size: app.lyricsDisplay.rubySize * Double(size) / 15, weight: .medium))
                             .opacity(piece.ruby == nil ? 0 : 0.85)
                             .lineLimit(1)
                             .fixedSize()
                         Text(piece.base)
-                            .font(.system(size: size, weight: weight))
+                            .font(lyricFont(app.lyricsDisplay, size: scaled))
                             .fixedSize()
                     }
                 }
