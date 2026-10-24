@@ -36,6 +36,16 @@
   /* 浮层（面板、弹窗、下拉）的底色。**必须够实**：--panel 这些是半透明的层填充，
      浮层用它的话，底下的歌词、封面会整个透上来 */
   --surface-pop: rgba(30, 30, 36, .97);
+  /* 卡拉 OK：KTV 字幕的两种颜色、描边阴影、底色；打轴页的波形和字块 */
+  --ktv-unsung: #ffffff;
+  --ktv-sung: #4cc2ff;
+  --ktv-shadow: rgba(0, 0, 0, .85);
+  --ktv-bg: #08080b;
+  --ktv-dim: rgba(8, 8, 11, .55);
+  --ktv-panel: rgba(16, 16, 20, .78);
+  --te-wave: rgba(255, 255, 255, .38);
+  --te-unit: rgba(76, 194, 255, .16);
+  --te-unit-sel: rgba(76, 194, 255, .38);
   --radius: 7px;
   --avatar-blue: #8eafc1;
   --avatar-sage: #a0b5a9;
@@ -756,15 +766,15 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 .karaoke-line { --k-dim: color-mix(in srgb, var(--fg) 50%, transparent); --k-lit: var(--accent); }
 .stage-line .karaoke-line { --k-dim: rgba(255, 255, 255, .5); --k-lit: #fff; }
 /* 字的颜色不做过渡：正在唱的字是透明字 + 渐变底，换成「唱过」时要是从 transparent 渐变过去，每个字都会闪一下 */
-.karaoke-line .kc { color: var(--k-dim); }
-.karaoke-line .kc.kc-on { color: var(--k-lit); }
-.karaoke-line .kc-now {
+.karaoke-line .kc, .ktv-row .kc { color: var(--k-dim); }
+.karaoke-line .kc.kc-on, .ktv-row .kc.kc-on { color: var(--k-lit); }
+.karaoke-line .kc-now, .ktv-row .kc-now {
   color: transparent;
   background: linear-gradient(90deg, var(--k-lit) var(--p, 0%), var(--k-dim) var(--p, 0%));
   -webkit-background-clip: text; background-clip: text;
 }
 /* 注音跟着它下面的字亮：底下有一个字亮了，注音就亮 */
-.karaoke-line ruby:has(.kc-on, .kc-now) rt { color: var(--k-lit); opacity: 1; }
+.karaoke-line ruby:has(.kc-on, .kc-now) rt, .ktv-row ruby:has(.kc-on, .kc-now) rt { color: var(--k-lit); opacity: 1; }
 .stage-line .karaoke-line .kc.kc-on { text-shadow: 0 0 18px rgba(255, 255, 255, .25); }
 .banner.error { color: var(--danger); background: rgba(247,118,142,.08); cursor: pointer; }
 
@@ -3068,3 +3078,117 @@ table.data tr.current td { background: var(--accent-soft); }
 .wc-field .link-btn { justify-self: start; font-size: 12px; }
 .wc-options-panel .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .wc-options-panel hr { margin: 0; border: 0; border-top: 1px solid var(--line); }
+
+/* ── 卡拉 OK ──
+   背景是封面：底下一张放大虚化的铺满，上面一张清楚的摆在中间偏上；歌词两行压在底部，上行靠左、下行靠右（KTV 的样子）。
+   以后的 MV 背景替换的就是 .ktv-bg 这一层。播放条（z-index 60）盖在上面，内容按它的高度让开。 */
+.ktv {
+  position: fixed; inset: 0; z-index: 55;
+  display: flex; flex-direction: column;
+  padding-bottom: var(--player-h, 0px);
+  background: var(--ktv-bg);
+  color: var(--fg);
+  animation: stage-in 220ms cubic-bezier(.2, .8, .3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) { .ktv { animation: none; } }
+.ktv-bg { position: absolute; inset: 0; overflow: hidden; }
+.ktv-bg-fill {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  transform: scale(1.3); filter: blur(48px) brightness(.55);
+}
+.ktv-bg-cover {
+  position: absolute; left: 50%; top: 36%; transform: translate(-50%, -50%);
+  max-width: min(62vw, 92%); max-height: 46vh; object-fit: contain;
+  border-radius: 10px; box-shadow: 0 24px 80px var(--ktv-shadow);
+  transition: opacity 300ms;
+}
+.ktv-editing .ktv-bg-cover { opacity: 0; }
+/* 前奏的歌名压在封面上读不清：封面先退到后面 */
+.ktv-intro-on .ktv-bg-cover { opacity: .18; }
+.ktv-bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 45%, var(--ktv-dim) 100%); }
+.ktv-editing .ktv-bg::after { background: var(--ktv-dim); }
+
+.ktv-head { position: relative; display: flex; align-items: center; gap: 8px; padding: 14px 24px 8px; }
+.ktv-title { flex: 1; min-width: 0; display: flex; flex-direction: column; text-shadow: 0 1px 4px var(--ktv-shadow); }
+.ktv-title strong { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ktv-title span { font-size: 12px; color: var(--muted); }
+.ktv-btn {
+  border: 1px solid var(--line-strong); background: var(--ktv-panel); color: var(--fg);
+  border-radius: 6px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.ktv-btn:hover:not(:disabled) { background: var(--control-hover); }
+.ktv-btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.ktv-btn:disabled { opacity: .4; cursor: default; }
+
+.ktv-intro {
+  position: relative; margin: auto; text-align: center;
+  text-shadow: 0 2px 10px var(--ktv-shadow);
+  animation: stage-body-in 500ms cubic-bezier(.2, .8, .3, 1) both;
+}
+.ktv-intro h1 { margin: 0 0 8px; font-size: clamp(32px, 5vw, 64px); font-family: var(--lyric-font); }
+.ktv-intro-artist { margin: 0 0 18px; font-size: 22px; }
+.ktv-intro-credit { margin: 4px 0; font-size: 15px; }
+.ktv-intro-credit span { opacity: .7; margin-right: 10px; }
+.ktv-empty { position: relative; margin: auto; text-align: center; font-size: 16px; text-shadow: 0 1px 4px var(--ktv-shadow); }
+
+.ktv-lyrics {
+  position: relative; margin-top: auto;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 0 6vw 28px;
+  font-family: var(--lyric-font);
+  font-size: clamp(28px, 4.2vw, 60px);
+  font-weight: 700; line-height: 1.5;
+}
+.ktv-row {
+  min-height: 1.5em; white-space: nowrap; overflow: hidden;
+  /* 描边：两层投影，背景图再亮也读得清。用 filter 不用 text-stroke，正在唱那个字的渐变填色才不受影响 */
+  filter: drop-shadow(0 0 2px var(--ktv-shadow)) drop-shadow(0 2px 6px var(--ktv-shadow));
+  --k-dim: var(--ktv-unsung); --k-lit: var(--ktv-sung);
+  color: var(--ktv-unsung);
+}
+.ktv-row-top { text-align: left; }
+.ktv-row-bottom { text-align: right; }
+.ktv-row ruby rt { font-size: .38em; font-weight: 600; color: var(--ktv-unsung); }
+.ktv-row:not(.ktv-row-active) { opacity: .82; }
+/* 没有逐字时间的行：到点整行变色，不按字估算 */
+.ktv-row.ktv-line-on .kc { color: var(--ktv-sung); }
+.ktv-countdown { display: inline-block; margin-right: .3em; font-size: .5em; vertical-align: middle; color: var(--ktv-sung); letter-spacing: .15em; }
+.ktv-text { display: inline; }
+
+/* ── 打轴 ── */
+.te { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 0 24px 12px; }
+.te-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.te-group { display: flex; gap: 4px; }
+.te-right { margin-left: auto; }
+.te-offset { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.te-offset input { width: 64px; }
+.te-progress { font-size: 13px; color: var(--muted); }
+.te-banner { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; background: var(--ktv-panel); border: 1px solid var(--warn); font-size: 13px; }
+.te-banner.te-notice { border-color: var(--line-strong); }
+.te-lines { flex: 1; min-height: 0; overflow: auto; background: var(--ktv-panel); border-radius: 8px; padding: 6px; }
+.te-line { display: flex; align-items: flex-start; gap: 10px; padding: 4px 6px; border-radius: 6px; }
+.te-line.on { background: var(--accent-soft); }
+.te-line-head { display: flex; flex-direction: column; align-items: flex-end; min-width: 76px; background: none; border: 0; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; padding: 2px 0; }
+.te-line-head:hover { color: var(--fg); }
+.te-line-no { font-size: 12px; }
+.te-units { flex: 1; display: flex; flex-wrap: wrap; gap: 3px; font-family: var(--lyric-font); }
+.te-unit { border: 1px solid var(--line); background: var(--control); color: var(--fg); border-radius: 4px; padding: 1px 6px; font: inherit; font-size: 17px; cursor: pointer; white-space: pre; }
+.te-unit.untimed { color: var(--muted); border-style: dashed; }
+.te-unit.open { border-color: var(--warn); }
+.te-unit.timed { border-color: var(--te-unit-sel); }
+.te-unit.sel { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.te-status { min-width: 64px; text-align: right; font-size: 12px; color: var(--muted); padding-top: 4px; }
+.te-done .te-status { color: var(--accent); }
+.te-error .te-status { color: var(--danger); }
+.te-detail { display: flex; flex-direction: column; gap: 8px; background: var(--ktv-panel); border-radius: 8px; padding: 10px; }
+.te-wave { position: relative; width: 100%; }
+.te-wave canvas { display: block; border-radius: 4px; background: var(--ktv-dim); touch-action: none; }
+.te-wave-loading { position: absolute; left: 12px; top: 8px; font-size: 12px; color: var(--muted); }
+.te-unit-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.te-unit-name { font-family: var(--lyric-font); font-size: 18px; min-width: 60px; }
+.te-edge { display: flex; align-items: center; gap: 3px; }
+.te-edge .ktv-btn { padding: 3px 7px; font-size: 12px; }
+.te-edge-label { font-size: 12px; color: var(--muted); margin-right: 4px; }
+.te-edge-input { width: 92px; text-align: center; font-variant-numeric: tabular-nums; }
+.te-keys { margin: 0; font-size: 11px; color: var(--muted); }
+

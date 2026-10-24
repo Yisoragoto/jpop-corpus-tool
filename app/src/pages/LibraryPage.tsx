@@ -30,6 +30,7 @@ import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
 import { LyricsStage } from "../components/LyricsStage";
+import { KaraokeStage } from "../components/KaraokeStage";
 import { SongEditor } from "../components/SongEditor";
 import { LyricsEditor } from "../components/LyricsEditor";
 import { SongLineagePanel } from "../components/SongLineagePanel";
@@ -335,6 +336,11 @@ export function LibraryPage({
   }, [stageWanted, selected, onStageConsumed]);
   const [stageSide, setStageSide] = useState(false);
   const closeStage = useCallback(() => setStageOpen(false), []);
+  // 卡拉 OK（封面背景 + KTV 逐字歌词 + 打轴）。换歌就关掉，免得拿着上一首的歌词打轴
+  const [karaokeOpen, setKaraokeOpen] = useState(false);
+  const closeKaraoke = useCallback(() => setKaraokeOpen(false), []);
+  const openKaraoke = useCallback(() => { setStageOpen(false); setKaraokeOpen(true); }, []);
+  useEffect(() => setKaraokeOpen(false), [selected?.id]);
   // 每行拆成「词之间的原文 + 词（里面带注音）」。播放轮询每秒重渲染 10 次，拆分结果要缓存
   const lineSegments = useMemo(
     () =>
@@ -1089,7 +1095,7 @@ export function LibraryPage({
               </div>
               <div className="track-side">
                 <div className="track-tools">
-                  <LyricsTools display={display} onError={onAudioError} onExpand={() => setStageOpen(true)} />
+                  <LyricsTools display={display} onError={onAudioError} onExpand={() => setStageOpen(true)} onKaraoke={lyrics.length > 0 ? openKaraoke : undefined} />
                   <div className="more-menu" ref={menuRef}>
                     <button
                       className={`btn more-btn ${menuOpen ? "on" : ""}`}
@@ -1278,6 +1284,24 @@ export function LibraryPage({
           }}
           onError={onAudioError}
           onClose={closeStage}
+          onKaraoke={openKaraoke}
+        />
+      )}
+
+      {karaokeOpen && selected && (
+        <KaraokeStage
+          track={selected}
+          coverPath={selected.coverPath}
+          credits={credits}
+          lyrics={lyrics}
+          timelines={timelines}
+          segments={lineSegments}
+          wordTimings={wordTimings}
+          playback={playback}
+          style={lyricsStyle}
+          onSaved={() => void actions.reloadLyrics()}
+          onError={onAudioError}
+          onClose={closeKaraoke}
         />
       )}
     </div>

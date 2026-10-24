@@ -568,6 +568,18 @@ pub fn audio_load(
     Ok(())
 }
 
+/// 整首歌的波形轮廓（每秒 `per_sec` 格，0–255），打轴页画波形用。整首解码一遍，放在工作线程里。
+#[tauri::command]
+pub async fn audio_peaks<R: tauri::Runtime>(app: tauri::AppHandle<R>, song_id: String, per_sec: u32) -> CmdResult<Vec<u8>> {
+    blocking(app, move |state| {
+        let track = state.corpus().track(&song_id)?.ok_or_else(|| anyhow::anyhow!("找不到曲目 {song_id}"))?;
+        anyhow::ensure!(!track.audio_path.trim().is_empty(), "《{}》没有音频文件", track.title);
+        let pcm = jp_audio::decode_all(std::path::Path::new(&track.audio_path))?;
+        Ok(jp_audio::decode::peaks(&pcm, per_sec.clamp(1, 1000)))
+    })
+    .await
+}
+
 // 播放 / 暂停 / 跳转：正在等变调渲染时先记下来，渲染好才生效
 
 #[tauri::command]
@@ -1818,6 +1830,29 @@ pub async fn lyrics_save_lines<R: tauri::Runtime>(
         let lyrics_dir = state.lyrics_dir.clone();
         let mut corpus = state.corpus();
         crate::lyrics::save_edited_lines(
+            corpus.connection_mut(),
+            &lyrics_dir,
+            &song_id,
+            &lines,
+            note.as_deref().unwrap_or(""),
+            state.analyzer().as_deref(),
+        )
+    })
+    .await
+}
+
+/// 存打轴结果：只改时间不改字，存成新的一版歌词（见 [`crate::lyrics::save_timed_lines`]）
+#[tauri::command]
+pub async fn lyrics_save_timing<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+    lines: Vec<crate::lyrics::TimedEditLine>,
+    note: Option<String>,
+) -> CmdResult<crate::lyrics::Attached> {
+    blocking(app, move |state| {
+        let lyrics_dir = state.lyrics_dir.clone();
+        let mut corpus = state.corpus();
+        crate::lyrics::save_timed_lines(
             corpus.connection_mut(),
             &lyrics_dir,
             &song_id,

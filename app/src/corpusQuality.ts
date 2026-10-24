@@ -111,6 +111,7 @@ export const REVISION_LABELS: Record<string, string> = {
   lyrics_attached: tr("挂上歌词"),
   lyrics_replaced: tr("换了歌词"),
   lyrics_edited: tr("逐行编辑"),
+  lyrics_timed: tr("手动打轴"),
   tokens_corrected: tr("校正分词"),
   tokens_reverted: tr("撤销校正"),
   corrections_restored: tr("套回校正"),

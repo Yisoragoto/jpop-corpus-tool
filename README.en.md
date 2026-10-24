@@ -418,6 +418,7 @@ reconciled against the old version during the port:
 | [clients.md](docs/clients.md) | One Rust core, two clients; how data maps to audio; counting rules for analysis |
 | [provenance.md](docs/provenance.md) | Lyric versions, validation, revision history, field provenance, reproducible analysis runs |
 | [import.md](docs/import.md) | Scan, plan, write; lyric matching |
+| [word-lyrics.md](docs/word-lyrics.md) · [karaoke.md](docs/karaoke.md) | Word-timed lyric sources and validation; karaoke mode and manual timing |
 | [tokenizer.md](docs/tokenizer.md) · [token-corrections.md](docs/token-corrections.md) | Tokenisation, POS mapping, token corrections |
 | [dictionary.md](docs/dictionary.md) | The Yomitan lookup port and its reconciliation |
 | [anki.md](docs/anki.md) | Mining, the Lyrics note type, the mining report |

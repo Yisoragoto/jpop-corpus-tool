@@ -666,4 +666,14 @@ export const backendEn: Record<string, string> = {
   "下回来的词典加载不了，已删除：{0}": "The downloaded dictionary couldn't be loaded and was deleted: {0}",
   "{0} 里没有 Sudachi 词典（要找的是 sudachi.json 和 system.dic）": "No Sudachi dictionary in {0} (looking for sudachi.json and system.dic)",
   "复制过来的词典加载不了，已删除：{0}": "The copied dictionary couldn't be loaded and was deleted: {0}",
+
+  // lyrics.rs：保存打轴
+  "第 {0} 行有一个时间单位超出了这一行的文字": "Line {0} has a timing unit outside the line's text",
+  "第 {0} 行的时间单位有重叠": "Line {0} has overlapping timing units",
+  "第 {0} 行有一个开始时间不对：{1}": "Line {0} has an invalid start time: {1}",
+  "第 {0} 行的时间倒退了：后面的字比前面的字先唱": "Times go backwards on line {0}: a later syllable starts before an earlier one",
+  "第 {0} 行有一个字的结束不晚于开始": "Line {0} has a syllable that ends before it starts",
+  "这首歌还没有歌词，没法打轴": "This song has no lyrics to time yet",
+  "打开打轴之后歌词改过了，请关掉打轴重新打开再存": "The lyrics changed after timing was opened. Close timing, reopen it and save again",
+  "手动打轴": "Manual timing",
 };
