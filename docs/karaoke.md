@@ -2,6 +2,28 @@
 
 曲库页歌词右上角（或全屏歌词右上角）点「卡拉 OK」进入。这首歌没在放时会从头开始放。
 
+## AMLL：全屏歌词与流动背景
+
+全屏歌词默认用 [AMLL](https://github.com/amll-dev/applemusic-like-lyrics)（Apple Music 风格：逐字发光、弹簧滚动、振假名跟着唱），
+全屏歌词和卡拉 OK 的背景默认用它的流动封面（WebGL）。设置 →「全屏与播放」里两个开关都能关，关掉回到原来的样子。
+WebGL 起不来、AMLL 加载失败时自动退回原来的全屏歌词和虚化封面。
+
+**点词查词照样能用。** AMLL 原来只有行级点击事件，所以改了它（`app/vendor/amll-core/PATCHES.md`）：
+每个词元素带 `data-char-start`（在原文里的字符位置），点击事件带出被点中的词元素。
+`AmllLyrics` 再用点击坐标（`caretRangeFromPoint`，跳过上面的注音）算出点中第几个字，换算成分词去查词，查过的词染成强调色；
+点在标点、空白、行的空处就跳到那一句。
+
+转换规则（`app/src/amllLines.ts`）：
+
+- 只用已验证的逐字时间轴。同一个真实单位的字合成一个 AMLL 词，不把一个单位拆开分时间。
+- 带振假名的一段合成一个词，读音放进 AMLL 的 `ruby`。
+- 空白单独成词、不占时间。AMLL 遇到带空格的词会按字数均摊时间，所以不交给它。
+- 没有逐字时间的行，每个词都在行首瞬间亮起，整行一起亮，不按字估算。
+- 每行带 `lineKey`（我们的行号）：AMLL 会按开始时间给行重新排序，它事件里的行号不一定是我们的。
+
+AMLL 和它带的 pixi 单独打成一块，只在打开全屏歌词或卡拉 OK 时才加载，不影响启动。
+流动背景直接把封面的 asset 地址交给 AMLL：它会自己 `fetch` 一次，CSP 的 `connect-src` 放行 asset 协议、不放行 `blob:`。
+
 ## 卡拉 OK
 
 - 背景是这首歌的封面：一张放大虚化铺满，一张清楚的摆在中间。
@@ -69,3 +91,5 @@
 - `app/src/karaoke.test.ts`：切分、打点两种模式、重打清理、边界联动、拆开合并、状态判断、KTV 交替和倒数。
 - `jp-app` 的 `manual_timing_becomes_a_protected_version_the_player_accepts`：保存后落盘文件逐字节确定、读回来时间一致，`display_timeline` 认作逐字，版本受保护，起点校准保留；正文变了、重叠、倒退都拒绝且不留版本。
 - `jp-audio` 的 `peaks_take_the_loudest_sample_of_each_bucket_across_channels`：波形轮廓。
+- `app/src/amllLines.test.ts`：转成 AMLL 行（单位合并、振假名、空白、无逐字时间的行、行号）、点击位置换算成分词（跳过注音）。
+- 真实界面（用户曲库的副本）：AMLL 全屏歌词点「専」查到「専用」、点带注音的「告」查到「告げる」，播放位置不动；点行的空处跳到那一句；振假名、流动背景在全屏歌词和卡拉 OK 里都正常。

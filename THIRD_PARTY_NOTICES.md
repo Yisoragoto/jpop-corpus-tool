@@ -9,6 +9,11 @@
   词典查词部分（`rust/crates/jp-dict`、`app/src/dict`）移植自 Yomitan：日语活用规则表与活用还原、文本预处理、查词与排序、词典导入、结构化内容与音高显示及相应样式、制卡字段模板与样式内联表（`structured-content-style.json`、`pronunciation-style.json`）；
   测试基准取自或由 Yomitan 源码生成（活用测试用例、测试词典 `valid-dictionary1` 与期望查词结果、注音分配用例）。各文件头部注明了对应的 Yomitan 源文件。
 - **Lapis**（[https://github.com/donkuri/lapis](https://github.com/donkuri/lapis)）：GPL-3.0。「Lyrics」笔记类型的模板（`rust/crates/jp-anki/data/lyrics/`）改自 Lapis 的模板与样式表，文件头注明了出处和所基于的 commit，Lapis 的许可证原文放在同一目录的 `LICENSE-Lapis`。
+- **AMLL**（Apple Music-like Lyrics，[https://github.com/amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics)）：**AGPL-3.0-only**。
+  全屏歌词的 Apple Music 风格显示和流动封面背景用的是它的 `@applemusic-like-lyrics/core` 0.6.0，**改过**：为了点词查词，
+  词元素记下在原文里的字符位置、点击事件带出被点中的词。改过的副本在 `app/vendor/amll-core/`（许可证原文 `LICENSE`、改动说明 `PATCHES.md`，
+  生成脚本 `scripts/vendor-amll.py`）。本项目整体是 GPL-3.0-or-later，按 GPLv3 第 13 条与它组合发布，这一部分仍按 AGPL-3.0 的条款提供，
+  对应源码就是本仓库里的副本加上游仓库。
 - **hoshidicts**（[https://github.com/Manhhao/hoshidicts](https://github.com/Manhhao/hoshidicts)）：GPL-3.0-or-later。词典存储与查词流程参考了其设计，未复制代码。
 
 ## 字体
@@ -36,6 +41,9 @@
 | [ureq](https://github.com/algesten/ureq)、[rustls](https://github.com/rustls/rustls)、[ring](https://github.com/briansmith/ring)、[webpki-roots](https://github.com/rustls/webpki-roots) | 联网（刮削、歌词、更新、下载词典） | ureq：MIT OR Apache-2.0；rustls：Apache-2.0 OR ISC OR MIT；ring：Apache-2.0 AND ISC；webpki-roots：CDLA-Permissive-2.0 |
 | [flate2](https://github.com/rust-lang/flate2-rs)、[lzma-rs](https://github.com/gendx/lzma-rs)、[encoding_rs](https://github.com/hsivonen/encoding_rs) | 解压词典包和词典、歌词编码回退 | flate2：MIT OR Apache-2.0；lzma-rs：MIT；encoding_rs：(Apache-2.0 OR MIT) AND BSD-3-Clause |
 | ICU4X（`icu_*`、`zerovec` 等 15 个） | 经 `url` → `idna` 间接引入，解析网址里的国际化域名 | Unicode-3.0 |
+| [AMLL core](https://github.com/amll-dev/applemusic-like-lyrics)（改过的副本，见上一节） | 全屏歌词的 Apple Music 风格显示、流动封面背景 | AGPL-3.0-only |
+| [PixiJS 7](https://github.com/pixijs/pixijs)（`@pixi/*` 14 个，含 pixi-filters 的 `filter-bulge-pinch`）、`gl-matrix`、`bezier-easing`、`eventemitter3`、`ismobilejs`、`url`、`punycode`、`object-inspect`、`get-intrinsic` 等 24 个小包 | AMLL 的渲染依赖（只在全屏歌词 / 卡拉 OK 里加载） | MIT |
+| `@ungap/structured-clone`、`earcut`；`qs` | 同上 | ISC；BSD-3-Clause |
 
 全部 257 个 crate 的许可证字段（`cargo tree` 原样输出，未合并同义写法）：
 

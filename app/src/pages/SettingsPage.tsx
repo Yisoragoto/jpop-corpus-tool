@@ -419,6 +419,28 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
           {section === "appearance" && (
             <Group title={tr("全屏与播放")}>
             <SettingCard
+              icon={Icons.lyrics}
+              title={tr("全屏歌词用 Apple Music 风格（AMLL）")}
+              description={tr("逐字发光、弹簧滚动、振假名跟着唱。点词照样查词，点空白处跳到那一句。关掉回到原来的全屏歌词（分词校正在那边）。")}
+            >
+              <Switch
+                checked={settings.stageAmllLyrics}
+                onChange={(v) => updateSettings({ stageAmllLyrics: v })}
+                label={tr("全屏歌词用 Apple Music 风格（AMLL）")}
+              />
+            </SettingCard>
+            <SettingCard
+              icon={Icons.blur}
+              title={tr("流动封面背景（AMLL）")}
+              description={tr("全屏歌词和卡拉 OK 的背景用封面颜色缓慢流动（WebGL）。关掉用下面的封面虚化或纯色，更省显卡。")}
+            >
+              <Switch
+                checked={settings.amllBackground}
+                onChange={(v) => updateSettings({ amllBackground: v })}
+                label={tr("流动封面背景（AMLL）")}
+              />
+            </SettingCard>
+            <SettingCard
               icon={Icons.stage}
               title={tr("全屏歌词的背景用封面虚化")}
               description={tr("关掉就用从封面取的一个纯色（原来的样子）。这首歌没有封面时自动回到纯色。")}

@@ -19,6 +19,8 @@ import { ktvLayout, type KtvLayout } from "../karaoke";
 import type { Segment } from "../lyricSegments";
 import { advanceClock, paintKaraoke, type ClockState } from "../useKaraoke";
 import type { CharTimeline, WordTiming } from "../wordTiming";
+import { useAppSettings } from "../settings";
+import { AmllBackground } from "./AmllBackground";
 import { usePlayerHeight } from "./LyricsStage";
 import { TimingEditor } from "./TimingEditor";
 
@@ -50,6 +52,9 @@ export function KaraokeStage(props: Props) {
   const [editing, setEditing] = useState(false);
   const [bgBroken, setBgBroken] = useState(false);
   useEffect(() => setBgBroken(false), [props.coverPath]);
+  // 背景用 AMLL 的流动封面（设置里可关，WebGL 起不来时退回虚化封面）
+  const [amllBgFailed, setAmllBgFailed] = useState(false);
+  const flowingBg = useAppSettings().amllBackground && !amllBgFailed;
   const playerHeight = usePlayerHeight();
   const [fullscreen, setFullscreen] = useState(() => isFullscreenHeld("karaoke"));
   useEffect(() => () => releaseFullscreen("karaoke"), []);
@@ -168,7 +173,11 @@ export function KaraokeStage(props: Props) {
       <div className="ktv-bg" aria-hidden="true">
         {props.coverPath && !bgBroken && (
           <>
-            <img className="ktv-bg-fill" src={convertFileSrc(props.coverPath)} alt="" draggable={false} onError={() => setBgBroken(true)} />
+            {flowingBg ? (
+              <AmllBackground coverPath={props.coverPath} playing={playing} onFail={() => setAmllBgFailed(true)} />
+            ) : (
+              <img className="ktv-bg-fill" src={convertFileSrc(props.coverPath)} alt="" draggable={false} onError={() => setBgBroken(true)} />
+            )}
             <img className="ktv-bg-cover" src={convertFileSrc(props.coverPath)} alt="" draggable={false} />
           </>
         )}

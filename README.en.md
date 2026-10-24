@@ -416,6 +416,7 @@ reconciled against the old version during the port:
 |---|---|
 | [Tauri 2](https://tauri.app/) | Apache-2.0 / MIT |
 | [React 19](https://react.dev/) | MIT |
+| [AMLL](https://github.com/amll-dev/applemusic-like-lyrics) (patched copy, see `app/vendor/amll-core/PATCHES.md`) · [PixiJS 7](https://pixijs.com/) | AGPL-3.0-only · MIT |
 | [rodio](https://github.com/RustAudio/rodio) · [rodio-wsola](https://crates.io/crates/rodio-wsola) | MIT / Apache-2.0 · Apache-2.0 |
 | [Symphonia](https://github.com/pdeljanov/Symphonia) (decoding) | MPL-2.0 |
 | [sudachi.rs](https://github.com/WorksApplications/sudachi.rs) | Apache-2.0 |
