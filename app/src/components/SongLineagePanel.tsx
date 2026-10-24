@@ -290,6 +290,7 @@ function revisionDetail(kind: string, after: unknown): string {
     case "corrections_restored":
       return tr("{lines} 行", { lines: String(a.lines ?? "?") });
     case "lyrics_edited":
+    case "lyrics_timed":
       return Array.isArray(after) ? tr("改完 {length} 行", { length: after.length }) : "";
     case "metadata_edited":
       return Object.entries(a)

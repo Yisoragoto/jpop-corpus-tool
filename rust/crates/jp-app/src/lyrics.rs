@@ -365,6 +365,230 @@ pub fn save_edited_lines(
     })
 }
 
+/// 打轴页里的一个时间单位：这一行第 `char_start..char_end` 个字从 `start_sec` 唱到 `end_sec`。
+/// 还没打到结尾的单位 `end_sec` 为空。
+#[derive(Debug, Clone, Copy, serde::Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimedUnit {
+    pub char_start: usize,
+    pub char_end: usize,
+    pub start_sec: f64,
+    pub end_sec: Option<f64>,
+}
+
+/// 打轴页存回来的一行。正文必须和库里现在的这一行一模一样：打轴只改时间。
+#[derive(Debug, Clone, serde::Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimedEditLine {
+    pub time_sec: Option<f64>,
+    pub text: String,
+    #[serde(default)]
+    pub units: Vec<TimedUnit>,
+}
+
+/// 时间统一到毫秒：落盘的增强 LRC 是毫秒精度，库里的数也取同一个值，两边不会差零点几毫秒。
+fn to_ms(sec: f64) -> f64 {
+    (sec * 1000.0).round() / 1000.0
+}
+
+fn lrc_stamp(sec: f64) -> String {
+    let ms = (sec.max(0.0) * 1000.0).round() as u64;
+    format!("{:02}:{:02}.{:03}", ms / 60_000, ms / 1000 % 60, ms % 1000)
+}
+
+/// 写成增强 LRC：`[行首]<字开始>字<字结束>`。结束和下一个字的开始相同时只写一个时间；
+/// 中间有停顿就写 `<结束><开始>` 两个，和 `jp_import::lrc::parse` 读回来的完全一致。
+fn enhanced_lrc(lines: &[jp_import::lrc::LyricLine]) -> String {
+    let mut out = String::new();
+    for line in lines {
+        if let Some(t) = line.time_sec {
+            out.push_str(&format!("[{}]", lrc_stamp(t)));
+        }
+        let mut marks: Vec<(usize, u8, f64)> = Vec::new();
+        for (i, w) in line.words.iter().enumerate() {
+            let joined = i > 0 && line.words[i - 1].end == w.start && line.words[i - 1].end_sec == Some(w.time_sec);
+            if !joined {
+                marks.push((w.start, 1, w.time_sec));
+            }
+            if let Some(end) = w.end_sec {
+                marks.push((w.end, 0, end));
+            }
+        }
+        // 同一个位置先写结束再写开始
+        marks.sort_by_key(|m| (m.0, m.1));
+        let mut marks = marks.into_iter().peekable();
+        for (at, ch) in line.text.chars().enumerate() {
+            while let Some((_, _, time)) = marks.next_if(|m| m.0 == at) {
+                out.push_str(&format!("<{}>", lrc_stamp(time)));
+            }
+            out.push(ch);
+        }
+        for (_, _, time) in marks {
+            out.push_str(&format!("<{}>", lrc_stamp(time)));
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// 检查一行的时间单位能不能存：范围在行内、按位置排好、互不重叠、时间有效且不倒退。
+/// **不要求覆盖整行**——打了一半的行也能存，播放时这一行照旧整行高亮，不补造时间。
+fn check_units(line_no: usize, text: &str, units: &[TimedUnit]) -> Result<()> {
+    let len = text.chars().count();
+    let mut cursor = 0usize;
+    let mut last = f64::NEG_INFINITY;
+    for unit in units {
+        if unit.char_start >= unit.char_end || unit.char_end > len {
+            bail!("第 {line_no} 行有一个时间单位超出了这一行的文字");
+        }
+        if unit.char_start < cursor {
+            bail!("第 {line_no} 行的时间单位有重叠");
+        }
+        if !(unit.start_sec.is_finite() && unit.start_sec >= 0.0) {
+            bail!("第 {line_no} 行有一个开始时间不对：{}", unit.start_sec);
+        }
+        if unit.start_sec < last {
+            bail!("第 {line_no} 行的时间倒退了：后面的字比前面的字先唱");
+        }
+        if let Some(end) = unit.end_sec {
+            if !(end.is_finite() && end > unit.start_sec) {
+                bail!("第 {line_no} 行有一个字的结束不晚于开始");
+            }
+            last = end;
+        } else {
+            last = unit.start_sec;
+        }
+        cursor = unit.char_end;
+    }
+    Ok(())
+}
+
+/// 把打轴结果存成新的一版歌词。
+///
+/// 只改时间，不改字：行数和每行正文必须和库里现在的一样，否则说明打开打轴之后歌词换过了，拒绝。
+/// 和逐行编辑走同一条路（[`save_edited_lines`]）：旧版进历史可恢复、重新分词、校正按原文套回；
+/// 来源记 `manual_edit`，所以批量补逐字歌词不会覆盖它。
+///
+/// 每行的逐字时间写进增强 LRC（落盘的 `.lrc` 也是它），入库后就是普通的 `lrc` 单位，
+/// 播放器按原来的规则验证，不需要另一套时间轴。有单位的行，行首时间取第一个字的开始。
+/// 以前只记了起点的手动校准（查词跳转用）原样保留。
+pub fn save_timed_lines(
+    conn: &mut Connection,
+    lyrics_dir: &Path,
+    song_id: &str,
+    lines: &[TimedEditLine],
+    note: &str,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+) -> Result<Attached> {
+    let current: Vec<(i64, Option<f64>, String)> = {
+        let mut stmt = conn.prepare("SELECT id, time_sec, text FROM utterances WHERE song_id=?1 ORDER BY line_idx, id")?;
+        stmt.query_map(params![song_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?
+    };
+    if current.is_empty() {
+        bail!("这首歌还没有歌词，没法打轴");
+    }
+    if current.len() != lines.len() || current.iter().zip(lines).any(|(c, l)| c.2 != l.text) {
+        bail!("打开打轴之后歌词改过了，请关掉打轴重新打开再存");
+    }
+
+    let mut clean = Vec::with_capacity(lines.len());
+    for (idx, line) in lines.iter().enumerate() {
+        if let Some(t) = line.time_sec
+            && !(t.is_finite() && t >= 0.0)
+        {
+            bail!("第 {} 行的时间不对：{t}", idx + 1);
+        }
+        let units: Vec<TimedUnit> = line
+            .units
+            .iter()
+            .map(|u| TimedUnit { start_sec: to_ms(u.start_sec), end_sec: u.end_sec.map(to_ms), ..*u })
+            .collect();
+        check_units(idx + 1, &line.text, &units)?;
+        let words: Vec<jp_import::lrc::WordTime> = units
+            .iter()
+            .map(|u| jp_import::lrc::WordTime { start: u.char_start, end: u.char_end, time_sec: u.start_sec, end_sec: u.end_sec })
+            .collect();
+        let time_sec = match words.first() {
+            Some(first) => Some(first.time_sec),
+            None => line.time_sec.map(to_ms),
+        };
+        let mut lyric = jp_import::lrc::LyricLine::new(time_sec, line.text.clone());
+        lyric.words = words;
+        clean.push(lyric);
+    }
+
+    let before: Vec<(Option<f64>, String)> = current.iter().map(|(_, t, x)| (*t, x.clone())).collect();
+    let after: Vec<(Option<f64>, String)> = clean.iter().map(|l| (l.time_sec, l.text.clone())).collect();
+    let raw = enhanced_lrc(&clean);
+    let units: usize = clean.iter().map(|l| l.words.len()).sum();
+    // 只记了起点的手动校准：按行号原样带过去（正文没变，行号就是同一行）
+    let anchors: Vec<(usize, jp_corpus::word_timing::WordTiming)> = {
+        let ids: Vec<i64> = current.iter().map(|c| c.0).collect();
+        jp_corpus::word_timing::for_utterances(conn, &ids)?
+            .into_iter()
+            .filter(|t| t.source == jp_corpus::word_timing::source::MANUAL && t.end_sec.is_none())
+            .filter_map(|t| ids.iter().position(|id| *id == t.utterance_id).map(|i| (i, t)))
+            .collect()
+    };
+    let (artist, title) = song_names(conn, song_id)?;
+    std::fs::create_dir_all(lyrics_dir)
+        .with_context(|| format!("建不出歌词目录：{}", lyrics_dir.display()))?;
+    let dest = lyrics_dir.join(format!("{song_id}.lrc"));
+
+    let tx = conn.transaction()?;
+    crate::timed_lyrics::archive_before(&tx, &crate::timed_lyrics::snapshot(&tx, song_id)?)?;
+    jp_import::maintain::clear_lyrics(&tx, song_id)?;
+    let note = if note.trim().is_empty() { "手动打轴" } else { note.trim() };
+    let source = LyricsSource::Edited.lineage(note);
+    let stats = jp_import::attach_lines(&tx, song_id, &raw, clean, &source, analyzer, &artist, &title)?;
+    let ids: Vec<i64> = tx
+        .prepare("SELECT id FROM utterances WHERE song_id=?1 ORDER BY line_idx, id")?
+        .query_map(params![song_id], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for (index, anchor) in anchors {
+        if let Some(id) = ids.get(index) {
+            jp_corpus::word_timing::set_manual(&tx, *id, anchor.char_start, anchor.char_end, anchor.start_sec)?;
+        }
+    }
+    let report = serde_json::json!({"status":"manual", "algorithmGenerated":false, "unitCount":units});
+    tx.execute(
+        "UPDATE lyric_versions SET timing_origin='manual', timing_validation_json=?2 WHERE song_id=?1 AND is_current=1",
+        params![song_id, report.to_string()],
+    )?;
+    let version_id: Option<i64> = tx.query_row(
+        "SELECT id FROM lyric_versions WHERE song_id=?1 AND is_current=1",
+        params![song_id],
+        |r| r.get(0),
+    )?;
+    let rows = |v: &[(Option<f64>, String)]| serde_json::to_value(v).unwrap_or_default();
+    jp_corpus::lineage::log(
+        &tx,
+        &jp_corpus::lineage::Revision {
+            song_id: song_id.into(),
+            kind: "lyrics_timed".into(),
+            version_id,
+            before: Some(rows(&before)),
+            after: Some(rows(&after)),
+            actor: "user".into(),
+            note: note.into(),
+            ..Default::default()
+        },
+    )?;
+    tx.execute("UPDATE songs SET source_file=?2 WHERE id=?1", params![song_id, dest.display().to_string()])?;
+    crate::timed_lyrics::commit_with_file(tx, &dest, raw.as_bytes())?;
+
+    Ok(Attached {
+        song_id: song_id.to_string(),
+        source: LyricsSource::Edited,
+        matched: note.to_string(),
+        lyric_lines: stats.lyric_lines,
+        tokens: stats.tokens,
+        credits: stats.credits,
+        corrections_restored: stats.corrections_restored,
+        lrc_path: dest.display().to_string(),
+    })
+}
+
 /// 把这首歌以前的某一版歌词恢复成当前版。
 ///
 /// 恢复也是「挂一版新的」（来源记 restored）：历史只追加，回到旧版不会抹掉中间那几版。
@@ -748,6 +972,77 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn manual_timing_becomes_a_protected_version_the_player_accepts() {
+        let mut conn = db();
+        let dir = scratch("timing");
+        apply_lrc_text(
+            &mut conn,
+            &dir,
+            SongRef { id: "001", artist: "サカナクション", title: "ネイティブダンサー" },
+            "[00:10.00]夜に駆ける\n[00:20.00]ねえ\n",
+            LyricsSource::Manual,
+            "x.lrc",
+            None,
+        )
+        .unwrap();
+        let ids: Vec<i64> = conn
+            .prepare("SELECT id FROM utterances WHERE song_id='001' ORDER BY line_idx")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        // 查词跳转用的起点校准：打轴后必须还在
+        jp_corpus::word_timing::set_manual(&conn, ids[1], 0, 2, 20.25).unwrap();
+
+        let unit = |s: usize, e: usize, a: f64, b: Option<f64>| TimedUnit { char_start: s, char_end: e, start_sec: a, end_sec: b };
+        let lines = vec![
+            TimedEditLine {
+                time_sec: Some(10.0),
+                text: "夜に駆ける".into(),
+                // 第二、三个单位之间停了 0.2 秒
+                units: vec![unit(0, 1, 10.1004, Some(10.4)), unit(1, 2, 10.4, Some(10.6)), unit(2, 5, 10.8, Some(11.5))],
+            },
+            TimedEditLine { time_sec: Some(20.0), text: "ねえ".into(), units: vec![] },
+        ];
+        save_timed_lines(&mut conn, &dir, "001", &lines, "", None).unwrap();
+
+        let on_disk = std::fs::read_to_string(dir.join("001.lrc")).unwrap();
+        assert_eq!(on_disk, "[00:10.100]<00:10.100>夜<00:10.400>に<00:10.600><00:10.800>駆ける<00:11.500>\n[00:20.000]ねえ\n");
+        // 落盘的文件读回来就是存进去的时间
+        let parsed = jp_import::lrc::parse(&on_disk);
+        let words: Vec<_> = parsed.lines[0].words.iter().map(|w| (w.start, w.end, w.time_sec, w.end_sec)).collect();
+        assert_eq!(words, vec![(0, 1, 10.1, Some(10.4)), (1, 2, 10.4, Some(10.6)), (2, 5, 10.8, Some(11.5))]);
+
+        let first: Option<f64> = conn.query_row("SELECT time_sec FROM utterances WHERE song_id='001' AND line_idx=0", [], |r| r.get(0)).unwrap();
+        assert_eq!(first, Some(10.1), "行首取第一个字的开始");
+        let shown = jp_corpus::display_timeline::for_song(&conn, "001").unwrap();
+        assert_eq!(shown[0].mode, jp_corpus::display_timeline::DisplayMode::Karaoke);
+        assert_eq!(shown[0].units.len(), 3);
+        let timings = jp_corpus::word_timing::for_song(&conn, "001").unwrap();
+        assert!(timings.iter().any(|t| t.utterance_id == shown[1].utterance_id && t.source == "manual" && t.start_sec == 20.25));
+
+        let versions = jp_corpus::lineage::versions(&conn, "001").unwrap();
+        assert_eq!(versions[0].source_type, "manual_edit");
+        assert_eq!(versions[0].timing_origin, "manual");
+        assert!(crate::lyric_upgrade::protected(&conn, "001").unwrap(), "批量补逐字不能覆盖手动打轴");
+        assert_eq!(jp_corpus::lineage::revisions(&conn, "001", 5).unwrap()[0].kind, "lyrics_timed");
+
+        // 正文变了、单位重叠、时间倒退：都拒绝，库不动
+        let count = versions.len();
+        let mut changed = lines.clone();
+        changed[1].text = "ねぇ".into();
+        assert!(save_timed_lines(&mut conn, &dir, "001", &changed, "", None).unwrap_err().to_string().contains("歌词改过了"));
+        let mut overlap = lines.clone();
+        overlap[0].units = vec![unit(0, 2, 10.1, Some(10.4)), unit(1, 3, 10.4, Some(10.6))];
+        assert!(save_timed_lines(&mut conn, &dir, "001", &overlap, "", None).is_err());
+        let mut backwards = lines.clone();
+        backwards[0].units = vec![unit(0, 1, 10.5, Some(10.6)), unit(1, 2, 10.4, None)];
+        assert!(save_timed_lines(&mut conn, &dir, "001", &backwards, "", None).is_err());
+        assert_eq!(jp_corpus::lineage::versions(&conn, "001").unwrap().len(), count);
     }
 
     #[test]

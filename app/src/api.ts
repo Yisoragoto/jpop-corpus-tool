@@ -986,6 +986,14 @@ export const api = {
   /** 问一次 GitHub Releases：有没有比正在跑的这一版更新的。 */
   /** 这几行歌词的词级时间（逐字歌词 lrc、手动校准 manual） */
   wordTimings: (utteranceIds: number[]) => call<WordTiming[]>("word_timings", { utteranceIds }),
+  /** 打轴结果存成新的一版歌词：只改时间不改字（见 karaoke.ts 的 toSavePayload） */
+  lyricsSaveTiming: (
+    songId: string,
+    lines: { timeSec: number | null; text: string; units: { charStart: number; charEnd: number; startSec: number; endSec: number | null }[] }[],
+    note = "",
+  ) => call<{ lyricLines: number; tokens: number; correctionsRestored: number }>("lyrics_save_timing", { songId, lines, note }),
+  /** 整首歌的波形轮廓，每秒 perSec 格，0–255 */
+  audioPeaks: (songId: string, perSec: number) => call<number[]>("audio_peaks", { songId, perSec }),
   /** 手动校准：这一行第 charStart..charEnd 个字从 startSec 开始 */
   wordTimeSet: (utteranceId: number, charStart: number, charEnd: number, startSec: number) =>
     call<void>("word_time_set", { utteranceId, charStart, charEnd, startSec }),

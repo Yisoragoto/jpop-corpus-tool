@@ -21,12 +21,14 @@ interface Props {
   onError: (message: string) => void;
   /** 给了就显示「全屏」按钮 */
   onExpand?: () => void;
+  /** 给了就显示「卡拉 OK」按钮 */
+  onKaraoke?: (() => void) | undefined;
 }
 
 /** 面板里的预览句（和 Python 版一样） */
 const PREVIEW_TEXT = "忘れたい自分に缶コーヒーを買った";
 
-export function LyricsTools({ display, onError, onExpand }: Props) {
+export function LyricsTools({ display, onError, onExpand, onKaraoke }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const fonts = useFontOptions(open, onError);
@@ -92,6 +94,9 @@ export function LyricsTools({ display, onError, onExpand }: Props) {
       >{tr("显示")}</button>
       {onExpand && (
         <button className="tool-toggle" onClick={onExpand} title={tr("全屏歌词（Esc 退出）")}>{tr("全屏")}</button>
+      )}
+      {onKaraoke && (
+        <button className="tool-toggle" onClick={onKaraoke} title={tr("封面背景 + 逐字歌词；可以自己打轴")}>{tr("卡拉 OK")}</button>
       )}
       {open && (
         <div className="lyrics-display-panel" role="dialog" aria-label={tr("歌词显示")}>

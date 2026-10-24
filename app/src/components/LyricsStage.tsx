@@ -50,6 +50,8 @@ interface Props {
   onCloseSide: () => void;
   onError: (message: string) => void;
   onClose: () => void;
+  /** 从全屏歌词进卡拉 OK */
+  onKaraoke?: () => void;
 }
 
 /** 当前行停在可视高度的这个位置（Python 版是 0.48） */
@@ -120,7 +122,7 @@ export function LyricsStage(props: Props) {
           <h1>{props.title}</h1>
           <p>{props.meta}</p>
         </div>
-        <LyricsTools display={props.display} onError={props.onError} />
+        <LyricsTools display={props.display} onError={props.onError} onKaraoke={props.onKaraoke} />
         <button className="stage-close" onClick={onClose} title={tr("退出全屏（Esc）")} aria-label={tr("退出全屏")}>
           ✕
         </button>
@@ -249,7 +251,7 @@ function SongCard({
 }
 
 /** 底部播放条的高度：全屏歌词盖到它上面为止 */
-function usePlayerHeight(): number {
+export function usePlayerHeight(): number {
   const [height, setHeight] = useState(() => document.querySelector("footer.player")?.getBoundingClientRect().height ?? 0);
   useEffect(() => {
     const footer = document.querySelector("footer.player");

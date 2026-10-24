@@ -40,6 +40,25 @@ fn open(path: &Path) -> Result<Decoder<std::io::BufReader<File>>> {
     Decoder::try_from(file).with_context(|| format!("解码失败 {}", path.display()))
 }
 
+/// 波形轮廓：每 `1 / per_sec` 秒一格，取这一格里所有声道的最大绝对值，量化成 0–255。
+/// 打轴页画波形用；只是看个形状，所以量化到一个字节，四分钟的歌 100 格/秒也就 24 KB。
+pub fn peaks(pcm: &Pcm, per_sec: u32) -> Vec<u8> {
+    let channels = usize::from(pcm.channels.max(1));
+    if per_sec == 0 || pcm.rate == 0 {
+        return Vec::new();
+    }
+    let frames_per_bucket = (f64::from(pcm.rate) / f64::from(per_sec)).max(1.0);
+    let buckets = (pcm.frames() as f64 / frames_per_bucket).ceil() as usize;
+    let mut out = Vec::with_capacity(buckets);
+    for bucket in 0..buckets {
+        let from = (bucket as f64 * frames_per_bucket) as usize * channels;
+        let to = (((bucket + 1) as f64 * frames_per_bucket) as usize * channels).min(pcm.samples.len());
+        let peak = pcm.samples[from.min(to)..to].iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        out.push((peak.min(1.0) * 255.0).round() as u8);
+    }
+    out
+}
+
 /// 整首解码。
 pub fn decode_all(path: &Path) -> Result<Pcm> {
     let decoder = open(path)?;
@@ -140,5 +159,18 @@ mod tests {
         let err = format!("{:#}", decode_all(&path).unwrap_err());
         assert!(err.contains("假的.flac"), "{err}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn peaks_take_the_loudest_sample_of_each_bucket_across_channels() {
+        // 立体声 4 Hz、2 秒：第一秒左声道 0.5，第二秒右声道 -1.0
+        let mut samples = Vec::new();
+        for i in 0..8 {
+            if i < 4 { samples.extend([0.5, 0.0]) } else { samples.extend([0.0, -1.0]) }
+        }
+        let pcm = Pcm { samples, channels: 2, rate: 4 };
+        assert_eq!(peaks(&pcm, 1), vec![128, 255]);
+        assert_eq!(peaks(&pcm, 2), vec![128, 128, 255, 255]);
+        assert!(peaks(&pcm, 0).is_empty());
     }
 }

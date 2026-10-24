@@ -350,6 +350,7 @@ raw/           本地音频和歌词目录，Git 默认忽略内容
 | [clients.md](docs/clients.md) | 一个 Rust 核心、两个客户端；数据怎么关联到音频；分析的计数口径 |
 | [provenance.md](docs/provenance.md) | 歌词版本、校验、修订历史、字段来源、可复现的分析存档 |
 | [import.md](docs/import.md) | 扫描、计划、写库，歌词匹配 |
+| [word-lyrics.md](docs/word-lyrics.md) · [karaoke.md](docs/karaoke.md) | 逐字歌词的来源与验证；卡拉 OK 模式和手动打轴 |
 | [tokenizer.md](docs/tokenizer.md) · [token-corrections.md](docs/token-corrections.md) | 分词、词性映射、分词校正 |
 | [dictionary.md](docs/dictionary.md) | Yomitan 查词的移植与对账 |
 | [anki.md](docs/anki.md) | 制卡、Lyrics 笔记类型、挖词报告 |
