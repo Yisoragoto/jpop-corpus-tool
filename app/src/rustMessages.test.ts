@@ -98,7 +98,7 @@ function uiMessages(): Map<string, string[]> {
       if (/^\s*(SELECT|INSERT|UPDATE|DELETE|WITH|CREATE)\b/.test(value)) continue;
       // 这句之前最近的一条语句里是日志、panic：不进界面
       const stmt = before.slice(Math.max(before.lastIndexOf(";"), before.lastIndexOf("{\n"), before.lastIndexOf("}\n")) + 1);
-      if (/(log::|tracing::|eprintln!|println!|\.expect\(|unreachable!|panic!|debug_assert|assert!|log_line|crate::log)/.test(stmt)) continue;
+      if (/(log::|tracing::|eprintln!|println!|\.expect\(|unreachable!|panic!|debug_assert|assert!|log_line|log_warn|crate::log)/.test(stmt)) continue;
       const key = backendKey(value);
       found.set(key, [...(found.get(key) ?? []), file]);
     }
