@@ -31,7 +31,7 @@ struct UpdateSettingsView: View {
             if let status = updates.status {
                 Text(status.message.isEmpty ? (status.updateAvailable ? "有新版本 \(status.latest?.identity ?? "")" : "已经是最新版（\(status.current)）") : status.message).font(.caption)
             }
-            Text("有新版会先显示说明，由你选择前往官方发布页、稍后或跳过；当前发布只有 Windows 安装包，mac 不会自动下载或执行文件。")
+            Text("有新版会先显示说明，由你选择前往官方发布页、稍后或跳过；在发布页下载新的 .dmg 覆盖安装，程序不会自动下载或执行文件。")
                 .font(.caption).foregroundStyle(.secondary)
             if let error = updates.errorMessage { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
         }
