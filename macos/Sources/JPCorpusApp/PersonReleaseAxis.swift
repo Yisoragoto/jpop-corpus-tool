@@ -19,10 +19,10 @@ struct PersonReleaseAxis: View {
             HStack(alignment: .top,spacing: 14) {
                 ForEach(Array(columns.enumerated()),id: \.offset) { _,col in
                     switch col {
-                    case let .gap(from,to): Text("…").foregroundStyle(.secondary).help("\(from)–\(to) 没有发行")
+                    case let .gap(from,to): Text("…").foregroundStyle(.secondary).help(Text(verbatim: "\(from)–\(to) 没有发行"))
                     case let .year(y,items,ended):
                         VStack(spacing: 7) {
-                            Text("\(y)\(ended ? " 解散" : "")").font(.caption).foregroundStyle(ended ? .orange : .secondary)
+                            Text(verbatim: "\(y)\(ended ? " 解散" : "")").font(.caption).foregroundStyle(ended ? .orange : .secondary)
                             ForEach(items,id: \.group.id) { item in
                                 Button { open(item.group) } label: {
                                     CoverImage(path: item.group.coverPath,size: item.kind == "credit" ? 26 : 34,cornerRadius: 4)

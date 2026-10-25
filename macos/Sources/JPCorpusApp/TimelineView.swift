@@ -163,7 +163,7 @@ struct TimelineTree: View {
             case let .gap(from,to): Text("\(from) … \(to)").font(.caption).foregroundStyle(.secondary)
             case let .year(year,items,ended):
                 VStack(spacing: 14) {
-                    Text("\(year)\(ended ? " · 解散" : "")").font(.headline).foregroundStyle(ended ? .orange : .secondary)
+                    Text(verbatim: "\(year)\(ended ? " · 解散" : "")").font(.headline).foregroundStyle(ended ? .orange : .secondary)
                     ForEach(items,id: \.release.release.id) { item in
                         if horizontal { releaseCard(item).frame(width: 300) }
                         else {
