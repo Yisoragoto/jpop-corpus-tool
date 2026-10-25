@@ -283,6 +283,7 @@ private struct ArchivePane: View {
     @State private var runs: [AnalysisSummary] = []
     @State private var selection: Set<AnalysisSummary.ID> = []
     @State private var comparison: Comparison?
+    @State private var detail: AnalysisRunDetail?
     @State private var busy = false
 
     var body: some View {
@@ -292,6 +293,8 @@ private struct ArchivePane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button("详情") { Task { await showDetail() } }
+                    .disabled(selection.count != 1 || busy)
                 Button("重跑并对比") { Task { await rerun() } }
                     .disabled(selection.count != 1 || busy)
                 Button("对比两条") { Task { await compare() } }
@@ -300,6 +303,7 @@ private struct ArchivePane: View {
             }
             .controlSize(.small)
             .padding(10)
+            if let detail { RunDetailView(run: detail) { self.detail = nil }.padding(.horizontal, 10).padding(.bottom, 10) }
             Table(runs, selection: $selection) {
                 TableColumn("#") { Text("\($0.id)").monospacedDigit().foregroundStyle(.secondary) }.width(36)
                 TableColumn("种类") { Text($0.kindLabel) }.width(110)
@@ -319,6 +323,7 @@ private struct ArchivePane: View {
             .alternatingRowBackgrounds(.disabled)
             .contextMenu(forSelectionType: AnalysisSummary.ID.self) { ids in
                 if ids.count == 1, let id = ids.first {
+                    Button("详情") { Task { await showDetail(id) } }
                     Button("重跑并对比") { Task { await rerun(id) } }
                     Divider()
                     Button("删除", role: .destructive) { Task { await delete(id) } }
@@ -356,6 +361,13 @@ private struct ArchivePane: View {
         }
     }
 
+    private func showDetail(_ id: Int64? = nil) async {
+        guard let id = id ?? selection.first, let client = app.core else { return }
+        busy = true
+        defer { busy = false }
+        do { detail = try await client.analysisGet(id) } catch { app.errorMessage = error.localizedDescription }
+    }
+
     private func compare() async {
         let ids = selection.sorted()
         guard ids.count == 2, let client = app.core else { return }
@@ -370,9 +382,81 @@ private struct ArchivePane: View {
         do {
             try await app.core?.analysisDelete(id)
             selection.remove(id)
+            if detail?.id == id { detail = nil }
             await load()
         } catch {
             app.errorMessage = error.localizedDescription
+        }
+    }
+}
+
+/// 存档详情，字段与 Windows AnalysisRuns 的 RunDetail 一致
+@MainActor
+private struct RunDetailView: View {
+    let run: AnalysisRunDetail
+    let close: () -> Void
+    private static let kinds = ["corpusReport": "语料统计", "frequency": "词频表", "corpusFrequency": "词频（重复感知）",
+                                "collocations": "搭配", "keyness": "子语料对比"]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("#\(run.id) \(Self.kinds[run.spec.kind] ?? run.spec.kind)\(run.label.isEmpty ? "" : " · \(run.label)")").font(.headline)
+                Spacer()
+                Button("收起", action: close).buttonStyle(.link)
+            }
+            Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 6) {
+                row("生成时间", "\(when(run.createdAt)) · 程序 \(run.appVersion.isEmpty ? "?" : run.appVersion) · 库结构 \(run.schemaVersion)")
+                row("条件", SubcorpusScope.describeFilter(run.filter))
+                row("范围", "\(run.scope.songCount) 首 / \(ExportText.pyGrouped(Double(run.scope.lineCount))) 行 · 指纹 \(run.scopeHash)")
+                GridRow {
+                    Text("分词器").foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(run.tokenizers.runs) { t in Text("\(CorpusQuality.tokenizerLabel(t))（\(t.lineCount) 行）") }
+                        if run.tokenizers.unknownLines > 0 { Text("\(run.tokenizers.unknownLines) 行不知道用的哪个分词器（老库导入的）").foregroundStyle(.secondary) }
+                    }
+                }
+                GridRow {
+                    Text("口径").foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(run.method.keys.sorted(), id: \.self) { key in
+                            Text("\(key) ").font(.caption.monospaced()) + Text(Self.methodText(run.method[key] ?? .null))
+                        }
+                    }
+                }
+                if let snap = run.snapshot {
+                    row("库指纹", "\(snap.fingerprint) · \(snap.songs) 首 / \(ExportText.pyGrouped(Double(snap.tokens))) 词 / \(snap.corrections) 处校正")
+                }
+                row("结果指纹", run.resultHash)
+            }
+        }
+        .font(.caption)
+        .textSelection(.enabled)
+        .padding(12)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+    }
+    private func row(_ title: String, _ value: String) -> some View {
+        GridRow { Text(title).foregroundStyle(.secondary); Text(value) }
+    }
+    private func when(_ iso: String) -> String {
+        var s = iso.replacingOccurrences(of: "T", with: " ")
+        if s.hasSuffix("Z") { s.removeLast() }
+        return s
+    }
+    /// Windows 用 `String(v)`，数组用 ", " 连接
+    private static func methodText(_ value: LyricJSON) -> String {
+        switch value {
+        case .array(let items): return items.map(scalar).joined(separator: ", ")
+        default: return scalar(value)
+        }
+    }
+    private static func scalar(_ value: LyricJSON) -> String {
+        switch value {
+        case .number(let n): return n == n.rounded() && abs(n) < 1e15 ? String(Int64(n)) : String(n)
+        case .string(let s): return s
+        case .bool(let b): return String(b)
+        case .null: return "null"
+        case .array(let items): return items.map(scalar).joined(separator: ",")
+        case .object: return "[object Object]"
         }
     }
 }

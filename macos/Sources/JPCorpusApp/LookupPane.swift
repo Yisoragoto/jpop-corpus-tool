@@ -29,6 +29,8 @@ struct LookupPane: View {
     @Environment(AppModel.self) private var app
     let request: LookupRequest
     let close: () -> Void
+    @AppStorage("dict.collapsed") private var collapsedJSON = "[]"
+    private var collapsed: Set<String> { Set((try? JSONDecoder().decode([String].self, from: Data(collapsedJSON.utf8))) ?? []) }
     @State private var result: LookupText?
     @State private var noDictionaries = false
     @State private var error: String?
@@ -106,10 +108,12 @@ struct LookupPane: View {
             }
             ForEach(Array(entry.definitions.enumerated()), id: \.offset) { _, d in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(d.dictionary).font(.caption2).foregroundStyle(.tertiary)
-                    ForEach(Array(d.text.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.callout).textSelection(.enabled)
-                    }
+                    Button {
+                        var names = collapsed
+                        if names.contains(d.dictionary) { names.remove(d.dictionary) } else { names.insert(d.dictionary) }
+                        if let data = try? JSONEncoder().encode(names.sorted()) { collapsedJSON = String(decoding: data, as: UTF8.self) }
+                    } label: { Label(d.dictionary, systemImage: collapsed.contains(d.dictionary) ? "chevron.right" : "chevron.down").font(.caption2) }.buttonStyle(.plain)
+                    if !collapsed.contains(d.dictionary), let core = app.core { DictionaryDefinitionView(definition: d, client: core) }
                 }
             }
         }

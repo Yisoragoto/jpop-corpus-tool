@@ -40,6 +40,12 @@ final class LibraryBridgeTests: XCTestCase {
         XCTAssertFalse(works.isEmpty)
         XCTAssertTrue(works.allSatisfy { !$0.track.title.isEmpty && !$0.roles.isEmpty })
         _ = try await client.collaborators(singer.id)
+        // 人物页「更多」菜单的资料来源，和名录外的人按 id 读名字
+        _ = try await client.artistProvenance(singer.name)
+        let byId = try await client.personById(singer.id)
+        XCTAssertEqual(byId?.name, singer.name)
+        let nobody = try await client.personById(999_999)
+        XCTAssertNil(nobody)
         _ = try await client.trackCredits(works[0].track.id)
 
         let was = try await client.isFavorite(song: "002")
@@ -76,6 +82,16 @@ final class LibraryBridgeTests: XCTestCase {
         XCTAssertEqual(list.count, 2)
         XCTAssertEqual(list.first { $0.id == run.id }?.filter.yearTo, 2019)
         XCTAssertEqual(list.first { $0.id == run.id }?.kindLabel, "词频（重复感知）")
+        // 存档「详情」：完整记录能解码，范围、口径、结果指纹与列表一致
+        let fetched = try await client.analysisGet(run.id)
+        let detail = try XCTUnwrap(fetched)
+        XCTAssertEqual(detail.spec.kind, "corpusFrequency")
+        XCTAssertEqual(detail.filter.yearTo, 2019)
+        XCTAssertEqual(detail.resultHash, list.first { $0.id == run.id }?.resultHash)
+        XCTAssertFalse(detail.method.isEmpty)
+        XCTAssertNotNil(detail.snapshot)
+        let missing = try await client.analysisGet(999_999)
+        XCTAssertNil(missing)
 
         var keyness = KeynessQuery(target: Subcorpus(songIds: ["001"]))
         keyness.minFreq = 1

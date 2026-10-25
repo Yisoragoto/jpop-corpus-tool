@@ -130,16 +130,17 @@ Swift 编译与运行由 CI 的 macOS job 验证，本机 Windows 不具备 Swif
 | 刮削 | 可用 | ScrapeBridgeTests、Rust 离线记账测试、smoke | 单首/批量、封面、歌手、复核，共用 jp-scrape |
 | Yomitan 词典导入 | 可用 | ImportTests、jp-ffi 词典管理测试 | 词典页导入 zip 并管理；Sudachi 安装是另一条链路 |
 | Anki 一键制卡 | 可用 | MiningBridgeTests、jp-anki/jp-ffi 测试 | 查词面板与设置入口；发送需要本机 AnkiConnect |
-| Anki 页、学习状态与挖词报告 | 可用 | AnkiModelTests、AnkiBridgeTests、Rust 离线测试与 smoke 门禁 | 选词/预览、导出/更新/刷新/取消、浏览笔记；新增 Swift 待 macOS CI，真实 AnkiConnect 待人工验证 |
-| 统计 TXT / KWIC CSV / 词云 PNG 导出 | 可用 | ExportTextTests、真 FFI 文件读回与 stats-export smoke 门禁 | 原生保存面板、Rust 原文、ImageRenderer；新增 Swift 待 macOS CI |
-| 资料库关系网、时间轴、词云 | 可用 | GraphTests、TimelineTests、WordCloudTests、真 FFI 与 smoke 门禁 | 第 4 阶段已接入；本次补常驻分栏/搜索、词云深底亮字、时间轴顶部对齐与图形图例，待 macOS CI 截图确认 |
-| 自动更新 | 未实现 | 无原生界面覆盖 | 从新源码重建 |
+| Anki 页、学习状态与挖词报告 | 可用 | AnkiModelTests、AnkiBridgeTests、Rust 离线测试与 smoke 门禁 | 选词/预览、导出/更新/刷新/取消、浏览笔记；macOS CI 已验证（run 40151834228），真实 AnkiConnect 待人工验证 |
+| 统计 TXT / KWIC CSV / 词云 PNG 导出 | 可用 | ExportTextTests、真 FFI 文件读回与 stats-export smoke 门禁 | 原生保存面板、Rust 原文、ImageRenderer；macOS CI 已验证（run 40151834228） |
+| 资料库关系网、时间轴、词云 | 可用 | GraphTests、TimelineTests、WordCloudTests、真 FFI 与 smoke 门禁 | 常驻分栏/搜索、词云深底亮字、时间轴顶部对齐与图形图例；macOS CI 截图已验证 |
+| 检查更新与更新日志 | 可用 | UpdateModelTests、SystemBridgeTests、jp-update 离线测试 | 共享 jp-update；发布页只有 Windows 安装包，mac 打开经校验的官方发布页，不自动下载或执行文件 |
+| 诊断信息 | 可用 | SystemBridgeTests、diagnostics smoke | 共享 jp-diagnostics；复制或存成文件，带最近 200 行日志 |
 | 换歌词、逐行编辑、恢复旧版 | 可用 | LyricsModelTests、LyricsBridgeTests、jp-lyrics/jp-ffi 测试 | 详情、面板、全屏共用管理入口，支持 .lrc 导入、版本原文和恢复；Swift 新测试待 CI |
 | 在线补齐、时间歌词搜索与升级 | 可用 | 同上，网络使用离线边界测试 | 单首/批量队列、进度和取消、来源开关、候选预览与采用 |
 | 卡拉 OK 与打轴 | 部分 | LyricsModelTests、LyricsBridgeTests、Rust 时间轴测试 | 两行交替、倒数、真实时间高亮、按住/点按、起止编辑、拆分合并、撤销重做与版本保存；无波形拖拽和完整 Windows 打轴快捷键 |
 | 分析存档、来源与语料质量 | 可用 | CoreBridgeTests、LibraryBridgeTests、smoke | 已有存档、重跑、比较、删除及来源/质量入口 |
 | 完整子语料管理 | 部分 | CoreBridgeTests 基础筛选 | 保存/管理完整条件的原生界面仍未接入 |
-| 资料库管理（第 3 阶段） | 可用 | LibraryModelTests、MembersModelTests、LibraryAdminBridgeTests、38 个 TS 移植用例、jp-ffi、smoke 编辑读回 | 歌曲编辑/删除、音频修复、新歌/文件夹、照片/成员、分词校正、迁移/维护；Swift 待 macOS CI |
+| 资料库管理（第 3 阶段） | 可用 | LibraryModelTests、MembersModelTests、LibraryAdminBridgeTests、38 个 TS 移植用例、jp-ffi、smoke 编辑读回 | 歌曲编辑/删除、音频修复、新歌/文件夹、照片/成员、分词校正、迁移/维护；macOS CI 已验证（run 40107267725） |
 | 导入内嵌封面、追加 metadata/songs.csv | 可用 | jp-app fixture_flows、jp-ffi CSV 与封面边界测试；Swift 真 FFI 导入 | 两端共用 jp-scrape::save_imported_covers 与 jp-library::admin::sync_imported，清单不存在不创建 |
 | 词级定位、跨行/句法搭配 | 部分 | CoreBridgeTests、LyricTimelineTests | 歌词面板可定位真实时间单位；KWIC 仍按行，搭配仍按行内窗口，跨行/句法未接入 |
 
@@ -176,7 +177,7 @@ SubcorpusScope 使用 UserDefaults/Observation 维护当前范围，检索、词
 侧栏补设置入口；分析补副歌效应、完整参照范围、总览/年份图与报告展示。
 质量显示函数及原测试断言已补入模型层；歌曲编辑/删除改用边框文字按钮、反馈置于正文顶部，人物成员入口与 Windows PersonProfile 相同。
 PitchCacheCard 不在 mac 提供磁盘缓存操作：AVAudioEngine 实时变调没有对应文件，见 [macos-player.md](macos-player.md#实现差异)。
-Anki 浏览/更新与报告导出已在第 5 阶段接入（见下节）；更新和诊断留第 6 阶段。
+Anki 浏览/更新与报告导出已在第 5 阶段接入（见下节）；更新和诊断已在第 6 阶段接入；全部 Tauri 命令的逐个对照见 [macos-status.md](macos-status.md) 的「命令对账表」。
 
 本机单任务 Rust build/test/clippy 已通过（含 jp-library，测试 368 passed、0 failed、52 ignored），Windows 全套测试 336 passed；新增 76 个 XCTest（含原 TS 的 58 例输入/断言）和三页真实窗口 smoke 门禁，
 Swift 编译、测试及截图尚待 macOS 14 CI，详见 [差异与验证表](macos-status.md#可视化与其余界面)。

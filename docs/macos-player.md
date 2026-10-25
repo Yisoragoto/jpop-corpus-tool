@@ -57,16 +57,17 @@ Windows 手动翻歌词后在下一次换行恢复跟随；mac 按本阶段的�
 
 采用 Music.app 的大封面、两栏正在播放、白色实心 SF Symbols、细进度轨道、悬停玻璃圈及交叉淡入。背景使用模糊渐变圆，兼容 macOS 14 / Xcode 15.4，不使用 MeshGradient 或 glassEffect。未引用 Petrichor 代码，无新增第三方署名。
 
-本机 Windows 无法编译 Swift。必须在 macos-14 CI 运行 swift build、swift test、SourceGuardTests 及真实 FLAC 的变调 / 倍速 smoke，检查截图与 smoke.txt；不能把本机静态复查当作已通过 Swift 编译。
+Swift 在 macos-14 CI 上编译、测试并跑真实 FLAC 的变调 / 倍速 smoke（run 40094155146 起每次都跑），截图与 smoke.txt 已检查。
 
 | 验证 | 本阶段结果 |
 |---|---|
 | git diff --check | 本机通过 |
 | SourceGuards.swift 同规则的 Python 静态检查 | 本机通过：55 个源文件、68 个 View；每个 View 至多一个 fileImporter / sheet / alert，导入失败显式处理 |
 | 档位、频谱条数、smoke 与 CI 检查名称一致性 | 本机通过；RATE_STEPS 完全相同、−6…+6 半音、48 条 |
-| PlayerModelTests（8 项） | 已新增，未在 Windows 执行：5 秒边界、音量与静音持久化、档位 / 重置、时长和设置、各速度 / 音调下循环与试听、历史与错误、真实单位末尾保护、曲末循环与暂停竞态 |
-| PlaybackSpectrumTests（1 项） | 已新增，待 CI：静音、440Hz 正弦、48 条范围、双声道抵消；不打开音频设备 |
-| smoke playback-tuning | 已接入 CI，待执行；要求 `[step] playback-tuning pitch=2 rate=1.25 advanced=true status=pass` |
-| swift build / swift test、截图、实际听感 | 未执行；本机缺少 macOS SDK，未提交 / 推送触发 CI |
+| PlayerModelTests（8 项） | macOS CI 通过：5 秒边界、音量与静音持久化、档位 / 重置、时长和设置、各速度 / 音调下循环与试听、历史与错误、真实单位末尾保护、曲末循环与暂停竞态 |
+| PlaybackSpectrumTests（1 项） | macOS CI 通过：静音、440Hz 正弦、48 条范围、双声道抵消；不打开音频设备 |
+| smoke playback-tuning | macOS CI 门禁通过；要求 `[step] playback-tuning pitch=2 rate=1.25 advanced=true status=pass` |
+| swift build / swift test、截图 | macOS CI 通过（run 40094155146），播放条高度门禁 `[step] player-bar height=76.0 status=pass` |
+| 实际听感、输出设备切换 | 需在 Mac 实机人工验收 |
 
 优先检查的编译边界是 PlaybackEngine 的完成回调切回 MainActor、PlaybackSpectrum 的 Accelerate C 类型 / 指针桥接，以及 LyricsStage 的 SwiftUI 类型推断。Canvas 已只捕获局部频谱数组，新文件的跨模块符号均显式 public；没有引入 Swift 6 专用语法。

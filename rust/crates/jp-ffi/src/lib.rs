@@ -26,6 +26,7 @@
 
 pub mod jobs;
 mod anki;
+mod system;
 #[cfg(test)]
 mod anki_tests;
 mod lyrics;
@@ -153,6 +154,12 @@ impl Session {
             dictionaries: Mutex::new(None),
             translator: jp_dict::translator::Translator::new(),
         };
+        jp_diagnostics::log::init(&session.library_root());
+        jp_lyrics::set_logger(|level, message| match level {
+            jp_lyrics::LogLevel::Warn => jp_diagnostics::log::warn(message),
+            jp_lyrics::LogLevel::Error => jp_diagnostics::log::error(message),
+        });
+        jp_diagnostics::log::info("打开 macOS 语料库");
         session.lyric_sources();
         Ok(session)
     }
@@ -266,6 +273,9 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
             json!({
                 "tracks": overview.tracks,
                 "lyricLines": overview.lyric_lines,
+                "dbPath": session.db_path.display().to_string(),
+                "tokenizerReady": session.analyzer().is_some(),
+                "audioReady": arg_or(&args, "audioAvailable", false)?,
                 "tokens": overview.tokens,
                 "root": session.root.as_ref().map(|p| p.display().to_string()),
             })
@@ -335,6 +345,7 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         )?)?,
 
         // 分析
+        "wordFrequency" => serde_json::to_value(corpus.word_frequency(arg_or::<Option<String>>(&args, "pos", None)?.as_deref(), arg_or(&args, "limit", 300)?)?)?,
         "frequency" => serde_json::to_value(corpus.frequency(&arg(&args, "query")?)?)?,
         "statsReport" => serde_json::to_value(jp_corpus::stats::stats_report(
             corpus.connection(), &arg_or(&args, "filter", jp_corpus::stats::StatsFilter::default())?,
@@ -473,6 +484,7 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
 /// 它们不拿语料库的锁，所以导入跑着（或者 207MB 的词典正在复制）的时候，界面照样能问进度、能检索。
 /// 不是这一组的方法返回 `Ok(None)`，交给 [`dispatch`] 里拿着锁的那一组。
 fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Option<Value>> {
+    if let Some(value) = system::dispatch(session, method, args)? { return Ok(Some(value)); }
     if let Some(value) = anki::dispatch(session, method, args)? {
         return Ok(Some(value));
     }
@@ -561,6 +573,15 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         }
 
         // ── 刮削（jp-scrape，和 Tauri 同一份）。联网的都用自己的连接 ──
+        "scrapeAlbumFillStart" => {
+            let targets = jp_scrape::album_fill_targets(session.network_connection()?.connection())?;
+            let total = targets.len();
+            if total > 0 {
+                let db = session.db_path.clone();
+                start_scrape(session, move |cancelled, progress| jp_scrape::run_album_fill(&db, targets, cancelled, progress))?;
+            }
+            json!(total)
+        }
         "scrapeStart" => {
             let ids = {
                 let corpus = session.corpus.lock().map_err(|_| anyhow!("语料库连接已损坏"))?;
@@ -842,14 +863,14 @@ fn lookup_text(result: &jp_dict::translator::FindTermsResult) -> Value {
             let definitions: Vec<Value> = entry
                 .definitions
                 .iter()
-                .filter_map(|d| {
+                .map(|d| {
                     let text: Vec<String> = d
                         .entries
                         .iter()
                         .map(jp_dict::lookup::plain_text)
                         .filter(|t| !t.is_empty())
                         .collect();
-                    (!text.is_empty()).then(|| json!({ "dictionary": d.dictionary, "text": text }))
+                    json!({ "dictionary": d.dictionary, "text": text, "entries": d.entries })
                 })
                 .collect();
             json!({ "headwords": headwords, "definitions": definitions })
@@ -880,13 +901,17 @@ unsafe fn from_c<'a>(ptr: *const c_char) -> Result<&'a str> {
 fn envelope(result: std::thread::Result<Result<Value>>) -> String {
     match result {
         Ok(Ok(value)) => json!({ "ok": value }).to_string(),
-        Ok(Err(err)) => json!({ "error": format!("{err:#}") }).to_string(),
+        Ok(Err(err)) => {
+            jp_diagnostics::log::error(format!("{err:#}"));
+            json!({ "error": format!("{err:#}") }).to_string()
+        }
         Err(panic) => {
             let msg = panic
                 .downcast_ref::<&str>()
                 .map(|s| s.to_string())
                 .or_else(|| panic.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "未知错误".into());
+            jp_diagnostics::log::error(format!("内部错误：{msg}"));
             json!({ "error": format!("内部错误：{msg}") }).to_string()
         }
     }

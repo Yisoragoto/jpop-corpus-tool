@@ -47,12 +47,20 @@ pub fn edit_at(path: &Path, edit: impl FnOnce(&mut Value)) -> Result<()> {
 }
 
 pub fn set_channel(channel: Channel) -> Result<()> {
-    edit_at(&crate::library_root::settings_path(), |s| s["update_channel"] = json!(channel))
+    set_channel_at(&crate::library_root::settings_path(), channel)
+}
+
+pub fn set_channel_at(path: &Path, channel: Channel) -> Result<()> {
+    edit_at(path, |s| s["update_channel"] = json!(channel))
 }
 
 pub fn skip(channel: Channel, id: &str) -> Result<()> {
+    skip_at(&crate::library_root::settings_path(), channel, id)
+}
+
+pub fn skip_at(path: &Path, channel: Channel, id: &str) -> Result<()> {
     ensure!(id.len() <= 128, "跳过的构建编号太长");
-    edit_at(&crate::library_root::settings_path(), |s| {
+    edit_at(path, |s| {
         s[match channel { Channel::Stable => "skipped_stable", Channel::Debug => "skipped_debug" }] = json!(id);
     })
 }
@@ -74,6 +82,29 @@ mod tests {
         let raw: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(raw["unknown"], 42);
         assert_eq!(read_at(&path).update_channel, Channel::Debug);
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    #[test]
+    fn preferences_roundtrip_clear_and_corruption_are_offline() {
+        let path = std::env::temp_dir().join(format!("jp-update-roundtrip-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(read_at(&path).update_channel, Channel::Stable);
+        set_channel_at(&path, Channel::Debug).unwrap();
+        skip_at(&path, Channel::Debug, "build-new").unwrap();
+        skip_at(&path, Channel::Stable, "9.8.7").unwrap();
+        let p = read_at(&path); assert!(p.skipped(Channel::Debug, "build-new")); assert!(p.skipped(Channel::Stable, "9.8.7"));
+        skip_at(&path, Channel::Debug, "").unwrap(); assert!(!read_at(&path).skipped(Channel::Debug, "build-new"));
+        assert!(skip_at(&path, Channel::Debug, &"x".repeat(129)).is_err());
+        assert_eq!(read_at(&path).update_channel, Channel::Debug);
+        std::fs::write(&path, b"{broken").unwrap();
+        assert_eq!(read_at(&path).update_channel, Channel::Stable);
+        assert!(set_channel_at(&path, Channel::Debug).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"{broken");
         let _ = std::fs::remove_file(path);
     }
 }

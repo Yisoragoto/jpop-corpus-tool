@@ -69,6 +69,9 @@ enum SmokeRun {
             app.audioRoots = [audioPath]
             await app.openDemo()
             try require(app.client != nil && app.errorMessage == nil, "open-demo", "tracks=\(app.tracks.count)")
+            guard let diagnosticsClient = app.core else { throw SmokeFailure.step("diagnostics-client") }
+            let diagnostic = try await diagnosticsClient.diagnosticsReport(audioAvailable: app.player.audioAvailable)
+            try require(!diagnostic.isEmpty, "diagnostics", "bytes=\(diagnostic.utf8.count)")
             guard let manager = app.library.client, let original = app.tracks.first else { throw SmokeFailure.step("library-edit-missing-client") }
             var edited = SongEdit(original); edited.title += "（管理验证）"
             let saved = await app.library.save(original.id, edit: edited)

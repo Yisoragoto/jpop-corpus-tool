@@ -12,6 +12,7 @@ struct DictionaryView: View {
     @State private var picking = false
     @State private var job: JobProgress<DictImportBatch>?
     @State private var lastBatch: DictImportBatch?
+    @State private var legacy: [LegacyDictionarySource] = []
     @State private var probe = ""
     @State private var probeRequest: LookupRequest?
 
@@ -22,6 +23,19 @@ struct DictionaryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 dictionariesSection
+                if !legacy.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("从旧版迁移词典").font(.headline)
+                        ForEach(legacy) { source in
+                            HStack {
+                                Text(source.name); Spacer()
+                                if source.imported { Text("已导入").foregroundStyle(.secondary) }
+                                else if !source.exists { Text("文件不存在，请重新选择词典包").foregroundStyle(.secondary) }
+                                else { Button("导入") { Task { await importDictionaries([URL(fileURLWithPath: source.path)]) } }.disabled(importing) }
+                            }
+                        }
+                    }
+                }
                 probeSection
             }
             .padding(24)
@@ -163,6 +177,8 @@ struct DictionaryView: View {
     // MARK: - 动作
 
     private func reload() async {
+        do { legacy = try await app.core?.dictLegacySources() ?? [] }
+        catch { app.errorMessage = error.localizedDescription }
         do {
             dictionaries = try await app.core?.dictionaries() ?? []
         } catch {

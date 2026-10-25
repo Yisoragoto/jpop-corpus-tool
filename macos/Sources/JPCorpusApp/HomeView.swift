@@ -146,6 +146,8 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("今天").font(.headline).foregroundStyle(.secondary)
             if let cardsToday { Text("今天制卡 \(cardsToday) 张").font(.caption).foregroundStyle(.secondary) }
+            ProgressView(value: min(1, t.listenedSec / (app.dailyGoalMinutes * 60)))
+                .help("每日目标 \(Int(app.dailyGoalMinutes)) 分钟")
             HStack(spacing: 18) {
                 StatBlock(value: formatListening(t.listenedSec), label: "\(t.songs) 首 · \(t.linesHeard) 行")
                 if t.streakDays > 1 {

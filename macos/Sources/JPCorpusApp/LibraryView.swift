@@ -336,10 +336,14 @@ struct PersonDetailView: View {
     @Environment(AppModel.self) private var app
     let personId: Int64
     @State private var person: DirectoryEntry?
+    /// 名录里没有这个人时的名字和照片（与 Windows 一样：先用所在乐队记录，再按 id 读）
+    @State private var fallback: (name: String, imagePath: String)?
     @State private var works: [PersonWork] = []
     @State private var collaborators: [Collaborator] = []
     @State private var role = ""
     @State private var bands: [Membership] = []
+
+    private var displayName: String { person?.name ?? fallback?.name ?? "" }
 
     private var shown: [PersonWork] {
         role.isEmpty ? works : works.filter { $0.roles.contains(role) }
@@ -353,11 +357,11 @@ struct PersonDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .center, spacing: 22) {
-                    CoverImage(path: person?.imagePath ?? "", size: 150, circle: true, placeholder: "person.fill", identity: person?.name ?? "")
+                    CoverImage(path: person?.imagePath ?? fallback?.imagePath ?? "", size: 150, circle: true, placeholder: "person.fill", identity: displayName)
                         .shadow(color: .black.opacity(0.2), radius: 12, y: 5)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(person?.artistType == "Group" ? "组合" : "歌手").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        Text(person?.name ?? "").font(.largeTitle.weight(.bold))
+                        Text(displayName).font(.largeTitle.weight(.bold))
                         if let p = person {
                             Text([p.roleSummary, years(p)].filter { !$0.isEmpty }.joined(separator: " · "))
                                 .foregroundStyle(.secondary)
@@ -425,7 +429,7 @@ struct PersonDetailView: View {
             .padding(24)
         }
         .clearScrollBackground()
-        .navigationTitle(person?.name ?? "歌手")
+        .navigationTitle(displayName.isEmpty ? "歌手" : displayName)
         .task(id: "\(personId)-\(app.library.version)") {
             guard let client = app.core else { return }
             do {
@@ -436,6 +440,10 @@ struct PersonDetailView: View {
                 works = try await w
                 collaborators = try await c
                 bands = try await app.library.client?.bandsOf(personId) ?? []
+                if person != nil { fallback = nil }
+                else if let band = bands.first { fallback = (band.memberName, band.memberImage) }
+                else if let found = try? await client.personById(personId) { fallback = (found.name, found.imagePath) }
+                else { fallback = nil }
             } catch {
                 app.errorMessage = error.localizedDescription
             }

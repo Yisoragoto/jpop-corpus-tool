@@ -35,6 +35,7 @@ public final class PlayerModel {
             engine.spectrumEnabled = spectrumEnabled
         }
     }
+    public var audioAvailable: Bool { engine.outputAvailable }
     public var spectrum: [Float] { engine.spectrum }
     public private(set) var canPlay = false
     public var tuneBadge: String {

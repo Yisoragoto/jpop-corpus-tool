@@ -12,6 +12,8 @@ import SwiftUI
 struct SearchView: View {
     @Environment(AppModel.self) private var app
 
+    @State private var textMode = false
+    @State private var suggestions: [WordFrequency] = []
     @State private var text = ""
     @State private var field: MatchField = .lemma
     @State private var dedup = true
@@ -52,6 +54,14 @@ struct SearchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Picker("检索方式", selection: $textMode) { Text("KWIC").tag(false); Text("全文搜索").tag(true) }
+                .pickerStyle(.segmented).fixedSize().padding(10)
+            if textMode { LyricTextSearchView() } else { kwicBody }
+        }.onChange(of: app.searchRequest) { _, request in if request != nil { textMode = false } }
+    }
+
+    private var kwicBody: some View {
+        VStack(spacing: 0) {
             controls
             Divider()
             if rows.isEmpty && searched == nil {
@@ -77,6 +87,10 @@ struct SearchView: View {
             }
         }
         .navigationTitle("检索")
+        .task(id: app.libraryURL) {
+            do { suggestions = try await app.core?.wordFrequency() ?? [] }
+            catch { app.errorMessage = error.localizedDescription }
+        }
         .onChange(of: app.library.version) { _, _ in
             if let searched { Task { await run(searched.query, searched.field) } }
         }
@@ -175,6 +189,13 @@ struct SearchView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("KWIC 把关键词居中对齐，一眼看出它在不同歌里怎么用。")
             Text("选中一条按空格试听那一句；回车或双击跳到那首歌从这一句接着放，右边的歌词跟着走。右键可以连前后文一起听。")
+            if !suggestions.isEmpty {
+                ScrollView(.horizontal) { HStack(spacing: 6) {
+                    ForEach(suggestions) { suggestion in
+                        Button(suggestion.lemma) { text = suggestion.lemma; Task { await run(text, .lemma) } }
+                    }
+                } }
+            }
             Text("精度到行：时间戳来自 LRC，没有词级时间。")
                 .foregroundStyle(.secondary)
         }
@@ -325,4 +346,51 @@ func formatTime(_ seconds: Double) -> String {
     guard seconds.isFinite, seconds >= 0 else { return "—" }
     let s = Int(seconds.rounded(.down))
     return String(format: "%d:%02d", s / 60, s % 60)
+}
+
+@MainActor
+private struct LyricTextSearchView: View {
+    @Environment(AppModel.self) private var app
+    @State private var text = ""
+    @State private var rows: [LyricHit] = []
+    @State private var selection: Set<Int64> = []
+    @State private var busy = false
+    @State private var sequence = 0
+    @State private var searched = false
+    var body: some View {
+        VStack {
+            HStack {
+                TextField("搜索歌词原文", text: $text).onSubmit { Task { await search() } }
+                Button(busy ? "搜索中…" : "搜索") { Task { await search() } }.disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if searched { Text("\(rows.count) 条").foregroundStyle(.secondary) }
+            }.padding(12)
+            Table(rows, selection: $selection) {
+                TableColumn("歌词") { Text($0.text).textSelection(.enabled) }
+                TableColumn("歌曲") { Text($0.artist + " · " + $0.title) }.width(min: 150, ideal: 230)
+            }
+            .contextMenu(forSelectionType: Int64.self) { ids in
+                if let hit = rows.first(where: { ids.contains($0.id) }) {
+                    Button("试听这一句") { Task { await app.player.audition(hit.utteranceId) } }.disabled(hit.timeSec == nil)
+                    Button("连前后各一行试听") { Task { await app.player.audition(hit.utteranceId, before: 1, after: 1) } }.disabled(hit.timeSec == nil)
+                    Button("从这一句接着放") { open(hit) }
+                }
+            } primaryAction: { ids in if let hit = rows.first(where: { ids.contains($0.id) }) { open(hit) } }
+            .onKeyPress(.space) {
+                guard let hit = rows.first(where: { selection.contains($0.id) }) else { return .ignored }
+                Task { await app.player.audition(hit.utteranceId) }; return .handled
+            }
+        }
+    }
+    private func open(_ hit: LyricHit) {
+        app.showLyrics = true
+        Task { await app.player.playFrom(songId: hit.songId, utteranceId: hit.utteranceId, timeSec: hit.timeSec) }
+    }
+    private func search() async {
+        guard let client = app.core else { return }
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines); guard !query.isEmpty else { return }
+        sequence += 1; let request = sequence; busy = true
+        defer { if sequence == request { busy = false } }
+        do { let found = try await client.searchLyrics(query); if sequence == request { rows = found; searched = true } }
+        catch { if sequence == request { app.errorMessage = error.localizedDescription } }
+    }
 }

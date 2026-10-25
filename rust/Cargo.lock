@@ -1920,6 +1920,7 @@ dependencies = [
  "jp-anki",
  "jp-audio",
  "jp-corpus",
+ "jp-diagnostics",
  "jp-dict",
  "jp-fonts",
  "jp-import",
@@ -1930,16 +1931,14 @@ dependencies = [
  "jp-scraper",
  "jp-setup",
  "jp-tokenizer",
+ "jp-update",
  "lofty",
  "rusqlite",
- "semver",
  "serde",
  "serde_json",
- "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
- "ureq",
  "windows",
 ]
 
@@ -1983,6 +1982,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jp-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "jp-corpus",
+ "jp-import",
+ "jp-setup",
+]
+
+[[package]]
 name = "jp-dict"
 version = "0.1.0"
 dependencies = [
@@ -2003,6 +2011,7 @@ dependencies = [
  "jp-anki",
  "jp-audio",
  "jp-corpus",
+ "jp-diagnostics",
  "jp-dict",
  "jp-fonts",
  "jp-import",
@@ -2012,6 +2021,7 @@ dependencies = [
  "jp-scraper",
  "jp-setup",
  "jp-tokenizer",
+ "jp-update",
  "serde",
  "serde_json",
 ]
@@ -2136,6 +2146,20 @@ dependencies = [
  "serde",
  "serde_json",
  "sudachi",
+]
+
+[[package]]
+name = "jp-update"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-corpus",
+ "jp-setup",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ureq",
 ]
 
 [[package]]

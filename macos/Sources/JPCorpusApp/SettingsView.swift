@@ -15,8 +15,16 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            UpdateSettingsView()
+            DiagnosticsSettingsView()
+            CloudPreferencesView()
+            HealthSettingsView()
             Section("Anki") { MineSettingsView() }
             Section("播放") {
+                LabeledContent("每天的收听目标") {
+                    Slider(value: Binding(get: { app.dailyGoalMinutes }, set: { app.dailyGoalMinutes = $0 }), in: 5...180, step: 1)
+                    Text("\(Int(app.dailyGoalMinutes)) 分钟").monospacedDigit()
+                }
                 Toggle("逐字点亮当前行", isOn: Binding(get: { app.karaokeLyrics }, set: { app.karaokeLyrics = $0 }))
                 Toggle("显示频谱", isOn: Binding(get: { app.player.spectrumEnabled }, set: { app.player.spectrumEnabled = $0 }))
                 Toggle("全屏歌词使用虚化封面", isOn: Binding(get: { app.stageCoverBlur }, set: { app.stageCoverBlur = $0 }))
@@ -26,9 +34,12 @@ struct SettingsView: View {
                 }.disabled(!app.stageCoverBlur)
             }
             Section("歌词") {
+                Toggle("默认显示振假名", isOn: Binding(get: { app.showFurigana }, set: { app.showFurigana = $0 }))
+                HStack { Text("字体、备用字体、字号、注音与间距"); Spacer(); LyricsDisplayButton() }
                 Button("歌词来源、批量补全与逐首预览") { lyricsOpen = true }.disabled(app.core == nil)
             }
             Section("资料库管理") {
+                Toggle("启动时检查新歌", isOn: Binding(get: { app.autoCheckNewSongs }, set: { app.autoCheckNewSongs = $0 }))
                 HStack { Text("歌曲、音频、成员、维护与迁移"); Spacer(); LibraryManageButton() }.disabled(app.core == nil)
             }
             Section("语料库") {

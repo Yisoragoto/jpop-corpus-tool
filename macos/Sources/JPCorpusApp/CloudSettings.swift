@@ -22,7 +22,7 @@ struct CloudSettings: View {
                         ForEach(Array(Set(files.map(\.family)+NSFontManager.shared.availableFontFamilies+[family])).filter { !$0.isEmpty }.sorted(),id: \.self) { Text($0).tag($0) }
                     }
                     Button("导入字体…") { importing = true }
-                    Picker("词数",selection: $count) { ForEach([60,120,200],id: \.self) { Text(String($0)).tag($0) } }.pickerStyle(.segmented)
+                    HStack { Text("词数"); Slider(value: Binding(get: { Double(count) }, set: { count = Int($0) }), in: 30...250, step: 1); Text(String(count)).monospacedDigit() }
                     Toggle("按词性上色",isOn: $colorByPos); Toggle("去虚词",isOn: $hideFunction)
                 }.padding(18).frame(width: 330)
             }

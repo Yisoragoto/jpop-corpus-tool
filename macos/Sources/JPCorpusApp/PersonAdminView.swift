@@ -12,15 +12,39 @@ struct PersonAdminView: View {
     @State private var model = MembersModel()
     @State private var choosing = false
     @State private var editing = false
+    @State private var provenance: [FieldProvenance] = []
+    private static let fieldLabels = ["artist_type": "类型", "country": "国家", "formed": "成立", "ended": "结束", "mbid": "MusicBrainz 编号", "image_path": "照片"]
+    /// 「资料来源 · 类型、国家：MusicBrainz（置信度 90%） · 照片：Deezer」，按来源首次出现的顺序分组
+    private var provenanceText: String {
+        guard !provenance.isEmpty else { return "" }
+        var order: [String] = []; var groups: [String: [FieldProvenance]] = [:]
+        for row in provenance { if groups[row.source] == nil { order.append(row.source) }; groups[row.source, default: []].append(row) }
+        let parts = order.map { source -> String in
+            let list = groups[source] ?? []
+            let fields = list.map { Self.fieldLabels[$0.field] ?? $0.field }.joined(separator: "、")
+            let conf = list.first?.confidence.map { "（置信度 \(String(format: "%.0f", $0 * 100))%）" } ?? ""
+            return "\(fields)：\(codeLabel(fieldSourceLabels, source))\(conf)"
+        }
+        return "资料来源 · " + parts.joined(separator: " · ")
+    }
     private var canEditMembers: Bool {
         LibraryIndex.canEditMembers(person, members: model.members, bands: model.bands)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button { choosing = true } label: { Label("更换照片", systemImage: "photo") }
-                Button { Task { _ = await app.library.perform { _ = try await app.library.client?.artistImageReset(name); app.library.version += 1 } } } label: { Label("恢复刮削照片", systemImage: "arrow.counterclockwise") }
-            }.buttonStyle(.borderless)
+            // 与 Windows 的「更多」菜单一致：换照片、手动换过才显示恢复、资料来源
+            Menu {
+                Button("换照片…") { choosing = true }
+                if person.imageManual {
+                    Button("恢复刮削的照片") { Task { _ = await app.library.perform { _ = try await app.library.client?.artistImageReset(name); app.library.version += 1 } } }
+                }
+                if !provenanceText.isEmpty { Divider(); Text(provenanceText) }
+            } label: { Label("更多", systemImage: "ellipsis.circle") }
+            .menuStyle(.borderlessButton).fixedSize().help("更多")
+            .task(id: "\(name)|\(person.imagePath)|\(person.imageManual)") {
+                // 读不到来源不影响看档案，静默
+                provenance = (try? await app.core?.artistProvenance(name)) ?? []
+            }
             ForEach(model.bands, id: \.bandId) { band in
                 Button("\(band.leftAt.isEmpty ? "也在" : "曾属") \(band.bandName) · \(LibraryIndex.spanOf(band.joined, band.leftAt))") { app.show(.person(band.bandId)) }.buttonStyle(.link)
             }

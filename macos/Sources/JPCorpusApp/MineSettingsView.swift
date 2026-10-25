@@ -23,7 +23,7 @@ struct MineSettingsView: View {
             Text("一键制卡").font(.title2.bold())
             LabeledContent("牌组") { Picker("牌组", selection: $deck) { ForEach(decks, id: \.self) { Text($0).tag($0) } }.labelsHidden().disabled(connection?.connected != true) }
             Text(connection?.connected == true ? "在曲库里点词，查词结果上的「＋ 制卡」就放进这里" : "Anki 没连上，列不出牌组；连上之后这里会是真实的牌组列表").font(.caption).foregroundStyle(.secondary)
-            Toggle("按歌手放进子牌组", isOn: $artistSubdeck)
+            Toggle("按歌手放进子牌组", isOn: $artistSubdeck).toggleStyle(.switch)
             Text(artistSubdeck ? "放进「\(deck)::歌手」；子牌组没有就新建，合作曲放进第一位歌手的。不是从歌里查的词还放在上面那个牌组" : "开了以后制卡放进「牌组::歌手」的子牌组，没有就新建").font(.caption).foregroundStyle(.secondary)
             Picker("笔记类型", selection: $model) { ForEach(modelChoices, id: \.self) { Text($0).tag($0) } }
             Text("默认「Lyrics」：照 Lapis 做的，背面右侧是封面，封面右边竖排歌名、歌手、专辑").font(.caption).foregroundStyle(.secondary)
@@ -40,7 +40,7 @@ struct MineSettingsView: View {
                     Text(model == lyricsNoteType ? "Anki 里还没有「Lyrics」笔记类型，第一次制卡时会自动建。" : "Anki 里没有「\(model)」笔记类型，换一个。").font(.caption).foregroundStyle(.secondary)
                 }
                 if let actual = connection?.decks, !actual.isEmpty && !actual.contains(deck) { Text("Anki 里没有「\(deck)」牌组，制卡会失败。").font(.caption).foregroundStyle(.orange) }
-            } else if let connection { Text(connection.message).font(.caption).foregroundStyle(.secondary) }
+            }
         }
         .task(id: "\(app.libraryURL?.path ?? "")|\(app.dictionaryVersion)|\(status?.connected == true)") {
             if status == nil { fetched = try? await app.core?.ankiStatus() }

@@ -4,6 +4,7 @@ import Foundation
 /// 所有位置均为源音频秒数，调音不改变歌词时间轴。
 @MainActor
 public protocol PlaybackEngine: AnyObject {
+    var outputAvailable: Bool { get }
     var isLoaded: Bool { get }
     var isPlaying: Bool { get }
     var position: Double { get }
@@ -22,6 +23,8 @@ public protocol PlaybackEngine: AnyObject {
     func pause()
     func seek(to seconds: Double)
 }
+
+public extension PlaybackEngine { var outputAvailable: Bool { true } }
 
 @MainActor
 public final class NativePlaybackEngine: PlaybackEngine {
@@ -42,6 +45,7 @@ public final class NativePlaybackEngine: PlaybackEngine {
     public var onStateChange: (() -> Void)?
     public private(set) var lastError: String?
     public private(set) var isPlaying = false
+    public var outputAvailable: Bool { engine.outputNode.outputFormat(forBus: 0).channelCount > 0 }
     public var isLoaded: Bool { file != nil }
     public var duration: Double { file.map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0 }
     public var rate: Float = 1 { didSet { timePitch.rate = rate } }

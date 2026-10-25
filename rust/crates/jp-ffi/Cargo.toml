@@ -11,6 +11,8 @@ description = "C ABI over the JPOP Corpus core, for the native macOS (SwiftUI) c
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+jp-update = { path = "../jp-update" }
+jp-diagnostics = { path = "../jp-diagnostics" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -30,5 +32,4 @@ jp-scrape = { path = "../jp-scrape" }
 
 jp-library = { path = "../jp-library" }
 
-[dev-dependencies]
 jp-scraper = { path = "../jp-scraper" }

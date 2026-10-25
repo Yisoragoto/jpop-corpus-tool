@@ -87,6 +87,7 @@ public final class AppModel {
     public let scopes: SubcorpusStore
     public let visualizations = VisualizationModel()
     public let anki = AnkiModel()
+    public let updates: UpdateModel
     public var libraryMode: LibraryMode = .songs { didSet { defaults.set(libraryMode.rawValue,forKey: "libraryMode") } }
     /// 全屏歌词
     public var showStage = false
@@ -131,6 +132,8 @@ public final class AppModel {
     public var stageBlurRadius: Double {
         didSet { defaults.set(stageBlurRadius, forKey: "player-stage-blur-radius") }
     }
+    public var autoCheckNewSongs: Bool { didSet { defaults.set(autoCheckNewSongs, forKey: "autoCheckNewSongs") } }
+    public var dailyGoalMinutes: Double { didSet { defaults.set(dailyGoalMinutes, forKey: "dailyGoalMinutes") } }
     public var karaokeLyrics: Bool {
         didSet { defaults.set(karaokeLyrics, forKey: "player-karaoke-lyrics") }
     }
@@ -174,6 +177,7 @@ public final class AppModel {
         }
     ) {
         self.defaults = defaults
+        updates = UpdateModel(defaults: defaults, client: client as? any UpdateCalling)
         scopes = SubcorpusStore(defaults: defaults)
         libraryMode = LibraryMode(rawValue: defaults.string(forKey: "libraryMode") ?? "") ?? .songs
         self.client = client
@@ -184,6 +188,9 @@ public final class AppModel {
         let blur = defaults.object(forKey: "player-stage-blur-radius") as? NSNumber
         let radius = blur?.doubleValue ?? 64
         stageBlurRadius = radius.isFinite ? min(120, max(20, radius)) : 64
+        autoCheckNewSongs = defaults.object(forKey: "autoCheckNewSongs") as? Bool ?? true
+        let goal = defaults.object(forKey: "dailyGoalMinutes") as? Double ?? 30
+        dailyGoalMinutes = goal.isFinite ? min(180, max(5, goal.rounded())) : 30
         karaokeLyrics = defaults.object(forKey: "player-karaoke-lyrics") as? Bool ?? true
         audioRoots = defaults.stringArray(forKey: Keys.audioRoots) ?? []
         showFurigana = defaults.bool(forKey: Keys.furigana)
@@ -252,13 +259,14 @@ public final class AppModel {
             try await next.setAudioRoots(audioRoots)
             let fetched = try await next.tracks()
             client = next
+            updates.client = next as? any UpdateCalling
             library = LibraryModel(client: next as? any LibraryCalling, defaults: defaults)
             libraryURL = folder
             importer = ImportModel()
             updateTracks(fetched)
             isDemo = false
             defaults.set(folder.path, forKey: Keys.library)
-            if library.client != nil { Task { await library.checkNewAudio() } }
+            if autoCheckNewSongs && library.client != nil { Task { await library.checkNewAudio() } }
         } catch {
             errorMessage = error.localizedDescription
         }

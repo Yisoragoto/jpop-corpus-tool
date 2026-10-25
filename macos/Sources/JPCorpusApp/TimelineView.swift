@@ -57,7 +57,8 @@ struct ReleaseTimelineView: View {
         let width = axis.width+80, height = 30+Double(rows.count)*64+16
         let step = perYear < 45 ? 5 : perYear < 70 ? 2 : 1
         let years = Array(Int(layout.min)...Int(layout.max)).filter { $0 % step == 0 }
-        return ScrollViewReader { proxy in
+        // 双向 ScrollView 会把比窗口小的内容居中；撑满可视区并靠左上。
+        return GeometryReader { viewport in ScrollViewReader { proxy in
             ScrollView([.horizontal,.vertical]) {
                 HStack(alignment: .top,spacing: 0) {
                     VStack(spacing: 0) {
@@ -102,9 +103,9 @@ struct ReleaseTimelineView: View {
                         }
                         Color.clear.frame(width: 1,height: 1).position(x: width,y: 0).id("latest")
                     }.frame(width: width,height: height)
-                }
+                }.frame(minWidth: viewport.size.width,minHeight: viewport.size.height,alignment: .topLeading)
             }.onAppear { proxy.scrollTo("latest",anchor: .topTrailing) }
-        }
+        } }
     }
 }
 

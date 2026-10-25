@@ -10,7 +10,7 @@ struct CloudView: View {
     @AppStorage("cloud.count") private var count = 120
     @AppStorage("cloud.hideFunction") private var hideFunction = true
     @AppStorage("cloud.colorByPos") private var colorByPos = false
-    @AppStorage("cloud.font") private var family = ""
+    @AppStorage("cloud.font") private var family = "Klee One"
     @AppStorage("cloud.hidden") private var hiddenJSON = "[]"
     @State private var canvasSize = CGSize.zero
     @State private var hovered: String?

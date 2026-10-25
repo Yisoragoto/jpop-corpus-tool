@@ -28,6 +28,10 @@ extension CorpusClient {
     public func artistImageReset(_ name: String) async throws -> String {
         return try await performDetached { try $0.call("artistImageReset", ["name": AnyEncodable(name)]) }
     }
+    /// 歌手资料（类型、国家、照片等）各字段的来源
+    public func artistProvenance(_ name: String) async throws -> [FieldProvenance] {
+        return try await perform { try $0.call("artistProvenance", ["name": AnyEncodable(name)]) }
+    }
     public func artistRoster() async throws -> [ArtistRow] {
         return try await performDetached { try $0.call("artistRoster") }
     }

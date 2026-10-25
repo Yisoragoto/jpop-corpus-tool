@@ -335,6 +335,28 @@ public struct AnalysisSummary: Decodable, Hashable, Identifiable, Sendable {
     }
 }
 
+/// `analysisGet`：一条存档的完整记录（存档页「详情」用）。结果本身不解
+public struct AnalysisRunDetail: Decodable, Hashable, Sendable {
+    public struct Spec: Decodable, Hashable, Sendable { public var kind: String }
+    public struct Scope: Decodable, Hashable, Sendable { public var songCount: Int64; public var lineCount: Int64 }
+    public struct Tokenizers: Decodable, Hashable, Sendable { public var runs: [LyricTokenizerRun]; public var unknownLines: Int64 }
+    public var id: Int64
+    public var label: String
+    public var spec: Spec
+    public var filter: StatsFilter
+    public var scope: Scope
+    public var scopeHash: String
+    public var tokenizers: Tokenizers
+    /// 口径：键 → 值（数组或标量），按 Windows 的方式显示
+    public var method: [String: LyricJSON]
+    public var resultHash: String
+    public var snapshot: CorpusSnapshot?
+    public var schemaVersion: Int64
+    public var appVersion: String
+    public var rerunOf: Int64?
+    public var createdAt: String
+}
+
 /// 存一次分析时返回的完整记录。界面只用得到 id 和摘要那几项，结果本身不解
 public struct AnalysisRunRef: Decodable, Hashable, Sendable {
     public var id: Int64

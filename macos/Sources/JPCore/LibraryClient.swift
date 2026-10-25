@@ -19,6 +19,11 @@ extension CorpusClient {
         try await perform { try $0.call("peopleDirectory") }
     }
 
+    /// 不在名录里的人（比如没有自己作品的成员）只能按 id 读名字和照片
+    public func personById(_ personId: Int64) async throws -> PersonSummary? {
+        try await perform { try $0.call("personById", ["personId": AnyEncodable(personId)]) }
+    }
+
     public func personWorks(_ personId: Int64) async throws -> [PersonWork] {
         try await perform { try $0.call("personWorks", ["personId": AnyEncodable(personId)]) }
     }
@@ -57,6 +62,10 @@ extension CorpusClient {
 
     public func analysisList(limit: Int = 200) async throws -> [AnalysisSummary] {
         try await perform { try $0.call("analysisList", ["limit": AnyEncodable(limit)]) }
+    }
+
+    public func analysisGet(_ id: Int64) async throws -> AnalysisRunDetail? {
+        try await perform { try $0.call("analysisGet", ["id": AnyEncodable(id)]) }
     }
 
     /// 把一次重复感知的词频存档

@@ -155,6 +155,7 @@ public struct LookupDefinition: Codable, Hashable, Sendable {
     public var dictionary: String
     /// 每一项是一条释义的纯文本（可能有换行）
     public var text: [String]
+    public var entries: [DictionaryValue]?
 }
 
 public struct LookupEntry: Codable, Hashable, Sendable {
@@ -198,4 +199,29 @@ public struct DictionaryCounts: Codable, Hashable, Sendable {
     public var terms: Int64?
     public var media: Int64?
     public var termMeta: [String: Int64]?
+}
+
+/// 保留词典结构化释义的 JSON，不在 Swift 复制渲染业务。
+public indirect enum DictionaryValue: Codable, Hashable, Sendable {
+    case string(String), number(Double), bool(Bool), array([DictionaryValue]), object([String: DictionaryValue]), null
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let v = try? c.decode(Bool.self) { self = .bool(v) }
+        else if let v = try? c.decode(String.self) { self = .string(v) }
+        else if let v = try? c.decode(Double.self) { self = .number(v) }
+        else if let v = try? c.decode([DictionaryValue].self) { self = .array(v) }
+        else { self = .object(try c.decode([String: DictionaryValue].self)) }
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .string(let v): try c.encode(v)
+        case .number(let v): try c.encode(v)
+        case .bool(let v): try c.encode(v)
+        case .array(let v): try c.encode(v)
+        case .object(let v): try c.encode(v)
+        case .null: try c.encodeNil()
+        }
+    }
 }
