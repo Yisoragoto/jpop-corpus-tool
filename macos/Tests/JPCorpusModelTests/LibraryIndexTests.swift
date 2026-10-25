@@ -76,4 +76,17 @@ final class LibraryIndexTests: XCTestCase {
         XCTAssertEqual(LibraryIndex.memberSubtitle(current), "作词作曲")
         XCTAssertEqual(LibraryIndex.filterMusicians(dir.musicians, "  ").map(\.memberHit), [false, false, false])
     }
+    func testMemberEditorHiddenForKnownPersonAndBandMember() throws {
+        XCTAssertFalse(LibraryIndex.canEditMembers(try person(2,"个人",performer: 6,type: "Person"),members: [],bands: []))
+        XCTAssertFalse(LibraryIndex.canEditMembers(try person(3,"幕后",composer: 4),members: [],bands: []))
+        let dir = try fixture()
+        XCTAssertFalse(LibraryIndex.canEditMembers(dir.byId[2],members: [],bands: dir.bandsOf[2] ?? []))
+        XCTAssertFalse(LibraryIndex.canEditMembers(nil,members: [],bands: []))
+    }
+    func testMemberEditorAllowsGroupsUnknownPerformersAndExistingMemberships() throws {
+        XCTAssertTrue(LibraryIndex.canEditMembers(try person(1,"组合",type: "Group"),members: [],bands: []))
+        XCTAssertTrue(LibraryIndex.canEditMembers(try person(4,"未知",performer: 1),members: [],bands: []))
+        let dir = try fixture()
+        XCTAssertTrue(LibraryIndex.canEditMembers(try person(1,"已有成员",type: "Person"),members: dir.membersOf[1] ?? [],bands: []))
+    }
 }

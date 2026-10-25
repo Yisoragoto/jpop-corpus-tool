@@ -70,6 +70,9 @@ struct JPCorpusApp: App {
                 Button("全库搜索…") { app.showQuickSearch = true }
                     .keyboardShortcut("k", modifiers: [.command])
                     .disabled(app.client == nil)
+                Button("命令面板…") { app.paletteCommands = true; app.showQuickSearch = true }
+                    .keyboardShortcut("p", modifiers: [.command])
+                    .disabled(app.client == nil)
             }
             CommandGroup(after: .sidebar) {
                 ForEach(Array(SidebarItem.allCases.enumerated()), id: \.element) { index, item in

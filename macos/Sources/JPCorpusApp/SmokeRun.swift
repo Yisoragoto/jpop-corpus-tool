@@ -157,11 +157,24 @@ enum SmokeRun {
             // 曲库三种看法
             app.section = .library
             for (name, mode) in [("04b-library-songs", "歌曲"), ("04c-library-albums", "专辑"), ("04d-library-artists", "歌手")] {
-                UserDefaults.standard.set(mode, forKey: "libraryMode")
+                app.libraryMode = LibraryMode(rawValue: mode) ?? .songs
                 await settle(1.5)
                 shot(name, into: out, note: note)
             }
-            UserDefaults.standard.set("歌曲", forKey: "libraryMode")
+            app.libraryMode = .graph
+            let lyricsWereVisible = app.showLyrics; app.showLyrics = false
+            for _ in 0..<60 { if !app.visualizations.graph.nodes.isEmpty && !app.visualizations.graphBusy { break }; await settle(0.2) }
+            try require(!app.visualizations.graph.nodes.isEmpty && !app.visualizations.graphBusy,"graph","nodes=\(app.visualizations.graph.nodes.count) links=\(app.visualizations.graph.links.count)")
+            await settle(0.5); shot("04g-graph",into: out,note: note)
+            app.libraryMode = .timeline
+            await settle(1)
+            try require(!app.visualizations.timeline.rows.isEmpty,"timeline","rows=\(app.visualizations.timeline.rows.count) releases=\(app.visualizations.releases.count)")
+            shot("04h-timeline",into: out,note: note)
+            app.libraryMode = .cloud
+            for _ in 0..<60 { if !app.visualizations.words.isEmpty && !app.visualizations.placed.isEmpty && !app.visualizations.cloudBusy { break }; await settle(0.2) }
+            try require(!app.visualizations.words.isEmpty && !app.visualizations.placed.isEmpty,"cloud","words=\(app.visualizations.words.count) placed=\(app.visualizations.placed.count)")
+            await settle(0.5); shot("04i-cloud",into: out,note: note)
+            app.libraryMode = .songs; app.showLyrics = lyricsWereVisible
 
             // 歌手详情、歌曲详情
             if let person = try? await app.core?.peopleDirectory().first(where: { $0.performer > 0 }) {

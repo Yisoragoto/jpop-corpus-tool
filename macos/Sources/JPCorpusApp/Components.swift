@@ -116,13 +116,5 @@ func grouped(_ n: Int64) -> String {
 
 /// 库里存的时间是 UTC 的 ISO 字符串（`2026-10-16T08:01:02Z` 或 `2026-10-16 08:01:02`）
 func relativeTime(_ stored: String) -> String {
-    if stored.isEmpty { return "" }
-    let iso = ISO8601DateFormatter()
-    let normalized = stored.contains("T") ? stored : stored.replacingOccurrences(of: " ", with: "T") + (stored.hasSuffix("Z") ? "" : "Z")
-    guard let date = iso.date(from: normalized) else { return stored }
-    if abs(date.timeIntervalSinceNow) < 60 { return "刚刚" }
-    let f = RelativeDateTimeFormatter()
-    f.locale = Locale(identifier: "zh_CN")
-    f.unitsStyle = .short
-    return f.localizedString(for: date, relativeTo: Date())
+    InterfaceLogic.formatRelative(stored)
 }

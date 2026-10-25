@@ -31,9 +31,15 @@ struct ContentView: View {
                         case .dictionaries: DictionaryView()
                         case .scrape: ScrapeView()
                         case .importer: ImportView()
+                        case .settings: SettingsView(embedded: true)
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .safeAreaInset(edge: .top) {
+                        if let notice = app.notice {
+                            HStack { Text(notice).font(.callout); Spacer(); Button { app.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless) }.padding(10).glassCard().padding(.horizontal,12)
+                        }
+                    }
                     // 播放条是浮在正文下方的一张玻璃卡片。只挂在正文这一栏：
                     // 挂在整个分栏视图上时，各栏不会给它让位，卡片会盖住侧栏底部和正文最后几行
                     .safeAreaInset(edge: .bottom, spacing: 0) {

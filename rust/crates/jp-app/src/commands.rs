@@ -1622,16 +1622,7 @@ pub async fn stats_frequency<R: tauri::Runtime>(
     .await
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StatsReport {
-    pub report: jp_corpus::stats::CorpusReport,
-    /// 筛选的演唱者名字，按传进来的顺序；库里找不到的 id 跳过
-    pub performers: Vec<String>,
-    pub jp_only: bool,
-    /// 导出 TXT 的内容，和这份报告一起算好：导出的就是界面上看到的那份
-    pub text: String,
-}
+pub use jp_corpus::stats::StatsReport;
 
 /// 语料统计报告（TTR / STTR / Hapax / 词性分布 / 覆盖率）。对应 Python 版报告页。
 #[tauri::command]
@@ -1640,31 +1631,7 @@ pub async fn stats_report<R: tauri::Runtime>(
     filter: Option<jp_corpus::stats::StatsFilter>,
 ) -> CmdResult<StatsReport> {
     blocking(app, move |state| {
-        let filter = filter.unwrap_or_default();
-        let corpus = state.corpus();
-        let conn = corpus.connection();
-        let mut performers = Vec::new();
-        for id in &filter.performer_ids {
-            let name: Option<String> = conn
-                .query_row("SELECT name FROM people WHERE id = ?1", [id], |r| r.get(0))
-                .map(Some)
-                .or_else(|err| {
-                    if err == rusqlite::Error::QueryReturnedNoRows {
-                        Ok(None)
-                    } else {
-                        Err(err)
-                    }
-                })?;
-            performers.extend(name);
-        }
-        let report = jp_corpus::stats::corpus_report(conn, &filter)?;
-        let text = jp_corpus::stats::report_text(&report, &performers, filter.jp_only);
-        Ok(StatsReport {
-            report,
-            performers,
-            jp_only: filter.jp_only,
-            text,
-        })
+        jp_corpus::stats::stats_report(state.corpus().connection(), &filter.unwrap_or_default())
     })
     .await
 }

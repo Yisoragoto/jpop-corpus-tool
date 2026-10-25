@@ -3,7 +3,7 @@ import JPCore
 import Observation
 
 public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case home, search, library, analysis, dictionaries, scrape, importer
+    case home, search, library, analysis, importer, scrape, dictionaries, settings
     public var id: String { rawValue }
 
     public var title: String {
@@ -15,6 +15,7 @@ public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .dictionaries: return "词典"
         case .scrape: return "刮削"
         case .importer: return "导入"
+        case .settings: return "设置"
         }
     }
 
@@ -27,6 +28,7 @@ public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .dictionaries: return "character.book.closed"
         case .scrape: return "wand.and.stars"
         case .importer: return "square.and.arrow.down"
+        case .settings: return "gearshape"
         }
     }
 }
@@ -54,11 +56,14 @@ public struct ScopeRequest: Equatable {
 public struct SearchRequest: Equatable {
     public var keyword: String
     public var field: MatchField
+    public var scope: Subcorpus?
+    public var pos: String?
     public var nonce = UUID()
 
-    public init(keyword: String, field: MatchField) {
+    public init(keyword: String, field: MatchField, scope: Subcorpus? = nil, pos: String? = nil) {
         self.keyword = keyword
         self.field = field
+        self.scope = scope; self.pos = pos
     }
 }
 
@@ -76,6 +81,10 @@ public final class AppModel {
     public var analysisScope: ScopeRequest?
     /// ⌘K 全库搜索
     public var showQuickSearch = false
+    public var paletteCommands = false
+    public let scopes: SubcorpusStore
+    public let visualizations = VisualizationModel()
+    public var libraryMode: LibraryMode = .songs { didSet { defaults.set(libraryMode.rawValue,forKey: "libraryMode") } }
     /// 全屏歌词
     public var showStage = false
     public var stageKaraoke = false
@@ -109,6 +118,7 @@ public final class AppModel {
     public var showLyrics = true
     public var searchRequest: SearchRequest?
     public var errorMessage: String?
+    public var notice: String?
     public private(set) var isDemo = false
     public var pendingCreationURL: URL?
     public let player: PlayerModel
@@ -161,6 +171,8 @@ public final class AppModel {
         }
     ) {
         self.defaults = defaults
+        scopes = SubcorpusStore(defaults: defaults)
+        libraryMode = LibraryMode(rawValue: defaults.string(forKey: "libraryMode") ?? "") ?? .songs
         self.client = client
         library = LibraryModel(client: client as? any LibraryCalling, defaults: defaults)
         self.openClient = openClient

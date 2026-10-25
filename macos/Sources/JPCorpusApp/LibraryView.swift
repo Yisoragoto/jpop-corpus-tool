@@ -38,36 +38,34 @@ struct LibraryView: View {
     }
 }
 
-private enum LibraryMode: String, CaseIterable {
-    case songs = "歌曲", albums = "专辑", artists = "歌手"
-}
-
 @MainActor
 private struct LibraryRoot: View {
     @Environment(AppModel.self) private var app
-    @AppStorage("libraryMode") private var mode: LibraryMode = .songs
     @State private var filter = ""
 
     var body: some View {
         Group {
-            switch mode {
+            switch app.libraryMode {
             case .songs: SongTable(filter: filter)
             case .albums: AlbumGrid(filter: filter)
             case .artists: ArtistGrid(filter: filter)
+            case .graph: GraphView()
+            case .timeline: ReleaseTimelineView()
+            case .cloud: CloudView()
             }
         }
         .safeAreaInset(edge: .top) { NewSongsNotice().padding(.horizontal, 20) }
         .toolbar {
             ToolbarItem { LibraryManageButton() }
             ToolbarItem(placement: .principal) {
-                Picker("", selection: $mode) {
+                Picker("", selection: Binding(get: { app.libraryMode },set: { app.libraryMode = $0 })) {
                     ForEach(LibraryMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .fixedSize()
             }
         }
-        .searchable(text: $filter, placement: .toolbar, prompt: mode == .artists ? "歌手名" : "曲名、歌手、专辑")
+        .searchable(text: $filter, placement: .toolbar, prompt: app.libraryMode == .artists ? "歌手名" : "曲名、歌手、专辑")
         .navigationTitle("曲库")
         .navigationSubtitle("\(app.tracks.count) 首")
     }
@@ -362,19 +360,31 @@ struct PersonDetailView: View {
                                 app.section = .analysis
                             }
                             .help("词频和子语料对比都限定在这位歌手演唱的歌里")
+                            Menu("可视化") {
+                                Button("关系网") { app.visualizations.selected = personId; openVisualization(.graph) }
+                                Button("时间树") { app.visualizations.treePerson = personId; app.visualizations.treeFocus = nil; openVisualization(.timeline) }
+                                Button("词云") {
+                                    if app.visualizations.cloudFilter.performerIds != [personId] {
+                                        app.visualizations.cloudFilter.performerIds = [personId]; app.visualizations.picked = nil
+                                    }
+                                    openVisualization(.cloud)
+                                }
+                            }.menuStyle(.borderlessButton).fixedSize()
                         }
                         .padding(.top, 4)
                     }
                 }
 
-                if let person { PersonAdminView(personId: personId, name: person.name, isBand: person.artistType == "Group") }
+                if let person { PersonAdminView(personId: personId, name: person.name, person: person) }
                 HStack {
                     SectionHeader(title: "作品", detail: "\(shown.count) 首")
                     if roles.count > 1 {
                         Picker("角色", selection: $role) { Text("全部").tag(""); ForEach(roles, id: \.self) { Text(roleLabels[$0] ?? $0).tag($0) } }.pickerStyle(.segmented).fixedSize()
                     }
                 }
-                ForEach(LibraryIndex.sectionWorks(personId, shown, bands)) { section in PersonWorkSection(section: section) }
+                let workSections = LibraryIndex.sectionWorks(personId, shown, bands)
+                PersonReleaseAxis(sections: workSections,ended: person?.ended ?? "")
+                ForEach(workSections) { section in PersonWorkSection(section: section) }
 
                 if !collaborators.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -422,6 +432,7 @@ struct PersonDetailView: View {
         default: return ""
         }
     }
+    private func openVisualization(_ mode: LibraryMode) { app.libraryMode = mode; app.libraryPath = [] }
 }
 
 @MainActor

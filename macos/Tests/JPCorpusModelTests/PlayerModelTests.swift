@@ -45,6 +45,15 @@ final class PlayerModelTests: XCTestCase {
     private let trackJSON = #"{"id":"001","title":"試験曲","artist":"歌手","album":"","year":"","genre":"","audioPath":"tone.flac","coverPath":"","durationSec":99,"lineCount":2}"#
 
     @MainActor
+    func testCloudUsesExactWordStartAndKwicKeepsLeadIn() async throws {
+        let (app,engine,_,_) = try await fixture()
+        await app.player.playFrom(songId: "001",utteranceId: 1,timeSec: 2.5,leadIn: 0)
+        XCTAssertEqual(engine.position,2.5,accuracy: 0.000001); XCTAssertEqual(app.player.focusUtterance,1)
+        await app.player.playFrom(songId: "001",utteranceId: 1,timeSec: 2.5)
+        XCTAssertEqual(engine.position,2.1,accuracy: 0.000001); XCTAssertNil(app.player.stopAt)
+    }
+
+    @MainActor
     func testDeletingCurrentSongStopsAndClearsPlaybackBeforeDatabaseWrite() async throws {
         let (app, engine, _, _) = try await fixture()
         await app.player.toggleLoop(1)

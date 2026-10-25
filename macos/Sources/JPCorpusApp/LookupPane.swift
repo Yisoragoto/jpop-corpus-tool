@@ -8,6 +8,7 @@ struct LookupRequest: Equatable {
     var songId: String?
     var utteranceId: Int64?
     var tokenIndex: Int?
+    var scope: Subcorpus? = nil
 }
 
 /// 制卡设置。存在这台机器的偏好里（和 Windows 版一样是每台机器各自的），默认值也和 Windows 版一致：
@@ -73,6 +74,7 @@ struct LookupPane: View {
                     } else {
                         ProgressView().controlSize(.small)
                     }
+                    WordExamplesView(lemma: request.text,localScope: request.scope)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

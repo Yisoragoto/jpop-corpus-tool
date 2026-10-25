@@ -9,15 +9,11 @@ struct SongAdminButton: View {
     var onChanged: () -> Void = {}
     @State private var editing = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Button { editing = true } label: { Image(systemName: "pencil") }.help("编辑曲目信息")
-                Button { app.library.pendingDeletion = track.id } label: { Image(systemName: "trash") }.help("删除曲目")
-            }
-            if !app.library.note.isEmpty { Text(app.library.note).font(.caption).foregroundStyle(.secondary) }
-            if let error = app.library.errorMessage { Text(error).font(.caption).foregroundStyle(.orange) }
+        HStack {
+            Button { app.library.errorMessage = nil; editing = true } label: { Label("编辑", systemImage: "pencil") }.help("编辑曲目信息")
+            Button { app.library.pendingDeletion = track.id } label: { Label("删除", systemImage: "trash") }.help("删除曲目")
         }
-        .buttonStyle(PlayerGlyphStyle())
+        .buttonStyle(.bordered)
         .sheet(isPresented: $editing) { SongEditorView(track: track, onChanged: onChanged) }
         .alert("删除《\(track.title)》？", isPresented: Binding(get: { app.library.pendingDeletion == track.id }, set: { if !$0 { app.library.pendingDeletion = nil } })) {
             Button("删除", role: .destructive) {
@@ -26,7 +22,10 @@ struct SongAdminButton: View {
                 Task {
                     await app.player.prepareDeletion(id)
                     app.library.pendingDeletion = id
-                    if await app.library.deleteConfirmed() { await app.reloadTracks(); app.homeVersion += 1; app.libraryPath = [] }
+                    if await app.library.deleteConfirmed() {
+                        app.notice = [app.library.note, app.library.errorMessage ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
+                        await app.reloadTracks(); app.homeVersion += 1; app.libraryPath = []
+                    }
                     else { app.errorMessage = app.library.errorMessage }
                 }
             }
@@ -57,7 +56,13 @@ struct SongEditorView: View {
             HStack {
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("保存") { Task { if await app.library.save(track.id, edit: draft) { await app.reloadTracks(); app.homeVersion += 1; onChanged(); dismiss() } } }
+                Button("保存") { Task {
+                    if await app.library.save(track.id, edit: draft) {
+                        // 反馈放在正文上方，曲目按钮行保持同高。
+                        app.notice = [app.library.note, app.library.errorMessage ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
+                        await app.reloadTracks(); app.homeVersion += 1; onChanged(); dismiss()
+                    }
+                } }
                     .disabled(!valid || draft == SongEdit(track) || app.library.busy).keyboardShortcut(.defaultAction)
             }
         }.padding(24).frame(width: 480).glass(.sidebar)

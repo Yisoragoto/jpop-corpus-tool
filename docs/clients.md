@@ -13,7 +13,7 @@
    jp-app（Tauri command）      jp-ffi（C ABI，JSON 进出）
         │                          │  libjp_ffi.a
    app/（React）                macos/（SwiftUI + AVFoundation）
-   jp-audio 播放（rodio）        AVPlayer 播放
+   jp-audio 播放（rodio）        AVAudioEngine 播放
 ```
 
 ## 为什么这样分
@@ -155,6 +155,29 @@ Swift 编译与运行由 CI 的 macOS job 验证，本机 Windows 不具备 Swif
 FakeCorpus 覆盖确认、部分失败、日期校验、持久化、校正和进度；真 FFI 测试检查管理写入与读回、照片、成员、校正及三种作业报告。
 SmokeRun 真改歌曲标题、读回并恢复，CI 检查 `[step] library-edit readback=true status=pass`，Rust 核心测试列表加入 `jp-library`。
 本机 Windows 仅执行 Rust 与静态检查；新增 Swift 编译、测试及真窗口交互须由 macOS 14 CI 确认。
+
+## 可视化与共用范围（第 4 阶段）
+
+曲库增加关系网、时间轴与词云，人物页可带焦点打开三种页面。Graph/WordCloud 用 SwiftUI Canvas，
+力导向和固定种子螺线算法逐项来自 Windows TS；大布局在后台计算，画布只捕获局部快照。
+时间轴复用泳道排序、年份扩宽、封面避让、解散连接、时间树与折叠空年的同一套规则。
+新增 JPCorpusModel 纯逻辑和 XCTest，使用 Windows 的全部原用例及实际 TS 运行得到的坐标对账。
+
+新增 FFI：`collaborationEdges`、`timelineReleases`、`statsFrequency`、`timeline`、`statsReport`。
+报告封装从 jp-app 移到 `jp_corpus::stats::stats_report`，Tauri 签名/JSON 不变，前端 `app/` 未改。
+mac 的子语料完整条件管理调用已有 `subcorpusFacets/Preview/List/Save/Delete`，
+SubcorpusScope 使用 UserDefaults/Observation 维护当前范围，检索、词云与例句共享；
+语言和完整度不再在 Swift Subcorpus 编解码时丢失。词云异体合并复用第 3 阶段的 lemmaForms，
+真实词首/人工校准仍走 wordTimings/wordTimeSet/wordTimeClear，分组不重复计算曲数。
+
+⌘K 搜索与 ⌘P 命令共用浮层，支持 `>`、上下选择、禁用原因和过期响应保护。
+侧栏补设置入口；分析补副歌效应、完整参照范围、总览/年份图与报告展示。
+质量显示函数及原测试断言已补入模型层；歌曲编辑/删除改用边框文字按钮、反馈置于正文顶部，人物成员入口与 Windows PersonProfile 相同。
+PitchCacheCard 不在 mac 提供磁盘缓存操作：AVAudioEngine 实时变调没有对应文件，见 [macos-player.md](macos-player.md#实现差异)。
+Anki 浏览/更新与报告导出仍留第 5 阶段，更新和诊断留第 6 阶段。
+
+本机单任务 Rust build/test/clippy 已通过（含 jp-library，测试 368 passed、0 failed、52 ignored），Windows 全套测试 336 passed；新增 76 个 XCTest（含原 TS 的 58 例输入/断言）和三页真实窗口 smoke 门禁，
+Swift 编译、测试及截图尚待 macOS 14 CI，详见 [差异与验证表](macos-status.md#可视化与其余界面)。
 
 ## 共享歌词业务层与 FFI（第 1 阶段）
 

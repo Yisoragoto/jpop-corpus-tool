@@ -20,6 +20,9 @@ struct SearchView: View {
     @State private var yearFrom = ""
     @State private var yearTo = ""
     @State private var performerIds: [Int64] = []
+    @State private var extraScope = Subcorpus()
+    @State private var requestedPos: String?
+    @State private var requestSequence = 0
     @State private var near: NearFilter?
     @State private var rows: [HitRow] = []
     @State private var searched: (query: String, field: MatchField)?
@@ -34,7 +37,9 @@ struct SearchView: View {
     }
 
     private var subcorpus: Subcorpus {
-        Subcorpus(performerIds: performerIds, yearFrom: Int(yearFrom.trimmingCharacters(in: .whitespaces)), yearTo: Int(yearTo.trimmingCharacters(in: .whitespaces)))
+        var local = extraScope
+        local.performerIds = performerIds; local.yearFrom = Int(yearFrom.trimmingCharacters(in: .whitespaces)); local.yearTo = Int(yearTo.trimmingCharacters(in: .whitespaces))
+        return SubcorpusScope.mergeSubcorpus(local,app.scopes.active)
     }
 
     /// 搭配只对单个词有意义
@@ -74,10 +79,12 @@ struct SearchView: View {
         .onChange(of: app.library.version) { _, _ in
             if let searched { Task { await run(searched.query, searched.field) } }
         }
+        .onChange(of: app.scopes.active) { _, _ in if let searched { Task { await run(searched.query,searched.field) } } }
         .onChange(of: app.searchRequest) { _, request in
             guard let request else { return }
             text = request.keyword
             field = request.field
+            applyScope(request)
             near = nil
             app.searchRequest = nil
             Task { await run(request.keyword, request.field) }
@@ -86,6 +93,7 @@ struct SearchView: View {
             if let request = app.searchRequest {
                 text = request.keyword
                 field = request.field
+                applyScope(request)
                 app.searchRequest = nil
                 await run(request.keyword, request.field)
             }
@@ -112,6 +120,7 @@ struct SearchView: View {
                     .disabled(busy || text.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             HStack(spacing: 14) {
+                SubcorpusPicker()
                 PerformerPicker(selected: $performerIds)
                 Toggle("去重", isOn: $dedup).help("同一首歌里重复的相同歌词行折叠成一条；搭配也只算第一次")
                 Toggle("仅日文", isOn: $jpOnly)
@@ -258,22 +267,29 @@ struct SearchView: View {
         let keywords = KwicQuery.parseKeywords(raw)
         guard !keywords.isEmpty, let client = app.client else { return }
         busy = true
-        defer { busy = false }
+        requestSequence += 1; let sequence = requestSequence
+        defer { if sequence == requestSequence { busy = false } }
         var query = KwicQuery(keywords: keywords, field: field)
         query.dedup = dedup
         query.jpOnly = jpOnly
         query.crossLine = crossLine
         query.subcorpus = subcorpus
         query.near = near
+        query.pos = requestedPos
         do {
             let hits = try await client.kwic(query)
+            guard sequence == requestSequence else { return }
             rows = hits.enumerated().map { HitRow(id: $0.offset, hit: $0.element) }
             selection = rows.first.map { [$0.id] } ?? []
             searched = (raw, field)
             tableFocused = true
         } catch {
-            app.errorMessage = error.localizedDescription
+            if sequence == requestSequence { app.errorMessage = error.localizedDescription }
         }
+    }
+    private func applyScope(_ request: SearchRequest) {
+        extraScope = request.scope ?? Subcorpus(); performerIds = extraScope.performerIds
+        yearFrom = extraScope.yearFrom.map(String.init) ?? ""; yearTo = extraScope.yearTo.map(String.init) ?? ""; requestedPos = request.pos
     }
 }
 
@@ -285,11 +301,7 @@ private struct PlayingMark: View {
 
     var body: some View {
         let player = app.player
-        let playing = player.isPlaying && player.track?.id == hit.songId && {
-            guard let start = hit.timeSec else { return false }
-            let end = hit.endSec ?? start + 5
-            return player.position >= start - 0.5 && player.position < end
-        }()
+        let playing = InterfaceLogic.isPlayingSpan(currentSong: player.track?.id,playing: player.isPlaying,position: player.position,songId: hit.songId,startSec: hit.timeSec,endSec: hit.endSec)
         Image(systemName: playing ? "speaker.wave.2.fill" : "play.fill")
             .font(.system(size: 9))
             .foregroundStyle(playing ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))

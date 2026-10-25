@@ -51,6 +51,10 @@ public struct Overview: Codable, Hashable, Sendable {
     public var tracks: Int64
     public var albums: Int64
     public var people: Int64
+    public var performers: Int64
+    public var composers: Int64
+    public var lyricists: Int64
+    public var arrangers: Int64
     public var lyricLines: Int64
     public var tokens: Int64
     public var vocabulary: Int64
@@ -74,6 +78,8 @@ public struct Subcorpus: Codable, Hashable, Sendable {
     public var albumIds: [Int64] = []
     public var genres: [String] = []
     public var songIds: [String] = []
+    public var languages: [String] = []
+    public var minCompleteness: Double?
 
     public init(performerIds: [Int64] = [], yearFrom: Int? = nil, yearTo: Int? = nil, songIds: [String] = []) {
         self.performerIds = performerIds
@@ -83,7 +89,7 @@ public struct Subcorpus: Codable, Hashable, Sendable {
     }
 
     public var isAll: Bool {
-        performerIds.isEmpty && yearFrom == nil && yearTo == nil && albumIds.isEmpty && genres.isEmpty && songIds.isEmpty
+        performerIds.isEmpty && yearFrom == nil && yearTo == nil && albumIds.isEmpty && genres.isEmpty && songIds.isEmpty && languages.isEmpty && minCompleteness == nil
     }
 }
 

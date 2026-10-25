@@ -8,10 +8,13 @@ struct PersonAdminView: View {
     @Environment(AppModel.self) private var app
     let personId: Int64
     let name: String
-    let isBand: Bool
+    let person: DirectoryEntry
     @State private var model = MembersModel()
     @State private var choosing = false
     @State private var editing = false
+    private var canEditMembers: Bool {
+        LibraryIndex.canEditMembers(person, members: model.members, bands: model.bands)
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -21,7 +24,8 @@ struct PersonAdminView: View {
             ForEach(model.bands, id: \.bandId) { band in
                 Button("\(band.leftAt.isEmpty ? "也在" : "曾属") \(band.bandName) · \(LibraryIndex.spanOf(band.joined, band.leftAt))") { app.show(.person(band.bandId)) }.buttonStyle(.link)
             }
-            if isBand || !model.members.isEmpty || !model.suggestions.isEmpty || editing {
+            if canEditMembers {
+            if !model.members.isEmpty || !model.suggestions.isEmpty || editing {
                 HStack { Text("成员").font(.headline); Spacer(); Button(editing ? "完成" : "编辑") { editing.toggle() } }
                 ForEach(model.members, id: \.memberId) { m in
                     if editing {
@@ -44,6 +48,7 @@ struct PersonAdminView: View {
                     }
                 }
             } else { Button("添加成员") { editing = true } }
+            }
             if !model.note.isEmpty { Text(model.note).font(.caption) }
             if let error = model.errorMessage { Text(error).foregroundStyle(.orange) }
             if let error = app.library.errorMessage { Text(error).foregroundStyle(.orange) }

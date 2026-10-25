@@ -224,9 +224,9 @@ public final class PlayerModel {
     }
 
     /// 从某一行接着往下放（不停）。KWIC 里双击 / 回车就是这个
-    public func playFrom(songId: String, utteranceId: Int64, timeSec: Double?) async {
+    public func playFrom(songId: String, utteranceId: Int64, timeSec: Double?, leadIn: Double = 0.4) async {
         guard let track = try? await app?.track(songId) else { return }
-        let start = timeSec.map { max(0, $0 - 0.4) }
+        let start = timeSec.map { max(0, $0 - leadIn) }
         await open(track, at: start, autoplay: timeSec != nil, focus: utteranceId, source: "search")
         stopAt = nil
     }

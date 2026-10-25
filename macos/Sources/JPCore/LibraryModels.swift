@@ -277,6 +277,7 @@ public struct QualityOverview: Decodable, Hashable, Sendable {
     public var issues: [LabelCount]
     public var tokenStatus: [LabelCount]
     public var linesLowTimeConfidence: Int64
+    public var tokenizers: [LyricTokenizerRun]?
     public var worst: [SongQuality]
 }
 

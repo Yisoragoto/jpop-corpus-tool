@@ -15,6 +15,11 @@ public struct WorkSection: Identifiable {
 }
 /// Windows libraryIndex.ts，同一演唱署名归属规则。
 public enum LibraryIndex {
+    /// PersonProfile 的入口规则：明确的个人、已有所属乐队的未知人物不显示添加成员。
+    public static func canEditMembers(_ entry: DirectoryEntry?, members: [Membership], bands: [Membership]) -> Bool {
+        !members.isEmpty || entry?.artistType == "Group" ||
+            (entry.map { $0.performer > 0 && $0.artistType != "Person" } == true && bands.isEmpty)
+    }
     private static let ja = Locale(identifier: "ja")
     private static func before(_ a: String, _ b: String) -> Bool { a.compare(b, locale: ja) == .orderedAscending }
     public static func yearOf(_ date: String) -> String {

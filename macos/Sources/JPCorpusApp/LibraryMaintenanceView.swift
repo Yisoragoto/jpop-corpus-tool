@@ -255,7 +255,7 @@ struct ListeningHistoryView: View {
             Picker("收听", selection: $most) { Text("最近播放").tag(false); Text("播放最多").tag(true) }.pickerStyle(.segmented)
             List(tracks) { t in
                 Button { app.show(.song(t.songId)) } label: {
-                    HStack { Text("\(t.title) · \(t.artist)"); Spacer(); Text("\(t.playCount) 次 · \(t.lastPlayed)").foregroundStyle(.secondary) }
+                    HStack { Text("\(t.title) · \(t.artist)"); Spacer(); Text("\(t.playCount) 次 · \(InterfaceLogic.formatRelative(t.lastPlayed))").foregroundStyle(.secondary) }
                 }.buttonStyle(.plain)
             }
         }.task(id: most) {

@@ -282,6 +282,9 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         )?)?,
         "albumTracks" => serde_json::to_value(corpus.album_tracks(arg(&args, "albumId")?)?)?,
         "peopleDirectory" => serde_json::to_value(corpus.people_directory()?)?,
+        "collaborationEdges" => serde_json::to_value(corpus.collaboration_edges()?)?,
+        "timelineReleases" => serde_json::to_value(corpus.timeline_releases()?)?,
+        "timeline" => serde_json::to_value(corpus.timeline()?)?,
         "personById" => serde_json::to_value(corpus.person_by_id(arg(&args, "personId")?)?)?,
         "personWorks" => serde_json::to_value(corpus.person_works(arg(&args, "personId")?)?)?,
         "collaborators" => serde_json::to_value(corpus.collaborators(arg(&args, "personId")?, arg_or(&args, "limit", 24)?)?)?,
@@ -328,6 +331,17 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
 
         // 分析
         "frequency" => serde_json::to_value(corpus.frequency(&arg(&args, "query")?)?)?,
+        "statsReport" => serde_json::to_value(jp_corpus::stats::stats_report(
+            corpus.connection(), &arg_or(&args, "filter", jp_corpus::stats::StatsFilter::default())?,
+        )?)?,
+        "statsFrequency" => {
+            let pos = arg_or::<Option<String>>(&args, "pos", None)?.filter(|p| !p.is_empty());
+            serde_json::to_value(jp_corpus::stats::frequency_table(
+                corpus.connection(), pos.as_deref(),
+                &arg_or(&args, "filter", jp_corpus::stats::StatsFilter::default())?,
+                arg_or::<usize>(&args, "limit", 300)?.clamp(1, 5000),
+            )?)?
+        }
         "collocations" => serde_json::to_value(corpus.collocations(&arg(&args, "query")?)?)?,
         "keyness" => serde_json::to_value(corpus.keyness(&arg(&args, "query")?)?)?,
         "songProfile" => serde_json::to_value(
@@ -980,6 +994,41 @@ pub unsafe extern "C" fn jp_write_fixture(dir: *const c_char) -> *mut c_char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visualization_methods_match_shared_queries() {
+        let (s, dir) = session();
+        let edges = s.call("collaborationEdges", json!({})).unwrap();
+        let releases = s.call("timelineReleases", json!({})).unwrap();
+        let corpus = jp_corpus::Corpus::open(dir.join("corpus.db")).unwrap();
+        assert_eq!(edges, serde_json::to_value(corpus.collaboration_edges().unwrap()).unwrap());
+        assert_eq!(releases, serde_json::to_value(corpus.timeline_releases().unwrap()).unwrap());
+        assert!(!releases.as_array().unwrap().is_empty());
+        let rows = s.call("statsFrequency", json!({"pos":"NOUN", "limit": 2})).unwrap();
+        assert_eq!(rows, serde_json::to_value(jp_corpus::stats::frequency_table(
+            corpus.connection(), Some("NOUN"), &Default::default(), 2,
+        ).unwrap()).unwrap());
+        assert!(!rows.as_array().unwrap().is_empty());
+        assert_eq!(s.call("statsFrequency", json!({"pos":"", "limit":0})).unwrap().as_array().unwrap().len(), 1);
+        let report = s.call("statsReport", json!({})).unwrap();
+        assert_eq!(report, serde_json::to_value(jp_corpus::stats::stats_report(corpus.connection(), &Default::default()).unwrap()).unwrap());
+        assert_eq!(s.call("timeline", json!({})).unwrap(), serde_json::to_value(corpus.timeline().unwrap()).unwrap());
+    }
+
+    #[test]
+    fn saved_scope_preserves_all_conditions_and_updates_by_name() {
+        let (s, _dir) = session();
+        let filter = json!({"performerIds":[1], "jpOnly":true, "yearFrom":2010, "yearTo":2024,
+            "genres":["J-Pop"], "languages":["ja"], "albumIds":[1], "songIds":["001"],
+            "minCompleteness":0.8, "distinctLines":true});
+        let saved = s.call("subcorpusSave", json!({"name":"完整范围", "filter":filter})).unwrap();
+        for (key, value) in filter.as_object().unwrap() { assert_eq!(&saved["filter"][key], value); }
+        let updated = s.call("subcorpusSave", json!({"name":"完整范围", "filter":{"performerIds":[], "jpOnly":false}})).unwrap();
+        assert_eq!(saved["id"], updated["id"]);
+        assert_eq!(s.call("subcorpusList", json!({})).unwrap().as_array().unwrap().len(), 1);
+        assert_eq!(s.call("subcorpusDelete", json!({"id":saved["id"]})).unwrap(), true);
+        assert!(s.call("subcorpusList", json!({})).unwrap().as_array().unwrap().is_empty());
+    }
 
     pub(super) fn session() -> (Session, PathBuf) {
         let dir = std::env::temp_dir().join(format!("jp-ffi-{}-{}", std::process::id(), rand_suffix()));

@@ -8,81 +8,35 @@ import SwiftUI
 struct AnalysisView: View {
     @Environment(AppModel.self) private var app
     @AppStorage("analysisTab") private var tab = 0
-    @State private var yearFrom = ""
-    @State private var yearTo = ""
-
-    /// 顶上那条范围：歌手（从歌手页带过来）+ 年份
-    private var scope: Subcorpus {
-        Subcorpus(performerIds: app.analysisScope?.performerIds ?? [], yearFrom: Int(yearFrom), yearTo: Int(yearTo))
-    }
-
-    private var scopeName: String {
-        var parts: [String] = []
-        if let s = app.analysisScope { parts.append(s.name) }
-        switch (Int(yearFrom), Int(yearTo)) {
-        case let (f?, t?): parts.append("\(f)–\(t)")
-        case let (f?, nil): parts.append("\(f) 起")
-        case let (nil, t?): parts.append("到 \(t)")
-        default: break
-        }
-        return parts.isEmpty ? "全库" : parts.joined(separator: " · ")
-    }
-
+    @State private var filter = StatsFilter()
+    private var scope: Subcorpus { SubcorpusScope.subcorpus(filter) }
+    private var scopeName: String { SubcorpusScope.describeFilter(filter) }
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Picker("", selection: $tab) {
-                    Text("词频").tag(0)
-                    Text("子语料对比").tag(1)
-                    Text("存档").tag(2)
-                    Text("语料质量").tag(3)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                if tab < 2 { scopeBar }
-                Spacer()
-            }
-            .padding(10)
+                Picker("",selection: $tab) {
+                    Text("总览").tag(5); Text("词频").tag(0); Text("子语料对比").tag(1); Text("存档").tag(2); Text("语料质量").tag(3); Text("副歌效应").tag(4); Text("报告").tag(6)
+                }.pickerStyle(.menu).labelsHidden().frame(width: 160)
+                if tab < 2 || tab == 4 || tab == 6 { SubcorpusFilters(filter: $filter) }
+            }.padding(10)
+            if tab < 2 || tab == 4 || tab == 6 { Text(scopeName).font(.caption).foregroundStyle(.secondary).padding(.bottom,6) }
             Divider()
             switch tab {
-            case 0: FrequencyPane(scope: scope, scopeName: scopeName)
-            case 1: KeynessPane(scope: scope, scopeName: scopeName)
+            case 0: FrequencyPane(scope: scope,scopeName: scopeName,jpOnly: $filter.jpOnly,distinctLines: $filter.distinctLines)
+            case 1: KeynessPane(scope: scope,scopeName: scopeName,jpOnly: filter.jpOnly)
             case 2: ArchivePane()
+            case 4: RepeatEffectPane(scope: scope,jpOnly: filter.jpOnly)
+            case 5: AnalyticsOverview()
+            case 6: StatsReportPane(filter: filter)
             default: QualityPane()
             }
-        }
-        .navigationTitle("分析")
+        }.navigationTitle("分析")
+        .task(id: app.libraryURL) { do { if let core = app.core { try await app.scopes.reload(core) } } catch { app.errorMessage = error.localizedDescription } }
+        .onChange(of: app.analysisScope) { _, request in apply(request) }
+        .onAppear { apply(app.analysisScope) }
     }
-
-    private var scopeBar: some View {
-        HStack(spacing: 6) {
-            Text("范围").foregroundStyle(.secondary)
-            PerformerPicker(selected: Binding(get: { app.analysisScope?.performerIds ?? [] }, set: { ids in
-                app.analysisScope = ids.isEmpty ? nil : ScopeRequest(name: "\(ids.count) 位歌手", performerIds: ids)
-            }))
-            if let s = app.analysisScope {
-                HStack(spacing: 4) {
-                    Image(systemName: "person.fill").font(.caption)
-                    Text(s.name)
-                    Button {
-                        app.analysisScope = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("不再限定这位歌手")
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(.tint.opacity(0.15), in: Capsule())
-            }
-            TextField("年份", text: $yearFrom).frame(width: 52)
-            Text("–")
-            TextField("年份", text: $yearTo).frame(width: 52)
-        }
-        .textFieldStyle(.roundedBorder)
-        .controlSize(.small)
+    private func apply(_ request: ScopeRequest?) {
+        if let request { filter.performerIds = request.performerIds; app.analysisScope = nil }
     }
 }
 
@@ -93,14 +47,15 @@ private struct FrequencyPane: View {
     @Environment(AppModel.self) private var app
     let scope: Subcorpus
     let scopeName: String
-    @State private var unit: CountUnit = .distinctLines
-    @State private var pos = "NOUN"
-    @State private var jpOnly = true
+    @Binding var jpOnly: Bool
+    @Binding var distinctLines: Bool
+    private var unit: CountUnit { distinctLines ? .distinctLines : .tokens }
+    @State private var pos = ""
     @State private var result: FrequencyResult?
     @State private var selection: Set<FrequencyItem.ID> = []
     @State private var archived: String?
 
-    private let posChoices = ["", "NOUN", "VERB", "ADJ", "ADV", "PRON", "PROPN", "INTJ"]
+    private let posChoices = ["", "NOUN", "VERB", "ADJ", "ADV", "AUX", "PRON", "PROPN", "INTJ", "ADP", "CCONJ"]
 
     private var query: FrequencyQuery {
         FrequencyQuery(scope: AnalysisScope(subcorpus: scope, unit: unit, jpOnly: jpOnly), pos: pos.isEmpty ? nil : pos, limit: 500)
@@ -109,7 +64,7 @@ private struct FrequencyPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
-                Picker("计数", selection: $unit) {
+                Picker("计数", selection: Binding(get: { unit },set: { distinctLines = $0 == .distinctLines })) {
                     Text("去掉重复行").tag(CountUnit.distinctLines)
                     Text("全部词次").tag(CountUnit.tokens)
                 }
@@ -207,6 +162,10 @@ private struct KeynessPane: View {
     @Environment(AppModel.self) private var app
     let scope: Subcorpus
     let scopeName: String
+    let jpOnly: Bool
+    @State private var refPeople: [Int64] = []
+    @State private var refSaved: Int64?
+    @State private var lastQuery: KeynessQuery?
     @State private var refFrom = ""
     @State private var refTo = ""
     @State private var unit: CountUnit = .distinctLines
@@ -216,23 +175,16 @@ private struct KeynessPane: View {
 
     private var query: KeynessQuery? {
         guard !scope.isAll else { return nil }
-        let reference = Subcorpus(yearFrom: Int(refFrom), yearTo: Int(refTo))
+        let saved = app.scopes.saved.first { $0.id == refSaved }.map { ActiveScope(id: $0.id,name: $0.name,filter: $0.filter) }
+        let reference = SubcorpusScope.mergeSubcorpus(Subcorpus(performerIds: refPeople,yearFrom: validYear(refFrom),yearTo: validYear(refTo)),saved)
         var q = KeynessQuery(target: scope, reference: reference.isAll ? nil : reference)
-        q.unit = unit
+        q.unit = unit; q.jpOnly = jpOnly; q.limit = 25
         return q
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 16) {
-                Text("目标：\(scopeName)").fontWeight(.medium)
-                HStack(spacing: 4) {
-                    Text("参照").foregroundStyle(.secondary)
-                    TextField("年份", text: $refFrom).frame(width: 52)
-                    Text("–")
-                    TextField("年份", text: $refTo).frame(width: 52)
-                }
-                .textFieldStyle(.roundedBorder)
                 Picker("", selection: $unit) {
                     Text("去掉重复行").tag(CountUnit.distinctLines)
                     Text("全部词次").tag(CountUnit.tokens)
@@ -243,13 +195,23 @@ private struct KeynessPane: View {
                     .disabled(busy || query == nil)
                     .keyboardShortcut(.defaultAction)
                 Spacer()
-                if result != nil, let q = query {
+                if result != nil, let q = lastQuery {
                     ArchiveButton(archived: $archived) {
                         try await app.core?.archiveKeyness(q, label: "对比 · \(scopeName)")
                     }
                 }
             }
             .controlSize(.small)
+            Text("目标：\(scopeName)").fontWeight(.medium)
+            HStack(spacing: 6) {
+                Text("参照").foregroundStyle(.secondary)
+                PerformerPicker(selected: $refPeople)
+                Picker("保存的范围",selection: $refSaved) {
+                    Text("不用子语料").tag(Int64?.none)
+                    ForEach(app.scopes.saved) { Text($0.name).tag(Optional($0.id)) }
+                }.frame(maxWidth: 180)
+                TextField("年份",text: $refFrom).frame(width: 52); Text("–"); TextField("年份",text: $refTo).frame(width: 52)
+            }.textFieldStyle(.roundedBorder).controlSize(.small)
             Text(scope.isAll
                  ? "目标是上面那条「范围」：填一个年份段，或者从歌手页点「分析这个人的歌」带一位歌手过来。"
                  : "参照留空 = 语料库里其余的歌。按对数似然排序，两边合计少于 5 次的词不列出。双击一个词去检索。")
@@ -274,6 +236,10 @@ private struct KeynessPane: View {
         }
     }
 
+    private func validYear(_ s: String) -> Int? {
+        let text = s.trimmingCharacters(in: .whitespaces)
+        return text.range(of: "^[0-9]{4}$",options: .regularExpression) != nil ? Int(text) : nil
+    }
     private func keyList(_ title: String, _ items: [KeyItem]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.headline)
@@ -302,6 +268,7 @@ private struct KeynessPane: View {
         archived = nil
         do {
             result = try await app.core?.keyness(query)
+            lastQuery = query
         } catch {
             app.errorMessage = error.localizedDescription
         }
@@ -342,7 +309,7 @@ private struct ArchivePane: View {
                         Text(r.label.isEmpty ? "—" : r.label)
                     }
                 }
-                TableColumn("范围") { Text($0.filter.summary).foregroundStyle(.secondary) }
+                TableColumn("范围") { Text(SubcorpusScope.describeFilter($0.filter)).foregroundStyle(.secondary) }
                 TableColumn("曲数") { Text("\($0.songCount)").monospacedDigit() }.width(44)
                 TableColumn("结果") { Text(String($0.resultHash.prefix(8))).font(.caption.monospaced()).foregroundStyle(.secondary) }.width(72)
                 TableColumn("时间") { Text(relativeTime($0.createdAt)).foregroundStyle(.secondary) }.width(90)
@@ -454,7 +421,7 @@ private struct ComparisonView: View {
             }
             if !c.metrics.isEmpty {
                 Table(c.metrics) {
-                    TableColumn("指标") { Text($0.name) }
+                    TableColumn("指标") { Text(CorpusQuality.metricLabel($0.name)) }
                     TableColumn("之前") { Text($0.before.map { String(format: "%.4g", $0) } ?? "—").monospacedDigit() }
                     TableColumn("之后") { Text($0.after.map { String(format: "%.4g", $0) } ?? "—").monospacedDigit() }
                 }
@@ -514,7 +481,7 @@ private struct QualityPane: View {
                                         Text(s.codes.map { codeLabel(issueLabels, $0) }.joined(separator: "、")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                         if s.errors > 0 { Text("\(s.errors) 错").foregroundStyle(.red).font(.caption) }
                                         if s.warnings > 0 { Text("\(s.warnings) 警告").foregroundStyle(.orange).font(.caption) }
-                                        Text(s.completeness.map { "\(Int($0 * 100))%" } ?? "—").monospacedDigit().frame(width: 44, alignment: .trailing)
+                                        Text(CorpusQuality.percent(s.completeness)).help(CorpusQuality.completenessLabel(s.completeness)).monospacedDigit().frame(width: 44, alignment: .trailing)
                                     }
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
@@ -525,6 +492,15 @@ private struct QualityPane: View {
                             }
                         }
                         .glassCard(cornerRadius: 12)
+                    }
+                    if let tokenizers = q.tokenizers, !tokenizers.isEmpty {
+                        SectionHeader(title: "分词器", detail: "自动分词时记下的引擎、词典和配置")
+                        ForEach(tokenizers) { t in
+                            VStack(alignment: .leading,spacing: 4) {
+                                Text(CorpusQuality.tokenizerLabel(t))
+                                Text("\(t.lineCount) 行 · \(t.fingerprint.prefix(12))").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
                 .padding(20)

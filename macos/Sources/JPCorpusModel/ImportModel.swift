@@ -177,12 +177,8 @@ public final class ImportModel {
 
     private static func describe(_ ready: DictionaryReady) -> String {
         var text = "词典装好了：\(ready.dir)"
-        if ready.tokenized.songs > 0 {
-            text += "；顺手补上了 \(ready.tokenized.songs) 首歌的分词"
-        }
-        if !ready.tokenizeError.isEmpty {
-            text += "；补分词失败：\(ready.tokenizeError)"
-        }
+        let note = InterfaceLogic.backfillNote(songs: ready.tokenized.songs,tokens: ready.tokenized.tokens,error: ready.tokenizeError)
+        if !note.isEmpty { text += "；" + note }
         return text
     }
 }

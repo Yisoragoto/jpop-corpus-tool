@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 @MainActor
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
+    var embedded = false
     private enum PickKind { case library, audio }
     @State private var pick = FilePickState<PickKind>()
     @State private var lyricsOpen = false
@@ -66,7 +67,7 @@ struct SettingsView: View {
                 }
                 HStack {
                     Button("添加文件夹…") { pick.present(.audio) }
-                    Button("去导入") { app.section = .importer; dismiss() }
+                    Button("去导入") { app.section = .importer; if !embedded { dismiss() } }
                         .disabled(app.client == nil)
                 }
             }
@@ -77,7 +78,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .clearScrollBackground()
         .glass(.sidebar)
-        .frame(width: 560, height: 460)
+        .frame(width: embedded ? nil : 560, height: embedded ? nil : 460)
         .sheet(isPresented: $lyricsOpen) { LyricsLibraryView() }
         .fileImporter(isPresented: $pick.isPresented, allowedContentTypes: [.folder]) { result in
             let kind = pick.finish()
