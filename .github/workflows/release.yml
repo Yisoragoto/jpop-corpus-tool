@@ -140,3 +140,55 @@ jobs:
           name: jpop-corpus-tool-${{ steps.policy.outputs.channel }}
           path: release-assets/*
           if-no-files-found: error
+
+  # 正式版附带 macOS 安装包（Apple Silicon，未签名、未公证）。和 Windows 同时构建；
+  # Release 由上面的 windows 作业建，建好之后再把 .dmg 挂上去。debug 轨道不出 macOS 包。
+  macos:
+    if: github.event_name == 'workflow_dispatch' && inputs.channel == 'stable'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+      - name: Build libjp_ffi.a
+        run: ./macos/scripts/build-rust.sh
+      - name: App bundle
+        working-directory: macos
+        run: ./scripts/bundle.sh
+      - name: Disk image
+        run: |
+          version="$(node -p "require('./app/package.json').version")"
+          test -n "$version"
+          stage="$RUNNER_TEMP/dmg"
+          mkdir -p "$stage" release-assets
+          cp -R "macos/build/JPOP Corpus.app" "$stage/"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname "JPOP Corpus" -srcfolder "$stage" -ov -format UDZO \
+            "release-assets/JPOP.Corpus.Tool_${version}_macOS_arm64.dmg"
+          ls -la release-assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jpop-corpus-tool-macos
+          path: release-assets/*.dmg
+          if-no-files-found: error
+
+  macos-publish:
+    needs: [windows, macos]
+    if: github.event_name == 'workflow_dispatch' && inputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: jpop-corpus-tool-macos
+          path: release-assets
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./app/package.json').version")"
+          gh release upload "v${version}" release-assets/*.dmg --clobber
