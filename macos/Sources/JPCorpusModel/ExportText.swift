@@ -5,8 +5,9 @@ import JPCore
 public enum ExportText {
     public static func pyFixed(_ value: Double, digits: Int) -> String { String(format: "%.*f", digits, value) }
     public static func pyGrouped(_ value: Double) -> String {
-        let f = NumberFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.numberStyle = .decimal; f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: value.rounded(.towardZero))) ?? "0"
+        let sign = value < 0 ? "-" : ""
+        let digits = String(format: "%.0f", abs(value.rounded(.towardZero)))
+        return sign + digits.replacingOccurrences(of: #"\B(?=(\d{3})+(?!\d))"#, with: ",", options: .regularExpression)
     }
     public static func pyFloatRepr(_ value: Double) -> String {
         if value.isNaN { return "nan" }; if !value.isFinite { return value > 0 ? "inf" : "-inf" }

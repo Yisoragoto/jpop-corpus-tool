@@ -23,7 +23,12 @@ final class ExportTextTests: XCTestCase {
     func testKwicCsvMatchesPythonByteForByte() throws {
         let f = try fixture(); let data = try JSONSerialization.data(withJSONObject: XCTUnwrap(f["kwicRows"]))
         let rows = try JSONDecoder().decode([ExportText.KwicCsvHit].self, from: data)
-        XCTAssertEqual(ExportText.kwicCsv(rows), f["kwicCsv"] as? String)
+        let actual = ExportText.kwicCsv(rows)
+        let expected = try XCTUnwrap(f["kwicCsv"] as? String)
+        XCTAssertTrue(actual.hasPrefix("\u{feff}"))
+        // Foundation JSONSerialization 可能丢掉 fixture 字符串开头的 BOM。
+        let expectedContent = expected.hasPrefix("\u{feff}") ? expected.dropFirst() : expected[...]
+        XCTAssertEqual(Array(actual.dropFirst().utf8), Array(expectedContent.utf8))
     }
     func testFilenameAndEscaping() {
         XCTAssertEqual(ExportText.kwicFilename("(夜|空)"), "夜_空.csv")
