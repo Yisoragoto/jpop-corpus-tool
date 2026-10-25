@@ -48,11 +48,13 @@ extension CorpusClient: UpdateCalling {
         return try await performDetached { try $0.call("updateCheck", args) }
     }
     public func updateSetChannel(_ channel: UpdateChannel) async throws -> UpdatePreferences {
-        var args = versionArgs; args["channel"] = AnyEncodable(channel)
+        var built = versionArgs; built["channel"] = AnyEncodable(channel)
+        let args = built
         return try await performDetached { try $0.call("updateSetChannel", args) }
     }
     public func updateSkip(_ channel: UpdateChannel, id: String) async throws -> UpdatePreferences {
-        var args = versionArgs; args["channel"] = AnyEncodable(channel); args["id"] = AnyEncodable(id)
+        var built = versionArgs; built["channel"] = AnyEncodable(channel); built["id"] = AnyEncodable(id)
+        let args = built
         return try await performDetached { try $0.call("updateSkip", args) }
     }
     public func updateChangelog() async throws -> [UpdateRelease] {
@@ -62,15 +64,17 @@ extension CorpusClient: UpdateCalling {
         try await performDetached { try $0.call("updateReleasePage", ["url": AnyEncodable(url)]) }
     }
     public func diagnosticsReport(audioAvailable: Bool) async throws -> String {
-        var args = versionArgs
-        args["system"] = AnyEncodable("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
-        args["audioAvailable"] = AnyEncodable(audioAvailable)
+        var built = versionArgs
+        built["system"] = AnyEncodable("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        built["audioAvailable"] = AnyEncodable(audioAvailable)
+        let args = built // @Sendable 闭包只能捕获常量
         return try await performDetached { try $0.call("diagnosticsReport", args) }
     }
     public func diagnosticsSave(path: String, audioAvailable: Bool) async throws -> String {
-        var args = versionArgs
-        args["system"] = AnyEncodable("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
-        args["audioAvailable"] = AnyEncodable(audioAvailable); args["path"] = AnyEncodable(path)
+        var built = versionArgs
+        built["system"] = AnyEncodable("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        built["audioAvailable"] = AnyEncodable(audioAvailable); built["path"] = AnyEncodable(path)
+        let args = built
         return try await performDetached { try $0.call("diagnosticsSave", args) }
     }
 }
