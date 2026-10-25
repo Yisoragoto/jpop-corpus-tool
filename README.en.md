@@ -15,10 +15,10 @@ Anki cards.
 
 <table>
 <tr>
-<td colspan="2"><img src="docs/screenshots/karaoke.webp" alt="Karaoke"></td>
+<td colspan="2"><img src="docs/screenshots/lyrics-lookup.webp" alt="Looking a word up in full-screen lyrics"></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/lyrics-lookup.webp" alt="Looking a word up in full-screen lyrics"></td>
+<td><img src="docs/screenshots/karaoke.webp" alt="Karaoke"></td>
 <td><img src="docs/screenshots/lyrics-info.webp" alt="Full-screen lyrics with credits"></td>
 </tr>
 <tr>
@@ -242,6 +242,8 @@ to add cards through. That is how cards get made here — **local only, nothing 
 - Optional per-artist subdecks; reads Anki's learning state so words you already know can be left out.
 - The Anki page selects, previews and exports words in bulk; a mining report (HTML) lists, by JLPT level, the words
   in your corpus that have no card yet.
+
+![The back of a Lyrics card](docs/screenshots/anki-lyrics-card.webp)
 
 ### Importing, scraping and library maintenance
 

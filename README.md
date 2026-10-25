@@ -14,10 +14,10 @@
 
 <table>
 <tr>
-<td colspan="2"><img src="docs/screenshots/karaoke.webp" alt="卡拉 OK"></td>
+<td colspan="2"><img src="docs/screenshots/lyrics-lookup.webp" alt="全屏歌词里查词"></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/lyrics-lookup.webp" alt="全屏歌词里查词"></td>
+<td><img src="docs/screenshots/karaoke.webp" alt="卡拉 OK"></td>
 <td><img src="docs/screenshots/lyrics-info.webp" alt="全屏歌词与制作人员"></td>
 </tr>
 <tr>
@@ -200,6 +200,8 @@ J-pop 的副歌会反复唱：真实语料里重复行占了约 23% 的行、20%
 - 例句是你点的那一行，这首歌里其他含这个词的句子接在后面，**每句都从歌里切一段对应的音频**。
 - 可选按歌手放进「牌组::歌手」子牌组；能读 Anki 的学习状态，排除已经学过的词。
 - Anki 页可以批量选词、预览、导出；挖词报告（HTML）按 JLPT 分级列出语料里还没做成卡片的词。
+
+![Lyrics 笔记类型的卡片背面](docs/screenshots/anki-lyrics-card.webp)
 
 ### 导入、刮削与曲库维护
 
