@@ -45,6 +45,8 @@ struct CloudView: View {
                 .frame(minWidth: 300)
                 .background { CloudBackdrop(photos: photos,color: colors.backdrop) }
                 .glassCard()
+                // Windows 的照片词云在浅色主题下也保持深底亮字。
+                .environment(\.colorScheme, .dark)
                 .overlay { if model.cloudBusy { ProgressView() } }
                 if let picked = model.picked { CloudSongPanel(word: picked,hide: { hide(picked) }).frame(minWidth: 270,idealWidth: 320,maxWidth: 400) }
             }.padding(12)
@@ -127,15 +129,19 @@ struct CloudView: View {
         if !Task.isCancelled { model.placed = placed }
     }
     private func export() {
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.png]; panel.nameFieldStringValue = "词云.png"
+        guard let client = app.core, canvasSize.width > 0, canvasSize.height > 0, !model.cloudBusy else { return }
+        let panel = NSSavePanel(); panel.title = "保存词云"; panel.allowedContentTypes = [.png]; panel.nameFieldStringValue = "wordcloud.png"
         guard panel.runModal() == .OK,let url = panel.url else { return }
-        let content = VStack(alignment: .leading) {
-            Text("歌词里的词").font(.title2.bold()).padding(20)
+        let chosen = model.entries.filter { model.cloudFilter.performerIds.contains($0.id) }
+        let who = chosen.isEmpty ? "全部歌手" : chosen.prefix(3).map(\.name).joined(separator: "、") + (chosen.count > 3 ? " 等 \(chosen.count) 位" : "")
+        let content = VStack(alignment: .leading, spacing: 0) {
+            HStack { Text(who).font(.system(size: 22, weight: .semibold)); Spacer(); Text("JPOP Corpus Tool").font(.system(size: 12)).foregroundStyle(.secondary) }.frame(height: 64, alignment: .top)
             WordCloudPainting(placed: model.placed,family: family,tint: colors.highlight,colorByPos: colorByPos,hovered: nil).frame(width: canvasSize.width,height: canvasSize.height)
-        }.background { CloudBackdrop(photos: photos,color: colors.backdrop) }
+                .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.07)).padding(-10))
+        }.padding(28).foregroundStyle(.white).background { CloudBackdrop(photos: photos,color: colors.backdrop) }.environment(\.colorScheme, .dark)
         let renderer = ImageRenderer(content: content); renderer.scale = 2
         guard let image = renderer.cgImage,let png = NSBitmapImageRep(cgImage: image).representation(using: .png,properties: [:]) else { app.errorMessage = "生成图片失败"; return }
-        do { try png.write(to: url) } catch { app.errorMessage = error.localizedDescription }
+        Task { do { try await client.exportPng(path: url.path, bytes: Array(png)) } catch { app.errorMessage = error.localizedDescription } }
     }
 }
 

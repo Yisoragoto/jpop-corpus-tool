@@ -2009,6 +2009,7 @@ dependencies = [
  "jp-library",
  "jp-lyrics",
  "jp-scrape",
+ "jp-scraper",
  "jp-setup",
  "jp-tokenizer",
  "serde",

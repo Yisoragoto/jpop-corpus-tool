@@ -28,6 +28,7 @@ struct SearchView: View {
     @State private var searched: (query: String, field: MatchField)?
     @State private var selection: Set<HitRow.ID> = []
     @State private var busy = false
+    @State private var exportNote = ""
     @State private var showColloc = false
     @FocusState private var tableFocused: Bool
 
@@ -145,6 +146,7 @@ struct SearchView: View {
                 }
                 if searched != nil {
                     Text(summary).foregroundStyle(.secondary).monospacedDigit()
+                    Button { Task { await exportCsv() } } label: { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless).help("导出 CSV：完整语境，UTF-8（带 BOM）").disabled(rows.isEmpty || busy)
                     Toggle(isOn: $showColloc) { Label("搭配", systemImage: "point.3.connected.trianglepath.dotted") }
                         .toggleStyle(.button)
                         .disabled(node == nil)
@@ -152,6 +154,7 @@ struct SearchView: View {
                 }
             }
             .controlSize(.small)
+            if !exportNote.isEmpty { Text(exportNote).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
         }
         .padding(12)
     }
@@ -159,6 +162,13 @@ struct SearchView: View {
     private var summary: String {
         let songs = Set(rows.map(\.hit.songId)).count
         return "\(rows.count) 条 · \(songs) 首"
+    }
+
+    private func exportCsv() async {
+        guard let client = app.core, !rows.isEmpty else { return }
+        let hits = rows.map(\.hit)
+        do { if let path = try await SaveExport.text(ExportText.kwicCsv(hits), name: ExportText.kwicFilename(text), title: "保存检索结果", client: client) { exportNote = "已保存 \(hits.count) 条：\(path)" } }
+        catch { app.errorMessage = error.localizedDescription }
     }
 
     private var intro: some View {
@@ -267,6 +277,7 @@ struct SearchView: View {
         let keywords = KwicQuery.parseKeywords(raw)
         guard !keywords.isEmpty, let client = app.client else { return }
         busy = true
+        exportNote = ""
         requestSequence += 1; let sequence = requestSequence
         defer { if sequence == requestSequence { busy = false } }
         var query = KwicQuery(keywords: keywords, field: field)

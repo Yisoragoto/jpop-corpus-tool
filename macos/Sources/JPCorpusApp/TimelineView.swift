@@ -12,22 +12,43 @@ struct ReleaseTimelineView: View {
         VStack(spacing: 0) {
             if let id = model.treePerson { TimelineTree(personId: id).id(id) }
             else {
-                HStack {
-                    TextField("筛选音乐人",text: $model.timelineQuery).textFieldStyle(.roundedBorder).frame(maxWidth: 240)
-                    Text("缩放").foregroundStyle(.secondary)
-                    Slider(value: $perYear,in: 30...240).frame(width: 160)
-                    Text("专辑 · 单曲 · 解散 ┃ · 之后单飞 ╌").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
+                ViewThatFits(in: .horizontal) {
+                    HStack { timelineFilters; Spacer(); legend }
+                    VStack(alignment: .leading, spacing: 10) { timelineFilters; legend }
                 }.padding(12)
                 let layout = model.timeline
                 if layout.rows.isEmpty { ContentUnavailableView("还没有带年份的发行",systemImage: "calendar",description: Text("刮削补上发行日期之后这里就有了")) }
                 else { overview(layout) }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: "\(app.libraryURL?.path ?? "")|\(app.library.version)") {
             if let core = app.core { await model.load(core,key: "\(app.libraryURL?.path ?? "demo")|\(app.library.version)") }
         }
         .onChange(of: model.error) { _, error in if let error { app.errorMessage = error; model.error = nil } }
+    }
+    private var timelineFilters: some View {
+        @Bindable var model = model
+        return HStack {
+            TextField("筛选音乐人",text: $model.timelineQuery).textFieldStyle(.roundedBorder).frame(width: 200)
+            Text("缩放").foregroundStyle(.secondary)
+            Slider(value: $perYear,in: 30...240).frame(width: 160)
+        }
+    }
+    private var legend: some View {
+        HStack(spacing: 14) {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 3).fill(LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 11, height: 11)
+                Text("专辑")
+            }
+            HStack(spacing: 6) { Circle().fill(.tint).frame(width: 9, height: 9); Text("单曲（越大歌越多）") }
+            HStack(spacing: 6) { Rectangle().fill(.orange).frame(width: 2, height: 12); Text("解散") }
+            HStack(spacing: 6) {
+                Path { p in p.move(to: CGPoint(x: 0, y: 6)); p.addLine(to: CGPoint(x: 18, y: 6)) }
+                    .stroke(.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])).frame(width: 18, height: 12)
+                Text("之后单飞")
+            }
+        }.font(.caption).foregroundStyle(.secondary).fixedSize()
     }
     private func coverSize(_ r: TimelineRelease) -> Double { r.albumId == nil ? 24 : min(44,26+Double(r.tracks)*1.6) }
     private func overview(_ layout: TimelineLayout) -> some View {
@@ -82,7 +103,7 @@ struct ReleaseTimelineView: View {
                         Color.clear.frame(width: 1,height: 1).position(x: width,y: 0).id("latest")
                     }.frame(width: width,height: height)
                 }
-            }.onAppear { proxy.scrollTo("latest",anchor: .trailing) }
+            }.onAppear { proxy.scrollTo("latest",anchor: .topTrailing) }
         }
     }
 }

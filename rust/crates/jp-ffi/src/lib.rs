@@ -25,6 +25,9 @@
 //! 头文件在 `include/jp_ffi.h`，手写，和这里的五个函数一一对应。
 
 pub mod jobs;
+mod anki;
+#[cfg(test)]
+mod anki_tests;
 mod lyrics;
 mod library;
 #[cfg(test)]
@@ -72,6 +75,7 @@ pub struct Session {
     scrape_job: Arc<Job>,
     lyrics_job: Arc<Job>,
     library_job: Arc<Job>,
+    anki_job: Arc<Job>,
     lyric_batch: Arc<jp_lyrics::lyric_upgrade::Batch>,
     lyric_sources: OnceLock<Mutex<jp_lyrics::timed_lyrics::Session>>,
     /// Yomitan 词典库 `dictionaries.db`，和 corpus.db 同一目录、分开存。没导入过就一直是 None
@@ -143,6 +147,7 @@ impl Session {
             scrape_job: Arc::default(),
             lyrics_job: Arc::default(),
             library_job: Arc::default(),
+            anki_job: Arc::default(),
             lyric_batch: Arc::default(),
             lyric_sources: OnceLock::new(),
             dictionaries: Mutex::new(None),
@@ -468,6 +473,9 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
 /// 它们不拿语料库的锁，所以导入跑着（或者 207MB 的词典正在复制）的时候，界面照样能问进度、能检索。
 /// 不是这一组的方法返回 `Ok(None)`，交给 [`dispatch`] 里拿着锁的那一组。
 fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Option<Value>> {
+    if let Some(value) = anki::dispatch(session, method, args)? {
+        return Ok(Some(value));
+    }
     if let Some(value) = library::dispatch(session, method, args)? {
         return Ok(Some(value));
     }
@@ -631,7 +639,6 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         }
 
         // ── Anki（AnkiConnect，本机 8765 端口）。连不上不是错误，界面显示指引 ──
-        "ankiStatus" => anki_status(&jp_anki::AnkiConnect::local()),
         "ankiMineCheck" => {
             let model: String = arg(args, "model")?;
             let expressions: Vec<String> = arg(args, "expressions")?;
@@ -644,20 +651,6 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         _ => return Ok(None),
     };
     Ok(Some(v))
-}
-
-/// Anki 开着吗、有哪些牌组、自己的 Lyrics 笔记类型建了没有（同 Tauri 的 `anki_status`，不读学习记录）
-fn anki_status(anki: &jp_anki::AnkiConnect) -> Value {
-    match anki.ping() {
-        Ok(version) => json!({
-            "connected": true,
-            "version": version,
-            "decks": anki.deck_names().unwrap_or_default(),
-            "models": anki.model_names().unwrap_or_default(),
-            "message": "",
-        }),
-        Err(err) => json!({ "connected": false, "version": 0, "decks": [], "models": [], "message": err.advice() }),
-    }
 }
 
 /// 一键制卡：取例句时拿一下语料库的锁，切音频、传 Anki 时不拿（同 Tauri 的 `anki_mine`）

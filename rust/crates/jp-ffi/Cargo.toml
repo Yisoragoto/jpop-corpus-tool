@@ -29,3 +29,6 @@ jp-anki = { path = "../jp-anki" }
 jp-scrape = { path = "../jp-scrape" }
 
 jp-library = { path = "../jp-library" }
+
+[dev-dependencies]
+jp-scraper = { path = "../jp-scraper" }

@@ -58,7 +58,7 @@ jobs:
 
       - name: Rust core (jp-ffi) tests
         working-directory: rust
-        run: cargo test -p jp-ffi -p jp-corpus -p jp-setup -p jp-scrape -p jp-lyrics -p jp-library --lib --no-fail-fast
+        run: cargo test -p jp-ffi -p jp-anki -p jp-corpus -p jp-setup -p jp-scrape -p jp-lyrics -p jp-library --lib --no-fail-fast
 
       - name: Build libjp_ffi.a
         run: ./macos/scripts/build-rust.sh
@@ -163,6 +163,9 @@ jobs:
           test -f "$out/04g-graph.png"
           test -f "$out/04h-timeline.png"
           test -f "$out/04i-cloud.png"
+          test -f "$out/05d-anki.png"
+          grep -Eq '^\[step\] anki-page connected=false screenshot=true status=pass$' "$out/smoke.txt"
+          grep -Eq '^\[step\] stats-export bytes=[1-9][0-9]* status=pass$' "$out/smoke.txt"
           grep -Eq '^\[step\] graph nodes=[1-9][0-9]* links=[0-9]+ status=pass$' "$out/smoke.txt"
           grep -Eq '^\[step\] timeline rows=[1-9][0-9]* releases=[1-9][0-9]* status=pass$' "$out/smoke.txt"
           grep -Eq '^\[step\] cloud words=[1-9][0-9]* placed=[1-9][0-9]* status=pass$' "$out/smoke.txt"

@@ -118,8 +118,14 @@ struct LookupPane: View {
     @ViewBuilder
     private func mineButton(_ head: LookupHeadword, key: String) -> some View {
         let has = !(existing[head.term]?.isEmpty ?? true)
+        let artist = app.tracks.first(where: { $0.id == request.songId })?.artist ?? ""
+        let targetDeck = artistSubdeck ? AnkiLogic.artistSubdeck(deck, artist: artist) ?? deck : deck
         Button {
-            Task { await mine(head, key: key) }
+            Task {
+                if has, let ids = existing[head.term] {
+                    do { try await app.core?.ankiBrowseNotes(ids) } catch { app.errorMessage = error.localizedDescription }
+                } else { await mine(head, key: key) }
+            }
         } label: {
             if mining == key {
                 ProgressView().controlSize(.mini)
@@ -129,8 +135,8 @@ struct LookupPane: View {
         }
         .buttonStyle(.borderless)
         .font(.caption)
-        .disabled(mining != nil || has)
-        .help(has ? "Anki 里已经有这个词的卡了" : "加进 Anki「\(deck)」牌组（\(kind.label)）。例句是这一行，音频切这一句")
+        .disabled(mining != nil)
+        .help(has ? "Anki 里已经有这个词的卡，点击打开" : "加进 Anki「\(targetDeck)」牌组（\(kind.label)）。例句是这一行，音频切这一句")
     }
 
     private func load() async {
@@ -170,12 +176,12 @@ struct LookupPane: View {
         )
         do {
             switch try await client.ankiMine(mineRequest) {
-            case let .added(_, deck, created, skipped, warnings):
+            case let .added(noteId, deck, created, skipped, warnings):
                 var message = "已加进「\(deck)」" + (created ? "（新建了这个子牌组）" : "")
                 if !skipped.isEmpty { message += "。这个笔记类型没有 \(skipped.joined(separator: "、")) 字段，这些没写" }
                 if !warnings.isEmpty { message += "。" + warnings.joined(separator: "；") }
                 outcome[key] = message
-                existing[head.term] = [1]
+                existing[head.term] = [noteId]
             case let .duplicate(ids):
                 outcome[key] = "Anki 里已经有这个词的卡了（\(ids.count) 张），没有再加"
                 existing[head.term] = ids

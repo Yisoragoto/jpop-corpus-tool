@@ -25,6 +25,8 @@
 | 刮削 | 可用 | ScrapeBridgeTests、jp-ffi 离线记账测试、smoke 刮削页 | 曲目/歌手批量与单首、复核、补封面、取消；共享 jp-scrape，真实网络另行验证 |
 | Yomitan 词典导入 | 可用 | ImportTests、jp-ffi 词典导入/启用/排序/删除测试 | 原生词典页支持 zip 导入与管理；独立于 Sudachi |
 | Anki 一键制卡 | 可用 | MiningBridgeTests、jp-anki、jp-ffi 制卡准备测试 | 查词面板与设置已有入口，共用 jp_anki::lyric_mine；发送需要本机 AnkiConnect |
+| Anki 页与挖词报告 | 可用 | AnkiModelTests、AnkiBridgeTests、jp-ffi/jp-anki 离线测试；smoke 门禁 | 选词/预览、导出/更新/刷新与取消、学习状态和报告；新增 Swift 待 macOS CI，真实 AnkiConnect 待人工验证 |
+| 统计 TXT / KWIC CSV / 词云 PNG 保存 | 可用 | ExportTextTests、AnkiBridgeTests、Rust 文件读回；stats-export smoke | NSSavePanel；共享 Rust 文本与写入校验、ImageRenderer PNG；新增 Swift 待 macOS CI |
 | 资料库关系网、时间轴、词云 | 可用 | GraphTests、TimelineTests、WordCloudTests、SmokeRun 门禁 | 原生 Canvas/时间树入口与筛选、跳转已接；数值对账和真实窗口截图待 macOS CI |
 | 自动更新 | 未实现 | 无原生界面覆盖 | 从新源码重建；Windows 更新器不适用于此客户端 |
 
@@ -39,18 +41,18 @@
 | CloudView / WordCloud / wordCloud.ts；stats_frequency / lemma_forms | lemmaForms 已有，其余未接 | 移植合并、过滤、确定性螺线、命中分组；词性/年份/歌手/子语料、词例试听 |
 | CommandPalette | QuickSearchView 仅搜索，无命令与上下选择 | 共用搜索浮层，支持 >、⌘P、禁用原因、键盘选择与过期响应保护 |
 | CorpusCompare | 基础词频与年份对比 | 补副歌效应、参照歌手/保存范围、口径与来源、结果检索 |
-| AnalyticsPage 的总览/年份统计/统计报告展示；timeline / stats_report | 只有分析词频/对比/存档/质量 | 补总览与年份图、报告正文和高频词检索；报告导出保留第 5 阶段 |
+| AnalyticsPage 的总览/年份统计/统计报告展示；timeline / stats_report | 只有分析词频/对比/存档/质量 | 补总览与年份图、报告正文和高频词检索；报告导出已在下文「Anki 与导出」接入 |
 | PersonProfile / releaseAxis.ts / 发行分组纯函数 | 平铺作品与合作者，没有发行轴 | 补折叠空年/解散标记发行轴、三种可视化入口；移植发行分组、单曲/EP 类型与排序函数及全部 4 个原测试 |
 | SubcorpusPicker / SubcorpusFilters / subcorpusScope.ts | 仅歌手与年份 | 完整条件保存/覆盖/删除/预览；检索、词云与例句共享当前范围 |
 | PitchCacheCard / pitchCache.ts | AVAudioEngine 实时独立变调 | 无离线缓存生成/清理需求，按 macos-player.md 说明平台差异 |
 | relativeTime.ts / listen.ts / backfill.ts | 原生调用链已有部分行为，纯函数未对齐 | 移植并接入显示、试听高亮与分词结果提示 |
-| App.tsx 导航 | 首页、检索、曲库、分析、导入、刮削、词典；设置在系统菜单 | 曲库补关系网/时间轴/词云；侧栏补设置；Anki 浏览/更新按第 5 阶段保留缺口 |
-| AnalysisRuns / QualityCard / SongProfile / SongLineagePanel | 已有存档、质量、画像、来源面板 | 补齐质量显示函数、分词器名单、指标名称及 corpusQuality.test.ts 全部断言；统计报告导出留第 5 阶段 |
+| App.tsx 导航 | 首页、检索、曲库、分析、导入、刮削、词典；设置在系统菜单 | 曲库补关系网/时间轴/词云；侧栏补设置；Anki 入口已在下文「Anki 与导出」接入 |
+| AnalysisRuns / QualityCard / SongProfile / SongLineagePanel | 已有存档、质量、画像、来源面板 | 补齐质量显示函数、分词器名单、指标名称及 corpusQuality.test.ts 全部断言；统计报告导出已在下文「Anki 与导出」接入 |
 | AudioRepair / NewSongsBanner / WatchedFolders / MigrateCard / MembersEditor / PerformerPicker / SongEditor / TokenCorrectionDialog | 第 3 阶段已有原生入口 | 编辑/删除统一边框与文字，反馈移至正文顶部；成员入口逐项照 PersonProfile 的 canEditMembers，另补 2 例规则回归 |
 | LyricsEditor / LyricsTools / LyricsFill / LyricsUpgradePanel / TimedLyricsPanel / TimingEditor / KaraokeStage / LyricsStage / LanguagePicker / Player | 第 1–2 阶段已有原生入口 | 复核复用 |
 | SudachiCard / SudachiBanner / TokenizeCard / SettingCard | 导入/设置/维护已有原生入口 | 复核复用，补 backfill 提示 |
 | Avatar / Cover / Stat / Section / NavIcons / CommandButton / ColumnSplitter / VirtualList | SwiftUI 共用组件、原生分栏和惰性列表 | 沿用原生对应物 |
-| MiningReportCard / Anki 浏览与更新 | 无完整原生入口 | 第 5 阶段，不在本次范围 |
+| MiningReportCard / Anki 浏览与更新 | 无完整原生入口 | 本阶段已补齐，见下文「Anki 与导出」 |
 | UpdateCard / UpdateDialog / DiagnosticsCard | 无更新与诊断页面 | 第 6 阶段，不在本次范围 |
 
 Rust 新增 5 个 camelCase FFI 方法：`collaborationEdges`、`timelineReleases`、`statsFrequency`、`timeline`、`statsReport`。
@@ -117,7 +119,7 @@ SmokeRun 从真实窗口进入三页，等待应用正在展示的 Visualization
 ```
 
 对应 `04g-graph.png`、`04h-timeline.png`、`04i-cloud.png`；N 除 links 外必须大于零。
-本机没有运行这三张截图。Anki 浏览/更新/MiningReportCard、报告导出留第 5 阶段；更新与诊断留第 6 阶段。
+本机没有运行这三张截图。Anki 浏览/更新/MiningReportCard、报告导出已在下文「Anki 与导出」接入；更新与诊断留第 6 阶段。
 PitchCacheCard 的生成/清理与 pitchCache.ts 的磁盘任务状态不适用于实时变调，明确不新增无效入口，详见 [macos-player.md](macos-player.md#实现差异)。
 
 ## 资料库管理
@@ -261,3 +263,141 @@ JPCORPUS_SMOKE=/tmp/jpcorpus-smoke JPCORPUS_SMOKE_AUDIO=/tmp/jpcorpus-audio \
 使用仓库的 macOS bug 模板，提供应用版本、关于页 build id（没有时提供构建 commit SHA）、
 macOS 版本和芯片，以及 smoke 或日志片段。源码构建可用 `git rev-parse HEAD` 取得 SHA。
 日志分享前移除私人路径和不想公开的歌曲/歌词内容。
+
+## Anki 与导出
+
+第 5 阶段以 Windows 为唯一行为依据；在 `feat/macos-finish` 的第 1–4 阶段提交上实现，`app/` 未改。下表是本次代码处理结果；新增 Swift 尚待 macOS 14 / Xcode 15.4 / Swift 5.10 CI 编译、测试及截图确认。
+
+| Windows 组件/命令 | mac 基线 | 本次处理 |
+|---|---|---|
+| AnkiPage；anki_status / notes_since / words / preview | 仅有字段不完整的 ankiStatus | 统一状态形状；补本地学习状态、候选词与预览 |
+| anki_export_start / update_start / refresh_preview / refresh_start / cancel / is_running；anki://progress | 无 | 共享作业循环；FFI jobs 自开连接、取消、保留逐词进度字段 |
+| anki_ensure_note_type / mine / mine_check / browse_notes / model_names | 仅 mine / mine_check | 补齐接口；已有笔记/刚制卡结果可打开 Anki 浏览器，使用真实 noteId，复用已有制卡逻辑 |
+| MiningReportCard / anki_mining_report | 无 | 共享 JLPT 查询与报告生成，系统浏览器打开 |
+| SettingsPage / MineSettingsCard；App.tsx 侧栏与命令面板 | 制卡设置仅在词典页 | 共用设置视图，设置页与 Anki 页入口；接通命令面板与首页今日制卡数 |
+| AnalyticsPage / stats_report / export_text | 展示报告，无保存 | Rust 原文、原生保存面板与读回 smoke |
+| KwicPage / kwicCsv / export_text | 无 CSV 保存 | 移植 CSV 纯函数及原测试，原生保存面板 |
+| WordCloud / export_png | 已有 ImageRenderer 与保存面板 | 选中歌手标题、署名、玻璃词云、照片底图、2 倍渲染与 wordcloud.png；共享写入校验 |
+| SmokeRun / macos.yml | 无 Anki 与报告导出门禁 | Anki 未连接截图、统计报告临时文件读回 |
+
+### 共享逻辑与接口
+
+`jp-app/src/anki.rs` 的三个作业循环及 `ExportProgress` / `ExportItem` 移至 `jp-anki::batch`，
+状态、学习状态读取、选词、预览、开始前校验与选项移至 `jp-anki::service`。
+`jp-app/src/anki_report.rs` 整体移至 `jp-anki::report`，Tauri 原模块重导出；
+`export_text` / `export_png` 的扩展名、PNG 签名校验与写入移至 `jp-corpus::export`。
+19 个相关 Tauri 函数（16 个 Anki、2 个保存、stats_report）的签名逐字符核对未变；返回 serde 类型、事件名与字段保持原样。
+Tauri 只负责作业槽/线程/事件，FFI 只负责参数/轮询。后台 Anki 作业自开只读连接，不占会话锁；
+export/update/refresh 共用一个 `anki_job`，重复启动不清除取消标志。
+
+新增 **16 个 FFI 方法**（camelCase）：
+
+- 本地查询：`ankiNotesSince`、`ankiWords`、`ankiPreview`。
+- 笔记与报告：`ankiEnsureNoteType`、`ankiBrowseNotes`、`ankiModelNames`、`ankiMiningReport`。
+- 作业：`ankiExportStart`、`ankiUpdateStart`、`ankiRefreshPreview`、`ankiRefreshStart`、`ankiCancel`、`ankiIsRunning`。
+- 轮询与保存：`ankiProgress`、`exportText`、`exportPng`。
+
+现有 `ankiStatus` 改为 Windows 的完整形状：`connected / message / version / decks / noteTypeReady / collectionPath / knownWords / studiedWords`；
+笔记类型列表通过 `ankiModelNames` 单独获取。`ankiMine` / `ankiMineCheck` 继续复用既有共享制卡流程。
+`ankiProgress` 返回既有 `JobView`，`result` 为 `{ progress, log }`：progress 与 Windows 事件载荷逐字段一致，
+log 最近 200 条、倒序，界面展示前 30 条；轮询期间也返回 result，避免漏掉中间的逐词结果。
+
+JPCore Codable 逐字段对应 serde：AnkiStatus、WordCandidate、AnkiCard、AnkiExample、AnkiProgress、MiningReportResult（含扁平化的 decks / noteTypes）。
+空卡片的 examples 会被 Rust 省略，因此 Swift 使用可选数组；时刻使用可选 Double，笔记 id 使用 Int64。
+NSSavePanel 用于原生保存；TXT 直接写 statsReport.text，KWIC CSV 保留 BOM / CRLF / 七列 / 完整语境。
+PNG 用 SwiftUI ImageRenderer 渲染对应词云视图，布局坐标、字体、词性颜色与照片来自当前词云，不包含悬停状态。
+
+### TS 移植与验证
+
+新增 **15 个纯函数入口**，按 Windows 的行为移植：
+
+| 来源 | 数量 | Swift 入口 |
+|---|---:|---|
+| AnkiPage.tsx 的纯函数/内联计算 | 6 | startedProgress、defaultDeck、counts、percent、selected、toggle |
+| MiningReportCard.tsx | 1 | localTimestamp |
+| dict/mine.ts | 1 | artistSubdeck（已接入制卡提示） |
+| pyFormat.ts | 6 | pyFixed、pyGrouped、pyFloatRepr、csvField、csvRow、kwicCsv |
+| KwicPage.tsx 导出文件名 | 1 | kwicFilename |
+
+移植原 TS **5 个测试用例**：pyFormat.test.ts 全部 4 例、mine.test.ts 全部 1 例；
+格式化测试直接读仓库原有 Python fixture（2175 条 fixed、8 条 grouped、7 行 KWIC，CSV 逐字符对照），未复制另一份期望数据。
+新增 **17 个 XCTest**：AnkiModelTests 9、ExportTextTests 5、AnkiBridgeTests 3。
+AnkiModel 通过 AnkiCalling 协议注入，FakeCorpus 覆盖离线状态、默认选项、选词/预览、导出/更新、刷新计数失效、取消、终态、报告错误与重试；
+JPCore 真 FFI 测试覆盖词表、预览、空卡、无效启动、idle 取消、TXT/CSV/PNG 写入读回与错误。
+
+本机 Windows 验证：
+
+- `cargo build -p jp-ffi -p jp-app`：通过（Windows linker_messages 提示，不是构建失败）。
+- `cargo test -p jp-ffi -p jp-app -p jp-anki`：**327 passed / 0 failed / 18 ignored**。
+- `cargo clippy -p jp-ffi -p jp-app -p jp-anki --all-targets`：通过，无警告。
+- 新增 Rust 测试 7 例（FFI 4、共享 batch 3）；另有原 Tauri 的 4 例随业务代码迁至 jp-anki。
+- 传输层注入模拟离线状态/错误；批量循环用 FakeAnki 模拟成功/失败/逐词取消，不连接真实 AnkiConnect。
+- 按 SourceGuards 规则对 97 个 Swift 源文件做静态等价扫描：0 违规；呈现守卫现在也覆盖 fileExporter。
+- `git diff --check` 通过；未 commit、未 push，报告/构建日志均写临时目录。
+
+CI 新增门禁：`05d-anki.png`，以及
+
+```text
+[step] anki-page connected=false screenshot=true status=pass
+[step] stats-export bytes=N status=pass
+```
+
+Anki 断言读取正在显示的 AppModel.anki 状态；统计报告经真实 FFI 写临时文件后读回，要求非空且等于 Rust 原文。
+macos.yml 同时强制检查两条日志和截图，并把 jp-anki 加入 Rust 核心测试。
+
+尚未在本机验证：Swift 编译/XCTest、WKWebView 预览与保存面板交互、ImageRenderer 实际图片、两项真窗口 smoke。
+原因是本机为 Windows；新增代码只使用 macOS 14 及以前 API，未使用 Swift 6 语法。
+重点待 CI 确认 SwiftUI 类型推导、Observation 的嵌套绑定与 WebKit 的协议适配；Canvas 继续只捕获局部 let 快照。
+真实 AnkiConnect 的导出/更新/刷新、浏览器打开挖词报告不在 CI 中实连，应在安装 Anki 的 Mac 上手动验证。
+本阶段要求的功能入口已接入；没有把联网和 macOS 实机验证记为已通过。
+
+### 续做复查与第 4 阶段截图修复
+
+保留被中止时的全部未提交实现，在其上续做；没有重建页面或回滚共享逻辑。
+本轮重新串行运行任务书的三条 Cargo 命令，保留环境已有的 `CARGO_BUILD_JOBS=3`：
+build 成功；test **327 passed / 0 failed / 18 ignored**；clippy 成功、无警告。
+测试分布：jp-anki 148 passed / 1 ignored，jp-app（含集成测试）143 passed / 17 ignored，jp-ffi 36 passed。
+
+| CI 截图问题 | Windows 依据 | 修复 |
+|---|---|---|
+| 04i-cloud 分栏和搜索进入溢出菜单 | 曲库各分栏始终能切换 | LibraryRoot 不再把六段导航与搜索交给窗口工具栏的溢出策略；改为常驻正文顶栏，ViewThatFits 在窄窗口分两行，保留原过滤绑定与清除搜索 |
+| 深色词云上的黑色标题 | WordCloud 的 wc-bg-plain / wc-dim 固定为深色，浅色主题也不切成白底 | 仅照片词云卡片固定 dark colorScheme，标题、计数、播放歌词均按深底亮字显示；筛选与右侧列表仍跟随系统主题 |
+| 04h-timeline 垂直居中、文字占位图例 | 时间轴从顶部排版；图例有专辑方块、单曲圆点、解散竖线、单飞虚线 | 页面填满可用高度并 topLeading 对齐；初次滚动 anchor 改为 topTrailing；用 SwiftUI Shape/Path 画四种图例，窄窗口将图例换行 |
+
+全部 **132 个 Swift 文件**经过 tree-sitter 语法解析，0 错误；按 SourceGuards 的同等规则扫描 **97 个源文件 / 100 个 View**，
+fileImporter / sheet / alert / fileExporter 数量与显式 failure 处理均无违规。
+19 个相关 Tauri command 的完整签名再次与 HEAD 自动对照，未改变；`app/` 仍无改动。
+上述检查不等于 Swift 类型检查、XCTest 或真实窗口截图。
+可选的全仓 `cargo fmt --all -- --check` 会报告大量既有格式差异（包括未修改的 examples 与其他 crate），未做全仓格式化。
+
+本次变更逐文件静态复查记录（相同目录省略路径前缀）：
+
+| 文件 | 复查结论/重点 |
+|---|---|
+| jp-anki：batch.rs | 三种作业复用原 Windows 循环；独立只读连接、逐词取消、整批错误与 11 个进度字段一致 |
+| jp-anki：service.rs | 状态 8 字段、学习状态容错、选词过滤、预览例句夹限、牌组校验与原行为一致 |
+| jp-anki：report.rs、lib.rs | 原报告逻辑和 3 个测试完整迁移，公共模块可供两端调用 |
+| jp-app：anki.rs、anki_report.rs | 只保留线程/事件适配及重导出；终态释放作业槽后发事件 |
+| jp-app：commands.rs | 19 个签名保持；参数默认值、返回 serde 形状、浏览笔记查询不变 |
+| jp-corpus：export.rs、lib.rs | 原扩展名、PNG 签名、写入错误共用，模块公开 |
+| jp-ffi：anki.rs、lib.rs | 新方法在 unlocked 路径分派；后台不占会话锁；nullable 参数用既有 arg_or 规则 |
+| jp-ffi：jobs.rs、anki_tests.rs | 轮询途中保留逐项结果；离线传输、预览、取消、文件读回均有测试 |
+| jp-ffi/Cargo.toml、Cargo.lock | 仅为离线传输测试添加 jp-scraper dev-dependency，无生产依赖版本变更 |
+| JPCore：AnkiClient.swift、MiningClient.swift | Codable 字段与 Rust serde 对照；省略的 examples 可选、时间 Double?、笔记 Int64；所有新增跨模块 API public |
+| JPCorpusModel：AnkiModel.swift | AnkiCalling 协议注入；选词、预览、任务与日志、计数失效、错误释放 busy 状态 |
+| JPCorpusModel：ExportText.swift | 七列 CSV、BOM、CRLF、引号转义、完整上下文、文件名与 Python 数字 fixture 对照 |
+| JPCorpusModel：AppModel.swift | Anki 侧栏、图标及可观察模型实例接入，所有 switch 分支覆盖 |
+| JPCorpusApp：AnkiView.swift | 导出/更新/刷新与取消按钮禁用规则、200/30 条日志、WebKit 预览和报告结果；MainActor 与嵌套绑定 |
+| JPCorpusApp：MineSettingsView.swift | 两页共用 AppStorage；模型/牌组选项包含当前值、词典启用和 terms 数量过滤 |
+| JPCorpusApp：SaveExport.swift、AnalyticsOverview.swift | MainActor 原生保存面板；Rust 原文、取消不写入、错误上报、加载时禁用旧报告导出 |
+| JPCorpusApp：SearchView.swift | 导出当前完整结果，原搜索异步序号保护保持，保存成功提示与 BOM/CRLF 一致 |
+| JPCorpusApp：LookupPane.swift | 已有与新制卡使用真实 noteId 打开 Anki；子牌组提示与设置一致 |
+| JPCorpusApp：ContentView.swift、QuickSearchView.swift | 侧栏与命令面板均能进入 Anki，沿用现有全局错误呈现 |
+| JPCorpusApp：DictionaryView.swift、SettingsView.swift | 去掉旧词典页制卡设置，设置页复用新视图；文件导入显式处理 failure |
+| JPCorpusApp：HomeView.swift | 今日制卡起点使用本地日历午夜，未找到 collection 时隐藏数字 |
+| JPCorpusApp：CloudView.swift | 深底亮字、PNG 2 倍渲染、保存校验；Canvas 使用局部 let 快照，ImageRenderer 使用 macOS 14 API |
+| JPCorpusApp：LibraryView.swift、TimelineView.swift | 常驻导航/搜索、窄窗分行、顶部对齐与图形图例；Canvas 无新增 MainActor 状态读取 |
+| JPCorpusApp：SmokeRun.swift、macos.yml | 截图断言读取真实显示模型；报告经 FFI 写临时文件读回；CI 两条日志及截图强制门禁 |
+| AnkiBridgeTests.swift、AnkiModelTests.swift、ExportTextTests.swift | 3 个真 FFI、9 个 FakeCorpus/纯逻辑、5 个导出测试；原 TS 5 例与原 fixture 直接复用 |
+| SourceGuards.swift | 呈现守卫及自测统一扩展到 fileExporter，未放宽已有规则 |
+| docs/clients.md、docs/macos-status.md | 差异表、接口/函数/测试清单与验证限制更新；修正 clients 表内第 4 阶段可视化的过期状态 |

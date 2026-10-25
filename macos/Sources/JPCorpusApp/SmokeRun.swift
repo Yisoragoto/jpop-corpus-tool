@@ -218,6 +218,25 @@ enum SmokeRun {
             shot("05c-quality", into: out, note: note)
             UserDefaults.standard.set(0, forKey: "analysisTab")
 
+            guard let exportClient = app.core else { throw SmokeFailure.step("stats-export-client") }
+            let report = try await exportClient.statsReport(StatsFilter())
+            let exportURL = FileManager.default.temporaryDirectory.appendingPathComponent("stats-smoke-\(UUID().uuidString).txt")
+            defer { try? FileManager.default.removeItem(at: exportURL) }
+            try await exportClient.exportText(path: exportURL.path, content: report.text)
+            let exported = try Data(contentsOf: exportURL)
+            try require(!exported.isEmpty && String(data: exported, encoding: .utf8) == report.text, "stats-export", "bytes=\(exported.count)")
+
+            app.section = .anki
+            for _ in 0..<100 {
+                if app.anki.status != nil { break }
+                await settle(0.1)
+            }
+            await settle(0.5)
+            shot("05d-anki", into: out, note: note)
+            let ankiStatus = app.anki.status
+            let ankiShot = FileManager.default.fileExists(atPath: out.appendingPathComponent("05d-anki.png").path)
+            try require(ankiShot && ankiStatus?.connected == false && !(ankiStatus?.message.isEmpty ?? true), "anki-page", "connected=\(ankiStatus?.connected == true) screenshot=\(ankiShot)")
+
             // 词典：现做一本只有一个词条的 Yomitan 词典（解开的目录），经界面那条路导入，再试查「夜」
             app.section = .dictionaries
             do {

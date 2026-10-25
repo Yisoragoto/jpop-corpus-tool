@@ -54,20 +54,37 @@ private struct LibraryRoot: View {
             case .cloud: CloudView()
             }
         }
-        .safeAreaInset(edge: .top) { NewSongsNotice().padding(.horizontal, 20) }
+        // 六个分栏和搜索常驻正文顶栏，避免被系统窗口工具栏收进溢出菜单。
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 10) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 16) { modePicker; Spacer(minLength: 0); searchField.frame(width: 220) }
+                    VStack(alignment: .leading, spacing: 10) { modePicker; searchField }
+                }
+                NewSongsNotice()
+            }.padding(.horizontal, 20).padding(.vertical, 10)
+        }
         .toolbar {
             ToolbarItem { LibraryManageButton() }
-            ToolbarItem(placement: .principal) {
-                Picker("", selection: Binding(get: { app.libraryMode },set: { app.libraryMode = $0 })) {
-                    ForEach(LibraryMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-            }
         }
-        .searchable(text: $filter, placement: .toolbar, prompt: app.libraryMode == .artists ? "歌手名" : "曲名、歌手、专辑")
         .navigationTitle("曲库")
         .navigationSubtitle("\(app.tracks.count) 首")
+    }
+    private var modePicker: some View {
+        Picker("曲库分栏", selection: Binding(get: { app.libraryMode },set: { app.libraryMode = $0 })) {
+            ForEach(LibraryMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }.labelsHidden().pickerStyle(.segmented).fixedSize().accessibilityIdentifier("library-mode")
+    }
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(app.libraryMode == .artists ? "歌手名" : "曲名、歌手、专辑", text: $filter)
+                .textFieldStyle(.plain).accessibilityIdentifier("library-search")
+            if !filter.isEmpty {
+                Button { filter = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.borderless).help("清除搜索")
+            }
+        }.padding(7).background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
     }
 }
 

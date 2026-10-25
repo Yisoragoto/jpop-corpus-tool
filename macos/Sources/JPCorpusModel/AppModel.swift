@@ -3,7 +3,7 @@ import JPCore
 import Observation
 
 public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case home, search, library, analysis, importer, scrape, dictionaries, settings
+    case home, search, library, analysis, importer, scrape, dictionaries, anki, settings
     public var id: String { rawValue }
 
     public var title: String {
@@ -16,6 +16,7 @@ public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .scrape: return "刮削"
         case .importer: return "导入"
         case .settings: return "设置"
+        case .anki: return "Anki"
         }
     }
 
@@ -29,6 +30,7 @@ public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .scrape: return "wand.and.stars"
         case .importer: return "square.and.arrow.down"
         case .settings: return "gearshape"
+        case .anki: return "rectangle.on.rectangle"
         }
     }
 }
@@ -84,6 +86,7 @@ public final class AppModel {
     public var paletteCommands = false
     public let scopes: SubcorpusStore
     public let visualizations = VisualizationModel()
+    public let anki = AnkiModel()
     public var libraryMode: LibraryMode = .songs { didSet { defaults.set(libraryMode.rawValue,forKey: "libraryMode") } }
     /// 全屏歌词
     public var showStage = false

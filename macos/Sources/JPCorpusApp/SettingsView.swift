@@ -15,6 +15,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Anki") { MineSettingsView() }
             Section("播放") {
                 Toggle("逐字点亮当前行", isOn: Binding(get: { app.karaokeLyrics }, set: { app.karaokeLyrics = $0 }))
                 Toggle("显示频谱", isOn: Binding(get: { app.player.spectrumEnabled }, set: { app.player.spectrumEnabled = $0 }))

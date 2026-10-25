@@ -60,7 +60,7 @@ enum SourceGuard {
                 end += 1
             }
             let body = ns.substring(with: NSRange(location: start, length: end - start))
-            for modifier in ["fileImporter", "sheet", "alert"] {
+            for modifier in ["fileImporter", "sheet", "alert", "fileExporter"] {
                 let uses = try! NSRegularExpression(pattern: "\\.\(modifier)\\s*\\(")
                 let count = uses.numberOfMatches(in: body, range: NSRange(location: 0, length: (body as NSString).length))
                 if count > 1 { issues.append("\(file): \(name) .\(modifier) count=\(count) (maximum 1)") }
@@ -108,7 +108,7 @@ final class SourceGuardTests: XCTestCase {
     }
 
     func testPresentationGuardRejectsDuplicatesAndIgnoresCommentsAndStrings() {
-        for modifier in ["fileImporter", "sheet", "alert"] {
+        for modifier in ["fileImporter", "sheet", "alert", "fileExporter"] {
             let bad = "struct Broken: View { var body: some View { Text(\"x\").\(modifier)(a).\(modifier)(b) } }"
             let issues = SourceGuard.presentationViolations(bad, file: "Broken.swift")
             XCTAssertEqual(issues.count, 1)

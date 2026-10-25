@@ -30,7 +30,7 @@ struct QuickSearchView: View {
             PaletteAction(id: "go-analytics",label: "打开 分析",run: { app.section = .analysis }),
             PaletteAction(id: "go-import",label: "打开 导入",hint: "扫描目录并写入语料",run: { app.section = .importer }),
             PaletteAction(id: "go-scrape",label: "打开 刮削",hint: "识别 · metadata · 封面",run: { app.section = .scrape }),
-            PaletteAction(id: "go-anki",label: "打开 Anki",hint: "用语料例句做卡片",disabled: "Anki 浏览将在第 5 阶段补齐",run: {}),
+            PaletteAction(id: "go-anki",label: "打开 Anki",hint: "用语料例句做卡片",run: { app.section = .anki }),
             PaletteAction(id: "go-settings",label: "打开 设置",hint: "外观 · 歌词 · 词典 · 制卡",run: { app.section = .settings }),
             PaletteAction(id: "search",label: "全局搜索…",hint: "⌘K",run: { query = ""; focused = true }),
             PaletteAction(id: "backfill",label: "回填时长",hint: "扫描音频文件补 duration_sec",run: { Task {

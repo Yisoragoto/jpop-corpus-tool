@@ -1910,36 +1910,13 @@ pub async fn anki_mining_report<R: tauri::Runtime>(
 /// 只写这几种扩展名，免得被拿去覆盖别的文件。
 #[tauri::command(async)]
 pub fn export_text(path: String, content: String) -> CmdResult<()> {
-    let target = std::path::Path::new(&path);
-    let ext = target
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .unwrap_or_default();
-    if !matches!(ext.as_str(), "txt" | "csv" | "html") {
-        return Err(anyhow::anyhow!("只能导出 .txt / .csv / .html：{path}").into());
-    }
-    std::fs::write(target, content).map_err(|err| anyhow::anyhow!("写不了 {path}：{err}"))?;
-    Ok(())
+    Ok(jp_corpus::export::text(path, content)?)
 }
 
 /// 把界面画好的图（统计页的词云）写到保存对话框选的位置。只写 .png，理由同上。
 #[tauri::command(async)]
 pub fn export_png(path: String, bytes: Vec<u8>) -> CmdResult<()> {
-    let target = std::path::Path::new(&path);
-    let ext = target
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .unwrap_or_default();
-    if ext != "png" {
-        return Err(anyhow::anyhow!("只能导出 .png：{path}").into());
-    }
-    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return Err(anyhow::anyhow!("不是 PNG 数据，没有写入").into());
-    }
-    std::fs::write(target, bytes).map_err(|err| anyhow::anyhow!("写不了 {path}：{err}"))?;
-    Ok(())
+    Ok(jp_corpus::export::png(path, bytes)?)
 }
 
 // ────────────────────────────── 曲库维护 ──────────────────────────────
@@ -2261,10 +2238,7 @@ pub fn anki_status(_state: State<'_, AppState>) -> CmdResult<crate::anki::AnkiSt
 /// 找不到 collection（没装 Anki）返回 null，界面就不显示这一句——不是错误。
 #[tauri::command(async)]
 pub fn anki_notes_since(since_ms: i64) -> CmdResult<Option<usize>> {
-    if jp_anki::learning::find_collection().is_none() {
-        return Ok(None);
-    }
-    Ok(Some(jp_anki::learning::notes_created_since(None, since_ms)?))
+    Ok(jp_anki::service::notes_since(since_ms)?)
 }
 
 /// 候选词表，按语料里的频次排，并标出 Anki 里已有 / 已学过的。
@@ -2284,14 +2258,7 @@ pub fn anki_words(
         song_ids: song_ids.unwrap_or_default(),
         limit: limit.unwrap_or(defaults.limit),
     };
-    // 学习状态是直接读文件，不需要 Anki 开着；读不到就当没有
-    let learning = jp_anki::learning::load(None, "").ok();
-    let corpus = state.corpus();
-    let mut words = jp_anki::pick_words(corpus.connection(), &options, learning.as_ref())?;
-    if skip_studied.unwrap_or(false) {
-        words.retain(|w| !w.studied);
-    }
-    Ok(words)
+    Ok(jp_anki::service::words(state.corpus().connection(), &options, skip_studied.unwrap_or(false))?)
 }
 
 /// 组一张卡看看。**不碰 Anki**，纯预览。
@@ -2303,17 +2270,7 @@ pub fn anki_preview(
     max_examples: Option<usize>,
     max_dicts: Option<usize>,
 ) -> CmdResult<jp_anki::Card> {
-    let corpus = state.corpus();
-    Ok(jp_anki::card::build(
-        corpus.connection(),
-        &lemma,
-        &pos.unwrap_or_default(),
-        &[],
-        jp_anki::CardOptions {
-            max_examples: max_examples.unwrap_or(2).clamp(1, 8),
-            max_dicts,
-        },
-    )?)
+    Ok(jp_anki::service::preview(state.corpus().connection(), &lemma, &pos.unwrap_or_default(), max_examples.unwrap_or(2), max_dicts)?)
 }
 
 /// 把「JPOP Corpus」笔记类型建好或更新到最新。返回是不是新建的。
@@ -2337,12 +2294,7 @@ pub fn anki_export_start<R: tauri::Runtime>(
     dup_scope: Option<jp_anki::DupScope>,
     clip_audio: Option<bool>,
 ) -> CmdResult<usize> {
-    if words.is_empty() {
-        return Err(anyhow::anyhow!("没有选中任何词").into());
-    }
-    if deck.trim().is_empty() {
-        return Err(anyhow::anyhow!("要先选一个牌组").into());
-    }
+    jp_anki::service::validate_selection(&words, &deck)?;
     let total = words.len();
     let mut options = crate::anki::options(deck, max_examples.unwrap_or(2), max_dicts);
     options.dup_mode = dup_mode.unwrap_or_default();
@@ -2373,12 +2325,7 @@ pub fn anki_update_start<R: tauri::Runtime>(
     deck: String,
     dup_scope: Option<jp_anki::DupScope>,
 ) -> CmdResult<usize> {
-    if words.is_empty() {
-        return Err(anyhow::anyhow!("没有选中任何词").into());
-    }
-    if deck.trim().is_empty() {
-        return Err(anyhow::anyhow!("要先选一个牌组").into());
-    }
+    jp_anki::service::validate_selection(&words, &deck)?;
     let total = words.len();
     crate::anki::spawn_update(
         app,
@@ -2415,9 +2362,7 @@ pub fn anki_refresh_start<R: tauri::Runtime>(
     deck: String,
     scope: Option<jp_anki::RefreshScope>,
 ) -> CmdResult<()> {
-    if deck.trim().is_empty() {
-        return Err(anyhow::anyhow!("要先选一个牌组").into());
-    }
+    jp_anki::service::validate_deck(&deck)?;
     crate::anki::spawn_refresh(
         app,
         state.anki_job(),
@@ -2590,14 +2535,7 @@ pub async fn anki_mine_check(
 #[tauri::command]
 pub async fn anki_browse_notes(note_ids: Vec<i64>) -> CmdResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
-        let ids: Vec<String> = note_ids.iter().map(i64::to_string).collect();
-        crate::anki::client()
-            .call(
-                "guiBrowse",
-                serde_json::json!({ "query": format!("nid:{}", ids.join(",")) }),
-            )
-            .map(|_| ())
-            .map_err(|err| anyhow::anyhow!(crate::anki::describe(&err)))
+        jp_anki::service::browse_notes(&crate::anki::client(), &note_ids)
     })
     .await
     .map_err(|err| anyhow::anyhow!("线程出错：{err}"))??;

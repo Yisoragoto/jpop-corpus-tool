@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import JPCorpusModel
 
-/// 词典页：导入 Yomitan 格式的词典包、启用 / 停用、拖动排序、删除；Anki 制卡的设置；试查一个词。
+/// 词典页：导入 Yomitan 格式的词典包、启用 / 停用、拖动排序、删除；试查一个词。
 /// 词典库是语料库目录里的 dictionaries.db，和 Windows 版同一个文件、同一套导入代码（jp-dict）
 @MainActor
 struct DictionaryView: View {
@@ -14,13 +14,7 @@ struct DictionaryView: View {
     @State private var lastBatch: DictImportBatch?
     @State private var probe = ""
     @State private var probeRequest: LookupRequest?
-    @State private var anki: AnkiStatus?
 
-    @AppStorage(MineDefaults.deck) private var deck = "JPOP"
-    @AppStorage(MineDefaults.model) private var model = lyricsNoteType
-    @AppStorage(MineDefaults.kind) private var kind: LapisCardKind = .wordAndSentence
-    @AppStorage(MineDefaults.artistSubdeck) private var artistSubdeck = false
-    @AppStorage(MineDefaults.mainDictionary) private var mainDictionary = ""
 
     private var importing: Bool { job?.running == true }
 
@@ -29,7 +23,6 @@ struct DictionaryView: View {
             VStack(alignment: .leading, spacing: 22) {
                 dictionariesSection
                 probeSection
-                ankiSection
             }
             .padding(24)
             .frame(maxWidth: 900, alignment: .leading)
@@ -45,7 +38,6 @@ struct DictionaryView: View {
                 submitProbe()
             }
         }
-        .task { await refreshAnki() }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.zip, .folder], allowsMultipleSelection: true) { result in
             switch result {
             case .failure(let error):
@@ -168,74 +160,6 @@ struct DictionaryView: View {
         }
     }
 
-    // MARK: - Anki
-
-    private var ankiSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                SectionHeader(title: "Anki 制卡", detail: nil)
-                Button {
-                    Task { await refreshAnki() }
-                } label: {
-                    Label("重新连接", systemImage: "arrow.clockwise")
-                }
-                .controlSize(.small)
-            }
-            Group {
-                if let anki, anki.connected {
-                    Label("Anki 已连接（AnkiConnect \(anki.version)）", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                } else if let anki {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("连不上 Anki", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                        Text(anki.message.isEmpty ? "打开 Anki，并装上 AnkiConnect 插件（代码 2055492159）。" : anki.message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    ProgressView().controlSize(.small)
-                }
-            }
-            Form {
-                Picker("牌组", selection: $deck) {
-                    ForEach(deckChoices, id: \.self) { Text($0).tag($0) }
-                }
-                Toggle("按歌手放进子牌组（「\(deck)::歌手」，没有就建）", isOn: $artistSubdeck)
-                Picker("笔记类型", selection: $model) {
-                    ForEach(modelChoices, id: \.self) { m in
-                        Text(m == lyricsNoteType ? "Lyrics（本应用的，第一次制卡时自动建）" : m).tag(m)
-                    }
-                }
-                Picker("卡片", selection: $kind) {
-                    ForEach(LapisCardKind.allCases, id: \.self) { Text($0.label).tag($0) }
-                }
-                Picker("主释义", selection: $mainDictionary) {
-                    Text("排在最前、有释义的那本").tag("")
-                    ForEach(dictionaries.filter { $0.frequencyMode == nil }) { Text($0.title).tag($0.title) }
-                }
-            }
-            .formStyle(.grouped)
-            .clearScrollBackground()
-            .frame(height: 250)
-            Text("在歌词面板里右键一行 →「查词」→ 词条右边点「制卡」：释义来自这里的词典，例句是那一行（同一首歌里其他含这个词的行也带上），例句音频切那一句。和 Windows 版做出来的卡一样。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    /// 牌组选项：Anki 里有的，加上现在选着的（Anki 没开时也能看到）
-    private var deckChoices: [String] {
-        var decks = anki?.decks ?? []
-        if !decks.contains(deck) { decks.insert(deck, at: 0) }
-        return decks
-    }
-
-    private var modelChoices: [String] {
-        var models = (anki?.models ?? []).filter { $0 != lyricsNoteType }
-        models.insert(lyricsNoteType, at: 0)
-        if !models.contains(model) { models.append(model) }
-        return models
-    }
-
     // MARK: - 动作
 
     private func reload() async {
@@ -246,9 +170,6 @@ struct DictionaryView: View {
         }
     }
 
-    private func refreshAnki() async {
-        anki = try? await app.core?.ankiStatus()
-    }
 
     private func submitProbe() {
         let text = probe.trimmingCharacters(in: .whitespaces)

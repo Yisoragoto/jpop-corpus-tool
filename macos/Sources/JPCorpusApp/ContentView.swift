@@ -32,6 +32,7 @@ struct ContentView: View {
                         case .scrape: ScrapeView()
                         case .importer: ImportView()
                         case .settings: SettingsView(embedded: true)
+                        case .anki: AnkiView()
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -8,6 +8,7 @@ import JPCorpusModel
 struct HomeView: View {
     @Environment(AppModel.self) private var app
     @State private var home: HomeSummary?
+    @State private var cardsToday: Int?
 
     var body: some View {
         ScrollView {
@@ -57,6 +58,10 @@ struct HomeView: View {
         .clearScrollBackground()
         .navigationTitle("首页")
         .task(id: app.homeVersion) { await load() }
+        .task(id: app.homeVersion) {
+            let since = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+            cardsToday = try? await app.core?.ankiNotesSince(since)
+        }
         .task(id: app.tracks.count) { await load() }
     }
 
@@ -140,6 +145,7 @@ struct HomeView: View {
     private func todayCard(_ t: DayListening, reach: Reach) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("今天").font(.headline).foregroundStyle(.secondary)
+            if let cardsToday { Text("今天制卡 \(cardsToday) 张").font(.caption).foregroundStyle(.secondary) }
             HStack(spacing: 18) {
                 StatBlock(value: formatListening(t.listenedSec), label: "\(t.songs) 首 · \(t.linesHeard) 行")
                 if t.streakDays > 1 {
