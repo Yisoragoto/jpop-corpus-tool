@@ -221,6 +221,28 @@ pub struct CorpusReport {
     pub top_words: Vec<(String, i64)>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsReport {
+    pub report: CorpusReport,
+    pub performers: Vec<String>,
+    pub jp_only: bool,
+    pub text: String,
+}
+
+/// 两端共用的报告封装：姓名顺序、缺失人物与文本保持 Tauri 原行为。
+pub fn stats_report(conn: &Connection, filter: &StatsFilter) -> anyhow::Result<StatsReport> {
+    use rusqlite::OptionalExtension;
+    let mut performers = Vec::new();
+    for id in &filter.performer_ids {
+        let name: Option<String> = conn.query_row("SELECT name FROM people WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+        performers.extend(name);
+    }
+    let report = corpus_report(conn, filter)?;
+    let text = report_text(&report, &performers, filter.jp_only);
+    Ok(StatsReport { report, performers, jp_only: filter.jp_only, text })
+}
+
 const COVERAGE_TARGETS: [usize; 4] = [100, 500, 1000, 2000];
 const EXCLUDED: &str = "t.pos NOT IN ('PUNCT','SYM','SPACE','X')";
 
@@ -487,6 +509,18 @@ mod tests {
     fn japanese_detection_matches_the_python_pattern() {
         assert!(is_japanese("夜") && is_japanese("ら") && is_japanese("ラブ") && is_japanese("ｱｲ"));
         assert!(!is_japanese("yeah") && !is_japanese("123") && !is_japanese("ー"));
+    }
+
+    #[test]
+    fn shared_report_preserves_name_order_missing_people_and_text() {
+        let conn = db();
+        conn.execute_batch("INSERT INTO people (id,name,normalized_name) VALUES (1,'A','a'),(2,'B','b');").unwrap();
+        let filter = StatsFilter { performer_ids: vec![2, 999, 1], jp_only: true, ..Default::default() };
+        let result = stats_report(&conn, &filter).unwrap();
+        assert_eq!(result.performers, ["B", "A"]);
+        assert_eq!(result.report, corpus_report(&conn, &filter).unwrap());
+        assert_eq!(result.text, report_text(&result.report, &result.performers, true));
+        assert!(result.jp_only);
     }
 
     #[test]

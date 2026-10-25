@@ -189,14 +189,14 @@ public final class CorpusClient: @unchecked Sendable {
         try await perform { try $0.call("songProfile", ["songId": AnyEncodable(songId), "limit": AnyEncodable(limit)]) }
     }
 
-    public func wordInCorpus(_ lemma: String, currentSongId: String?) async throws -> WordInCorpus {
+    public func wordInCorpus(_ lemma: String, currentSongId: String?, scope: Subcorpus? = nil, limit: Int = 1000) async throws -> WordInCorpus {
         try await perform {
-            try $0.call("wordInCorpus", ["lemma": AnyEncodable(lemma), "currentSongId": AnyEncodable(currentSongId), "limit": AnyEncodable(24)])
+            try $0.call("wordInCorpus", ["lemma": AnyEncodable(lemma), "currentSongId": AnyEncodable(currentSongId), "limit": AnyEncodable(limit), "scope": AnyEncodable(scope)])
         }
     }
 
     public func performers() async throws -> [PersonSummary] {
-        try await perform { try $0.call("performers") }
+        try await peopleByRole("performer", limit: 5000)
     }
 
     public func overview() async throws -> Overview {

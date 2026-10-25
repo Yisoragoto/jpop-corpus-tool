@@ -11,10 +11,15 @@ description = "C ABI over the JPOP Corpus core, for the native macOS (SwiftUI) c
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+jp-update = { path = "../jp-update" }
+jp-diagnostics = { path = "../jp-diagnostics" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 jp-corpus = { path = "../jp-corpus" }
+jp-lyrics = { path = "../jp-lyrics" }
+jp-fonts = { path = "../jp-fonts" }
+jp-audio = { path = "../jp-audio" }
 # 导入（扫描 → 计划 → 写库）、分词、分词词典的下载和定位、查词：和 Tauri 客户端是同一份代码
 jp-import = { path = "../jp-import" }
 jp-tokenizer = { path = "../jp-tokenizer" }
@@ -24,3 +29,7 @@ jp-dict = { path = "../jp-dict" }
 jp-anki = { path = "../jp-anki" }
 # 刮削元数据、封面、歌手照片：和 Tauri 客户端同一份 jp-scrape
 jp-scrape = { path = "../jp-scrape" }
+
+jp-library = { path = "../jp-library" }
+
+jp-scraper = { path = "../jp-scraper" }

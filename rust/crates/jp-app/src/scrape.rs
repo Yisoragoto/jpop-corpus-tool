@@ -27,29 +27,7 @@ pub fn connect_log() {
 /// 导入本身一首歌一个事务、已经提交了，封面放在后面单独做：
 /// 一张图写不下去不该让这首歌算导入失败。
 pub fn save_imported_covers(state: &crate::state::AppState, report: &jp_import::ImportReport) -> usize {
-    let corpus = state.corpus();
-    let conn = corpus.connection();
-    let mut saved = 0;
-    for track in &report.tracks {
-        if !matches!(track.outcome, jp_import::Outcome::Imported { .. }) {
-            continue;
-        }
-        let Ok(artist) = conn.query_row(
-            "SELECT artist FROM songs WHERE id=?1",
-            rusqlite::params![track.song_id],
-            |r| r.get::<_, String>(0),
-        ) else {
-            continue;
-        };
-        let audio = std::path::Path::new(&track.path);
-        if let Some(path) = save_embedded_cover(&state.covers_dir, &track.song_id, &artist, audio) {
-            match record_cover(conn, &track.song_id, &path) {
-                Ok(()) => saved += 1,
-                Err(err) => crate::log::warn(format!("封面记不进库 {}: {err:#}", track.song_id)),
-            }
-        }
-    }
-    saved
+    jp_scrape::save_imported_covers(state.corpus().connection(), &state.covers_dir, report)
 }
 
 /// 在后台线程刮一批。立刻返回，进度走 `scrape://progress` 事件。

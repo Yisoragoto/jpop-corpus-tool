@@ -3,7 +3,7 @@ import JPCore
 import Observation
 
 public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case home, search, library, analysis, dictionaries, scrape, importer
+    case home, search, library, analysis, importer, scrape, dictionaries, anki, settings
     public var id: String { rawValue }
 
     public var title: String {
@@ -15,6 +15,8 @@ public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .dictionaries: return "词典"
         case .scrape: return "刮削"
         case .importer: return "导入"
+        case .settings: return "设置"
+        case .anki: return "Anki"
         }
     }
 
@@ -27,6 +29,8 @@ public enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .dictionaries: return "character.book.closed"
         case .scrape: return "wand.and.stars"
         case .importer: return "square.and.arrow.down"
+        case .settings: return "gearshape"
+        case .anki: return "rectangle.on.rectangle"
         }
     }
 }
@@ -54,11 +58,14 @@ public struct ScopeRequest: Equatable {
 public struct SearchRequest: Equatable {
     public var keyword: String
     public var field: MatchField
+    public var scope: Subcorpus?
+    public var pos: String?
     public var nonce = UUID()
 
-    public init(keyword: String, field: MatchField) {
+    public init(keyword: String, field: MatchField, scope: Subcorpus? = nil, pos: String? = nil) {
         self.keyword = keyword
         self.field = field
+        self.scope = scope; self.pos = pos
     }
 }
 
@@ -76,8 +83,21 @@ public final class AppModel {
     public var analysisScope: ScopeRequest?
     /// ⌘K 全库搜索
     public var showQuickSearch = false
+    public var paletteCommands = false
+    public let scopes: SubcorpusStore
+    public let visualizations = VisualizationModel()
+    public let anki = AnkiModel()
+    public let updates: UpdateModel
+    public var libraryMode: LibraryMode = .songs { didSet { defaults.set(libraryMode.rawValue,forKey: "libraryMode") } }
     /// 全屏歌词
     public var showStage = false
+    public var stageKaraoke = false
+    public var lyricsDisplay = LyricsDisplay() {
+        didSet { if let data = try? JSONEncoder().encode(lyricsDisplay) { defaults.set(data, forKey: "lyrics-display") } }
+    }
+    public var importedLyricFonts: [String] = [] {
+        didSet { defaults.set(importedLyricFonts, forKey: "lyrics-imported-fonts") }
+    }
 
     /// 振假名开关和注法。存在偏好里，歌词面板和全屏歌词共用
     public var showFurigana: Bool {
@@ -102,11 +122,24 @@ public final class AppModel {
     public var showLyrics = true
     public var searchRequest: SearchRequest?
     public var errorMessage: String?
+    public var notice: String?
     public private(set) var isDemo = false
     public var pendingCreationURL: URL?
-    public let player = PlayerModel()
+    public let player: PlayerModel
+    public var stageCoverBlur: Bool {
+        didSet { defaults.set(stageCoverBlur, forKey: "player-stage-cover-blur") }
+    }
+    public var stageBlurRadius: Double {
+        didSet { defaults.set(stageBlurRadius, forKey: "player-stage-blur-radius") }
+    }
+    public var autoCheckNewSongs: Bool { didSet { defaults.set(autoCheckNewSongs, forKey: "autoCheckNewSongs") } }
+    public var dailyGoalMinutes: Double { didSet { defaults.set(dailyGoalMinutes, forKey: "dailyGoalMinutes") } }
+    public var karaokeLyrics: Bool {
+        didSet { defaults.set(karaokeLyrics, forKey: "player-karaoke-lyrics") }
+    }
     /// Shared with ImportView so smoke exercises the model actually displayed in the window.
     public private(set) var importer = ImportModel()
+    public private(set) var library: LibraryModel
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let openClient: @Sendable (URL) async throws -> any CorpusCalling
@@ -137,17 +170,35 @@ public final class AppModel {
     public init(
         defaults: UserDefaults = .standard,
         client: (any CorpusCalling)? = nil,
+        playbackEngine: (any PlaybackEngine)? = nil,
         openClient: @escaping @Sendable (URL) async throws -> any CorpusCalling = { db in
             let core = try await Task.detached { try CorpusCore(databaseURL: db) }.value
             return CorpusClient(core: core)
         }
     ) {
         self.defaults = defaults
+        updates = UpdateModel(defaults: defaults, client: client as? any UpdateCalling)
+        scopes = SubcorpusStore(defaults: defaults)
+        libraryMode = LibraryMode(rawValue: defaults.string(forKey: "libraryMode") ?? "") ?? .songs
         self.client = client
+        library = LibraryModel(client: client as? any LibraryCalling, defaults: defaults)
         self.openClient = openClient
+        player = PlayerModel(engine: playbackEngine, defaults: defaults)
+        stageCoverBlur = defaults.object(forKey: "player-stage-cover-blur") as? Bool ?? true
+        let blur = defaults.object(forKey: "player-stage-blur-radius") as? NSNumber
+        let radius = blur?.doubleValue ?? 64
+        stageBlurRadius = radius.isFinite ? min(120, max(20, radius)) : 64
+        autoCheckNewSongs = defaults.object(forKey: "autoCheckNewSongs") as? Bool ?? true
+        let goal = defaults.object(forKey: "dailyGoalMinutes") as? Double ?? 30
+        dailyGoalMinutes = goal.isFinite ? min(180, max(5, goal.rounded())) : 30
+        karaokeLyrics = defaults.object(forKey: "player-karaoke-lyrics") as? Bool ?? true
         audioRoots = defaults.stringArray(forKey: Keys.audioRoots) ?? []
         showFurigana = defaults.bool(forKey: Keys.furigana)
         furiganaMode = FuriganaMode(rawValue: defaults.string(forKey: Keys.furiganaMode) ?? "") ?? .kanji
+        if let data = defaults.data(forKey: "lyrics-display"), var display = try? JSONDecoder().decode(LyricsDisplay.self, from: data) {
+            display.normalize(); lyricsDisplay = display
+        }
+        importedLyricFonts = defaults.stringArray(forKey: "lyrics-imported-fonts") ?? []
         player.app = self
     }
 
@@ -208,11 +259,14 @@ public final class AppModel {
             try await next.setAudioRoots(audioRoots)
             let fetched = try await next.tracks()
             client = next
+            updates.client = next as? any UpdateCalling
+            library = LibraryModel(client: next as? any LibraryCalling, defaults: defaults)
             libraryURL = folder
             importer = ImportModel()
             updateTracks(fetched)
             isDemo = false
             defaults.set(folder.path, forKey: Keys.library)
+            if autoCheckNewSongs && library.client != nil { Task { await library.checkNewAudio() } }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -244,6 +298,7 @@ public final class AppModel {
     private func updateTracks(_ tracks: [Track]) {
         self.tracks = tracks
         tracksById = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        player.refreshMetadata(tracks)
     }
 
     public func track(_ id: String) async throws -> Track? {

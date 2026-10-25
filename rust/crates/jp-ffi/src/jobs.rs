@@ -79,6 +79,11 @@ impl Job {
         view.stage = stage.into();
     }
 
+    /// 轮询也能取得逐项结果，避免两次轮询之间丢进度。
+    pub fn report_result(&self, result: Value) {
+        self.view.lock().unwrap_or_else(|e| e.into_inner()).result = result;
+    }
+
     /// 起一条线程跑 `work`。已经在跑就报错，**不动**正在跑的那一份（包括它的取消标志）。
     ///
     /// `work` 返回 `Ok(结果)` 或错误；panic 也接住，变成一条错误——

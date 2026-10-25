@@ -2,7 +2,7 @@
 //!
 //! ## 为什么是「一个入口 + JSON」
 //!
-//! 业务逻辑全在 `jp-corpus`，Tauri 客户端经 command 调它，这里给 Swift 开同样的口子。
+//! 业务逻辑在共享 Rust crate，Tauri 经 command 调用，这里给 Swift 开同样的口子。
 //! 没有逐个函数导出 C 签名，也没用 UniFFI 之类的代码生成：
 //!
 //! - **两个客户端看到的是同一份数据形状。** 参数和返回值都是 serde 序列化的 JSON，
@@ -19,18 +19,28 @@
 //! - [`jp_call`] 返回 `{"ok": <结果>}` 或 `{"error": "<一句人话>"}`，**从不返回 NULL**（内存分配失败除外）。
 //! - 一个会话一个 SQLite 连接，内部加锁；Swift 可以从任意线程调，用到这条连接的调用是串行的。
 //!   不碰这条连接的方法（作业进度、分词词典、查词、扫描目录）不拿这把锁，导入跑着时照样能问进度。
-//! - 长作业（导入、下载分词词典）在后台线程上跑，用自己的连接，界面轮询进度（见 [`jobs`]）。
+//! - 长作业（导入、词典、刮削、歌词）在后台线程上跑，用自己的连接，界面轮询进度（见 [`jobs`]）。
 //! - panic 不会跨过 FFI 边界：被接住，变成一条 error。
 //!
 //! 头文件在 `include/jp_ffi.h`，手写，和这里的五个函数一一对应。
 
 pub mod jobs;
+mod anki;
+mod system;
+#[cfg(test)]
+mod anki_tests;
+mod lyrics;
+mod library;
+#[cfg(test)]
+mod library_tests;
+#[cfg(test)]
+mod lyrics_tests;
 #[cfg(test)]
 mod import_tests;
 
 use std::ffi::{CStr, CString, c_char};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, ensure};
@@ -64,6 +74,11 @@ pub struct Session {
     dict_job: Arc<Job>,
     /// 批量刮削（曲目、歌手共用：两边都排 MusicBrainz 的队，同时跑只会互相拖慢）
     scrape_job: Arc<Job>,
+    lyrics_job: Arc<Job>,
+    library_job: Arc<Job>,
+    anki_job: Arc<Job>,
+    lyric_batch: Arc<jp_lyrics::lyric_upgrade::Batch>,
+    lyric_sources: OnceLock<Mutex<jp_lyrics::timed_lyrics::Session>>,
     /// Yomitan 词典库 `dictionaries.db`，和 corpus.db 同一目录、分开存。没导入过就一直是 None
     dictionaries: Mutex<Option<jp_dict::store::DictionaryStore>>,
     translator: jp_dict::translator::Translator,
@@ -120,7 +135,7 @@ impl Session {
         // 和 Tauri 客户端启动时一样：来源追踪之前导进来的歌补登记一版歌词（docs/provenance.md）。
         // 补不上不影响打开，质量清单里那些歌只是没有版本记录
         let _ = corpus.backfill_lineage();
-        Ok(Self {
+        let session = Self {
             corpus: Mutex::new(corpus),
             root: path.parent().map(PathBuf::from),
             db_path: path,
@@ -131,9 +146,22 @@ impl Session {
             tokenizer_job: Arc::default(),
             dict_job: Arc::default(),
             scrape_job: Arc::default(),
+            lyrics_job: Arc::default(),
+            library_job: Arc::default(),
+            anki_job: Arc::default(),
+            lyric_batch: Arc::default(),
+            lyric_sources: OnceLock::new(),
             dictionaries: Mutex::new(None),
             translator: jp_dict::translator::Translator::new(),
-        })
+        };
+        jp_diagnostics::log::init(&session.library_root());
+        jp_lyrics::set_logger(|level, message| match level {
+            jp_lyrics::LogLevel::Warn => jp_diagnostics::log::warn(message),
+            jp_lyrics::LogLevel::Error => jp_diagnostics::log::error(message),
+        });
+        jp_diagnostics::log::info("打开 macOS 语料库");
+        session.lyric_sources();
+        Ok(session)
     }
 
     /// 语料库目录。分词词典（`sudachi/`）、Yomitan 词典库都在这里
@@ -142,6 +170,10 @@ impl Session {
             Some(root) if !root.as_os_str().is_empty() => root.clone(),
             _ => PathBuf::from("."),
         }
+    }
+
+    fn lyric_sources(&self) -> &Mutex<jp_lyrics::timed_lyrics::Session> {
+        self.lyric_sources.get_or_init(|| Mutex::new(jp_lyrics::timed_lyrics::Session::load(&self.library_root())))
     }
 
     /// 刮下来的封面、歌手照片放哪（和 Windows 版一样：`raw/covers`、`raw/artists`）
@@ -241,6 +273,9 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
             json!({
                 "tracks": overview.tracks,
                 "lyricLines": overview.lyric_lines,
+                "dbPath": session.db_path.display().to_string(),
+                "tokenizerReady": session.analyzer().is_some(),
+                "audioReady": arg_or(&args, "audioAvailable", false)?,
                 "tokens": overview.tokens,
                 "root": session.root.as_ref().map(|p| p.display().to_string()),
             })
@@ -262,6 +297,9 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         )?)?,
         "albumTracks" => serde_json::to_value(corpus.album_tracks(arg(&args, "albumId")?)?)?,
         "peopleDirectory" => serde_json::to_value(corpus.people_directory()?)?,
+        "collaborationEdges" => serde_json::to_value(corpus.collaboration_edges()?)?,
+        "timelineReleases" => serde_json::to_value(corpus.timeline_releases()?)?,
+        "timeline" => serde_json::to_value(corpus.timeline()?)?,
         "personById" => serde_json::to_value(corpus.person_by_id(arg(&args, "personId")?)?)?,
         "personWorks" => serde_json::to_value(corpus.person_works(arg(&args, "personId")?)?)?,
         "collaborators" => serde_json::to_value(corpus.collaborators(arg(&args, "personId")?, arg_or(&args, "limit", 24)?)?)?,
@@ -307,7 +345,19 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         )?)?,
 
         // 分析
+        "wordFrequency" => serde_json::to_value(corpus.word_frequency(arg_or::<Option<String>>(&args, "pos", None)?.as_deref(), arg_or(&args, "limit", 300)?)?)?,
         "frequency" => serde_json::to_value(corpus.frequency(&arg(&args, "query")?)?)?,
+        "statsReport" => serde_json::to_value(jp_corpus::stats::stats_report(
+            corpus.connection(), &arg_or(&args, "filter", jp_corpus::stats::StatsFilter::default())?,
+        )?)?,
+        "statsFrequency" => {
+            let pos = arg_or::<Option<String>>(&args, "pos", None)?.filter(|p| !p.is_empty());
+            serde_json::to_value(jp_corpus::stats::frequency_table(
+                corpus.connection(), pos.as_deref(),
+                &arg_or(&args, "filter", jp_corpus::stats::StatsFilter::default())?,
+                arg_or::<usize>(&args, "limit", 300)?.clamp(1, 5000),
+            )?)?
+        }
         "collocations" => serde_json::to_value(corpus.collocations(&arg(&args, "query")?)?)?,
         "keyness" => serde_json::to_value(corpus.keyness(&arg(&args, "query")?)?)?,
         "songProfile" => serde_json::to_value(
@@ -434,8 +484,29 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
 /// 它们不拿语料库的锁，所以导入跑着（或者 207MB 的词典正在复制）的时候，界面照样能问进度、能检索。
 /// 不是这一组的方法返回 `Ok(None)`，交给 [`dispatch`] 里拿着锁的那一组。
 fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Option<Value>> {
+    if let Some(value) = system::dispatch(session, method, args)? { return Ok(Some(value)); }
+    if let Some(value) = anki::dispatch(session, method, args)? {
+        return Ok(Some(value));
+    }
+    if let Some(value) = library::dispatch(session, method, args)? {
+        return Ok(Some(value));
+    }
+    if let Some(value) = lyrics::dispatch(session, method, args)? {
+        return Ok(Some(value));
+    }
     let v = match method {
         // ── 导入：扫描 → 计划（只读）→ 后台写库 ──
+        "audioPeaks" => {
+            let id: String = arg(args, "songId")?;
+            let per_sec: u32 = arg(args, "perSec")?;
+            let track = session.network_connection()?.track(&id)?.ok_or_else(|| anyhow!("找不到曲目 {id}"))?;
+            ensure!(!track.audio_path.trim().is_empty(), "《{}》没有音频文件", track.title);
+            let roots = session.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
+            let path = jp_corpus::media::resolve(&track.audio_path, session.root.as_deref(), &roots)
+                .unwrap_or_else(|| PathBuf::from(&track.audio_path));
+            let pcm = jp_audio::decode_all(&path)?;
+            serde_json::to_value(jp_audio::decode::peaks(&pcm, per_sec.clamp(1, 1000)))?
+        }
         "scanFolder" => {
             let path: String = arg(args, "path")?;
             ensure!(Path::new(&path).exists(), "路径不存在：{path}");
@@ -502,6 +573,15 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         }
 
         // ── 刮削（jp-scrape，和 Tauri 同一份）。联网的都用自己的连接 ──
+        "scrapeAlbumFillStart" => {
+            let targets = jp_scrape::album_fill_targets(session.network_connection()?.connection())?;
+            let total = targets.len();
+            if total > 0 {
+                let db = session.db_path.clone();
+                start_scrape(session, move |cancelled, progress| jp_scrape::run_album_fill(&db, targets, cancelled, progress))?;
+            }
+            json!(total)
+        }
         "scrapeStart" => {
             let ids = {
                 let corpus = session.corpus.lock().map_err(|_| anyhow!("语料库连接已损坏"))?;
@@ -580,7 +660,6 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         }
 
         // ── Anki（AnkiConnect，本机 8765 端口）。连不上不是错误，界面显示指引 ──
-        "ankiStatus" => anki_status(&jp_anki::AnkiConnect::local()),
         "ankiMineCheck" => {
             let model: String = arg(args, "model")?;
             let expressions: Vec<String> = arg(args, "expressions")?;
@@ -593,20 +672,6 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         _ => return Ok(None),
     };
     Ok(Some(v))
-}
-
-/// Anki 开着吗、有哪些牌组、自己的 Lyrics 笔记类型建了没有（同 Tauri 的 `anki_status`，不读学习记录）
-fn anki_status(anki: &jp_anki::AnkiConnect) -> Value {
-    match anki.ping() {
-        Ok(version) => json!({
-            "connected": true,
-            "version": version,
-            "decks": anki.deck_names().unwrap_or_default(),
-            "models": anki.model_names().unwrap_or_default(),
-            "message": "",
-        }),
-        Err(err) => json!({ "connected": false, "version": 0, "decks": [], "models": [], "message": err.advice() }),
-    }
 }
 
 /// 一键制卡：取例句时拿一下语料库的锁，切音频、传 Anki 时不拿（同 Tauri 的 `anki_mine`）
@@ -722,9 +787,15 @@ fn run_import(session: &Session, tokenize: bool) -> Result<Value> {
             |track, done, _| job.report(done as u64, total, track.title.clone()),
             &|| job.cancelled(),
         )?;
+        let root = db_path.parent().unwrap_or(Path::new("."));
+        jp_scrape::save_imported_covers(corpus.connection(), &root.join("raw/covers"), &report);
+        let csv = jp_library::admin::sync_imported(&jp_library::admin::Library {
+            corpus: &mut corpus, db_path: &db_path, covers_dir: &root.join("raw/covers"), pitch_cache: &root.join("cache/pitch"),
+        }, &report);
         // 导完就清掉，避免同一批被点两次
         pending.lock().unwrap_or_else(|e| e.into_inner()).clear();
         let mut result = serde_json::to_value(&report)?;
+        result["csv"] = json!(csv);
         result["imported"] = json!(report.imported());
         result["failed"] = json!(report.failed());
         result["lyricLines"] = json!(report.lyric_lines());
@@ -792,14 +863,14 @@ fn lookup_text(result: &jp_dict::translator::FindTermsResult) -> Value {
             let definitions: Vec<Value> = entry
                 .definitions
                 .iter()
-                .filter_map(|d| {
+                .map(|d| {
                     let text: Vec<String> = d
                         .entries
                         .iter()
                         .map(jp_dict::lookup::plain_text)
                         .filter(|t| !t.is_empty())
                         .collect();
-                    (!text.is_empty()).then(|| json!({ "dictionary": d.dictionary, "text": text }))
+                    json!({ "dictionary": d.dictionary, "text": text, "entries": d.entries })
                 })
                 .collect();
             json!({ "headwords": headwords, "definitions": definitions })
@@ -830,13 +901,17 @@ unsafe fn from_c<'a>(ptr: *const c_char) -> Result<&'a str> {
 fn envelope(result: std::thread::Result<Result<Value>>) -> String {
     match result {
         Ok(Ok(value)) => json!({ "ok": value }).to_string(),
-        Ok(Err(err)) => json!({ "error": format!("{err:#}") }).to_string(),
+        Ok(Err(err)) => {
+            jp_diagnostics::log::error(format!("{err:#}"));
+            json!({ "error": format!("{err:#}") }).to_string()
+        }
         Err(panic) => {
             let msg = panic
                 .downcast_ref::<&str>()
                 .map(|s| s.to_string())
                 .or_else(|| panic.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "未知错误".into());
+            jp_diagnostics::log::error(format!("内部错误：{msg}"));
             json!({ "error": format!("内部错误：{msg}") }).to_string()
         }
     }
@@ -938,7 +1013,42 @@ pub unsafe extern "C" fn jp_write_fixture(dir: *const c_char) -> *mut c_char {
 mod tests {
     use super::*;
 
-    fn session() -> (Session, PathBuf) {
+    #[test]
+    fn visualization_methods_match_shared_queries() {
+        let (s, dir) = session();
+        let edges = s.call("collaborationEdges", json!({})).unwrap();
+        let releases = s.call("timelineReleases", json!({})).unwrap();
+        let corpus = jp_corpus::Corpus::open(dir.join("corpus.db")).unwrap();
+        assert_eq!(edges, serde_json::to_value(corpus.collaboration_edges().unwrap()).unwrap());
+        assert_eq!(releases, serde_json::to_value(corpus.timeline_releases().unwrap()).unwrap());
+        assert!(!releases.as_array().unwrap().is_empty());
+        let rows = s.call("statsFrequency", json!({"pos":"NOUN", "limit": 2})).unwrap();
+        assert_eq!(rows, serde_json::to_value(jp_corpus::stats::frequency_table(
+            corpus.connection(), Some("NOUN"), &Default::default(), 2,
+        ).unwrap()).unwrap());
+        assert!(!rows.as_array().unwrap().is_empty());
+        assert_eq!(s.call("statsFrequency", json!({"pos":"", "limit":0})).unwrap().as_array().unwrap().len(), 1);
+        let report = s.call("statsReport", json!({})).unwrap();
+        assert_eq!(report, serde_json::to_value(jp_corpus::stats::stats_report(corpus.connection(), &Default::default()).unwrap()).unwrap());
+        assert_eq!(s.call("timeline", json!({})).unwrap(), serde_json::to_value(corpus.timeline().unwrap()).unwrap());
+    }
+
+    #[test]
+    fn saved_scope_preserves_all_conditions_and_updates_by_name() {
+        let (s, _dir) = session();
+        let filter = json!({"performerIds":[1], "jpOnly":true, "yearFrom":2010, "yearTo":2024,
+            "genres":["J-Pop"], "languages":["ja"], "albumIds":[1], "songIds":["001"],
+            "minCompleteness":0.8, "distinctLines":true});
+        let saved = s.call("subcorpusSave", json!({"name":"完整范围", "filter":filter})).unwrap();
+        for (key, value) in filter.as_object().unwrap() { assert_eq!(&saved["filter"][key], value); }
+        let updated = s.call("subcorpusSave", json!({"name":"完整范围", "filter":{"performerIds":[], "jpOnly":false}})).unwrap();
+        assert_eq!(saved["id"], updated["id"]);
+        assert_eq!(s.call("subcorpusList", json!({})).unwrap().as_array().unwrap().len(), 1);
+        assert_eq!(s.call("subcorpusDelete", json!({"id":saved["id"]})).unwrap(), true);
+        assert!(s.call("subcorpusList", json!({})).unwrap().as_array().unwrap().is_empty());
+    }
+
+    pub(super) fn session() -> (Session, PathBuf) {
         let dir = std::env::temp_dir().join(format!("jp-ffi-{}-{}", std::process::id(), rand_suffix()));
         std::fs::create_dir_all(&dir).unwrap();
         let db = jp_corpus::fixture::write_to(&dir).unwrap();

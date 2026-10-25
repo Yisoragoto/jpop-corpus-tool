@@ -12,6 +12,7 @@ struct CoverImage: View {
     var cornerRadius: CGFloat = 8
     var circle = false
     var placeholder = "music.note"
+    var identity = ""
     @State private var image: NSImage?
 
     var body: some View {
@@ -21,15 +22,19 @@ struct CoverImage: View {
             } else {
                 ZStack {
                     Rectangle().fill(.quaternary)
-                    Image(systemName: placeholder)
-                        .font(.system(size: size * 0.32))
-                        .foregroundStyle(.secondary)
+                    if circle && !identity.isEmpty {
+                        let tones: [Color] = [.indigo, .teal, .orange, .pink]
+                        tones[AvatarIdentity.avatarTone(identity)].opacity(0.18)
+                        Text(AvatarIdentity.monogram(identity)).font(.system(size: size * 0.32, weight: .semibold))
+                    } else {
+                        Image(systemName: placeholder).font(.system(size: size * 0.32)).foregroundStyle(.secondary)
+                    }
                 }
             }
         }
         .frame(width: size, height: size)
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)))
-        .task(id: path) {
+        .task(id: "\(path)-\(app.library.version)") {
             image = nil
             guard !path.isEmpty, let client = app.client else { return }
             let resolved = (try? await client.resolveMedia(path)) ?? nil
@@ -69,7 +74,7 @@ struct CoverTile: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: circle ? .center : .leading, spacing: 6) {
-                CoverImage(path: coverPath, size: size, cornerRadius: 10, circle: circle, placeholder: placeholder)
+                CoverImage(path: coverPath, size: size, cornerRadius: 10, circle: circle, placeholder: placeholder, identity: title)
                     .shadow(color: .black.opacity(hovering ? 0.28 : 0.16), radius: hovering ? 10 : 6, y: 3)
                     .scaleEffect(hovering ? 1.03 : 1)
                 Text(title).font(.callout.weight(.medium)).lineLimit(1)
@@ -111,13 +116,5 @@ func grouped(_ n: Int64) -> String {
 
 /// 库里存的时间是 UTC 的 ISO 字符串（`2026-10-16T08:01:02Z` 或 `2026-10-16 08:01:02`）
 func relativeTime(_ stored: String) -> String {
-    if stored.isEmpty { return "" }
-    let iso = ISO8601DateFormatter()
-    let normalized = stored.contains("T") ? stored : stored.replacingOccurrences(of: " ", with: "T") + (stored.hasSuffix("Z") ? "" : "Z")
-    guard let date = iso.date(from: normalized) else { return stored }
-    if abs(date.timeIntervalSinceNow) < 60 { return "刚刚" }
-    let f = RelativeDateTimeFormatter()
-    f.locale = Locale(identifier: "zh_CN")
-    f.unitsStyle = .short
-    return f.localizedString(for: date, relativeTo: Date())
+    InterfaceLogic.formatRelative(stored)
 }

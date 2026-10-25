@@ -31,13 +31,23 @@ struct ContentView: View {
                         case .dictionaries: DictionaryView()
                         case .scrape: ScrapeView()
                         case .importer: ImportView()
+                        case .settings: SettingsView(embedded: true)
+                        case .anki: AnkiView()
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .safeAreaInset(edge: .top) {
+                        if let notice = app.notice {
+                            HStack { Text(notice).font(.callout); Spacer(); Button { app.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless) }.padding(10).glassCard().padding(.horizontal,12)
+                        }
+                    }
                     // 播放条是浮在正文下方的一张玻璃卡片。只挂在正文这一栏：
                     // 挂在整个分栏视图上时，各栏不会给它让位，卡片会盖住侧栏底部和正文最后几行
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         PlayerBar()
+                            .onPreferenceChange(PlayerBarHeightKey.self) { height in
+                                if SmokeRun.isEnabled { SmokeRun.playerBarHeight = height }
+                            }
                             .padding(.horizontal, 12)
                             .padding(.bottom, 10)
                             .padding(.top, 4)
@@ -66,6 +76,8 @@ struct ContentView: View {
             }
         }
         .background(GlassWindowConfigurator())
+        .background(PlaybackKeyboard(app: app))
+        .background(UpdatePresentation())
         // 全屏歌词是单独一个窗口（JPCorpusApp 里的 Window("stage")）：盖在主窗口上做的话，
         // 主窗口的标题栏和工具栏总会露一条出来
         .onChange(of: app.showStage) { _, on in

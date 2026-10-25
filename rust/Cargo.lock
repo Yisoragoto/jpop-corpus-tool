@@ -1920,23 +1920,25 @@ dependencies = [
  "jp-anki",
  "jp-audio",
  "jp-corpus",
+ "jp-diagnostics",
  "jp-dict",
+ "jp-fonts",
  "jp-import",
+ "jp-library",
+ "jp-lyrics",
  "jp-normalize",
  "jp-scrape",
  "jp-scraper",
  "jp-setup",
  "jp-tokenizer",
+ "jp-update",
  "lofty",
  "rusqlite",
- "semver",
  "serde",
  "serde_json",
- "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
- "ureq",
  "windows",
 ]
 
@@ -1980,6 +1982,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jp-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "jp-corpus",
+ "jp-import",
+ "jp-setup",
+]
+
+[[package]]
 name = "jp-dict"
 version = "0.1.0"
 dependencies = [
@@ -1998,14 +2009,31 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "jp-anki",
+ "jp-audio",
  "jp-corpus",
+ "jp-diagnostics",
  "jp-dict",
+ "jp-fonts",
  "jp-import",
+ "jp-library",
+ "jp-lyrics",
  "jp-scrape",
+ "jp-scraper",
  "jp-setup",
  "jp-tokenizer",
+ "jp-update",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "jp-fonts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-dict",
+ "serde",
+ "windows",
 ]
 
 [[package]]
@@ -2022,6 +2050,37 @@ dependencies = [
  "serde",
  "serde_json",
  "unicode-normalization",
+]
+
+[[package]]
+name = "jp-library"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-audio",
+ "jp-corpus",
+ "jp-import",
+ "jp-scrape",
+ "jp-setup",
+ "rusqlite",
+ "serde",
+]
+
+[[package]]
+name = "jp-lyrics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "encoding_rs",
+ "jp-corpus",
+ "jp-import",
+ "jp-normalize",
+ "jp-scraper",
+ "jp-tokenizer",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -2087,6 +2146,20 @@ dependencies = [
  "serde",
  "serde_json",
  "sudachi",
+]
+
+[[package]]
+name = "jp-update"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jp-corpus",
+ "jp-setup",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ureq",
 ]
 
 [[package]]

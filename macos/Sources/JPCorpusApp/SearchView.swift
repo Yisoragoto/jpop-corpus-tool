@@ -12,6 +12,8 @@ import SwiftUI
 struct SearchView: View {
     @Environment(AppModel.self) private var app
 
+    @State private var textMode = false
+    @State private var suggestions: [WordFrequency] = []
     @State private var text = ""
     @State private var field: MatchField = .lemma
     @State private var dedup = true
@@ -19,11 +21,16 @@ struct SearchView: View {
     @State private var crossLine = false
     @State private var yearFrom = ""
     @State private var yearTo = ""
+    @State private var performerIds: [Int64] = []
+    @State private var extraScope = Subcorpus()
+    @State private var requestedPos: String?
+    @State private var requestSequence = 0
     @State private var near: NearFilter?
     @State private var rows: [HitRow] = []
     @State private var searched: (query: String, field: MatchField)?
     @State private var selection: Set<HitRow.ID> = []
     @State private var busy = false
+    @State private var exportNote = ""
     @State private var showColloc = false
     @FocusState private var tableFocused: Bool
 
@@ -33,7 +40,9 @@ struct SearchView: View {
     }
 
     private var subcorpus: Subcorpus {
-        Subcorpus(yearFrom: Int(yearFrom.trimmingCharacters(in: .whitespaces)), yearTo: Int(yearTo.trimmingCharacters(in: .whitespaces)))
+        var local = extraScope
+        local.performerIds = performerIds; local.yearFrom = Int(yearFrom.trimmingCharacters(in: .whitespaces)); local.yearTo = Int(yearTo.trimmingCharacters(in: .whitespaces))
+        return SubcorpusScope.mergeSubcorpus(local,app.scopes.active)
     }
 
     /// 搭配只对单个词有意义
@@ -44,6 +53,14 @@ struct SearchView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("检索方式", selection: $textMode) { Text("KWIC").tag(false); Text("全文搜索").tag(true) }
+                .pickerStyle(.segmented).fixedSize().padding(10)
+            if textMode { LyricTextSearchView() } else { kwicBody }
+        }.onChange(of: app.searchRequest) { _, request in if request != nil { textMode = false } }
+    }
+
+    private var kwicBody: some View {
         VStack(spacing: 0) {
             controls
             Divider()
@@ -70,10 +87,19 @@ struct SearchView: View {
             }
         }
         .navigationTitle("检索")
+        .task(id: app.libraryURL) {
+            do { suggestions = try await app.core?.wordFrequency() ?? [] }
+            catch { app.errorMessage = error.localizedDescription }
+        }
+        .onChange(of: app.library.version) { _, _ in
+            if let searched { Task { await run(searched.query, searched.field) } }
+        }
+        .onChange(of: app.scopes.active) { _, _ in if let searched { Task { await run(searched.query,searched.field) } } }
         .onChange(of: app.searchRequest) { _, request in
             guard let request else { return }
             text = request.keyword
             field = request.field
+            applyScope(request)
             near = nil
             app.searchRequest = nil
             Task { await run(request.keyword, request.field) }
@@ -82,6 +108,7 @@ struct SearchView: View {
             if let request = app.searchRequest {
                 text = request.keyword
                 field = request.field
+                applyScope(request)
                 app.searchRequest = nil
                 await run(request.keyword, request.field)
             }
@@ -108,6 +135,8 @@ struct SearchView: View {
                     .disabled(busy || text.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             HStack(spacing: 14) {
+                SubcorpusPicker()
+                PerformerPicker(selected: $performerIds)
                 Toggle("去重", isOn: $dedup).help("同一首歌里重复的相同歌词行折叠成一条；搭配也只算第一次")
                 Toggle("仅日文", isOn: $jpOnly)
                 Toggle("跨行语境", isOn: $crossLine)
@@ -131,6 +160,7 @@ struct SearchView: View {
                 }
                 if searched != nil {
                     Text(summary).foregroundStyle(.secondary).monospacedDigit()
+                    Button { Task { await exportCsv() } } label: { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless).help("导出 CSV：完整语境，UTF-8（带 BOM）").disabled(rows.isEmpty || busy)
                     Toggle(isOn: $showColloc) { Label("搭配", systemImage: "point.3.connected.trianglepath.dotted") }
                         .toggleStyle(.button)
                         .disabled(node == nil)
@@ -138,6 +168,7 @@ struct SearchView: View {
                 }
             }
             .controlSize(.small)
+            if !exportNote.isEmpty { Text(exportNote).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
         }
         .padding(12)
     }
@@ -147,10 +178,24 @@ struct SearchView: View {
         return "\(rows.count) 条 · \(songs) 首"
     }
 
+    private func exportCsv() async {
+        guard let client = app.core, !rows.isEmpty else { return }
+        let hits = rows.map(\.hit)
+        do { if let path = try await SaveExport.text(ExportText.kwicCsv(hits), name: ExportText.kwicFilename(text), title: "保存检索结果", client: client) { exportNote = "已保存 \(hits.count) 条：\(path)" } }
+        catch { app.errorMessage = error.localizedDescription }
+    }
+
     private var intro: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("KWIC 把关键词居中对齐，一眼看出它在不同歌里怎么用。")
             Text("选中一条按空格试听那一句；回车或双击跳到那首歌从这一句接着放，右边的歌词跟着走。右键可以连前后文一起听。")
+            if !suggestions.isEmpty {
+                ScrollView(.horizontal) { HStack(spacing: 6) {
+                    ForEach(suggestions) { suggestion in
+                        Button(suggestion.lemma) { text = suggestion.lemma; Task { await run(text, .lemma) } }
+                    }
+                } }
+            }
             Text("精度到行：时间戳来自 LRC，没有词级时间。")
                 .foregroundStyle(.secondary)
         }
@@ -253,22 +298,30 @@ struct SearchView: View {
         let keywords = KwicQuery.parseKeywords(raw)
         guard !keywords.isEmpty, let client = app.client else { return }
         busy = true
-        defer { busy = false }
+        exportNote = ""
+        requestSequence += 1; let sequence = requestSequence
+        defer { if sequence == requestSequence { busy = false } }
         var query = KwicQuery(keywords: keywords, field: field)
         query.dedup = dedup
         query.jpOnly = jpOnly
         query.crossLine = crossLine
         query.subcorpus = subcorpus
         query.near = near
+        query.pos = requestedPos
         do {
             let hits = try await client.kwic(query)
+            guard sequence == requestSequence else { return }
             rows = hits.enumerated().map { HitRow(id: $0.offset, hit: $0.element) }
             selection = rows.first.map { [$0.id] } ?? []
             searched = (raw, field)
             tableFocused = true
         } catch {
-            app.errorMessage = error.localizedDescription
+            if sequence == requestSequence { app.errorMessage = error.localizedDescription }
         }
+    }
+    private func applyScope(_ request: SearchRequest) {
+        extraScope = request.scope ?? Subcorpus(); performerIds = extraScope.performerIds
+        yearFrom = extraScope.yearFrom.map(String.init) ?? ""; yearTo = extraScope.yearTo.map(String.init) ?? ""; requestedPos = request.pos
     }
 }
 
@@ -280,11 +333,7 @@ private struct PlayingMark: View {
 
     var body: some View {
         let player = app.player
-        let playing = player.isPlaying && player.track?.id == hit.songId && {
-            guard let start = hit.timeSec else { return false }
-            let end = hit.endSec ?? start + 5
-            return player.position >= start - 0.5 && player.position < end
-        }()
+        let playing = InterfaceLogic.isPlayingSpan(currentSong: player.track?.id,playing: player.isPlaying,position: player.position,songId: hit.songId,startSec: hit.timeSec,endSec: hit.endSec)
         Image(systemName: playing ? "speaker.wave.2.fill" : "play.fill")
             .font(.system(size: 9))
             .foregroundStyle(playing ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
@@ -297,4 +346,51 @@ func formatTime(_ seconds: Double) -> String {
     guard seconds.isFinite, seconds >= 0 else { return "—" }
     let s = Int(seconds.rounded(.down))
     return String(format: "%d:%02d", s / 60, s % 60)
+}
+
+@MainActor
+private struct LyricTextSearchView: View {
+    @Environment(AppModel.self) private var app
+    @State private var text = ""
+    @State private var rows: [LyricHit] = []
+    @State private var selection: Set<Int64> = []
+    @State private var busy = false
+    @State private var sequence = 0
+    @State private var searched = false
+    var body: some View {
+        VStack {
+            HStack {
+                TextField("搜索歌词原文", text: $text).onSubmit { Task { await search() } }
+                Button(busy ? "搜索中…" : "搜索") { Task { await search() } }.disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if searched { Text("\(rows.count) 条").foregroundStyle(.secondary) }
+            }.padding(12)
+            Table(rows, selection: $selection) {
+                TableColumn("歌词") { Text($0.text).textSelection(.enabled) }
+                TableColumn("歌曲") { Text($0.artist + " · " + $0.title) }.width(min: 150, ideal: 230)
+            }
+            .contextMenu(forSelectionType: Int64.self) { ids in
+                if let hit = rows.first(where: { ids.contains($0.id) }) {
+                    Button("试听这一句") { Task { await app.player.audition(hit.utteranceId) } }.disabled(hit.timeSec == nil)
+                    Button("连前后各一行试听") { Task { await app.player.audition(hit.utteranceId, before: 1, after: 1) } }.disabled(hit.timeSec == nil)
+                    Button("从这一句接着放") { open(hit) }
+                }
+            } primaryAction: { ids in if let hit = rows.first(where: { ids.contains($0.id) }) { open(hit) } }
+            .onKeyPress(.space) {
+                guard let hit = rows.first(where: { selection.contains($0.id) }) else { return .ignored }
+                Task { await app.player.audition(hit.utteranceId) }; return .handled
+            }
+        }
+    }
+    private func open(_ hit: LyricHit) {
+        app.showLyrics = true
+        Task { await app.player.playFrom(songId: hit.songId, utteranceId: hit.utteranceId, timeSec: hit.timeSec) }
+    }
+    private func search() async {
+        guard let client = app.core else { return }
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines); guard !query.isEmpty else { return }
+        sequence += 1; let request = sequence; busy = true
+        defer { if sequence == request { busy = false } }
+        do { let found = try await client.searchLyrics(query); if sequence == request { rows = found; searched = true } }
+        catch { if sequence == request { app.errorMessage = error.localizedDescription } }
+    }
 }

@@ -9,20 +9,202 @@
 | 功能 | 状态 | 有测试覆盖 | 备注 |
 |---|---|---|---|
 | 建库、打开已有库 | 可用 | AppModelTests；ImportTests 真 FFI 建库；smoke 打开示例库 | 默认目录可直接建库；选其他无 corpus.db 的目录须先确认；openExisting 不创建库 |
-| 导入音频与歌词 | 可用 | ImportModelTests 路由/错误；SourceGuardTests；ImportTests；smoke 真写库 | 文件夹、单文件、多文件、混选统一 scanFiles；显示计划后导入，可停止；内嵌封面与 songs.csv 尚未接入 |
+| 导入音频与歌词 | 可用 | ImportModelTests 路由/错误；SourceGuardTests；ImportTests；smoke 真写库；jp-app fixture_flows | 文件夹、单文件、多文件、混选统一 scanFiles；显示计划后导入，可停止；共享内嵌封面保存与 songs.csv 同步 |
 | Sudachi 分词 | 可用 | ImportTests 下载外的安装/补分词/KWIC 链路；ImportModelTests 词典选择路由 | 提供下载/从目录复制；真实网络中断和下载按钮交互没有自动化覆盖 |
-| 歌词显示 | 部分 | CoreBridgeTests 解码；smoke 窗口截图 | 随播放高亮；换歌词、逐行编辑、恢复旧版尚无界面 |
-| 播放 | 部分 | CoreBridgeTests 行区间；smoke 试听及行尾自动停 | AVFoundation、单句循环、倍速；smoke 不判断声卡是否实际有声，不覆盖全部控制按钮 |
+| 歌词显示与管理（第 1 阶段） | 可用 | LyricEditTests（Windows 全部 6 例）、LyricsModelTests、LyricsBridgeTests、jp-ffi/jp-lyrics/jp-fonts | 时间戳解析、改动摘要、行后插入/删除、空行过滤；lrc/txt/yrc/qrc/krc/ttml 导入；校验问题、语言、分词器、字段来源、修订历史、版本原文与恢复；显示面板提供字体/备用字体、字体与 zip 导入、字号/注音字号/间距；macOS CI 已验证（run 40089802579） |
+| 在线补歌词与时间歌词候选 | 可用 | LyricsModelTests、LyricsBridgeTests、Rust 离线队列与候选保护测试 | 单首在线补齐、批量缺失补齐、全库逐字升级、进度/取消/错误、全库待补名单；来源开关、候选精度与预览、采用失败清候选；Apple 地区与只写令牌（留空保留、显式清除、只显示已设置）；真实网络与 Swift 界面待另行验证 |
+| 卡拉 OK 与打轴 | 可用 | KaraokeTests（Windows 全部 17 例）、LyricsModelTests、LyricsBridgeTests、Rust 波形/保存测试 | Karaoke.swift 逐函数移植；按结束时间换行、按有时间行序号交替、前奏歌名/署名与倒数；完整打轴快捷键、按住/点按共用撤销步骤、200 步历史、速度/提前量记忆、行状态、波形与边界拖动/选择/定位、拆并/清行、保存前检查与离开保护；macOS CI 已验证编译与测试（run 40089802579），真实打轴手感待人工验证 |
+| 播放 | 可用 | PlayerModelTests 注入引擎覆盖定位 / 音量 / 调音 / 循环 / 自动停 / 历史；smoke 增加 +2 半音、1.25× 位置推进 | AVAudioEngine 实时独立变速变调、48 条频谱、原生播放条与全屏歌词；详见 [macos-player.md](macos-player.md)；macOS CI 已验证（run 40094155146，含播放条高度与调音 smoke） |
 | 检索 | 可用 | CoreBridgeTests；smoke 检索截图 | 关键词、辞书形与写法、多词表达、附近词过滤 |
-| KWIC 定位与试听 | 可用 | CoreBridgeTests；smoke 真窗口试听 | LRC 行级定位，尚无词级时间戳 |
-| 分析 | 部分 | CoreBridgeTests 词频/搭配/对比；smoke 分析截图 | 重复感知词频、搭配、子语料对比、歌曲画像；来源/质量面板与分析存档尚无原生界面 |
-| 子语料 | 部分 | CoreBridgeTests 指定歌曲筛选 | 原生界面主要按歌手、年份选择；保存/管理完整条件的界面未接入 |
-| 查词（只读） | 部分 | ImportTests 无词典返回；jp-dict/jp-ffi 另有词典查询测试 | 读取同目录的 dictionaries.db，纯文本释义；需先在 Windows 导好再复制；原生查词弹窗未做交互测试 |
-| 刮削 | 未实现 | 无原生界面覆盖 | Rust 核心存在，Mac 尚无入口 |
-| Yomitan 词典导入 | 未实现 | 无原生界面覆盖 | 区别于已可用的 Sudachi 分词词典安装 |
-| Anki 制卡 | 未实现 | 无原生界面覆盖 | 尚无原生入口 |
-| 资料库关系网、时间轴、词云 | 未实现 | 无原生界面覆盖 | Mac 只有曲目表，不等同于 Windows 的资料库 |
-| 自动更新 | 未实现 | 无原生界面覆盖 | 从新源码重建；Windows 更新器不适用于此客户端 |
+| KWIC 定位与试听 | 可用 | CoreBridgeTests；smoke 真窗口试听；LyricTimelineTests | 行级试听；歌词面板可按经过验证的真实单位起点播放，没有单位则回退到行 |
+| 资料库管理（第 3 阶段） | 可用 | LibraryModelTests、MembersModelTests、LibraryAdminBridgeTests、TS 移植测试、jp-ffi、smoke 写库 | macOS CI 已验证编译、测试和写库 smoke（run 40107267725），详见下节 |
+| 首页、曲库与详情 | 可用 | LibraryBridgeTests、smoke 截图 | 首页各分区、三栏曲库、歌曲/专辑/人物详情、收藏和快速搜索已接入 |
+| 分析、分析存档、来源与语料质量 | 可用 | CoreBridgeTests、LibraryBridgeTests、smoke 分析截图 | 词频/搭配/对比/画像、保存/重跑/比较/删除分析、来源与质量面板已有原生入口 |
+| 子语料 | 可用 | SubcorpusScopeTests、VisualizationBridgeTests、Rust 完整条件往返 | 完整条件预览、同名覆盖、删除与跨检索/词云/例句的当前范围；macOS CI 已验证（run 40148251913） |
+| 查词 | 可用 | ImportTests、MiningBridgeTests、jp-dict/jp-ffi 查询测试 | 释义按词典原样式渲染（结构化内容、图片、词典 CSS；不执行脚本、外链交给系统浏览器），按词典折叠、原文选择；读取同目录 dictionaries.db；查词弹窗本身未做完整交互测试 |
+| 刮削 | 可用 | ScrapeBridgeTests、jp-ffi 离线记账测试、smoke 刮削页 | 曲目/歌手批量与单首、复核、补封面、取消；共享 jp-scrape，真实网络另行验证 |
+| Yomitan 词典导入 | 可用 | ImportTests、jp-ffi 词典导入/启用/排序/删除测试 | 原生词典页支持 zip 导入与管理；独立于 Sudachi |
+| Anki 一键制卡 | 可用 | MiningBridgeTests、jp-anki、jp-ffi 制卡准备测试 | 查词面板与设置已有入口，共用 jp_anki::lyric_mine；发送需要本机 AnkiConnect |
+| Anki 页与挖词报告 | 可用 | AnkiModelTests、AnkiBridgeTests、jp-ffi/jp-anki 离线测试；smoke 门禁 | 选词/预览、导出/更新/刷新与取消、学习状态和报告；macOS CI 已验证（run 40151834228），真实 AnkiConnect 待人工验证 |
+| 统计 TXT / KWIC CSV / 词云 PNG 保存 | 可用 | ExportTextTests、AnkiBridgeTests、Rust 文件读回；stats-export smoke | NSSavePanel；共享 Rust 文本与写入校验、ImageRenderer PNG；macOS CI 已验证（run 40151834228） |
+| 资料库关系网、时间轴、词云 | 可用 | GraphTests、TimelineTests、WordCloudTests、SmokeRun 门禁 | 原生 Canvas/时间树入口与筛选、跳转已接；macOS CI 已验证截图与门禁（run 40148251913） |
+| 检查更新与更新日志 | 可用 | UpdateModelTests、SystemBridgeTests、jp-update/jp-corpus 离线测试 | 共享 jp-update：检查、通道切换、跳过版本、更新日志与启动时检查；发布页只有 Windows 安装包，mac 改为打开经校验的官方发布页，不下载、不执行文件（实现差异，见下文「更新与诊断」） |
+| 诊断信息 | 可用 | SystemBridgeTests、jp-ffi 离线测试；diagnostics smoke | 共享 jp-diagnostics 生成报告（版本、库、分词词典、音频、最近 200 行日志）；复制或存成文件；macOS 填写系统版本与原生变调引擎 |
+
+## 可视化与其余界面
+
+第 4 阶段差异核对：Windows `app/src` 为行为唯一依据；`app/` 不改。下表记录原基线与本次代码处理；新增 Swift 未在 Windows 编译或执行。
+
+| Windows 组件/命令 | mac 基线 | 本次处理 |
+|---|---|---|
+| GraphView / RelationGraph / graph.ts；collaboration_edges | 无图页面与边 FFI | 移植建图、力导向、命中检测；Canvas、角色/合作数/局部筛选、拖动、缩放、人物跳转 |
+| TimelineView / TimelineTree / timeline.ts / releaseAxis.ts；timeline_releases | 无时间轴与发行 FFI | 移植泳道、年份扩宽、封面排布、时间树与折叠空年；人物/歌曲跳转 |
+| CloudView / WordCloud / wordCloud.ts；stats_frequency / lemma_forms | lemmaForms 已有，其余未接 | 移植合并、过滤、确定性螺线、命中分组；词性/年份/歌手/子语料、词例试听 |
+| CommandPalette | QuickSearchView 仅搜索，无命令与上下选择 | 共用搜索浮层，支持 >、⌘P、禁用原因、键盘选择与过期响应保护 |
+| CorpusCompare | 基础词频与年份对比 | 补副歌效应、参照歌手/保存范围、口径与来源、结果检索 |
+| AnalyticsPage 的总览/年份统计/统计报告展示；timeline / stats_report | 只有分析词频/对比/存档/质量 | 补总览与年份图、报告正文和高频词检索；报告导出已在下文「Anki 与导出」接入 |
+| PersonProfile / releaseAxis.ts / 发行分组纯函数 | 平铺作品与合作者，没有发行轴 | 补折叠空年/解散标记发行轴、三种可视化入口；移植发行分组、单曲/EP 类型与排序函数及全部 4 个原测试 |
+| SubcorpusPicker / SubcorpusFilters / subcorpusScope.ts | 仅歌手与年份 | 完整条件保存/覆盖/删除/预览；检索、词云与例句共享当前范围 |
+| PitchCacheCard / pitchCache.ts | AVAudioEngine 实时独立变调 | 无离线缓存生成/清理需求，按 macos-player.md 说明平台差异 |
+| relativeTime.ts / listen.ts / backfill.ts | 原生调用链已有部分行为，纯函数未对齐 | 移植并接入显示、试听高亮与分词结果提示 |
+| App.tsx 导航 | 首页、检索、曲库、分析、导入、刮削、词典；设置在系统菜单 | 曲库补关系网/时间轴/词云；侧栏补设置；Anki 入口已在下文「Anki 与导出」接入 |
+| AnalysisRuns / QualityCard / SongProfile / SongLineagePanel | 已有存档、质量、画像、来源面板 | 补齐质量显示函数、分词器名单、指标名称及 corpusQuality.test.ts 全部断言；统计报告导出已在下文「Anki 与导出」接入 |
+| AudioRepair / NewSongsBanner / WatchedFolders / MigrateCard / MembersEditor / PerformerPicker / SongEditor / TokenCorrectionDialog | 第 3 阶段已有原生入口 | 编辑/删除统一边框与文字，反馈移至正文顶部；成员入口逐项照 PersonProfile 的 canEditMembers，另补 2 例规则回归 |
+| LyricsEditor / LyricsTools / LyricsFill / LyricsUpgradePanel / TimedLyricsPanel / TimingEditor / KaraokeStage / LyricsStage / LanguagePicker / Player | 第 1–2 阶段已有原生入口 | 复核复用 |
+| SudachiCard / SudachiBanner / TokenizeCard / SettingCard | 导入/设置/维护已有原生入口 | 复核复用，补 backfill 提示 |
+| Avatar / Cover / Stat / Section / NavIcons / CommandButton / ColumnSplitter / VirtualList | SwiftUI 共用组件、原生分栏和惰性列表 | 沿用原生对应物 |
+| MiningReportCard / Anki 浏览与更新 | 无完整原生入口 | 本阶段已补齐，见下文「Anki 与导出」 |
+| UpdateCard / UpdateDialog / DiagnosticsCard | 无更新与诊断页面 | 第 6 阶段已补，见「更新与诊断」 |
+
+Rust 新增 5 个 camelCase FFI 方法：`collaborationEdges`、`timelineReleases`、`statsFrequency`、`timeline`、`statsReport`。
+前四个直接复用 jp-corpus；`StatsReport` 及其查询封装从 jp-app 移至 `jp_corpus::stats::stats_report`，
+Tauri 重导出原类型、继续返回 `CmdResult<StatsReport>`，字段与文本不变。没有引入第二份 SQL 或业务计算。
+子语料五个 FFI、lemmaForms、wordTimings/wordTimeSet/wordTimeClear 均复用已有接口。
+
+移植到 JPCorpusModel 的 47 个 TS 函数/算法入口（含 Simulation 方法；seeded 对应 SeededRandom）：
+
+| 来源 | 数量 | 入口 |
+|---|---:|---|
+| graph.ts | 6 | radiusFor、buildGraph、nodeAt、reheat、tick、settle；另保留 running、内部主角色/螺线初始化 |
+| timeline.ts / releaseAxis.ts | 6 | yearValue、buildTimeline、warpYears、packRow、buildTree、buildAxisColumns；songsOf 内联复用 |
+| wordCloud.ts | 10 | variantKey、mergeByLemma、isFunctionPos、isFunctionWord、filterCloudRows、seeded、fontSizeFor、layoutCloud、isSentenceStart、groupHitsBySong |
+| subcorpusScope.ts / corpusQuality.ts | 7 | withScope、mergeSubcorpus、toSubcorpus（Swift 名 subcorpus）、normalizeFilter、sameFilter、isWholeCorpus、describeFilter |
+| corpusQuality.ts 的质量与指标显示 | 5 | issueLabel、completenessLabel、percent、tokenizerLabel、metricLabel；baseMetricLabel 内联，问题代码表共用 |
+| relativeTime.ts / listen.ts / backfill.ts | 3 | formatRelative、isPlayingSpan、backfillNote；audition/playFrom 复用已有 PlayerModel 调用链 |
+| PersonProfile.tsx | 6 | albumKey、groupByAlbum、releaseTitle、releaseKind、splitReleases、allSongs |
+| wordTiming.ts 的词首定位部分 | 4 | keywordSpan、validLyricTime、lyricEndBound、wordStart；完整单位时间轴继续使用 JPCore |
+
+浏览器存储/订阅改为 UserDefaults 与 Observation，不复制 localStorage/React hook；当前范围删除、同名覆盖后刷新。
+语言与完整度补入 JPCore.Subcorpus，保存整份 StatsFilter，包括歌手、年份、流派、语言、专辑、指定歌曲及两个计数口径。
+画布只读取局部快照；关系网分桶力计算与词云螺线排布在 detached Task 中执行，取消/过期结果不覆盖当前视图。
+
+新增 76 个 XCTest：Graph 7、Timeline/ReleaseAxis 12、WordCloud 22、InterfaceLogic 7、SubcorpusScope 7、CorpusQuality 4、
+PersonReleases 5、WordStart 5、真实 FFI 4、PlayerModel 精确词首/行首提前量 1、人物成员入口 2。指定原 TS 测试的全部 46 例、人物发行 4 例和 corpusQuality 8 例（共 58 例输入/断言）已移植；
+另有范围、边界及从 Windows TS 实际运行取出的图坐标/词云坐标对账断言。
+同一字宽测量函数下断言同一布局；实际系统字体字宽由 AppKit 提供，像素与窗口交互仍需 Mac 验收。
+
+本机验证：`cargo build -p jp-ffi -p jp-app` 成功；
+`cargo test -p jp-ffi -p jp-app -p jp-corpus -p jp-library` 为 **368 passed、0 failed、52 ignored**（含 doc-test）。
+其中 jp-app 147 passed/17 ignored、jp-ffi 32 passed、jp-corpus 185 passed/35 ignored、jp-library 3 passed，另 1 个 jp-corpus doc-test。
+忽略项均为既有真实库、联网/设备用例。三条命令均设置 `CARGO_BUILD_JOBS=1`，本次没有并行启动大型构建。
+`cargo clippy -p jp-ffi -p jp-app -p jp-corpus --all-targets` 成功，无警告；build/test 只有既有 MSVC linker_messages。
+`app/` 未改，仍执行 `npm.cmd test -- --maxWorkers=1 --no-file-parallelism`：42 个文件、336 例全过（含上述 9 个文件、58 例）。
+53 个改动 Swift 文件逐文件静态复查；tree-sitter 解析全部 123 个 Swift 文件无语法错误；SourceGuards 同规则静态检查（91 个源文件、98 个 View）与 git diff --check 通过。
+这些检查不能替代 Swift 类型检查、XCTest 或截图；必须在 macos-14 / Xcode 15.4 / Swift 5.10 上确认。
+重点编译风险为 SwiftUI 复杂 ViewBuilder/Chart、Canvas 文本测量、AppKit 后台字宽测量与 ImageRenderer 的 PNG 输出；
+NSEvent 监视器通过 MainActor.assumeIsolated 进入主线程，离开页面时移除，没有使用 macOS 15 API。
+
+本次续做复查修正：新页面改名 `ReleaseTimelineView`，避免遮蔽播放器/歌词舞台使用的 `SwiftUI.TimelineView`；
+关系网与时间树使用数据修订号刷新，人数/发行数相同的换库或修改也会重算；过滤后的旧悬停索引先校验范围。
+词云选词按完整合并结果刷新歌曲，取消的词首查询不覆盖新面板；无辞书也能看到语料例句，例句使用 Windows 的 1000 行上限与惰性布局。
+
+逐文件复查清单（均检查 Swift 5.10 语法、跨模块 public/import、隔离闭包和 presentation 数量；不代表已做类型检查）：
+
+| 文件（同目录省略路径前缀） | 静态复查重点 |
+|---|---|
+| JPCore：CorpusCore、LibraryModels、Models、VisualizationClient | 5 个新方法、既有范围接口；JSON 数值/元组/可选字段、角色数量及完整范围不丢失 |
+| JPCorpusModel：AppModel、ImportModel、PlayerModel、LibraryIndex、VisualizationModel、SubcorpusScope | 偏好恢复、已有播放调用兼容、成员入口规则、后台任务取消/过期保护、同数量数据刷新 |
+| JPCorpusModel：Graph、Timeline、WordCloud、InterfaceLogic、PersonReleases、WordStart、CorpusQuality | 逐函数对照 Windows 运算顺序、固定种子、Unicode scalar、排序、边界和全部对应测试输入 |
+| JPCorpusApp：GraphView、TimelineView、CloudView、CloudSettings、CloudSongPanel、PersonReleaseAxis | Canvas 局部快照、后台布局、监视器卸载、类型名冲突、字体导入失败处理、词首/范围查询 |
+| JPCorpusApp：AnalyticsOverview、RepeatEffectPane、SubcorpusViews、WordExamplesView、AnalysisView、SearchView | 全部筛选条件、保存/覆盖/删除、统计模型字段、惰性例句、过期请求与查询口径 |
+| JPCorpusApp：Components、ContentView、JPCorpusApp、LibraryMaintenanceView、LibraryView、LookupPane、PersonAdminView、QualityLabels、QuickSearchView、SettingsView、SmokeRun、SongAdminView | 导航枚举穷尽、命令键盘选择、按钮/反馈位置、成员门槛、sheet/alert/fileImporter 每 View 各最多一个、三张截图与步骤日志 |
+| Tests：VisualizationBridgeTests；CorpusQualityTests、GraphTests、InterfaceLogicTests、LibraryIndexTests、PersonReleasesTests、PlayerModelTests、SubcorpusScopeTests、TimelineTests、VisualizationFixtures、WordCloudTests、WordStartTests | 真实 FFI 解码、全部原 TS 断言与坐标对账、成员规则、测试 fixture 形状；仍待 XCTest 执行 |
+| Rust：jp-corpus/stats.rs、jp-ffi/lib.rs、jp-app/commands.rs；macos.yml | 报告抽取只保留一份逻辑、Tauri 签名/JSON 不变；真实方法测试、三张图片与三条正数门禁 |
+
+SmokeRun 从真实窗口进入三页，等待应用正在展示的 VisualizationModel 有内容后截图，macos.yml 强制检查：
+
+```text
+[step] graph nodes=N links=N status=pass
+[step] timeline rows=N releases=N status=pass
+[step] cloud words=N placed=N status=pass
+```
+
+对应 `04g-graph.png`、`04h-timeline.png`、`04i-cloud.png`；N 除 links 外必须大于零。
+本机没有运行这三张截图。Anki 浏览/更新/MiningReportCard、报告导出已在下文「Anki 与导出」接入；更新与诊断已在第 6 阶段接入。
+PitchCacheCard 的生成/清理与 pitchCache.ts 的磁盘任务状态不适用于实时变调，明确不新增无效入口，详见 [macos-player.md](macos-player.md#实现差异)。
+
+## 资料库管理
+
+第 3 阶段差异核对，基线 `a395fae`。Windows 源码是唯一行为权威，`app/` 不改。
+
+| Windows command / 界面 | macOS 基线差异 | 本次完成与验证 |
+|---|---|---|
+| library_edit_song / SongEditor | 无入口 | 歌曲详情五字段编辑；共享事务、署名/专辑/CSV 同步；模型与真 FFI 读回、smoke |
+| library_delete_song | 无入口 | 详情二次确认，停止当前播放并等待历史落库；保留音频/校正，清应用封面/缓存；FakeCorpus、PlayerModelTests、Rust 文件边界测试 |
+| library_missing_audio / library_suggest_relinks / library_relink_audio / AudioRepair | 无入口 | 管理面板扫描、手选、路径预览后确认写入，手选不被建议覆盖，逐首保留失败；模型与真 FFI |
+| library_new_audio / NewSongsBanner / WatchedFolders | 无入口 | 打开库自动扫描；曲库横幅及导入页/管理面板文件夹列表；20 首规则、复核、忽略/恢复、摘要与缺词补齐；18 个 TS 用例、持久化测试 |
+| backfill_durations / fill_album_artwork | 无入口 | 维护页独立连接 jobs，分类报告/失败样本；只用库里已有曲目封面；Rust 锁内等待测试、真 FFI 报告解码 |
+| artist_image_set / artist_image_reset / PersonProfile | jp-scrape 已有，界面未接 | 人物页本地替换/恢复，更新照片缓存；共享人工来源保护；Swift 真 FFI、jp-scrape 回归 |
+| membership_suggestions / membership_confirm / membership_reject / membership_put / memberships / band_members / bands_of / MembersEditor | jp-corpus 已有，FFI/界面未接 | 人物页成员增改、建议确认/否定、移除二次确认、日期校验、结果提示；MembersModelTests 与真 FFI |
+| token_correction / save_token_correction / revert_token_correction / TokenCorrectionDialog | jp-corpus 已有，FFI/界面未接 | 歌词行右键入口，三字段/UPOS、相邻合并/码点拆分、再次点击撤销，保存后重载歌词和检索；9 个 TS 用例、模型与真 FFI |
+| artist_roster / people_by_role / works_by_person / PerformerPicker | 仅 performers（500）和 personWorks | 刮削页名单和单人入口；搜索/分析演唱者多选含照片，按 Windows 上限 5000；名单随资料库变化重拉；同名查询均可调用 |
+| most_played / recently_played | 首页仅最近 12 首 | 管理面板收听页；独立参数接口和真 FFI 播放记录读回 |
+| lemma_forms | 缺 FFI | 同名接口/模型已接，空输入与无词典测试；调用方词云仍属后续可视化 |
+| song_set_language | songSetLanguage、LyricsModel 和语言菜单已有 | 已核对 LyricsManagementView → LyricsModel → songSetLanguage；真 FFI 写入来源及语言测试 |
+| library_root / set_library_root | AppModel/Settings 用 UserDefaults 选库并打开 | 沿用原生选库/建库确认、Application Support 和 audioRoots 映射；不新增 Windows 安装路径设置 FFI |
+| migrate_plan / migrate_run / MigrateCard | jp-import 仅搬数据库行 | 维护页预览/确认/两选项/jobs/报告；共享文件复制、Sudachi 和补分词；Rust 非空迁移、文件/id/源库/幂等与不占锁测试 |
+| libraryAdmin.ts / newSongs.ts / corrections.ts / avatarIdentity.ts / libraryIndex.ts | 未移植 | 35 个公开纯函数及其内部辅助逻辑移植；原 38 个 TS 用例全部移植，另补辅助函数/状态测试；存储订阅改为 Observation/UserDefaults |
+| LibraryBrowser / PersonProfile 作品归属、成员层级、幕后角色筛选 | 平铺目录及角色筛选 | 演唱署名归属，音乐人/幕后、成员命中自动展开、角色筛选和个人/乐队/合作分区；10 个 TS 用例及辅助用例 |
+| 额外：内嵌封面、metadata/songs.csv | 导入未接 | jp-scrape::save_imported_covers 与 jp-library::admin::sync_imported 两端共用；Swift 显示 CSV 错误；Rust CSV/封面边界与现有导入回归 |
+| 额外：关系网/时间轴/词云 | 第 3 阶段未实现 | 第 4 阶段已补，见上节；不宣称整个客户端等价 |
+
+共享 crate `jp-library` 承接曲库编辑/删除/重新关联的事务与文件收尾、发现新歌、时长回填、迁移文件和成员输入/歌手名录适配。
+这些是同时依赖语料库、导入器与本地文件的应用层，放进纯网络/格式层 `jp-scraper` 或通用查询层 `jp-corpus` 都不合适。
+Tauri 保留播放停止、历史刷新、事件/锁适配；原 command 签名和返回 JSON 不变，`app/` 未改。
+发现与配对扫描在 Tauri 也使用独立只读连接，避免抽取后把慢文件扫描包进会话锁。
+
+新增 camelCase FFI：`libraryEditSong`、`libraryDeleteSong`、`libraryMissingAudio`、`libraryNewAudio`、
+`librarySuggestRelinks`、`libraryRelinkAudio`、`backfillDurations`、`fillAlbumArtwork`、`libraryProgress`、
+`artistImageSet`、`artistImageReset`、`artistRoster`、`membershipSuggestions`、`membershipConfirm`、
+`membershipReject`、`membershipPut`、`memberships`、`bandMembers`、`bandsOf`、`tokenCorrection`、
+`saveTokenCorrection`、`revertTokenCorrection`、`peopleByRole`、`worksByPerson`、`mostPlayed`、
+`recentlyPlayed`、`lemmaForms`、`migratePlan`、`migrateRun`（29 个）。
+`songSetLanguage` 和 `scrapeArtist` 是既有 FFI，本次分别复核接线、补 Swift 包装与名单入口。
+长作业共享 library_job 槽，自己开 SQLite 连接，返回现有 JobView；不阻塞会话查询。
+
+测试：新增 Swift 真 FFI 6 例、LibraryModel/MembersModel 14 例、播放器删除 1 例；
+TS 移植为 corrections 9、newSongs 18、avatarIdentity 1、libraryIndex 10，共 38 例，另有辅助/描述测试。
+本机已执行指定 Rust build/test/clippy；新增 Swift 逐文件复核 public/import/@MainActor、JSON 字段和 presentation 限制。
+Rust 共 195 passed、0 failed、17 ignored；忽略项是既有的真实库/联网/音频输出设备用例。
+各套件原文摘要：jp-app lib `61 passed; 0 failed`，fixture_commands `62 passed; 0 failed; 5 ignored`，
+fixture_flows `16 passed; 0 failed; 2 ignored`，其余格式/主线程/schema 共 8 passed，真实资源套件 `0 passed; 0 failed; 10 ignored`；
+jp-ffi `30 passed; 0 failed; 0 ignored`，jp-library `3 passed; 0 failed; 0 ignored`，jp-scrape `15 passed; 0 failed; 0 ignored`。
+build/clippy 均 exit 0；build 仅有 MSVC 创建导入库的 linker_messages，clippy 无新增警告。
+Windows 无法编译 macOS SwiftUI/AVFoundation，Swift 测试与窗口交互仍须 macos-14 / Xcode 15.4 CI 执行，不能把静态复查当成已运行。
+SmokeRun 用显示在应用中的 LibraryModel 编辑标题后从真 FFI 读回，再恢复标题；CI 强制检查：
+
+```text
+[step] library-edit readback=true status=pass
+```
+
+## 歌词管理第 1 阶段
+
+业务层从 `jp-app/src/lyrics.rs`、`timed_lyrics.rs`、`lyric_upgrade.rs` 抽到 `jp-lyrics`，
+Tauri 的 command 签名、JSON 返回与事件名保持不变；版本/原文归档、文件与事务一致性、
+人工修改保护、候选过期和并发校验均由同一份 Rust 代码负责。
+新 crate 是依赖语料库与导入器的应用层，不能放进不认识语料库的 `jp-scraper`。
+
+FFI 的批量补齐和升级共用一个 `jobs::Job`，在工作线程同步调用共享 `run_batch`，队列自己开 SQLite 连接；
+进度仍是 `running / finished / cancelled / done / total / stage / result / error`。
+`lyricsFillProgress` 与 `lyricsUpgradeProgress` 是该作业的两个轮询入口；`lyricsUpgradeStatus` 维持 Tauri 的详细进度形状。
+单首在线补齐使用与 Windows 相同的 `lyricsFillOne`；批量任务离开面板继续运行，再次打开可恢复进度。
+
+`LyricsModel` 负责可测试的草稿、选择完成/失败、候选选择、作业恢复、错误与打点状态，
+JPCore 的 `LyricsClient.swift` 只封装方法和 Codable 形状。字符范围按 Unicode scalar（Rust `char`）计数。
+来源提供的多字符单位不拆成伪时间；新切分的单位只有手工打点后才有时间。
+字符单位已核对 `jp-corpus` 的 word_timings、`jp-lyrics::save_timed_lines` 和 Windows `karaoke.ts`：
+Rust `chars()` 与 JS `[...text]` 都按码点计数；Swift 使用 Unicode scalar，同样把 `𠮷` 算一个，不使用 UTF-16 下标或字素簇下标。
+`Karaoke.swift` 的 19 个公开函数及 MIN_UNIT_SEC / COUNTDOWN_GAP / INTRO_LEAD 常量逐项对应 Windows；
+`LyricEdit.swift` 移植 formatStamp、parseStamp、summarizeEdit，全部 23 个原始用例的输入和断言值保持一致。
+新增 `audioPeaks(songId, perSec)` 复用 jp_audio::decode_all / decode::peaks，每秒格数钳在 1–1000，Swift 请求 100。
+FFI 此前已通过 jp-anki 引入同一份 jp-audio 和 CoreAudio/Rubber Band 链接配置，本轮没有引入新的设备依赖，未另拆 feature。
+新增 `songSetLanguage`、`fontsCatalog`、`fontsImportArchive`；字体解析和压缩包导入原样抽到 jp-fonts，两端共用。
+Apple SettingsInput 与 SettingsView 分开建模，不把只读的 `*TokenSet` 字段编码进输入；令牌不落盘、不回显，失败用固定文案。
+jp-lyrics 的 warn/error 钩子接入 Tauri 日志，panic 日志恢复；FFI 默认 stderr。
+来源配置统一从 session.library_root() 加载。
+新增 Swift 代码已逐文件静态复查，**尚未在本机编译或执行测试**，以 macOS 14 CI 为最终证据。
+表中的「可用」表示代码已有完整功能入口，不表示这次新增 Swift 已通过 CI；原生字体枚举使用 CoreText/AppKit，
+字体选择结果与系统字体集合有关，窗口排版和系统文件选择面板的交互仍需 Mac 实机确认。
 
 ## 本次修复与任务书评审
 
@@ -82,3 +264,349 @@ JPCORPUS_SMOKE=/tmp/jpcorpus-smoke JPCORPUS_SMOKE_AUDIO=/tmp/jpcorpus-audio \
 使用仓库的 macOS bug 模板，提供应用版本、关于页 build id（没有时提供构建 commit SHA）、
 macOS 版本和芯片，以及 smoke 或日志片段。源码构建可用 `git rev-parse HEAD` 取得 SHA。
 日志分享前移除私人路径和不想公开的歌曲/歌词内容。
+
+## Anki 与导出
+
+第 5 阶段以 Windows 为唯一行为依据；在 `feat/macos-finish` 的第 1–4 阶段提交上实现，`app/` 未改。下表是本次代码处理结果；macOS 14 / Xcode 15.4 / Swift 5.10 CI 已通过编译、测试及截图（run 40151834228）。
+
+| Windows 组件/命令 | mac 基线 | 本次处理 |
+|---|---|---|
+| AnkiPage；anki_status / notes_since / words / preview | 仅有字段不完整的 ankiStatus | 统一状态形状；补本地学习状态、候选词与预览 |
+| anki_export_start / update_start / refresh_preview / refresh_start / cancel / is_running；anki://progress | 无 | 共享作业循环；FFI jobs 自开连接、取消、保留逐词进度字段 |
+| anki_ensure_note_type / mine / mine_check / browse_notes / model_names | 仅 mine / mine_check | 补齐接口；已有笔记/刚制卡结果可打开 Anki 浏览器，使用真实 noteId，复用已有制卡逻辑 |
+| MiningReportCard / anki_mining_report | 无 | 共享 JLPT 查询与报告生成，系统浏览器打开 |
+| SettingsPage / MineSettingsCard；App.tsx 侧栏与命令面板 | 制卡设置仅在词典页 | 共用设置视图，设置页与 Anki 页入口；接通命令面板与首页今日制卡数 |
+| AnalyticsPage / stats_report / export_text | 展示报告，无保存 | Rust 原文、原生保存面板与读回 smoke |
+| KwicPage / kwicCsv / export_text | 无 CSV 保存 | 移植 CSV 纯函数及原测试，原生保存面板 |
+| WordCloud / export_png | 已有 ImageRenderer 与保存面板 | 选中歌手标题、署名、玻璃词云、照片底图、2 倍渲染与 wordcloud.png；共享写入校验 |
+| SmokeRun / macos.yml | 无 Anki 与报告导出门禁 | Anki 未连接截图、统计报告临时文件读回 |
+
+### 共享逻辑与接口
+
+`jp-app/src/anki.rs` 的三个作业循环及 `ExportProgress` / `ExportItem` 移至 `jp-anki::batch`，
+状态、学习状态读取、选词、预览、开始前校验与选项移至 `jp-anki::service`。
+`jp-app/src/anki_report.rs` 整体移至 `jp-anki::report`，Tauri 原模块重导出；
+`export_text` / `export_png` 的扩展名、PNG 签名校验与写入移至 `jp-corpus::export`。
+19 个相关 Tauri 函数（16 个 Anki、2 个保存、stats_report）的签名逐字符核对未变；返回 serde 类型、事件名与字段保持原样。
+Tauri 只负责作业槽/线程/事件，FFI 只负责参数/轮询。后台 Anki 作业自开只读连接，不占会话锁；
+export/update/refresh 共用一个 `anki_job`，重复启动不清除取消标志。
+
+新增 **16 个 FFI 方法**（camelCase）：
+
+- 本地查询：`ankiNotesSince`、`ankiWords`、`ankiPreview`。
+- 笔记与报告：`ankiEnsureNoteType`、`ankiBrowseNotes`、`ankiModelNames`、`ankiMiningReport`。
+- 作业：`ankiExportStart`、`ankiUpdateStart`、`ankiRefreshPreview`、`ankiRefreshStart`、`ankiCancel`、`ankiIsRunning`。
+- 轮询与保存：`ankiProgress`、`exportText`、`exportPng`。
+
+现有 `ankiStatus` 改为 Windows 的完整形状：`connected / message / version / decks / noteTypeReady / collectionPath / knownWords / studiedWords`；
+笔记类型列表通过 `ankiModelNames` 单独获取。`ankiMine` / `ankiMineCheck` 继续复用既有共享制卡流程。
+`ankiProgress` 返回既有 `JobView`，`result` 为 `{ progress, log }`：progress 与 Windows 事件载荷逐字段一致，
+log 最近 200 条、倒序，界面展示前 30 条；轮询期间也返回 result，避免漏掉中间的逐词结果。
+
+JPCore Codable 逐字段对应 serde：AnkiStatus、WordCandidate、AnkiCard、AnkiExample、AnkiProgress、MiningReportResult（含扁平化的 decks / noteTypes）。
+空卡片的 examples 会被 Rust 省略，因此 Swift 使用可选数组；时刻使用可选 Double，笔记 id 使用 Int64。
+NSSavePanel 用于原生保存；TXT 直接写 statsReport.text，KWIC CSV 保留 BOM / CRLF / 七列 / 完整语境。
+PNG 用 SwiftUI ImageRenderer 渲染对应词云视图，布局坐标、字体、词性颜色与照片来自当前词云，不包含悬停状态。
+
+### TS 移植与验证
+
+新增 **15 个纯函数入口**，按 Windows 的行为移植：
+
+| 来源 | 数量 | Swift 入口 |
+|---|---:|---|
+| AnkiPage.tsx 的纯函数/内联计算 | 6 | startedProgress、defaultDeck、counts、percent、selected、toggle |
+| MiningReportCard.tsx | 1 | localTimestamp |
+| dict/mine.ts | 1 | artistSubdeck（已接入制卡提示） |
+| pyFormat.ts | 6 | pyFixed、pyGrouped、pyFloatRepr、csvField、csvRow、kwicCsv |
+| KwicPage.tsx 导出文件名 | 1 | kwicFilename |
+
+移植原 TS **5 个测试用例**：pyFormat.test.ts 全部 4 例、mine.test.ts 全部 1 例；
+格式化测试直接读仓库原有 Python fixture（2175 条 fixed、8 条 grouped、7 行 KWIC，CSV 逐字符对照），未复制另一份期望数据。
+新增 **17 个 XCTest**：AnkiModelTests 9、ExportTextTests 5、AnkiBridgeTests 3。
+AnkiModel 通过 AnkiCalling 协议注入，FakeCorpus 覆盖离线状态、默认选项、选词/预览、导出/更新、刷新计数失效、取消、终态、报告错误与重试；
+JPCore 真 FFI 测试覆盖词表、预览、空卡、无效启动、idle 取消、TXT/CSV/PNG 写入读回与错误。
+
+本机 Windows 验证：
+
+- `cargo build -p jp-ffi -p jp-app`：通过（Windows linker_messages 提示，不是构建失败）。
+- `cargo test -p jp-ffi -p jp-app -p jp-anki`：**327 passed / 0 failed / 18 ignored**。
+- `cargo clippy -p jp-ffi -p jp-app -p jp-anki --all-targets`：通过，无警告。
+- 新增 Rust 测试 7 例（FFI 4、共享 batch 3）；另有原 Tauri 的 4 例随业务代码迁至 jp-anki。
+- 传输层注入模拟离线状态/错误；批量循环用 FakeAnki 模拟成功/失败/逐词取消，不连接真实 AnkiConnect。
+- 按 SourceGuards 规则对 97 个 Swift 源文件做静态等价扫描：0 违规；呈现守卫现在也覆盖 fileExporter。
+- `git diff --check` 通过；未 commit、未 push，报告/构建日志均写临时目录。
+
+CI 新增门禁：`05d-anki.png`，以及
+
+```text
+[step] anki-page connected=false screenshot=true status=pass
+[step] stats-export bytes=N status=pass
+```
+
+Anki 断言读取正在显示的 AppModel.anki 状态；统计报告经真实 FFI 写临时文件后读回，要求非空且等于 Rust 原文。
+macos.yml 同时强制检查两条日志和截图，并把 jp-anki 加入 Rust 核心测试。
+
+尚未在本机验证：Swift 编译/XCTest、WKWebView 预览与保存面板交互、ImageRenderer 实际图片、两项真窗口 smoke。
+原因是本机为 Windows；新增代码只使用 macOS 14 及以前 API，未使用 Swift 6 语法。
+重点待 CI 确认 SwiftUI 类型推导、Observation 的嵌套绑定与 WebKit 的协议适配；Canvas 继续只捕获局部 let 快照。
+真实 AnkiConnect 的导出/更新/刷新、浏览器打开挖词报告不在 CI 中实连，应在安装 Anki 的 Mac 上手动验证。
+本阶段要求的功能入口已接入；没有把联网和 macOS 实机验证记为已通过。
+
+### 续做复查与第 4 阶段截图修复
+
+保留被中止时的全部未提交实现，在其上续做；没有重建页面或回滚共享逻辑。
+本轮重新串行运行任务书的三条 Cargo 命令，保留环境已有的 `CARGO_BUILD_JOBS=3`：
+build 成功；test **327 passed / 0 failed / 18 ignored**；clippy 成功、无警告。
+测试分布：jp-anki 148 passed / 1 ignored，jp-app（含集成测试）143 passed / 17 ignored，jp-ffi 36 passed。
+
+| CI 截图问题 | Windows 依据 | 修复 |
+|---|---|---|
+| 04i-cloud 分栏和搜索进入溢出菜单 | 曲库各分栏始终能切换 | LibraryRoot 不再把六段导航与搜索交给窗口工具栏的溢出策略；改为常驻正文顶栏，ViewThatFits 在窄窗口分两行，保留原过滤绑定与清除搜索 |
+| 深色词云上的黑色标题 | WordCloud 的 wc-bg-plain / wc-dim 固定为深色，浅色主题也不切成白底 | 仅照片词云卡片固定 dark colorScheme，标题、计数、播放歌词均按深底亮字显示；筛选与右侧列表仍跟随系统主题 |
+| 04h-timeline 垂直居中、文字占位图例 | 时间轴从顶部排版；图例有专辑方块、单曲圆点、解散竖线、单飞虚线 | 页面填满可用高度并 topLeading 对齐；初次滚动 anchor 改为 topTrailing；用 SwiftUI Shape/Path 画四种图例，窄窗口将图例换行 |
+
+全部 **132 个 Swift 文件**经过 tree-sitter 语法解析，0 错误；按 SourceGuards 的同等规则扫描 **97 个源文件 / 100 个 View**，
+fileImporter / sheet / alert / fileExporter 数量与显式 failure 处理均无违规。
+19 个相关 Tauri command 的完整签名再次与 HEAD 自动对照，未改变；`app/` 仍无改动。
+上述检查不等于 Swift 类型检查、XCTest 或真实窗口截图。
+可选的全仓 `cargo fmt --all -- --check` 会报告大量既有格式差异（包括未修改的 examples 与其他 crate），未做全仓格式化。
+
+本次变更逐文件静态复查记录（相同目录省略路径前缀）：
+
+| 文件 | 复查结论/重点 |
+|---|---|
+| jp-anki：batch.rs | 三种作业复用原 Windows 循环；独立只读连接、逐词取消、整批错误与 11 个进度字段一致 |
+| jp-anki：service.rs | 状态 8 字段、学习状态容错、选词过滤、预览例句夹限、牌组校验与原行为一致 |
+| jp-anki：report.rs、lib.rs | 原报告逻辑和 3 个测试完整迁移，公共模块可供两端调用 |
+| jp-app：anki.rs、anki_report.rs | 只保留线程/事件适配及重导出；终态释放作业槽后发事件 |
+| jp-app：commands.rs | 19 个签名保持；参数默认值、返回 serde 形状、浏览笔记查询不变 |
+| jp-corpus：export.rs、lib.rs | 原扩展名、PNG 签名、写入错误共用，模块公开 |
+| jp-ffi：anki.rs、lib.rs | 新方法在 unlocked 路径分派；后台不占会话锁；nullable 参数用既有 arg_or 规则 |
+| jp-ffi：jobs.rs、anki_tests.rs | 轮询途中保留逐项结果；离线传输、预览、取消、文件读回均有测试 |
+| jp-ffi/Cargo.toml、Cargo.lock | 仅为离线传输测试添加 jp-scraper dev-dependency，无生产依赖版本变更 |
+| JPCore：AnkiClient.swift、MiningClient.swift | Codable 字段与 Rust serde 对照；省略的 examples 可选、时间 Double?、笔记 Int64；所有新增跨模块 API public |
+| JPCorpusModel：AnkiModel.swift | AnkiCalling 协议注入；选词、预览、任务与日志、计数失效、错误释放 busy 状态 |
+| JPCorpusModel：ExportText.swift | 七列 CSV、BOM、CRLF、引号转义、完整上下文、文件名与 Python 数字 fixture 对照 |
+| JPCorpusModel：AppModel.swift | Anki 侧栏、图标及可观察模型实例接入，所有 switch 分支覆盖 |
+| JPCorpusApp：AnkiView.swift | 导出/更新/刷新与取消按钮禁用规则、200/30 条日志、WebKit 预览和报告结果；MainActor 与嵌套绑定 |
+| JPCorpusApp：MineSettingsView.swift | 两页共用 AppStorage；模型/牌组选项包含当前值、词典启用和 terms 数量过滤 |
+| JPCorpusApp：SaveExport.swift、AnalyticsOverview.swift | MainActor 原生保存面板；Rust 原文、取消不写入、错误上报、加载时禁用旧报告导出 |
+| JPCorpusApp：SearchView.swift | 导出当前完整结果，原搜索异步序号保护保持，保存成功提示与 BOM/CRLF 一致 |
+| JPCorpusApp：LookupPane.swift | 已有与新制卡使用真实 noteId 打开 Anki；子牌组提示与设置一致 |
+| JPCorpusApp：ContentView.swift、QuickSearchView.swift | 侧栏与命令面板均能进入 Anki，沿用现有全局错误呈现 |
+| JPCorpusApp：DictionaryView.swift、SettingsView.swift | 去掉旧词典页制卡设置，设置页复用新视图；文件导入显式处理 failure |
+| JPCorpusApp：HomeView.swift | 今日制卡起点使用本地日历午夜，未找到 collection 时隐藏数字 |
+| JPCorpusApp：CloudView.swift | 深底亮字、PNG 2 倍渲染、保存校验；Canvas 使用局部 let 快照，ImageRenderer 使用 macOS 14 API |
+| JPCorpusApp：LibraryView.swift、TimelineView.swift | 常驻导航/搜索、窄窗分行、顶部对齐与图形图例；Canvas 无新增 MainActor 状态读取 |
+| JPCorpusApp：SmokeRun.swift、macos.yml | 截图断言读取真实显示模型；报告经 FFI 写临时文件读回；CI 两条日志及截图强制门禁 |
+| AnkiBridgeTests.swift、AnkiModelTests.swift、ExportTextTests.swift | 3 个真 FFI、9 个 FakeCorpus/纯逻辑、5 个导出测试；原 TS 5 例与原 fixture 直接复用 |
+| SourceGuards.swift | 呈现守卫及自测统一扩展到 fileExporter，未放宽已有规则 |
+| docs/clients.md、docs/macos-status.md | 差异表、接口/函数/测试清单与验证限制更新；修正 clients 表内第 4 阶段可视化的过期状态 |
+
+## 更新与诊断
+
+第 6 阶段。更新与诊断的业务逻辑挪进共享 crate，Tauri 侧命令签名和返回形状不变，`app/` 未改。
+
+| Windows 命令 / 界面 | macOS 处理 |
+|---|---|
+| `update_check` / `update_changelog` / `update_preferences` / `update_set_channel` / `update_skip`，UpdateCard、UpdateDialog | 共享 `jp-update`（原 `jp-app/src/update.rs` 与 `update/channels.rs` 原样移入）；mac 设置页「更新」：当前版本与构建号、正式版 / debug 轨道（切到 debug 先确认）、跳过与恢复提醒、启动时检查开关、更新日志；启动时有新版弹出说明，可「前往发布页」「稍后」「跳过这个版本」 |
+| `update_download` / `update_install` | **实现差异**：发布页只有 Windows 安装包（`check_asset_name` 只认 `-setup.exe`），mac 没有可装的文件。mac 只打开经 `jp_update::is_official` 校验的本仓库 releases 页面，不下载、不执行任何文件；FFI 对这两个方法返回错误 |
+| `diagnostics_report` / `diagnostics_save`，DiagnosticsCard | 共享 `jp-diagnostics` 生成报告；平台相关的几项由调用方填写：Windows 填 Rubber Band 与变调缓存用量，mac 填 macOS 版本、`AVAudioUnitTimePitch`、「不适用（原生实时变调）」。复制到剪贴板或存成文件（NSSavePanel） |
+| 日志（`jp-app/src/log.rs`） | 移入 `jp-diagnostics::log`，两端写同一种 `logs/jp-app.log`；jp-ffi 打开库时初始化，歌词作业的警告 / 错误和所有 FFI 错误都写进日志，诊断报告带最近 200 行 |
+| 版本号 | mac 包的 `CFBundleShortVersionString` 由 `macos/scripts/bundle.sh` 从 `rust/crates/jp-app/Cargo.toml` 读取，与 Windows 同源；构建号两端共用 `rust/build_identity.rs` |
+
+验证：`jp-update`、`jp-diagnostics`、`jp-corpus::update_settings` 离线测试（不连网）；jp-ffi 诊断 / 发布页校验 / 拒绝安装测试；
+Swift `UpdateModelTests`（8 例）、`SystemBridgeTests`；SmokeRun `[step] diagnostics bytes=N status=pass`（CI 门禁）。
+真实 GitHub 网络请求没有自动化覆盖。
+
+## 命令对账表
+
+`rust/crates/jp-app/src/lib.rs` 里 `generate_handler!` 注册的全部 Tauri 命令，逐个对应 jp-ffi 方法与 mac 调用处。
+统计：共 183 个，**已接 161 个，不适用 22 个，缺 0 个**。不适用的是：15 个 `audio_*`（原生播放）、2 个变调缓存、
+2 个库位置设置、2 个更新下载 / 安装（无 mac 安装包）、`corpus_snapshot`（两端界面都未调用）。
+
+| Tauri 命令 | jp-ffi 方法 | mac 调用处 | 状态 | 说明 |
+|---|---|---|---|---|
+| `album_tracks` | `albumTracks` | LibraryClient.swift | 已接 |  |
+| `analysis_compare` | `analysisCompare` | LibraryClient.swift | 已接 |  |
+| `analysis_delete` | `analysisDelete` | LibraryClient.swift | 已接 |  |
+| `analysis_get` | `analysisGet` | LibraryClient.swift | 已接 |  |
+| `analysis_list` | `analysisList` | LibraryClient.swift | 已接 |  |
+| `analysis_rerun` | `analysisRerun` | LibraryClient.swift | 已接 |  |
+| `analysis_run` | `analysisRun` | LibraryClient.swift | 已接 |  |
+| `anki_browse_notes` | `ankiBrowseNotes` | AnkiClient.swift | 已接 |  |
+| `anki_cancel` | `ankiCancel` | AnkiClient.swift | 已接 |  |
+| `anki_ensure_note_type` | `ankiEnsureNoteType` | AnkiClient.swift | 已接 |  |
+| `anki_export_start` | `ankiExportStart` | AnkiClient.swift | 已接 |  |
+| `anki_is_running` | `ankiIsRunning` | AnkiClient.swift | 已接 |  |
+| `anki_mine` | `ankiMine` | MiningClient.swift | 已接 |  |
+| `anki_mine_check` | `ankiMineCheck` | MiningClient.swift | 已接 |  |
+| `anki_mining_report` | `ankiMiningReport` | AnkiClient.swift | 已接 |  |
+| `anki_model_names` | `ankiModelNames` | AnkiClient.swift | 已接 |  |
+| `anki_notes_since` | `ankiNotesSince` | AnkiClient.swift | 已接 |  |
+| `anki_preview` | `ankiPreview` | AnkiClient.swift | 已接 |  |
+| `anki_refresh_preview` | `ankiRefreshPreview` | AnkiClient.swift | 已接 |  |
+| `anki_refresh_start` | `ankiRefreshStart` | AnkiClient.swift | 已接 |  |
+| `anki_status` | `ankiStatus` | MiningClient.swift | 已接 |  |
+| `anki_update_start` | `ankiUpdateStart` | AnkiClient.swift | 已接 |  |
+| `anki_words` | `ankiWords` | AnkiClient.swift | 已接 |  |
+| `artist_image_reset` | `artistImageReset` | LibraryAdminClient.swift | 已接 |  |
+| `artist_image_set` | `artistImageSet` | LibraryAdminClient.swift | 已接 |  |
+| `artist_provenance` | `artistProvenance` | LibraryAdminClient.swift | 已接 |  |
+| `artist_roster` | `artistRoster` | LibraryAdminClient.swift | 已接 |  |
+| `audio_load` | `audioLoad` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_pause` | `audioPause` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_peaks` | `audioPeaks` | LyricsClient.swift | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_play` | `audioPlay` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_seek` | `audioSeek` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_set_loop` | `audioSetLoop` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_set_pitch` | `audioSetPitch` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_set_rate` | `audioSetRate` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_set_stop_at` | `audioSetStopAt` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_set_volume` | `audioSetVolume` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_spectrum` | `audioSpectrum` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_state` | `audioState` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_stop` | `audioStop` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_tick` | `audioTick` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `audio_toggle` | `audioToggle` | — | 不适用 | mac 用原生 AVAudioEngine 播放（PlaybackEngine），不经过 Rust 音频命令 |
+| `backfill_durations` | `backfillDurations` | LibraryAdminClient.swift | 已接 |  |
+| `band_members` | `bandMembers` | LibraryAdminClient.swift | 已接 |  |
+| `bands_of` | `bandsOf` | LibraryAdminClient.swift | 已接 |  |
+| `cancel_import` | `cancelImport` | CorpusCore.swift | 已接 |  |
+| `collaboration_edges` | `collaborationEdges` | VisualizationClient.swift | 已接 |  |
+| `collaborators` | `collaborators` | LibraryClient.swift | 已接 |  |
+| `collocations` | `collocations` | AnalysisView.swift, CorpusCore.swift, LibraryClient.swift | 已接 |  |
+| `corpus_frequency` | `corpusFrequency` | AnalysisView.swift, LibraryClient.swift, LibraryModels.swift | 已接 |  |
+| `corpus_snapshot` | `snapshot` | — | 不适用 | 两端界面都未调用（FFI 有 `snapshot`） |
+| `diagnostics_report` | `diagnosticsReport` | SystemClient.swift | 已接 |  |
+| `diagnostics_save` | `diagnosticsSave` | SystemClient.swift | 已接 |  |
+| `dict_delete` | `dictDelete` | MiningClient.swift | 已接 |  |
+| `dict_import_cancel` | `dictImportCancel` | MiningClient.swift | 已接 |  |
+| `dict_import_start` | `dictImport` | MiningClient.swift | 已接 | FFI 方法名 `dictImport` |
+| `dict_is_importing` | `dictImportProgress` | MiningClient.swift | 已接 | FFI 方法名 `dictImportProgress` |
+| `dict_legacy_sources` | `dictLegacySources` | SystemClient.swift | 已接 |  |
+| `dict_list` | `dictList` | CorpusCore.swift | 已接 |  |
+| `dict_lookup` | `dictLookup` | — | 已接 | mac 查词面板用 `dictLookupText` |
+| `dict_media` | `dictMedia` | DictionaryDefinitionView.swift | 已接 |  |
+| `dict_set_enabled` | `dictSetEnabled` | MiningClient.swift | 已接 |  |
+| `dict_set_order` | `dictSetOrder` | MiningClient.swift | 已接 |  |
+| `dict_styles` | `dictStyles` | — | 已接 | 样式由 `dictDefinitionHtml` 内嵌进释义页 |
+| `export_png` | `exportPng` | AnkiClient.swift | 已接 |  |
+| `export_text` | `exportText` | AnkiClient.swift | 已接 |  |
+| `fill_album_artwork` | `fillAlbumArtwork` | LibraryAdminClient.swift | 已接 |  |
+| `fonts_catalog` | `fontsCatalog` | LyricsClient.swift | 已接 |  |
+| `fonts_import_archive` | `fontsImportArchive` | LyricsClient.swift | 已接 |  |
+| `get_track` | `track` | CorpusCore.swift, LibraryModels.swift | 已接 | FFI 方法名 `track` |
+| `health` | `health` | SystemClient.swift | 已接 |  |
+| `home_summary` | `homeSummary` | LibraryClient.swift | 已接 |  |
+| `is_favorite` | `isFavorite` | LibraryClient.swift | 已接 |  |
+| `keyness` | `keyness` | AnalysisView.swift, CorpusCore.swift, LibraryClient.swift | 已接 |  |
+| `kwic` | `kwic` | CorpusCore.swift, ExportText.swift, SmokeRun.swift | 已接 |  |
+| `lemma_forms` | `lemmaForms` | LibraryAdminClient.swift | 已接 |  |
+| `library_completeness` | `completeness` | ScrapeClient.swift | 已接 | FFI 方法名 `completeness` |
+| `library_delete_song` | `libraryDeleteSong` | LibraryAdminClient.swift | 已接 |  |
+| `library_edit_song` | `libraryEditSong` | LibraryAdminClient.swift | 已接 |  |
+| `library_missing_audio` | `libraryMissingAudio` | LibraryAdminClient.swift | 已接 |  |
+| `library_new_audio` | `libraryNewAudio` | LibraryAdminClient.swift | 已接 |  |
+| `library_relink_audio` | `libraryRelinkAudio` | LibraryAdminClient.swift | 已接 |  |
+| `library_root` | `libraryRoot` | — | 不适用 | mac 用原生选库 / 建库确认与 Application Support，不需要 Windows 的库位置设置 |
+| `library_suggest_relinks` | `librarySuggestRelinks` | LibraryAdminClient.swift | 已接 |  |
+| `line_spans` | `lineSpans` | CorpusCore.swift | 已接 |  |
+| `list_albums` | `albums` | LibraryClient.swift | 已接 | FFI 方法名 `albums` |
+| `list_tracks` | `tracks` | CorpusCore.swift | 已接 | FFI 方法名 `tracks` |
+| `listen_window` | `listenWindow` | CorpusCore.swift | 已接 |  |
+| `lyric_version_raw` | `lyricVersionRaw` | LyricsClient.swift | 已接 |  |
+| `lyrics` | `lyrics` | CorpusCore.swift | 已接 |  |
+| `lyrics_fill_cancel` | `lyricsFillCancel` | LyricsClient.swift | 已接 |  |
+| `lyrics_fill_one` | `lyricsFillOne` | LyricsClient.swift | 已接 |  |
+| `lyrics_fill_running` | `lyricsFillRunning` | LyricsClient.swift | 已接 |  |
+| `lyrics_fill_start` | `lyricsFillStart` | LyricsClient.swift | 已接 |  |
+| `lyrics_furigana` | `lyricsFurigana` | ScrapeClient.swift | 已接 |  |
+| `lyrics_import_file` | `lyricsImportFile` | LyricsClient.swift | 已接 |  |
+| `lyrics_missing` | `lyricsMissing` | LyricsClient.swift | 已接 |  |
+| `lyrics_restore_version` | `lyricsRestoreVersion` | LyricsClient.swift | 已接 |  |
+| `lyrics_revalidate` | `lyricsRevalidate` | LyricsClient.swift | 已接 |  |
+| `lyrics_save_lines` | `lyricsSaveLines` | LyricsClient.swift | 已接 |  |
+| `lyrics_save_timing` | `lyricsSaveTiming` | LyricsClient.swift | 已接 |  |
+| `lyrics_sources_get` | `lyricsSourcesGet` | LyricsClient.swift | 已接 |  |
+| `lyrics_sources_set` | `lyricsSourcesSet` | LyricsClient.swift | 已接 |  |
+| `lyrics_timed_apply` | `lyricsTimedApply` | LyricsClient.swift | 已接 |  |
+| `lyrics_timed_search` | `lyricsTimedSearch` | LyricsClient.swift | 已接 |  |
+| `lyrics_timed_targets` | `lyricsTimedTargets` | LyricsClient.swift | 已接 |  |
+| `lyrics_upgrade_cancel` | `lyricsUpgradeCancel` | LyricsClient.swift | 已接 |  |
+| `lyrics_upgrade_start` | `lyricsUpgradeStart` | LyricsClient.swift | 已接 |  |
+| `lyrics_upgrade_status` | `lyricsUpgradeStatus` | LyricsClient.swift | 已接 |  |
+| `membership_confirm` | `membershipConfirm` | LibraryAdminClient.swift | 已接 |  |
+| `membership_put` | `membershipPut` | LibraryAdminClient.swift | 已接 |  |
+| `membership_reject` | `membershipReject` | LibraryAdminClient.swift | 已接 |  |
+| `membership_suggestions` | `membershipSuggestions` | LibraryAdminClient.swift | 已接 |  |
+| `memberships` | `memberships` | LibraryAdminClient.swift | 已接 |  |
+| `migrate_plan` | `migratePlan` | LibraryAdminClient.swift | 已接 |  |
+| `migrate_run` | `migrateRun` | LibraryAdminClient.swift | 已接 |  |
+| `most_played` | `mostPlayed` | LibraryAdminClient.swift | 已接 |  |
+| `overview` | `overview` | CorpusCore.swift | 已接 |  |
+| `people_by_role` | `peopleByRole` | LibraryAdminClient.swift | 已接 |  |
+| `people_directory` | `peopleDirectory` | LibraryClient.swift | 已接 |  |
+| `person_by_id` | `personById` | LibraryClient.swift | 已接 |  |
+| `person_works` | `personWorks` | LibraryClient.swift | 已接 |  |
+| `pitch_cache_set_limit` | `pitchCacheSetLimit` | — | 不适用 | mac 实时变调（AVAudioUnitTimePitch），没有变调缓存 |
+| `pitch_cache_status` | `pitchCacheStatus` | — | 不适用 | mac 实时变调（AVAudioUnitTimePitch），没有变调缓存 |
+| `quality_overview` | `qualityOverview` | LibraryClient.swift | 已接 |  |
+| `quick_search` | `quickSearch` | LibraryClient.swift | 已接 |  |
+| `recently_played` | `recentlyPlayed` | LibraryAdminClient.swift | 已接 |  |
+| `record_play` | `recordPlay` | CorpusCore.swift | 已接 |  |
+| `revert_token_correction` | `revertTokenCorrection` | LibraryAdminClient.swift | 已接 |  |
+| `run_import` | `runImport` | CorpusCore.swift | 已接 |  |
+| `save_token_correction` | `saveTokenCorrection` | LibraryAdminClient.swift | 已接 |  |
+| `scan_files` | `scanFiles` | CorpusCore.swift | 已接 |  |
+| `scan_folder` | `scanFolder` | CorpusCore.swift | 已接 |  |
+| `scrape_accept` | `scrapeAccept` | ScrapeClient.swift | 已接 |  |
+| `scrape_album_fill_start` | `scrapeAlbumFillStart` | SystemClient.swift | 已接 |  |
+| `scrape_artist` | `scrapeArtist` | LibraryAdminClient.swift | 已接 |  |
+| `scrape_artists_start` | `scrapeArtistsStart` | ScrapeClient.swift | 已接 |  |
+| `scrape_attempts` | `scrapeAttempts` | SystemClient.swift | 已接 |  |
+| `scrape_backfill_covers` | `scrapeBackfillCovers` | ScrapeClient.swift | 已接 |  |
+| `scrape_cancel` | `scrapeCancel` | ScrapeClient.swift | 已接 |  |
+| `scrape_is_running` | `scrapeProgress` | ScrapeClient.swift | 已接 | FFI 方法名 `scrapeProgress` |
+| `scrape_retry_failed` | `scrapeRetryFailed` | ScrapeClient.swift | 已接 |  |
+| `scrape_review_queue` | `scrapeReviewQueue` | ScrapeClient.swift | 已接 |  |
+| `scrape_skip` | `scrapeSkip` | ScrapeClient.swift | 已接 |  |
+| `scrape_start` | `scrapeStart` | ScrapeClient.swift | 已接 |  |
+| `scrape_summary` | `scrapeSummary` | ScrapeClient.swift | 已接 |  |
+| `scrape_track` | `scrapeTrack` | ScrapeClient.swift | 已接 |  |
+| `search_lyrics` | `searchLyrics` | CorpusCore.swift | 已接 |  |
+| `set_library_root` | `setLibraryRoot` | — | 不适用 | mac 用原生选库 / 建库确认与 Application Support，不需要 Windows 的库位置设置 |
+| `song_lineage` | `songLineage` | LibraryClient.swift | 已接 |  |
+| `song_profile` | `songProfile` | CorpusCore.swift | 已接 |  |
+| `song_set_language` | `songSetLanguage` | LyricsClient.swift | 已接 |  |
+| `stats_frequency` | `statsFrequency` | VisualizationClient.swift | 已接 |  |
+| `stats_report` | `statsReport` | VisualizationClient.swift | 已接 |  |
+| `subcorpus_delete` | `subcorpusDelete` | VisualizationClient.swift | 已接 |  |
+| `subcorpus_facets` | `subcorpusFacets` | VisualizationClient.swift | 已接 |  |
+| `subcorpus_list` | `subcorpusList` | VisualizationClient.swift | 已接 |  |
+| `subcorpus_preview` | `subcorpusPreview` | VisualizationClient.swift | 已接 |  |
+| `subcorpus_save` | `subcorpusSave` | VisualizationClient.swift | 已接 |  |
+| `timeline` | `timeline` | SmokeRun.swift, VisualizationClient.swift | 已接 |  |
+| `timeline_releases` | `timelineReleases` | VisualizationClient.swift | 已接 |  |
+| `toggle_favorite` | `toggleFavorite` | LibraryClient.swift | 已接 |  |
+| `token_correction` | `tokenCorrection` | LibraryAdminClient.swift | 已接 |  |
+| `tokenize` | `tokenize` | CorpusCore.swift | 已接 |  |
+| `tokenize_missing_list` | `tokenizeMissingList` | CorpusCore.swift | 已接 |  |
+| `tokenize_missing_run` | `tokenizeMissingRun` | CorpusCore.swift | 已接 |  |
+| `tokenizer_download` | `tokenizerDownload` | CorpusCore.swift | 已接 |  |
+| `tokenizer_install` | `tokenizerInstall` | CorpusCore.swift | 已接 |  |
+| `tokenizer_status` | `tokenizerStatus` | CorpusCore.swift | 已接 |  |
+| `track_credits` | `trackCredits` | LibraryClient.swift | 已接 |  |
+| `update_changelog` | `updateChangelog` | SystemClient.swift | 已接 |  |
+| `update_check` | `updateCheck` | SystemClient.swift | 已接 |  |
+| `update_download` | `updateDownload` | — | 不适用 | 发布页没有 mac 安装包；mac 打开经校验的官方发布页，FFI 明确拒绝下载与安装 |
+| `update_install` | `updateInstall` | — | 不适用 | 发布页没有 mac 安装包；mac 打开经校验的官方发布页，FFI 明确拒绝下载与安装 |
+| `update_preferences` | `updatePreferences` | SystemClient.swift | 已接 |  |
+| `update_set_channel` | `updateSetChannel` | SystemClient.swift | 已接 |  |
+| `update_skip` | `updateSkip` | SystemClient.swift | 已接 |  |
+| `word_frequency` | `wordFrequency` | SystemClient.swift | 已接 |  |
+| `word_in_corpus` | `wordInCorpus` | CorpusCore.swift | 已接 |  |
+| `word_time_clear` | `wordTimeClear` | LyricsClient.swift | 已接 |  |
+| `word_time_set` | `wordTimeSet` | LyricsClient.swift | 已接 |  |
+| `word_timings` | `wordTimings` | LyricsClient.swift | 已接 |  |
+| `works_by_person` | `worksByPerson` | LibraryAdminClient.swift | 已接 |  |

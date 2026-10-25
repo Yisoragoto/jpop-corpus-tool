@@ -8,6 +8,7 @@ struct LookupRequest: Equatable {
     var songId: String?
     var utteranceId: Int64?
     var tokenIndex: Int?
+    var scope: Subcorpus? = nil
 }
 
 /// 制卡设置。存在这台机器的偏好里（和 Windows 版一样是每台机器各自的），默认值也和 Windows 版一致：
@@ -28,6 +29,8 @@ struct LookupPane: View {
     @Environment(AppModel.self) private var app
     let request: LookupRequest
     let close: () -> Void
+    @AppStorage("dict.collapsed") private var collapsedJSON = "[]"
+    private var collapsed: Set<String> { Set((try? JSONDecoder().decode([String].self, from: Data(collapsedJSON.utf8))) ?? []) }
     @State private var result: LookupText?
     @State private var noDictionaries = false
     @State private var error: String?
@@ -73,6 +76,7 @@ struct LookupPane: View {
                     } else {
                         ProgressView().controlSize(.small)
                     }
+                    WordExamplesView(lemma: request.text,localScope: request.scope)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -104,10 +108,12 @@ struct LookupPane: View {
             }
             ForEach(Array(entry.definitions.enumerated()), id: \.offset) { _, d in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(d.dictionary).font(.caption2).foregroundStyle(.tertiary)
-                    ForEach(Array(d.text.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.callout).textSelection(.enabled)
-                    }
+                    Button {
+                        var names = collapsed
+                        if names.contains(d.dictionary) { names.remove(d.dictionary) } else { names.insert(d.dictionary) }
+                        if let data = try? JSONEncoder().encode(names.sorted()) { collapsedJSON = String(decoding: data, as: UTF8.self) }
+                    } label: { Label(d.dictionary, systemImage: collapsed.contains(d.dictionary) ? "chevron.right" : "chevron.down").font(.caption2) }.buttonStyle(.plain)
+                    if !collapsed.contains(d.dictionary), let core = app.core { DictionaryDefinitionView(definition: d, client: core) }
                 }
             }
         }
@@ -116,8 +122,14 @@ struct LookupPane: View {
     @ViewBuilder
     private func mineButton(_ head: LookupHeadword, key: String) -> some View {
         let has = !(existing[head.term]?.isEmpty ?? true)
+        let artist = app.tracks.first(where: { $0.id == request.songId })?.artist ?? ""
+        let targetDeck = artistSubdeck ? AnkiLogic.artistSubdeck(deck, artist: artist) ?? deck : deck
         Button {
-            Task { await mine(head, key: key) }
+            Task {
+                if has, let ids = existing[head.term] {
+                    do { try await app.core?.ankiBrowseNotes(ids) } catch { app.errorMessage = error.localizedDescription }
+                } else { await mine(head, key: key) }
+            }
         } label: {
             if mining == key {
                 ProgressView().controlSize(.mini)
@@ -127,8 +139,8 @@ struct LookupPane: View {
         }
         .buttonStyle(.borderless)
         .font(.caption)
-        .disabled(mining != nil || has)
-        .help(has ? "Anki 里已经有这个词的卡了" : "加进 Anki「\(deck)」牌组（\(kind.label)）。例句是这一行，音频切这一句")
+        .disabled(mining != nil)
+        .help(has ? "Anki 里已经有这个词的卡，点击打开" : "加进 Anki「\(targetDeck)」牌组（\(kind.label)）。例句是这一行，音频切这一句")
     }
 
     private func load() async {
@@ -168,12 +180,12 @@ struct LookupPane: View {
         )
         do {
             switch try await client.ankiMine(mineRequest) {
-            case let .added(_, deck, created, skipped, warnings):
+            case let .added(noteId, deck, created, skipped, warnings):
                 var message = "已加进「\(deck)」" + (created ? "（新建了这个子牌组）" : "")
                 if !skipped.isEmpty { message += "。这个笔记类型没有 \(skipped.joined(separator: "、")) 字段，这些没写" }
                 if !warnings.isEmpty { message += "。" + warnings.joined(separator: "；") }
                 outcome[key] = message
-                existing[head.term] = [1]
+                existing[head.term] = [noteId]
             case let .duplicate(ids):
                 outcome[key] = "Anki 里已经有这个词的卡了（\(ids.count) 张），没有再加"
                 existing[head.term] = ids

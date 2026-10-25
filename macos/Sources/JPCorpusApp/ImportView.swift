@@ -19,6 +19,9 @@ struct ImportView: View {
             VStack(alignment: .leading, spacing: 12) {
                 TokenizerCard(model: model, onPickDictionary: { pick.present(.dictionary) })
                 sourceBar
+                if app.client != nil {
+                    DisclosureGroup("语料库文件夹") { WatchedFoldersView().frame(height: 180) }
+                }
                 if let job = model.importJob, job.running {
                     progress(job)
                 } else if let result = model.lastResult {

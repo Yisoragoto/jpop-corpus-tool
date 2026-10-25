@@ -1431,6 +1431,31 @@ pub fn backfill_and_fill_albums(conn: &rusqlite::Connection, covers_dir: &std::p
     Ok(report)
 }
 
+/// 导入后从音频保存封面；单首失败不打断导入。
+pub fn save_imported_covers(conn: &rusqlite::Connection, covers_dir: &std::path::Path, report: &jp_import::ImportReport) -> usize {
+    let mut saved = 0;
+    for track in &report.tracks {
+        if !matches!(track.outcome, jp_import::Outcome::Imported { .. }) {
+            continue;
+        }
+        let Ok(artist) = conn.query_row(
+            "SELECT artist FROM songs WHERE id=?1",
+            rusqlite::params![track.song_id],
+            |r| r.get::<_, String>(0),
+        ) else {
+            continue;
+        };
+        let audio = std::path::Path::new(&track.path);
+        if let Some(path) = save_embedded_cover(covers_dir, &track.song_id, &artist, audio) {
+            match record_cover(conn, &track.song_id, &path) {
+                Ok(()) => saved += 1,
+                Err(err) => log_warn(format!("封面记不进库 {}: {err:#}", track.song_id)),
+            }
+        }
+    }
+    saved
+}
+
 #[cfg(test)]
 mod tests {
     /// 手动换的照片刮削不覆盖；恢复后用回刮削下的那张，刮削又能更新它

@@ -243,6 +243,13 @@ fn lookups_read_an_imported_yomitan_dictionary() {
     assert_eq!(entry["headwords"][0]["term"], "夜", "{found}");
     assert_eq!(entry["definitions"][0]["text"][0], "日が沈んでから昇るまでの間");
     assert_eq!(found["originalTextLength"], 1);
+    let definition = &entry["definitions"][0];
+    let html = s.call("dictDefinitionHtml", json!({"dictionary":definition["dictionary"], "entries":definition["entries"]})).unwrap();
+    assert!(html.as_str().unwrap().contains("日が沈んでから昇るまでの間"));
+    assert!(html.as_str().unwrap().contains("Content-Security-Policy"));
+    assert!(s.call("dictMedia", json!({"dictionary":"unknown", "path":"missing.png"})).unwrap().as_array().unwrap().is_empty());
+    assert!(s.call("dictStyles", json!({})).unwrap().is_array());
+    assert!(s.call("dictLegacySources", json!({})).unwrap().as_array().unwrap().is_empty());
     drop(s);
     let _ = std::fs::remove_dir_all(root.parent().unwrap());
 }

@@ -29,6 +29,7 @@ struct ScrapeView: View {
                 if let job, job.running { progress(job) }
                 if let lastBatch, !lastBatch.items.isEmpty { results(lastBatch) }
                 reviewSection
+                ArtistRosterView()
             }
             .padding(24)
             .frame(maxWidth: 960, alignment: .leading)
@@ -96,6 +97,10 @@ struct ScrapeView: View {
             if (summary?.failed ?? 0) > 0 {
                 Button("重试失败的 \(summary?.failed ?? 0) 首") { Task { await retryFailed() } }
             }
+            Button("补专辑信息") { Task {
+                do { _ = try await app.core?.scrapeAlbumFillStart(); await follow() }
+                catch { app.errorMessage = error.localizedDescription }
+            } }
             Spacer()
         }
         .disabled(running || busy)
@@ -222,6 +227,7 @@ struct ScrapeView: View {
             }
             job = nil
             await app.reloadTracks()
+            app.library.version += 1
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription
@@ -237,6 +243,7 @@ struct ScrapeView: View {
             message = "检查了 \(r.checked) 首没有封面的：补上 \(r.filled)，没有候选 \(r.noCandidate)，下不下来 \(r.failed)。"
             lastBatch = nil
             await app.reloadTracks()
+            app.library.version += 1
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription
@@ -262,6 +269,7 @@ struct ScrapeView: View {
             let r = try await client.scrapeAccept(filePath: item.filePath, candidateIndex: index)
             message = "「\(item.localTitle)」补了 \(r.fieldsFilled) 个字段" + (r.coverPath != nil ? "，下到了封面" : "")
             await app.reloadTracks()
+            app.library.version += 1
             await reload()
         } catch {
             app.errorMessage = error.localizedDescription
@@ -281,6 +289,9 @@ struct ScrapeView: View {
 /// 复核队列的一张卡：本地写的是什么，候选一条一条列出来（分数、专辑、年份、小封面），点「采用」写进去
 @MainActor
 private struct ReviewCard: View {
+    @Environment(AppModel.self) private var app
+    @State private var history: [ScrapeAttempt] = []
+    @State private var historyOpen = false
     let item: ReviewItem
     let accept: (Int) -> Void
     let skip: () -> Void
@@ -299,7 +310,7 @@ private struct ReviewCard: View {
                     .controlSize(.small)
                     .help("这首不刮了，重跑时也不再自动处理")
             }
-            ForEach(Array(item.candidates.prefix(4).enumerated()), id: \.offset) { index, c in
+            ForEach(Array(item.candidates.prefix(5).enumerated()), id: \.offset) { index, c in
                 HStack(spacing: 10) {
                     AsyncImage(url: URL(string: c.thumbUrl.isEmpty ? c.artworkUrl : c.thumbUrl)) { image in
                         image.resizable().aspectRatio(contentMode: .fill)
@@ -322,6 +333,17 @@ private struct ReviewCard: View {
                     Button("采用") { accept(index) }
                         .controlSize(.small)
                 }
+            }
+            DisclosureGroup("尝试历史", isExpanded: $historyOpen) {
+                if history.isEmpty { Text("没有历史记录").font(.caption) }
+                ForEach(history) { attempt in
+                    Text([attempt.attemptedAt, attempt.status, attempt.provider, attempt.errorMessage].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).textSelection(.enabled)
+                }
+            }.onChange(of: historyOpen) { _, open in
+                if open { Task {
+                    do { history = try await app.core?.scrapeAttempts(item.filePath) ?? [] }
+                    catch { app.errorMessage = error.localizedDescription }
+                } }
             }
             if !item.explain.isEmpty {
                 Text(item.explain).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)

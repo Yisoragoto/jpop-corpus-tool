@@ -1,0 +1,131 @@
+import SwiftUI
+import UniformTypeIdentifiers
+import JPCore
+import JPCorpusModel
+
+@MainActor
+struct PersonAdminView: View {
+    @Environment(AppModel.self) private var app
+    let personId: Int64
+    let name: String
+    let person: DirectoryEntry
+    @State private var model = MembersModel()
+    @State private var choosing = false
+    @State private var editing = false
+    @State private var provenance: [FieldProvenance] = []
+    private static let fieldLabels = ["artist_type": "类型", "country": "国家", "formed": "成立", "ended": "结束", "mbid": "MusicBrainz 编号", "image_path": "照片"]
+    /// 「资料来源 · 类型、国家：MusicBrainz（置信度 90%） · 照片：Deezer」，按来源首次出现的顺序分组
+    private var provenanceText: String {
+        guard !provenance.isEmpty else { return "" }
+        var order: [String] = []; var groups: [String: [FieldProvenance]] = [:]
+        for row in provenance { if groups[row.source] == nil { order.append(row.source) }; groups[row.source, default: []].append(row) }
+        let parts = order.map { source -> String in
+            let list = groups[source] ?? []
+            let fields = list.map { Self.fieldLabels[$0.field] ?? $0.field }.joined(separator: "、")
+            let conf = list.first?.confidence.map { "（置信度 \(String(format: "%.0f", $0 * 100))%）" } ?? ""
+            return "\(fields)：\(codeLabel(fieldSourceLabels, source))\(conf)"
+        }
+        return "资料来源 · " + parts.joined(separator: " · ")
+    }
+    private var canEditMembers: Bool {
+        LibraryIndex.canEditMembers(person, members: model.members, bands: model.bands)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 与 Windows 的「更多」菜单一致：换照片、手动换过才显示恢复、资料来源
+            Menu {
+                Button("换照片…") { choosing = true }
+                if person.imageManual {
+                    Button("恢复刮削的照片") { Task { _ = await app.library.perform { _ = try await app.library.client?.artistImageReset(name); app.library.version += 1 } } }
+                }
+                if !provenanceText.isEmpty { Divider(); Text(provenanceText) }
+            } label: { Label("更多", systemImage: "ellipsis.circle") }
+            .menuStyle(.borderlessButton).fixedSize().help("更多")
+            .task(id: "\(name)|\(person.imagePath)|\(person.imageManual)") {
+                // 读不到来源不影响看档案，静默
+                provenance = (try? await app.core?.artistProvenance(name)) ?? []
+            }
+            ForEach(model.bands, id: \.bandId) { band in
+                Button("\(band.leftAt.isEmpty ? "也在" : "曾属") \(band.bandName) · \(LibraryIndex.spanOf(band.joined, band.leftAt))") { app.show(.person(band.bandId)) }.buttonStyle(.link)
+            }
+            if canEditMembers {
+            if !model.members.isEmpty || !model.suggestions.isEmpty || editing {
+                HStack { Text("成员").font(.headline); Spacer(); Button(editing ? "完成" : "编辑") { editing.toggle() } }
+                ForEach(model.members, id: \.memberId) { m in
+                    if editing {
+                        MemberEditRow(bandId: personId, initial: m, model: model)
+                    } else {
+                        Button { app.show(.person(m.memberId)) } label: {
+                            HStack { CoverImage(path: m.memberImage, size: 34, circle: true, placeholder: "person.fill", identity: m.memberName); Text(m.memberName); Text("\(m.part) · \(LibraryIndex.spanOf(m.joined, m.leftAt))").foregroundStyle(.secondary) }
+                        }.buttonStyle(.plain)
+                    }
+                }
+                if editing {
+                    MemberEditRow(bandId: personId, initial: nil, model: model).id(model.members.count)
+                    Text("日期写年份就行（2019，或 2019-05-27）；现在还在的，离开空着。改过的都记成手动，以后刮削不会盖掉。").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(model.suggestions, id: \.memberId) { s in
+                    HStack {
+                        Text("\(s.memberName) 可能是成员：写的 \(s.written) 首里 \(s.shared) 首给这个乐队").font(.caption)
+                        Button("是成员") { Task { if let c = app.library.client { await model.confirm(personId, member: s.memberId, client: c); app.library.version += 1 } } }
+                        Button("不是") { Task { if let c = app.library.client { await model.rejectSuggestion(personId, member: s.memberId, client: c); app.library.version += 1 } } }
+                    }
+                }
+            } else { Button("添加成员") { editing = true } }
+            }
+            if !model.note.isEmpty { Text(model.note).font(.caption) }
+            if let error = model.errorMessage { Text(error).foregroundStyle(.orange) }
+            if let error = app.library.errorMessage { Text(error).foregroundStyle(.orange) }
+        }.disabled(model.busy)
+            .task(id: personId) { if let c = app.library.client { await model.load(personId, client: c) } }
+            .fileImporter(isPresented: $choosing, allowedContentTypes: ["jpg", "jpeg", "png", "webp"].compactMap { UTType(filenameExtension: $0) }) { result in
+                switch result {
+                case .failure(let error): app.library.errorMessage = error.localizedDescription
+                case .success(let url): Task { _ = await app.library.perform { _ = try await app.library.client?.artistImageSet(name, path: url.path); app.library.version += 1 } }
+                }
+            }
+    }
+}
+
+@MainActor
+struct MemberEditRow: View {
+    @Environment(AppModel.self) private var app
+    let bandId: Int64
+    let initial: Membership?
+    let model: MembersModel
+    @State private var name: String
+    @State private var part: String
+    @State private var joined: String
+    @State private var leftAt: String
+    init(bandId: Int64, initial: Membership?, model: MembersModel) {
+        self.bandId = bandId; self.initial = initial; self.model = model
+        _name = State(initialValue: initial?.memberName ?? ""); _part = State(initialValue: initial?.part ?? "")
+        _joined = State(initialValue: initial?.joined ?? ""); _leftAt = State(initialValue: initial?.leftAt ?? "")
+    }
+    private var changed: Bool {
+        guard let initial else { return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return part != initial.part || joined != initial.joined || leftAt != initial.leftAt
+    }
+    var body: some View {
+        HStack {
+            if initial == nil { TextField("新成员名字", text: $name) } else { Text(name).frame(width: 100) }
+            TextField("分工", text: $part)
+            TextField("加入", text: $joined).frame(width: 90)
+            TextField("离开（在队留空）", text: $leftAt).frame(width: 120)
+            Button(initial == nil ? "添加" : "保存") {
+                Task {
+                    guard let c = app.library.client else { return }
+                    let input = MembershipInput(bandId: bandId, memberId: initial?.memberId, memberName: name.trimmingCharacters(in: .whitespacesAndNewlines), part: part.trimmingCharacters(in: .whitespacesAndNewlines), joined: joined.trimmingCharacters(in: .whitespacesAndNewlines), leftAt: leftAt.trimmingCharacters(in: .whitespacesAndNewlines))
+                    if await model.put(input, client: c) { app.library.version += 1; if initial == nil { name = ""; part = ""; joined = ""; leftAt = "" } }
+                }
+            }.disabled(!changed || model.busy || !LibraryIndex.validDate(joined.trimmingCharacters(in: .whitespacesAndNewlines)) || !LibraryIndex.validDate(leftAt.trimmingCharacters(in: .whitespacesAndNewlines)))
+            if let initial {
+                if model.removal == initial.memberId {
+                    Text("不是成员？").font(.caption)
+                    Button("确认", role: .destructive) { Task { if let c = app.library.client { await model.removeConfirmed(bandId, client: c); app.library.version += 1 } } }
+                    Button("取消") { model.removal = nil }
+                } else { Button("移除", role: .destructive) { model.removal = initial.memberId } }
+            }
+        }
+    }
+}

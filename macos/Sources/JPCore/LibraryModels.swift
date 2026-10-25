@@ -87,6 +87,8 @@ public struct DirectoryEntry: Codable, Hashable, Identifiable, Sendable {
     public var name: String
     public var imagePath: String
     public var artistType: String
+    public var ended: String
+    public var imageManual: Bool
     public var performer: Int64
     public var composer: Int64
     public var lyricist: Int64
@@ -108,13 +110,16 @@ public struct DirectoryEntry: Codable, Hashable, Identifiable, Sendable {
 public struct PersonWork: Decodable, Hashable, Identifiable, Sendable {
     public var track: Track
     public var roles: [String]
+    public var performerIds: [Int64]
     public var id: String { track.id }
 
-    private enum Keys: String, CodingKey { case roles }
+    private enum Keys: String, CodingKey { case roles, performerIds }
 
     public init(from decoder: Decoder) throws {
         track = try Track(from: decoder)
-        roles = try decoder.container(keyedBy: Keys.self).decode([String].self, forKey: .roles)
+        let c = try decoder.container(keyedBy: Keys.self)
+        roles = try c.decode([String].self, forKey: .roles)
+        performerIds = try c.decode([Int64].self, forKey: .performerIds)
     }
 }
 
@@ -226,6 +231,8 @@ public struct LyricVersion: Decodable, Hashable, Identifiable, Sendable {
     public var completeness: Double?
     public var isCurrent: Bool
     public var note: String
+    public var hasRawText: Bool
+    public var validation: LyricsValidation?
 }
 
 public struct FieldProvenance: Decodable, Hashable, Sendable {
@@ -241,6 +248,10 @@ public struct SongLineage: Decodable, Hashable, Sendable {
     public var language: String?
     public var versions: [LyricVersion]
     public var provenance: [FieldProvenance]
+    public var lines: [LyricLineQuality]?
+    public var tokenStatus: [String: Int]?
+    public var tokenizers: [LyricTokenizerRun]?
+    public var revisions: [LyricRevision]?
 }
 
 public struct SongQuality: Decodable, Hashable, Identifiable, Sendable {
@@ -266,6 +277,7 @@ public struct QualityOverview: Decodable, Hashable, Sendable {
     public var issues: [LabelCount]
     public var tokenStatus: [LabelCount]
     public var linesLowTimeConfidence: Int64
+    public var tokenizers: [LyricTokenizerRun]?
     public var worst: [SongQuality]
 }
 
@@ -321,6 +333,28 @@ public struct AnalysisSummary: Decodable, Hashable, Identifiable, Sendable {
         ["corpusReport": "语料统计", "frequency": "词频表", "corpusFrequency": "词频（重复感知）",
          "collocations": "搭配", "keyness": "子语料对比"][kind] ?? kind
     }
+}
+
+/// `analysisGet`：一条存档的完整记录（存档页「详情」用）。结果本身不解
+public struct AnalysisRunDetail: Decodable, Hashable, Sendable {
+    public struct Spec: Decodable, Hashable, Sendable { public var kind: String }
+    public struct Scope: Decodable, Hashable, Sendable { public var songCount: Int64; public var lineCount: Int64 }
+    public struct Tokenizers: Decodable, Hashable, Sendable { public var runs: [LyricTokenizerRun]; public var unknownLines: Int64 }
+    public var id: Int64
+    public var label: String
+    public var spec: Spec
+    public var filter: StatsFilter
+    public var scope: Scope
+    public var scopeHash: String
+    public var tokenizers: Tokenizers
+    /// 口径：键 → 值（数组或标量），按 Windows 的方式显示
+    public var method: [String: LyricJSON]
+    public var resultHash: String
+    public var snapshot: CorpusSnapshot?
+    public var schemaVersion: Int64
+    public var appVersion: String
+    public var rerunOf: Int64?
+    public var createdAt: String
 }
 
 /// 存一次分析时返回的完整记录。界面只用得到 id 和摘要那几项，结果本身不解

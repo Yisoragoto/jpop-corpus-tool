@@ -39,6 +39,7 @@ enum SmokeRun {
     }
 
     private static var started = false
+    static var playerBarHeight: CGFloat = 0
 
     static func run(_ app: AppModel) async {
         guard let out = outputDirectory, !started else { return }
@@ -55,6 +56,10 @@ enum SmokeRun {
             note("[step] \(name) \(values) status=\(condition ? "pass" : "fail")")
             if !condition { throw SmokeFailure.step(name) }
         }
+        func requirePlayerBarHeight() throws {
+            let height = playerBarHeight
+            try require(height.isFinite && height > 0 && height <= 120, "player-bar", "height=\(height)")
+        }
 
         do {
             note("[step] launch windows=\(NSApplication.shared.windows.count)")
@@ -64,6 +69,16 @@ enum SmokeRun {
             app.audioRoots = [audioPath]
             await app.openDemo()
             try require(app.client != nil && app.errorMessage == nil, "open-demo", "tracks=\(app.tracks.count)")
+            guard let diagnosticsClient = app.core else { throw SmokeFailure.step("diagnostics-client") }
+            let diagnostic = try await diagnosticsClient.diagnosticsReport(audioAvailable: app.player.audioAvailable)
+            try require(!diagnostic.isEmpty, "diagnostics", "bytes=\(diagnostic.utf8.count)")
+            guard let manager = app.library.client, let original = app.tracks.first else { throw SmokeFailure.step("library-edit-missing-client") }
+            var edited = SongEdit(original); edited.title += "（管理验证）"
+            let saved = await app.library.save(original.id, edit: edited)
+            let readback = try await app.core?.track(original.id)
+            try require(saved && readback?.title == edited.title, "library-edit", "readback=true")
+            _ = try await manager.libraryEditSong(original.id, edit: SongEdit(original))
+            await app.reloadTracks()
             await settle(2)
             shot("01-start", into: out, note: note)
 
@@ -78,10 +93,40 @@ enum SmokeRun {
                 await settle(1.5)
                 let p = app.player
                 try require(p.isPlaying && p.lastError == nil, "audition", "playing=\(p.isPlaying) song=\(p.track?.id ?? "none")")
+                try requirePlayerBarHeight()
                 shot("03-audition", into: out, note: note)
                 let wait = max(0, (hit.endSec ?? 0) - p.position) + 1
                 await settle(min(wait, 12))
                 try require(!p.isPlaying, "audition-stopped", "playing=\(p.isPlaying)")
+            }
+
+            // 真 FLAC 经 TimePitch 播放：调整时不重载、不跳回起点。
+            if let track = app.player.track {
+                let player = app.player
+                await player.open(track, at: 0, autoplay: true)
+                player.setPitch(2)
+                player.setRate(1.25)
+                let before = player.position
+                await settle(1.2)
+                try require(player.isPlaying && player.pitch == 2 && player.rate == 1.25 && player.position > before + 0.5 && player.lastError == nil,
+                            "playback-tuning", "pitch=\(player.pitch) rate=\(player.rate) advanced=\(player.position > before + 0.5)")
+                player.pause()
+                player.resetTuning()
+            } else { throw SmokeFailure.step("playback-tuning-missing-track") }
+
+            // Exercise the compact layout with the lyrics inspector still open, and without spectrum.
+            if let window = NSApplication.shared.windows.first(where: { $0.isVisible && $0.contentView != nil }) {
+                let originalFrame = window.frame
+                window.setContentSize(NSSize(width: 960, height: 600))
+                await settle(0.8)
+                try requirePlayerBarHeight()
+                shot("03a-compact-player", into: out, note: note)
+                app.player.spectrumEnabled = false
+                await settle(0.3)
+                try requirePlayerBarHeight()
+                app.player.spectrumEnabled = true
+                window.setFrame(originalFrame, display: true)
+                await settle(0.8)
             }
 
             // 振假名要分词词典：CI 把缓存的那份目录传进来，装进示例库（和导入页「选已有的词典」同一条路）
@@ -109,16 +154,30 @@ enum SmokeRun {
             // 首页：刚才那次试听到行尾自动暂停，播放记录里有了，「继续听」应该是这首
             app.section = .home
             await settle(2)
+            try requirePlayerBarHeight()
             shot("04a-home", into: out, note: note)
 
             // 曲库三种看法
             app.section = .library
             for (name, mode) in [("04b-library-songs", "歌曲"), ("04c-library-albums", "专辑"), ("04d-library-artists", "歌手")] {
-                UserDefaults.standard.set(mode, forKey: "libraryMode")
+                app.libraryMode = LibraryMode(rawValue: mode) ?? .songs
                 await settle(1.5)
                 shot(name, into: out, note: note)
             }
-            UserDefaults.standard.set("歌曲", forKey: "libraryMode")
+            app.libraryMode = .graph
+            let lyricsWereVisible = app.showLyrics; app.showLyrics = false
+            for _ in 0..<60 { if !app.visualizations.graph.nodes.isEmpty && !app.visualizations.graphBusy { break }; await settle(0.2) }
+            try require(!app.visualizations.graph.nodes.isEmpty && !app.visualizations.graphBusy,"graph","nodes=\(app.visualizations.graph.nodes.count) links=\(app.visualizations.graph.links.count)")
+            await settle(0.5); shot("04g-graph",into: out,note: note)
+            app.libraryMode = .timeline
+            await settle(1)
+            try require(!app.visualizations.timeline.rows.isEmpty,"timeline","rows=\(app.visualizations.timeline.rows.count) releases=\(app.visualizations.releases.count)")
+            shot("04h-timeline",into: out,note: note)
+            app.libraryMode = .cloud
+            for _ in 0..<60 { if !app.visualizations.words.isEmpty && !app.visualizations.placed.isEmpty && !app.visualizations.cloudBusy { break }; await settle(0.2) }
+            try require(!app.visualizations.words.isEmpty && !app.visualizations.placed.isEmpty,"cloud","words=\(app.visualizations.words.count) placed=\(app.visualizations.placed.count)")
+            await settle(0.5); shot("04i-cloud",into: out,note: note)
+            app.libraryMode = .songs; app.showLyrics = lyricsWereVisible
 
             // 歌手详情、歌曲详情
             if let person = try? await app.core?.peopleDirectory().first(where: { $0.performer > 0 }) {
@@ -129,6 +188,7 @@ enum SmokeRun {
             app.libraryPath = []
             app.show(.song("004"))
             await settle(2)
+            try requirePlayerBarHeight()
             shot("04f-song", into: out, note: note)
 
             // ⌘K 全库搜索
@@ -160,6 +220,25 @@ enum SmokeRun {
             await settle(1.5)
             shot("05c-quality", into: out, note: note)
             UserDefaults.standard.set(0, forKey: "analysisTab")
+
+            guard let exportClient = app.core else { throw SmokeFailure.step("stats-export-client") }
+            let report = try await exportClient.statsReport(StatsFilter())
+            let exportURL = FileManager.default.temporaryDirectory.appendingPathComponent("stats-smoke-\(UUID().uuidString).txt")
+            defer { try? FileManager.default.removeItem(at: exportURL) }
+            try await exportClient.exportText(path: exportURL.path, content: report.text)
+            let exported = try Data(contentsOf: exportURL)
+            try require(!exported.isEmpty && String(data: exported, encoding: .utf8) == report.text, "stats-export", "bytes=\(exported.count)")
+
+            app.section = .anki
+            for _ in 0..<100 {
+                if app.anki.status != nil { break }
+                await settle(0.1)
+            }
+            await settle(0.5)
+            shot("05d-anki", into: out, note: note)
+            let ankiStatus = app.anki.status
+            let ankiShot = FileManager.default.fileExists(atPath: out.appendingPathComponent("05d-anki.png").path)
+            try require(ankiShot && ankiStatus?.connected == false && !(ankiStatus?.message.isEmpty ?? true), "anki-page", "connected=\(ankiStatus?.connected == true) screenshot=\(ankiShot)")
 
             // 词典：现做一本只有一个词条的 Yomitan 词典（解开的目录），经界面那条路导入，再试查「夜」
             app.section = .dictionaries

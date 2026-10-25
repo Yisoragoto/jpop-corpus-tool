@@ -7,12 +7,13 @@
 ```text
                  jp-corpus（SQL、检索、分析、行区间、迁移）
                  jp-normalize
+                 jp-import / jp-scrape / jp-anki / jp-lyrics / jp-library（共享应用层）
                      │
         ┌────────────┴─────────────┐
    jp-app（Tauri command）      jp-ffi（C ABI，JSON 进出）
         │                          │  libjp_ffi.a
    app/（React）                macos/（SwiftUI + AVFoundation）
-   jp-audio 播放（rodio）        AVPlayer 播放
+   jp-audio 播放（rodio）        AVAudioEngine 播放
 ```
 
 ## 为什么这样分
@@ -22,7 +23,7 @@
 - **跨语言接口是「一个入口 + JSON」**（`jp_call(session, method, args_json)`），不是逐个函数导出 C 签名，
   也没用 UniFFI。方法名和参数名与 Tauri command 对齐，数据形状就是 serde 的 camelCase——
   Rust 结构体加一个字段，Tauri 前端和 Swift 自动都有，不会出现某一边的绑定忘了重新生成。
-  C 层只有五个函数（`include/jp_ffi.h`），几乎不会变；新功能只在 `jp-ffi/src/lib.rs` 的 `dispatch` 里加一个分支。
+  C 层只有五个函数（`include/jp_ffi.h`），几乎不会变；新功能在 `jp-ffi` 的 dispatch 中分派（歌词入口在 `src/lyrics.rs`）。
   代价是每次调用多一次 JSON 编解码（微秒级），相对查询本身（毫秒到几十毫秒）可以忽略。
 - **播放不走 Rust**。macOS 用 AVFoundation：原生解码 FLAC/MP3/AAC、系统输出设备、变速保持音高。
   但「从哪儿放到哪儿」由 Rust 决定（见下），两边定位行为一致。
@@ -101,8 +102,8 @@ macOS 客户端可以自己建库，不必从 Windows 拷：欢迎页「新建�
   导入、分词词典、查词、扫描这些方法在 Rust 里不拿会话的锁，Swift 侧也走另一条并发队列，导入跑着时检索照常。
 - **分词词典**放在语料库目录的 `sudachi/`，和 Windows 版同一个下载地址、同一个哈希；装好后顺手给没分词的歌补上。
   没有词典也能导，计划上会说清楚「这批不会分词」，之后在导入页点「补上分词」。
-- **查词**读语料库目录的 `dictionaries.db`（Yomitan 词典库）。macOS 上还不能导入 Yomitan 词典，
-  现在是在 Windows 版导好后把这个文件一起拷过来；歌词面板右键一个词「查词」。
+- **查词**读语料库目录的 `dictionaries.db`（Yomitan 词典库）。macOS 词典页支持导入 Yomitan zip、启用、排序和删除；
+  歌词面板右键一个词「查词」，可继续通过共享 `jp-anki` 一键制卡。
 
 ## 构建 macOS 客户端
 
@@ -121,16 +122,105 @@ CI：`.github/workflows/macos.yml` 在 macOS runner 上跑 Rust 核心测试、`
 `JPCoreTests` 检查真 FFI，`JPCorpusModelTests` 检查模型与源码接线，SmokeRun 在真窗口里导入并刷新曲目表。
 Swift 编译与运行由 CI 的 macOS job 验证，本机 Windows 不具备 Swift 验证环境。
 
-## 还没做的
+## 原生功能与剩余边界
 
 | 功能 | 状态 | 有测试覆盖 | 备注 |
 |---|---|---|---|
-| 刮削 | 未实现 | 无原生界面覆盖 | 核心在 jp-scraper，尚无 Mac 入口 |
-| Yomitan 词典导入 | 未实现 | 无原生界面覆盖 | 可读已有 dictionaries.db；Sudachi 安装是另一条已实现的链路 |
-| Anki 制卡 | 未实现 | 无原生界面覆盖 | 核心在 jp-anki |
-| 资料库关系网、时间轴、词云 | 未实现 | 无原生界面覆盖 | 当前 Mac 只有曲目表 |
-| 自动更新 | 未实现 | 无原生界面覆盖 | 从新源码重建 |
-| 换歌词、逐行编辑、恢复旧版 | 未实现 | 无原生界面覆盖 | 歌词显示部分可用；写 .lrc 的代码仍在 jp-app/src/lyrics.rs |
-| 完整子语料管理、分析存档与来源面板 | 部分 | 基础分析与筛选有 CoreBridgeTests；存档原生 UI 未覆盖 | Rust/FFI 有接口，SwiftUI 尚未提供完整管理入口 |
-| 导入内嵌封面、追加 metadata/songs.csv | 部分 | 导入主体有模型/真 FFI/smoke；这两项未覆盖 | 对应代码仍在 jp-app/src/scrape.rs 与 library_admin.rs |
-| 词级定位、跨行/句法搭配 | 部分 | 行级区间和行内搭配有 CoreBridgeTests；新增粒度未覆盖 | 当前按 LRC 行级时间及行内窗口计算 |
+| 首页、曲库详情 | 可用 | LibraryBridgeTests、smoke | 首页、专辑/人物/歌曲详情、收藏、快速搜索 |
+| 刮削 | 可用 | ScrapeBridgeTests、Rust 离线记账测试、smoke | 单首/批量、封面、歌手、复核，共用 jp-scrape |
+| Yomitan 词典导入 | 可用 | ImportTests、jp-ffi 词典管理测试 | 词典页导入 zip 并管理；Sudachi 安装是另一条链路 |
+| Anki 一键制卡 | 可用 | MiningBridgeTests、jp-anki/jp-ffi 测试 | 查词面板与设置入口；发送需要本机 AnkiConnect |
+| Anki 页、学习状态与挖词报告 | 可用 | AnkiModelTests、AnkiBridgeTests、Rust 离线测试与 smoke 门禁 | 选词/预览、导出/更新/刷新/取消、浏览笔记；macOS CI 已验证（run 40151834228），真实 AnkiConnect 待人工验证 |
+| 统计 TXT / KWIC CSV / 词云 PNG 导出 | 可用 | ExportTextTests、真 FFI 文件读回与 stats-export smoke 门禁 | 原生保存面板、Rust 原文、ImageRenderer；macOS CI 已验证（run 40151834228） |
+| 资料库关系网、时间轴、词云 | 可用 | GraphTests、TimelineTests、WordCloudTests、真 FFI 与 smoke 门禁 | 常驻分栏/搜索、词云深底亮字、时间轴顶部对齐与图形图例；macOS CI 截图已验证 |
+| 检查更新与更新日志 | 可用 | UpdateModelTests、SystemBridgeTests、jp-update 离线测试 | 共享 jp-update；发布页只有 Windows 安装包，mac 打开经校验的官方发布页，不自动下载或执行文件 |
+| 诊断信息 | 可用 | SystemBridgeTests、diagnostics smoke | 共享 jp-diagnostics；复制或存成文件，带最近 200 行日志 |
+| 换歌词、逐行编辑、恢复旧版 | 可用 | LyricsModelTests、LyricsBridgeTests、jp-lyrics/jp-ffi 测试 | 详情、面板、全屏共用管理入口，支持 .lrc 导入、版本原文和恢复；Swift 新测试待 CI |
+| 在线补齐、时间歌词搜索与升级 | 可用 | 同上，网络使用离线边界测试 | 单首/批量队列、进度和取消、来源开关、候选预览与采用 |
+| 卡拉 OK 与打轴 | 部分 | LyricsModelTests、LyricsBridgeTests、Rust 时间轴测试 | 两行交替、倒数、真实时间高亮、按住/点按、起止编辑、拆分合并、撤销重做与版本保存；无波形拖拽和完整 Windows 打轴快捷键 |
+| 分析存档、来源与语料质量 | 可用 | CoreBridgeTests、LibraryBridgeTests、smoke | 已有存档、重跑、比较、删除及来源/质量入口 |
+| 完整子语料管理 | 部分 | CoreBridgeTests 基础筛选 | 保存/管理完整条件的原生界面仍未接入 |
+| 资料库管理（第 3 阶段） | 可用 | LibraryModelTests、MembersModelTests、LibraryAdminBridgeTests、38 个 TS 移植用例、jp-ffi、smoke 编辑读回 | 歌曲编辑/删除、音频修复、新歌/文件夹、照片/成员、分词校正、迁移/维护；macOS CI 已验证（run 40107267725） |
+| 导入内嵌封面、追加 metadata/songs.csv | 可用 | jp-app fixture_flows、jp-ffi CSV 与封面边界测试；Swift 真 FFI 导入 | 两端共用 jp-scrape::save_imported_covers 与 jp-library::admin::sync_imported，清单不存在不创建 |
+| 词级定位、跨行/句法搭配 | 部分 | CoreBridgeTests、LyricTimelineTests | 歌词面板可定位真实时间单位；KWIC 仍按行，搭配仍按行内窗口，跨行/句法未接入 |
+
+## 共享资料库业务层与 FFI（第 3 阶段）
+
+`jp-library` 是依赖语料库、导入器和本地文件的共享应用层：从 `jp-app` 抽出编辑/删除/重新关联的事务与 CSV/封面/缓存收尾、
+发现新歌、时长回填、迁移文件复制、成员输入与歌手名录。`jp-app` 保留播放器和事件适配，command 签名、返回形状及 `app/` 均不变。
+导入封面保存移入现有 `jp-scrape`，Tauri 和 FFI 导入后都调用它，再同步已有的 `metadata/songs.csv`。
+
+新增 29 个 camelCase FFI 方法及与 serde 字段对应的 JPCore Codable 模型，完整清单和逐项差异见 [资料库管理](macos-status.md#资料库管理)。
+`backfillDurations`、`fillAlbumArtwork`、`migrateRun` 共用 `libraryProgress` 作业槽，工作线程自开连接，不占会话锁。
+原生选库继续使用 AppModel/Settings、Application Support 与既有 UserDefaults；Windows 安装目录定位不适用于 macOS，未新增对应设置 FFI。
+
+`LibraryModel` / `MembersModel` 承接可测试状态；35 个公开 TS 纯函数移为 Swift，38 个原 TS 用例全部移植。
+FakeCorpus 覆盖确认、部分失败、日期校验、持久化、校正和进度；真 FFI 测试检查管理写入与读回、照片、成员、校正及三种作业报告。
+SmokeRun 真改歌曲标题、读回并恢复，CI 检查 `[step] library-edit readback=true status=pass`，Rust 核心测试列表加入 `jp-library`。
+本机 Windows 仅执行 Rust 与静态检查；新增 Swift 编译、测试及真窗口交互须由 macOS 14 CI 确认。
+
+## 可视化与共用范围（第 4 阶段）
+
+曲库增加关系网、时间轴与词云，人物页可带焦点打开三种页面。Graph/WordCloud 用 SwiftUI Canvas，
+力导向和固定种子螺线算法逐项来自 Windows TS；大布局在后台计算，画布只捕获局部快照。
+时间轴复用泳道排序、年份扩宽、封面避让、解散连接、时间树与折叠空年的同一套规则。
+新增 JPCorpusModel 纯逻辑和 XCTest，使用 Windows 的全部原用例及实际 TS 运行得到的坐标对账。
+
+新增 FFI：`collaborationEdges`、`timelineReleases`、`statsFrequency`、`timeline`、`statsReport`。
+报告封装从 jp-app 移到 `jp_corpus::stats::stats_report`，Tauri 签名/JSON 不变，前端 `app/` 未改。
+mac 的子语料完整条件管理调用已有 `subcorpusFacets/Preview/List/Save/Delete`，
+SubcorpusScope 使用 UserDefaults/Observation 维护当前范围，检索、词云与例句共享；
+语言和完整度不再在 Swift Subcorpus 编解码时丢失。词云异体合并复用第 3 阶段的 lemmaForms，
+真实词首/人工校准仍走 wordTimings/wordTimeSet/wordTimeClear，分组不重复计算曲数。
+
+⌘K 搜索与 ⌘P 命令共用浮层，支持 `>`、上下选择、禁用原因和过期响应保护。
+侧栏补设置入口；分析补副歌效应、完整参照范围、总览/年份图与报告展示。
+质量显示函数及原测试断言已补入模型层；歌曲编辑/删除改用边框文字按钮、反馈置于正文顶部，人物成员入口与 Windows PersonProfile 相同。
+PitchCacheCard 不在 mac 提供磁盘缓存操作：AVAudioEngine 实时变调没有对应文件，见 [macos-player.md](macos-player.md#实现差异)。
+Anki 浏览/更新与报告导出已在第 5 阶段接入（见下节）；更新和诊断已在第 6 阶段接入；全部 Tauri 命令的逐个对照见 [macos-status.md](macos-status.md) 的「命令对账表」。
+
+本机单任务 Rust build/test/clippy 已通过（含 jp-library，测试 368 passed、0 failed、52 ignored），Windows 全套测试 336 passed；新增 76 个 XCTest（含原 TS 的 58 例输入/断言）和三页真实窗口 smoke 门禁，
+Swift 编译、测试及截图尚待 macOS 14 CI，详见 [差异与验证表](macos-status.md#可视化与其余界面)。
+
+## 共享歌词业务层与 FFI（第 1 阶段）
+
+`jp-lyrics` 承接原先在 `jp-app` 的歌词版本/逐行编辑、手动打轴、文件导入、来源设置、
+候选搜索与采用、补齐/升级队列。它依赖 `jp-corpus`、`jp-import`、`jp-scraper`；
+`jp-scraper` 继续只负责网络和格式，避免引入语料库依赖。
+Tauri 原模块只做重导出和事件适配，`app/` 无需改动。
+
+新增的 camelCase FFI 方法（参数与 Tauri command 对齐）：
+
+- 编辑/版本：`lyricsSaveLines`、`lyricsRestoreVersion`、`lyricsImportFile`、`lyricsRevalidate`、`lyricsSourcesGet`、`lyricsSourcesSet`、`lyricsMissing`。
+- 补齐：`lyricsFillStart`、`lyricsFillOne`、`lyricsFillCancel`、`lyricsFillRunning`。
+- 时间歌词：`lyricsTimedTargets`、`lyricsTimedSearch`、`lyricsTimedApply`。
+- 升级：`lyricsUpgradeStart`、`lyricsUpgradeCancel`、`lyricsUpgradeStatus`。
+- 打轴/校准：`lyricsSaveTiming`、`wordTimings`、`wordTimeSet`、`wordTimeClear`。
+- 作业轮询扩展：`lyricsFillProgress`、`lyricsUpgradeProgress`，返回同导入/刮削的 `JobView`，`result` 是详细升级统计。
+
+补齐与升级共用一份作业，重复启动返回错误；取消不会清除已完成的歌曲。
+FFI 的 Job 工作线程调用共享队列的同步 `run_batch`，独立连接开启 WAL、外键与 30 秒 busy timeout，
+不占会话锁；Tauri 继续通过同一队列的异步 `enqueue` 发送原有两个进度事件，并保留追加导入目标的行为。
+文件与数据库提交、版本归档和人工修改保护在共享核心中完成。
+Swift 的新代码及测试需 macOS CI 编译执行；Windows 本地只验证 Rust 与前端回归。
+
+## Anki 与导出（第 5 阶段）
+
+mac 新增完整 Anki 页，侧栏与命令面板可达；制卡设置从词典页移至设置页和 Anki 页，两处复用同一视图。
+支持离线学习状态、选词/预览、导出/更新/刷新/取消、挖词报告；查词结果的已有笔记可打开 Anki 浏览器，首页补今日制卡数。
+作业循环、状态、选词/预览、报告应用封装从 jp-app 挪至现有 jp-anki；Tauri 保留原函数签名与返回形状，app/ 未改。
+FFI 新增 16 个方法（13 个 Anki command 对应方法、ankiProgress、exportText、exportPng），
+Anki 作业沿用 JobView 轮询、独立连接和取消标志，result 含 Windows 相同进度载荷及最近 200 条日志。
+
+统计报告 TXT 直接保存 Rust 的 text；KWIC CSV 逐字符对应 Windows 的 BOM/CRLF/完整七列；
+词云 PNG 经 SwiftUI ImageRenderer 按当前词云渲染，原生 NSSavePanel 选位置，共享 Rust 校验后写入。
+JPCore Codable 与 Rust serde 逐字段核对；AnkiModel 使用协议注入与 FakeCorpus 测试。
+移植 15 个 TS 纯函数入口、5 个原 TS 用例，新增 17 个 XCTest（含 3 个真 FFI 测试）；
+原 Python fixture 的 2175 条定点数、8 条千分位及 7 行 KWIC 直接复用。
+
+本机 Rust build/test/clippy 全通过：327 passed、0 failed、18 ignored，clippy 无警告。
+Swift 未在 Windows 编译/执行：WKWebView、Observation 嵌套绑定、ImageRenderer 与原生保存交互待 macOS 14 / Xcode 15.4 / Swift 5.10 CI。
+macos.yml 新增 Anki 未连接页截图和统计报告临时文件读回门禁；真实 AnkiConnect 不在 CI 实连。
+续做同时修复第 4 阶段截图问题：曲库六个分栏和搜索移至常驻正文顶栏，窄窗口分行；
+词云照片卡片在浅色主题下也使用深底亮字；时间轴顶部对齐、滚至最近年份时保持顶边，图例使用实际方块/圆点/竖线/虚线。
+完整差异表、FFI 清单、测试证据和未验证边界见 [Anki 与导出](macos-status.md#anki-与导出)。

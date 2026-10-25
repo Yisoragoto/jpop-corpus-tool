@@ -46,7 +46,10 @@ public struct AnkiStatus: Codable, Hashable, Sendable {
     public var connected: Bool
     public var version: Int64
     public var decks: [String]
-    public var models: [String]
+    public var noteTypeReady: Bool
+    public var collectionPath: String
+    public var knownWords: Int
+    public var studiedWords: Int
     /// 连不上时给人看的指引
     public var message: String
 }

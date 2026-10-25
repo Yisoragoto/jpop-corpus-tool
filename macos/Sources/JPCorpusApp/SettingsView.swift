@@ -7,12 +7,41 @@ import UniformTypeIdentifiers
 @MainActor
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
+    var embedded = false
     private enum PickKind { case library, audio }
     @State private var pick = FilePickState<PickKind>()
+    @State private var lyricsOpen = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Form {
+            UpdateSettingsView()
+            DiagnosticsSettingsView()
+            CloudPreferencesView()
+            HealthSettingsView()
+            Section("Anki") { MineSettingsView() }
+            Section("播放") {
+                LabeledContent("每天的收听目标") {
+                    Slider(value: Binding(get: { app.dailyGoalMinutes }, set: { app.dailyGoalMinutes = $0 }), in: 5...180, step: 1)
+                    Text("\(Int(app.dailyGoalMinutes)) 分钟").monospacedDigit()
+                }
+                Toggle("逐字点亮当前行", isOn: Binding(get: { app.karaokeLyrics }, set: { app.karaokeLyrics = $0 }))
+                Toggle("显示频谱", isOn: Binding(get: { app.player.spectrumEnabled }, set: { app.player.spectrumEnabled = $0 }))
+                Toggle("全屏歌词使用虚化封面", isOn: Binding(get: { app.stageCoverBlur }, set: { app.stageCoverBlur = $0 }))
+                LabeledContent("封面模糊") {
+                    Slider(value: Binding(get: { app.stageBlurRadius }, set: { app.stageBlurRadius = $0 }), in: 20...120, step: 1)
+                    Text("\(Int(app.stageBlurRadius))").monospacedDigit().frame(width: 28)
+                }.disabled(!app.stageCoverBlur)
+            }
+            Section("歌词") {
+                Toggle("默认显示振假名", isOn: Binding(get: { app.showFurigana }, set: { app.showFurigana = $0 }))
+                HStack { Text("字体、备用字体、字号、注音与间距"); Spacer(); LyricsDisplayButton() }
+                Button("歌词来源、批量补全与逐首预览") { lyricsOpen = true }.disabled(app.core == nil)
+            }
+            Section("资料库管理") {
+                Toggle("启动时检查新歌", isOn: Binding(get: { app.autoCheckNewSongs }, set: { app.autoCheckNewSongs = $0 }))
+                HStack { Text("歌曲、音频、成员、维护与迁移"); Spacer(); LibraryManageButton() }.disabled(app.core == nil)
+            }
             Section("语料库") {
                 LabeledContent("文件夹") {
                     Text(app.isDemo ? "示例语料库" : (app.libraryURL?.path ?? "未选择"))
@@ -50,7 +79,7 @@ struct SettingsView: View {
                 }
                 HStack {
                     Button("添加文件夹…") { pick.present(.audio) }
-                    Button("去导入") { app.section = .importer; dismiss() }
+                    Button("去导入") { app.section = .importer; if !embedded { dismiss() } }
                         .disabled(app.client == nil)
                 }
             }
@@ -61,7 +90,8 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .clearScrollBackground()
         .glass(.sidebar)
-        .frame(width: 560, height: 460)
+        .frame(width: embedded ? nil : 560, height: embedded ? nil : 460)
+        .sheet(isPresented: $lyricsOpen) { LyricsLibraryView() }
         .fileImporter(isPresented: $pick.isPresented, allowedContentTypes: [.folder]) { result in
             let kind = pick.finish()
             switch result {

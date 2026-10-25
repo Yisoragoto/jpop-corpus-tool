@@ -1,0 +1,16 @@
+[package]
+name = "jp-library"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+jp-corpus = { path = "../jp-corpus" }
+jp-import = { path = "../jp-import" }
+jp-audio = { path = "../jp-audio" }
+jp-setup = { path = "../jp-setup" }
+jp-scrape = { path = "../jp-scrape" }
+rusqlite = { version = "0.40", features = ["bundled"] }

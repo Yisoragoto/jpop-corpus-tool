@@ -1,3 +1,4 @@
+import AppKit
 import JPCore
 import SwiftUI
 import JPCorpusModel
@@ -10,7 +11,37 @@ struct QuickSearchView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var results: QuickSearchResults?
+    @State private var active = 0
+    @State private var busy = false
     @FocusState private var focused: Bool
+    private var commandMode: Bool { query.hasPrefix(">") }
+    private var needle: String { (commandMode ? String(query.dropFirst()) : query).trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var hits: [QuickHit] { groups.flatMap(\.1) }
+    private var visibleCommands: [PaletteAction] { commands.filter { needle.isEmpty || $0.label.localizedCaseInsensitiveContains(needle) || $0.hint.localizedCaseInsensitiveContains(needle) } }
+    private var commands: [PaletteAction] {
+        let player = app.player
+        return [
+            PaletteAction(id: "play",label: player.isPlaying ? "暂停" : "播放",hint: "Space",disabled: player.canPlay ? nil : "没有音频设备",run: { player.toggle() }),
+            PaletteAction(id: "loop-off",label: "取消单句循环",disabled: player.loop == nil ? "当前没有循环" : nil,run: { Task { await player.toggleLoop(nil) } }),
+            PaletteAction(id: "fullscreen",label: "全屏 / 退出全屏",hint: "F11",run: { let key = NSApplication.shared.keyWindow; (key?.sheetParent ?? key)?.toggleFullScreen(nil) }),
+            PaletteAction(id: "go-home",label: "打开 首页",hint: "继续听 · 今日 · 语料库",run: { app.section = .home }),
+            PaletteAction(id: "go-kwic",label: "打开 检索",hint: "KWIC",run: { app.section = .search }),
+            PaletteAction(id: "go-library",label: "打开 资料库",hint: "音乐人 · 专辑 · 歌曲",run: { app.section = .library }),
+            PaletteAction(id: "go-analytics",label: "打开 分析",run: { app.section = .analysis }),
+            PaletteAction(id: "go-import",label: "打开 导入",hint: "扫描目录并写入语料",run: { app.section = .importer }),
+            PaletteAction(id: "go-scrape",label: "打开 刮削",hint: "识别 · metadata · 封面",run: { app.section = .scrape }),
+            PaletteAction(id: "go-anki",label: "打开 Anki",hint: "用语料例句做卡片",run: { app.section = .anki }),
+            PaletteAction(id: "go-settings",label: "打开 设置",hint: "外观 · 歌词 · 词典 · 制卡",run: { app.section = .settings }),
+            PaletteAction(id: "search",label: "全局搜索…",hint: "⌘K",run: { query = ""; focused = true }),
+            PaletteAction(id: "backfill",label: "回填时长",hint: "扫描音频文件补 duration_sec",run: { Task {
+                guard await app.library.backfillDurations() else { app.errorMessage = app.library.errorMessage; return }
+                while app.library.job?.running == true {
+                    try? await Task.sleep(nanoseconds: 250_000_000); await app.library.pollJob()
+                }
+                if let error = app.library.errorMessage { app.errorMessage = error } else { app.notice = app.library.note; await app.reloadTracks() }
+            } })
+        ]
+    }
 
     private var groups: [(String, [QuickHit])] {
         guard let r = results else { return [] }
@@ -22,30 +53,37 @@ struct QuickSearchView: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜歌、专辑、歌手、词、歌词", text: $query)
+                TextField(commandMode ? "输入命令…" : "搜歌、专辑、人物、词、歌词（> 切到命令）", text: $query)
                     .textFieldStyle(.plain)
                     .font(.title3)
                     .focused($focused)
                     .onSubmit {
-                        if let first = groups.first?.1.first { pick(first) }
+                        execute(active)
                     }
             }
             .padding(14)
             Divider()
+            ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2, pinnedViews: []) {
-                    ForEach(groups, id: \.0) { title, hits in
-                        Text(title)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 14)
-                            .padding(.top, 10)
-                        ForEach(hits) { hit in
+                    if commandMode {
+                        ForEach(Array(visibleCommands.enumerated()),id: \.element.id) { i,c in
+                            Button { execute(i) } label: {
+                                HStack { Text(c.label); Spacer(); Text(c.disabled ?? c.hint).font(.caption).foregroundStyle(.secondary) }.padding(.vertical,4)
+                            }.buttonStyle(QuickRowStyle()).disabled(c.disabled != nil)
+                                .background(i == active ? Color.accentColor.opacity(0.16) : Color.clear).id(i)
+                                .onHover { if $0 { active = i } }
+                        }
+                        if visibleCommands.isEmpty { Text("没有匹配的命令").padding(20).foregroundStyle(.secondary) }
+                    } else {
+                        ForEach(Array(hits.enumerated()),id: \.element.id) { i,hit in
                             Button { pick(hit) } label: { row(hit) }
                                 .buttonStyle(QuickRowStyle())
+                                .background(i == active ? Color.accentColor.opacity(0.16) : Color.clear).id(i)
+                                .onHover { if $0 { active = i } }
                         }
                     }
-                    if results?.isEmpty == true {
+                    if !commandMode && results?.isEmpty == true && !busy {
                         Text("没有找到「\(query)」")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
@@ -55,28 +93,46 @@ struct QuickSearchView: View {
                 .padding(.vertical, 6)
             }
             .frame(height: 380)
+            .onChange(of: active) { _, value in proxy.scrollTo(value,anchor: .center) }
+            }
+            HStack { Text("↑↓ 选择 · Enter 执行 · Esc 关闭"); Spacer(); if busy { ProgressView().controlSize(.mini) } }.font(.caption).foregroundStyle(.secondary).padding(12)
         }
         .frame(width: 560)
         .background(GlassBackground(material: .popover))
         .onAppear {
             focused = true
+            if app.paletteCommands { query = ">"; app.paletteCommands = false }
             if !app.quickSearchSeed.isEmpty {
                 query = app.quickSearchSeed
                 app.quickSearchSeed = ""
             }
         }
         .onExitCommand { dismiss() }
+        .onKeyPress(.downArrow) { move(1); return .handled }
+        .onKeyPress(.upArrow) { move(-1); return .handled }
+        .onChange(of: query) { _, _ in active = 0 }
         .task(id: query) {
-            let q = query.trimmingCharacters(in: .whitespaces)
-            guard !q.isEmpty else {
+            let q = needle
+            guard !q.isEmpty && !commandMode else {
                 results = nil
+                busy = false
                 return
             }
             // 打字时别每个键都查
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            busy = true
+            try? await Task.sleep(nanoseconds: 140_000_000)
             guard !Task.isCancelled else { return }
-            results = try? await app.core?.quickSearch(q)
+            let fresh = try? await app.core?.quickSearch(q)
+            guard !Task.isCancelled else { return }
+            results = fresh; active = 0; busy = false
         }
+    }
+    private func move(_ delta: Int) { let count = commandMode ? visibleCommands.count : hits.count; active = count == 0 ? 0 : (active+delta+count)%count }
+    private func execute(_ index: Int) {
+        if commandMode {
+            guard visibleCommands.indices.contains(index) else { return }; let command = visibleCommands[index]
+            guard command.disabled == nil else { return }; if command.id != "search" { dismiss() }; command.run()
+        } else if hits.indices.contains(index) { pick(hits[index]) }
     }
 
     @ViewBuilder
@@ -131,6 +187,11 @@ struct QuickSearchView: View {
             app.showLyrics = true
         }
     }
+}
+
+@MainActor
+private struct PaletteAction: Identifiable {
+    var id: String; var label: String; var hint = ""; var disabled: String?; var run: () -> Void
 }
 
 private struct QuickRowStyle: ButtonStyle {

@@ -1,14 +1,18 @@
 import AppKit
 import JPCore
+import JPCorpusModel
 import SwiftUI
 
 /// One native text button per actual source unit. Masking expresses progress
 /// only inside that unit's own interval, never between units or by character.
 @MainActor
 struct TimedLyricText: View {
+    @Environment(AppModel.self) private var app
     let text: String
     let units: [LyricTimingUnit]
     let position: Double
+    var size: CGFloat = 15
+    var highlight: Color = .accentColor
     let seek: (LyricTimingUnit) -> Void
 
     var body: some View {
@@ -20,7 +24,7 @@ struct TimedLyricText: View {
                         .foregroundStyle(.secondary)
                         .overlay(alignment: .leading) {
                             Text(label)
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(highlight)
                                 .mask {
                                     GeometryReader { geometry in
                                         Rectangle()
@@ -38,7 +42,8 @@ struct TimedLyricText: View {
                 .accessibilityLabel("从「\(label)」开始播放")
             }
         }
-        .font(.system(size: 19, weight: .bold))
+        .font(lyricFont(app.lyricsDisplay, size: Double(size) * app.lyricsDisplay.fontSize / 15))
+        .kerning(app.lyricsDisplay.letterSpacing)
         .animation(nil, value: position)
     }
 }
