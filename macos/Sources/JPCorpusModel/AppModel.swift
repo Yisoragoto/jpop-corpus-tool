@@ -332,8 +332,10 @@ public final class AppModel {
     /// `queue` 是界面上这一组歌（专辑、歌手作品、曲库列表、检索结果），放完这首按顺序接着放
     public func play(songId: String, at: Double? = nil, source: String = "library", queue: [Track]? = nil) async {
         do {
-            let listed = queue?.first(where: { $0.id == songId })
-            guard let track = try await listed ?? self.track(songId) else { return }
+            // 不写成 `listed ?? await track(id)`：?? 的右边是不支持 async 的自动闭包
+            var found = queue?.first(where: { $0.id == songId })
+            if found == nil { found = try await self.track(songId) }
+            guard let track = found else { return }
             showLyrics = true
             await player.open(track, at: at, autoplay: true, source: source, queue: queue)
         } catch {
