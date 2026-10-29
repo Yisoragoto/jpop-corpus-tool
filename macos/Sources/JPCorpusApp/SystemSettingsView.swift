@@ -36,7 +36,12 @@ struct UpdateSettingsView: View {
                     .textSelection(.enabled)
             }
             if let status = updates.status {
-                Text(status.message.isEmpty ? (status.updateAvailable ? "有新版本 \(status.latest?.identity ?? "")" : "已经是最新版（\(status.current)）") : status.message).font(.caption)
+                let text = status.message.isEmpty ? (status.updateAvailable ? "有新版本 \(status.latest?.identity ?? "")" : "已经是最新版（\(status.current)）") : status.message
+                // 这次检查失败了：下面是更早那次成功检查的结果，标出来，别和这次的失败混在一起
+                let prefix = updates.statusIsStale
+                    ? "上次成功检查（\(updates.statusCheckedAt?.formatted(date: .abbreviated, time: .shortened) ?? "更早")）的结果："
+                    : ""
+                Text(prefix + text).font(.caption).foregroundStyle(updates.statusIsStale ? Color.secondary : Color.primary)
             }
             Text("有新版会先显示说明，由你选择前往官方发布页、稍后或跳过；在发布页下载新的 .dmg 覆盖安装，程序不会自动下载或执行文件。")
                 .font(.caption).foregroundStyle(.secondary)

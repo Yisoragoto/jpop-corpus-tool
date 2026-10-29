@@ -45,14 +45,18 @@ struct CloudSongPanel: View {
                 Button { play(s,fullscreen: true) } label: { CoverImage(path: app.tracks.first { $0.id == s.songId }?.coverPath ?? "",size: 40,cornerRadius: 6) }.buttonStyle(.plain).help("播放并进入全屏歌词")
                 Button { play(s) } label: {
                     VStack(alignment: .leading,spacing: 3) {
-                        Text(s.title).fontWeight(.medium); Text("\(s.artist) · \(s.count) 次\(start?.kind == "manual" ? " · 已校准" : "")").font(.caption).foregroundStyle(.secondary)
+                        Text(s.title).fontWeight(.medium); Text("\(s.artist) · \(s.count) 次 · \(WordTimingLogic.startLabel(start))").font(.caption).foregroundStyle(.secondary)
+                            .help(start?.kind == "line" ? "这一行没有这个词的时间，从行首开始放。可以校准词首" : "")
                         (Text(s.atStart ? "句首 · " : "")+Text(s.first.left)+Text(s.first.keyword).bold().foregroundColor(.accentColor)+Text(s.first.right)).font(.caption).lineLimit(3)
                     }.frame(maxWidth: .infinity,alignment: .leading)
                 }.buttonStyle(.plain)
                 Button { play(s) } label: { CloudPlayingIcon(songId: s.songId,startSec: start?.sec,endSec: s.first.endSec) }.buttonStyle(.borderless)
             }.contextMenu {
-                Button("从行首校准词首") { calibrating = s.songId; Task { await app.player.playFrom(songId: s.songId,utteranceId: s.first.utteranceId,timeSec: max(0,(s.first.timeSec ?? 0)-0.5),leadIn: 0) } }
+                Button("从行首校准词首") { beginCalibration(s) }
                 Button("歌曲详情") { app.show(.song(s.songId)) }
+            }
+            if calibrating != s.songId, start?.kind == "line", WordTimingLogic.validLyricTime(s.first.timeSec) {
+                Button("校准词首") { beginCalibration(s) }.buttonStyle(.borderless).font(.caption)
             }
             if calibrating == s.songId {
                 Button("听到「\(s.first.keyword)」时点这里") { calibrate(s) }
@@ -73,13 +77,27 @@ struct CloudSongPanel: View {
         let fresh = (try? await app.core?.wordTimings(model.cloudSongs.map { $0.first.utteranceId })) ?? []
         if !Task.isCancelled { timings = fresh }
     }
+    private func beginCalibration(_ s: SongHits) {
+        calibrating = s.songId
+        Task { await app.player.playFrom(songId: s.songId,utteranceId: s.first.utteranceId,timeSec: max(0,(s.first.timeSec ?? 0)-0.5),leadIn: 0) }
+    }
     private func calibrate(_ s: SongHits) {
-        guard app.player.track?.id == s.songId else { app.errorMessage = "现在放的不是这首，先从这一行放起来"; return }
-        set(s,at: max(0,app.player.position-WordTimingLogic.reactionSec))
+        let player = app.player
+        guard player.track?.id == s.songId else { app.errorMessage = "现在放的不是这首，先从这一行放起来"; return }
+        // 用引擎的实时时钟，不用界面上隔一拍才更新的位置
+        switch WordTimingLogic.calibration(s.first,playing: player.isPlaying,position: player.timingPosition,duration: player.duration) {
+        case .success(let at): set(s,at: at)
+        case .failure(let problem): app.errorMessage = problem.message
+        }
     }
     private func nudge(_ s: SongHits,_ delta: Double) {
         let start = WordTimingLogic.keywordSpan(s.first).start
-        if let manual = timings.first(where: { $0.utteranceId == s.first.utteranceId && $0.source == "manual" && $0.charStart == start }) { set(s,at: max(0,manual.startSec+delta)) }
+        guard let manual = timings.first(where: { $0.utteranceId == s.first.utteranceId && $0.source == "manual" && $0.charStart == start }) else { return }
+        let duration = app.player.track?.id == s.songId ? app.player.duration : nil
+        switch WordTimingLogic.nudged(s.first,from: manual.startSec,by: delta,duration: duration) {
+        case .success(let at): set(s,at: at)
+        case .failure(let problem): app.errorMessage = problem.message
+        }
     }
     private func set(_ s: SongHits,at: Double) {
         let span = WordTimingLogic.keywordSpan(s.first)

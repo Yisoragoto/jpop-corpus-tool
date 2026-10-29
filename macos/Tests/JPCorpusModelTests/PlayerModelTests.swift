@@ -70,7 +70,7 @@ final class PlayerModelTests: XCTestCase {
     }
 
     @MainActor
-    private func fixture() async throws -> (AppModel, FakePlaybackEngine, FakeCorpus, UserDefaults) {
+    private func fixture(openClient: (@Sendable (URL) async throws -> any CorpusCalling)? = nil) async throws -> (AppModel, FakePlaybackEngine, FakeCorpus, UserDefaults) {
         let suite = "PlayerModelTests-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
@@ -81,11 +81,99 @@ final class PlayerModelTests: XCTestCase {
         await corpus.respondToLyrics("listenWindow", json: #"{"songId":"001","startSec":1.8,"endSec":5,"focusUtteranceId":1,"focusStartSec":2,"focusEndSec":5,"utteranceIds":[1]}"#)
         await corpus.respondToLyrics("resolveMedia", json: #""/tmp/tone.flac""#)
         let engine = FakePlaybackEngine()
-        let app = AppModel(defaults: defaults, client: corpus, playbackEngine: engine)
+        let app = openClient.map { AppModel(defaults: defaults, client: corpus, playbackEngine: engine, openClient: $0) }
+            ?? AppModel(defaults: defaults, client: corpus, playbackEngine: engine)
         await app.player.open(try decoded(Track.self, trackJSON), autoplay: false)
         XCTAssertNil(app.player.lastError)
         XCTAssertTrue(app.player.canPlay)
         return (app, engine, corpus, defaults)
+    }
+
+    @MainActor
+    private func waitParked(_ corpus: FakeCorpus, _ key: String) async {
+        for _ in 0..<1000 where !(await corpus.isParked(key)) { await Task.yield() }
+    }
+
+    /// 连点两条试听：先点的那条慢，不能在后点的那首上设停止点、也不能把歌换回去
+    @MainActor
+    func testSlowAuditionCannotTakeOverTheLaterOne() async throws {
+        let (app, _, corpus, _) = try await fixture()
+        let second = trackJSON.replacingOccurrences(of: #""id":"001""#, with: #""id":"002""#).replacingOccurrences(of: "tone.flac", with: "two.flac")
+        await corpus.respondToLyrics("track:002", json: second)
+        await corpus.respondToLyrics("resolveMedia:two.flac", json: #""/tmp/two.flac""#)
+        await corpus.respondToLyrics("listenWindow:7,0,0", json: #"{"songId":"002","startSec":10,"endSec":12,"focusUtteranceId":7,"focusStartSec":10,"focusEndSec":12,"utteranceIds":[7]}"#)
+
+        // 旧请求卡在查试听窗口
+        await corpus.hold("listenWindow:7,0,0")
+        let slowWindow = Task { await app.player.audition(7) }
+        await waitParked(corpus, "listenWindow:7,0,0")
+        await app.player.audition(1)
+        await corpus.release("listenWindow:7,0,0")
+        await slowWindow.value
+        XCTAssertEqual(app.player.track?.id, "001")
+        XCTAssertEqual(app.player.stopAt, 5)
+        XCTAssertTrue(app.player.isPlaying)
+
+        // 旧请求卡在加载音频
+        await corpus.hold("resolveMedia:two.flac")
+        let slowLoad = Task { await app.player.audition(7) }
+        await waitParked(corpus, "resolveMedia:two.flac")
+        await app.player.audition(1)
+        await corpus.release("resolveMedia:two.flac")
+        await slowLoad.value
+        XCTAssertEqual(app.player.track?.id, "001")
+        XCTAssertEqual(app.player.stopAt, 5, "旧请求的停止点（12 秒）不能套到这首上")
+        XCTAssertTrue(app.player.isPlaying)
+
+        // 被顶掉的加载要告诉调用方
+        await corpus.hold("resolveMedia:two.flac")
+        let superseded = Task { await app.player.open(try decoded(Track.self, second), autoplay: true) }
+        await waitParked(corpus, "resolveMedia:two.flac")
+        let current = await app.player.open(try decoded(Track.self, trackJSON), autoplay: false)
+        await corpus.release("resolveMedia:two.flac")
+        let stale = try await superseded.value
+        XCTAssertTrue(current)
+        XCTAssertFalse(stale)
+        XCTAssertEqual(app.player.track?.id, "001")
+    }
+
+    /// 换库：旧库这首的收听记回旧库，播放器清空，新库里一笔都不写
+    @MainActor
+    func testSwitchingLibraryKeepsHistoryInTheOldLibraryAndClearsThePlayer() async throws {
+        let other = FakeCorpus()
+        let (app, engine, corpus, _) = try await fixture(openClient: { _ in other })
+        app.player.play()
+        for i in 0...30 { engine.emit(Double(i) / 10) }
+        app.libraryPath = [.song("001")]
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("switch-\(UUID())", isDirectory: true)
+        await app.createOrOpen(folder: folder)
+        XCTAssertNil(app.errorMessage)
+        XCTAssertTrue(app.client === other)
+        let old = await corpus.recordedPlays
+        XCTAssertEqual(old.count, 1)
+        XCTAssertEqual(old.first?.songId, "001")
+        XCTAssertNil(app.player.track)
+        XCTAssertTrue(app.player.queue.isEmpty)
+        XCTAssertFalse(engine.isLoaded)
+        XCTAssertTrue(app.libraryPath.isEmpty, "详情页的歌曲 id 是旧库的")
+        app.player.pause()
+        for _ in 0..<5 { await Task.yield() }
+        let new = await other.recordedPlays
+        XCTAssertTrue(new.isEmpty)
+    }
+
+    /// 旧库还在导入：不让换库，播放器也不动
+    @MainActor
+    func testSwitchingLibraryIsRefusedWhileAnImportRuns() async throws {
+        let other = FakeCorpus()
+        let (app, _, corpus, _) = try await fixture(openClient: { _ in other })
+        await corpus.setImportRunning(true)
+        await app.createOrOpen(folder: FileManager.default.temporaryDirectory.appendingPathComponent("busy-\(UUID())", isDirectory: true))
+        XCTAssertTrue(app.client === corpus)
+        XCTAssertTrue(app.errorMessage?.contains("导入") == true)
+        XCTAssertEqual(app.player.track?.id, "001")
+        let jobs = await app.runningJobs()
+        XCTAssertEqual(jobs, ["导入"])
     }
 
     @MainActor

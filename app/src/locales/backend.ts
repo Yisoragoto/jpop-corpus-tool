@@ -508,6 +508,8 @@ export const backendEn: Record<string, string> = {
   "位置不对：{0}..{1}": "Invalid position: {0}..{1}",
   "找不到这一行歌词（{0}），可能歌词刚换过": "Lyric line ({0}) not found; the lyrics may have just been replaced",
   "位置超出这一行：{0} > {1}": "Position past the end of the line: {0} > {1}",
+  "校准时间 {0} 秒早于这一行的开始（{1} 秒）": "Calibration time {0} s is before this line starts ({1} s)",
+  "校准时间 {0} 秒已经过了这一行（{1} 秒结束）": "Calibration time {0} s is past this line (it ends at {1} s)",
 
   // jp-dict
   "读不了目录 {0}": "Couldn't read folder {0}",

@@ -249,15 +249,44 @@ public final class AppModel {
         await createOrOpen(folder: folder)
     }
 
+    /// 当前库里还在跑的长任务（导入、下载分词词典、导入词典、刮削、补歌词、曲库维护、Anki 制卡）。
+    /// 这些任务绑在旧库上，换库后界面就看不到它们的进度、也停不下来，完成后的刷新还会落到新库上，
+    /// 所以有任务在跑时不让换库
+    public func runningJobs() async -> [String] {
+        guard let client else { return [] }
+        var names: [String] = []
+        if importer.scanning { names.append("扫描导入文件") }
+        if importer.importing || (try? await client.importProgress())?.running == true { names.append("导入") }
+        if importer.downloading || (try? await client.tokenizerProgress())?.running == true { names.append("下载分词词典") }
+        if let core {
+            if (try? await core.dictImportProgress())?.running == true { names.append("导入词典") }
+            if (try? await core.scrapeProgress())?.running == true { names.append("刮削") }
+            if (try? await core.lyricsFillProgress())?.running == true { names.append("补逐字歌词") }
+            if (try? await core.libraryProgress())?.running == true { names.append("曲库维护") }
+            if (try? await core.ankiProgress())?.running == true { names.append("Anki 制卡") }
+        }
+        return names
+    }
+
     /// Explicit create-or-open semantics, used for the default folder and confirmed custom folders.
     public func createOrOpen(folder: URL) async {
         errorMessage = nil
+        if let blocked = await switchBlocked() {
+            errorMessage = blocked
+            return
+        }
         let access = folder.startAccessingSecurityScopedResource()
         defer { if access { folder.stopAccessingSecurityScopedResource() } }
         do {
             let next = try await openClient(folder.appendingPathComponent("corpus.db"))
             try await next.setAudioRoots(audioRoots)
             let fetched = try await next.tracks()
+            // 打开新库要几秒：这期间开始的任务也要拦
+            if let blocked = await switchBlocked() {
+                errorMessage = blocked
+                return
+            }
+            if client != nil { await detachLibrary() }
             client = next
             updates.client = next as? any UpdateCalling
             library = LibraryModel(client: next as? any LibraryCalling, defaults: defaults)
@@ -270,6 +299,24 @@ public final class AppModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func switchBlocked() async -> String? {
+        let jobs = await runningJobs()
+        guard !jobs.isEmpty else { return nil }
+        return "「\(jobs.joined(separator: "、"))」还在进行，它属于当前这个库。等它完成或先停止，再切换语料库。"
+    }
+
+    /// 换库前把旧库留在界面上的东西清掉：播放器（历史先记回旧库）、详情页的导航栈、
+    /// 检索 / 分析的请求、振假名。它们里面的歌曲 id、行 id 都是旧库的
+    private func detachLibrary() async {
+        await player.detachLibrary()
+        showStage = false
+        libraryPath = []
+        analysisScope = nil
+        searchRequest = nil
+        furigana = [:]
+        furiganaError = nil
     }
 
     public func openDemo() async {
@@ -311,10 +358,14 @@ public final class AppModel {
         furigana = [:]
         furiganaError = nil
         guard showFurigana, let songId = player.track?.id, let core else { return }
+        let mode = furiganaMode
         do {
-            let lines = try await core.lyricsFurigana(songId, mode: furiganaMode)
+            let lines = try await core.lyricsFurigana(songId, mode: mode)
+            // 快速换歌时旧请求可能后到：别拿上一首的注音盖掉这一首的
+            guard showFurigana, player.track?.id == songId, furiganaMode == mode, self.core === core else { return }
             furigana = Dictionary(lines.map { ($0.utteranceId, $0.rubies) }, uniquingKeysWith: { a, _ in a })
         } catch {
+            guard player.track?.id == songId, self.core === core else { return }
             furiganaError = error.localizedDescription
         }
     }

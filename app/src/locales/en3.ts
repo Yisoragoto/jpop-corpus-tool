@@ -177,6 +177,7 @@ export const en3: Record<string, string> = {
   "这组筛选下没有词": "No words match these filters",
   "词性颜色": "Part-of-speech colors",
   "现在放的不是这首，先点「校准」从这一行放起来": "A different song is playing. Start calibration on this line first",
+  "先从这一行放起来，听到这个词时再点": "Play this line first, then click when you hear the word",
   "「{lemma}」出现的歌": "Songs with “{lemma}”",
   "出现 {total} 次 · {length} 首歌{v}": "{total}× · {length} {length|song|songs}{v}",
   "（只查了前 {KWIC_LIMIT} 行）": " (first {KWIC_LIMIT} lines only)",

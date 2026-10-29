@@ -90,8 +90,12 @@ public final class PlayerModel {
     private var source = "library"
     private var loadSequence: UInt64 = 0
     private var seekSequence: UInt64 = 0
+    /// 用户最近一次「放什么」的请求。试听、从某行放这类先查一圈再加载的操作，
+    /// 每次 await 回来都要确认自己还是最新的那次，不然慢的旧请求会把停止点、播放状态套到新歌上
+    private var intentSequence: UInt64 = 0
     private var loadingLyrics = false
-    private var loadedClientID: ObjectIdentifier?
+    /// 当前这首来自哪个库。播放历史只记回这个库：换库后新库里同 id 的歌不是这一首
+    private var loadedClient: (any CorpusCalling)?
 
     public init(engine: (any PlaybackEngine)? = nil, defaults: UserDefaults = .standard) {
         let audio = engine ?? NativePlaybackEngine()
@@ -200,14 +204,22 @@ public final class PlayerModel {
 
     /// 打开一首歌。`at` 有值就跳过去，`autoplay` 决定放不放。
     /// `queue` 有值就换成这组歌（应当包含 `track`）；没给时，这首在现有队列里就只挪位置，不在就只剩它一首
+    /// 返回 true 表示这首加载好了、请求没被后来的顶掉，可以放
+    @discardableResult
     public func open(_ track: Track, at: Double? = nil, autoplay: Bool = true, focus: Int64? = nil,
-                     source: String = "library", queue newQueue: [Track]? = nil) async {
-        guard let client = app?.client else { return }
+                     source: String = "library", queue newQueue: [Track]? = nil) async -> Bool {
+        intentSequence &+= 1
+        return await load(track, at: at, autoplay: autoplay, focus: focus, source: source, queue: newQueue)
+    }
+
+    private func load(_ track: Track, at: Double?, autoplay: Bool, focus: Int64?,
+                      source: String, queue newQueue: [Track]?) async -> Bool {
+        guard let client = app?.client else { return false }
         placeInQueue(track, newQueue)
         loadSequence &+= 1
         let request = loadSequence
         defer { if request == loadSequence { loadingLyrics = false } }
-        if self.track?.id != track.id || loadingLyrics || loadedClientID != ObjectIdentifier(client) || !engine.isLoaded {
+        if self.track?.id != track.id || loadingLyrics || loadedClient !== client || !engine.isLoaded {
             flushHistory()
             loadingLyrics = true
             lastError = nil
@@ -227,30 +239,31 @@ public final class PlayerModel {
                 async let s = client.lineSpans(track.id)
                 async let t = try? client.lyricTimeline(track.id)
                 let (fetchedLines, fetchedSpans, fetchedTimelines) = try await (l, s, t)
-                guard request == loadSequence, app?.client === client else { return }
+                guard request == loadSequence, app?.client === client else { return false }
                 lines = fetchedLines
                 spans = Dictionary(uniqueKeysWithValues: fetchedSpans.map { ($0.utteranceId, $0) })
                 timelines = Dictionary((fetchedTimelines ?? []).map { ($0.utteranceId, $0) }, uniquingKeysWith: { first, _ in first })
             } catch {
-                guard request == loadSequence, app?.client === client else { return }
+                guard request == loadSequence, app?.client === client else { return false }
                 lastError = error.localizedDescription
                 lines = []
                 spans = [:]
                 timelines = [:]
             }
             let path = try? await client.resolveMedia(track.audioPath)
-            guard request == loadSequence, app?.client === client else { return }
+            guard request == loadSequence, app?.client === client else { return false }
             guard let path else {
                 self.track = track
+                loadedClient = client
                 engine.unload()
                 canPlay = false
                 isPlaying = false
                 lastError = "找不到《\(track.title)》的音频：\(track.audioPath)。可以在设置里添加音频所在的文件夹。"
                 focusUtterance = focus
-                return
+                return false
             }
             self.track = track
-            loadedClientID = ObjectIdentifier(client)
+            loadedClient = client
             loop = nil
             stopAt = nil
             listened = 0
@@ -261,32 +274,40 @@ public final class PlayerModel {
             } catch {
                 engine.unload()
                 canPlay = false
-                loadedClientID = nil
                 lastError = "无法播放《\(track.title)》：\(error.localizedDescription)"
-                return
+                return false
             }
         }
         self.source = source
         focusUtterance = focus
         if let at { await seek(to: at) }
-        guard request == loadSequence, app?.client === client else { return }
+        guard request == loadSequence, app?.client === client, engine.isLoaded else { return false }
         if autoplay { play() }
+        return true
     }
 
     /// 检索结果的「试听」：加载那首歌、从窗口起点放、到窗口终点自动停
     public func audition(_ utteranceId: Int64, before: Int = 0, after: Int = 0) async {
         guard let client = app?.client else { return }
+        intentSequence &+= 1
+        let intent = intentSequence
         do {
-            guard let window = try await client.listenWindow(utteranceId, before: before, after: after) else {
+            let window = try await client.listenWindow(utteranceId, before: before, after: after)
+            guard intent == intentSequence, app?.client === client else { return }
+            guard let window else {
                 lastError = "这一行没有时间戳，没法定位到音频"
                 return
             }
-            guard let track = try await app?.track(window.songId) else { return }
-            await open(track, at: window.startSec, autoplay: false, focus: utteranceId, source: "search")
+            let found = try await app?.track(window.songId)
+            guard intent == intentSequence, app?.client === client, let track = found else { return }
+            let ready = await load(track, at: window.startSec, autoplay: false, focus: utteranceId, source: "search", queue: nil)
+            // 加载期间又点了别的：停止点和播放都让给后来的那次
+            guard ready, intent == intentSequence, self.track?.id == window.songId else { return }
             loop = nil
             stopAt = window.endSec
             play()
         } catch {
+            guard intent == intentSequence else { return }
             lastError = error.localizedDescription
         }
     }
@@ -294,9 +315,14 @@ public final class PlayerModel {
     /// 从某一行接着往下放（不停）。KWIC 里双击 / 回车就是这个
     /// `queue` 是检索结果里的那组歌：这首放完接着放结果里的下一首
     public func playFrom(songId: String, utteranceId: Int64, timeSec: Double?, leadIn: Double = 0.4, queue: [Track]? = nil) async {
-        guard let track = try? await app?.track(songId) else { return }
+        intentSequence &+= 1
+        let intent = intentSequence
+        let client = app?.client
+        let found = try? await app?.track(songId)
+        guard intent == intentSequence, app?.client === client, let track = found else { return }
         let start = timeSec.map { max(0, $0 - leadIn) }
-        await open(track, at: start, autoplay: timeSec != nil, focus: utteranceId, source: "search", queue: queue)
+        let ready = await load(track, at: start, autoplay: timeSec != nil, focus: utteranceId, source: "search", queue: queue)
+        guard ready, intent == intentSequence else { return }
         stopAt = nil
     }
 
@@ -529,7 +555,7 @@ public final class PlayerModel {
         if track?.id == songId {
             pause(); engine.unload(); track = nil; lines = []; isPlaying = false; loadSequence += 1
             canPlay = false; setPosition(0); duration = 0; loop = nil; stopAt = nil; focusUtterance = nil
-            spans = [:]; timelines = [:]; loadedClientID = nil
+            spans = [:]; timelines = [:]; loadedClient = nil
         }
         // 删掉的歌也从队列里拿掉，当前这首的位置跟着挪
         if let removed = queue.firstIndex(where: { $0.id == songId }) {
@@ -558,9 +584,28 @@ public final class PlayerModel {
         await historyWrite?.value
     }
 
-    /// 记下的 client 是写入那一刻的库：换库之后，旧库的收听仍记回旧库
+    /// 换库前调：旧库这首的收听记回旧库并等写完，然后把播放器清空。
+    /// 曲目、歌词行、队列里的 id 都是旧库的，留着会在新库里查错歌、写错历史
+    public func detachLibrary() async {
+        pause()
+        await historyWrite?.value
+        historyWrite = nil
+        intentSequence &+= 1
+        loadSequence &+= 1
+        engine.unload()
+        track = nil
+        loadedClient = nil
+        lines = []; spans = [:]; timelines = [:]
+        queue = []; queueIndex = nil
+        canPlay = false; isPlaying = false; duration = 0; setPosition(0)
+        loop = nil; stopAt = nil; focusUtterance = nil
+        listened = 0; lastTick = nil; lastError = nil
+        loadingLyrics = false
+    }
+
+    /// 写进这首歌所属的那个库（`loadedClient`），不是写入那一刻的 `app.client`
     private func flushHistory(completed: Bool = false) {
-        guard let track, listened >= 2, let client = app?.client else { return }
+        guard let track, listened >= 2, let client = loadedClient else { return }
         let event = PlayEvent(songId: track.id, listenedSec: listened, positionSec: position, completed: completed, source: source)
         listened = 0
         let previous = historyWrite
