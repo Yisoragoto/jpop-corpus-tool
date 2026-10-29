@@ -4,7 +4,7 @@
  * 以前是一整页竖着堆十张卡，筛选条吸顶浮在内容上，往下滚就和表头叠在一起。现在：
  *
  * - **范围条**（`ScopeBar`）是页面的一部分，不浮动；每一页都按它圈出的歌算；
- * - **分页**：概览 · 词表 · 词簇 · 丰富度 · 对比 · 报告 · 记录。一页一个工具，表格占满高度、
+ * - **分页**：概览 · 词表 · 词簇 · 活用·写法 · 丰富度 · 对比 · 报告 · 记录。一页一个工具，表格占满高度、
  *   跟着页面滚，表头吸在顶上，不再套一个 560px 的小滚动框；
  * - 选了哪一页记住（`jp.analytics.tab`）；页第一次打开才挂载，之后切走也保留状态（对比填好的两边不丢）。
  *
@@ -34,6 +34,7 @@ import {
 import { AnalysisRuns } from "../components/AnalysisRuns";
 import { KeynessCard, RepeatEffectCard } from "../components/CorpusCompare";
 import { LexicalCard } from "../components/LexicalCard";
+import { InflectionCard, OrthographyCard } from "../components/MorphologyCards";
 import { NgramCard } from "../components/NgramCard";
 import { QualityCard } from "../components/QualityCard";
 import { saveCsv } from "../components/saveCsv";
@@ -67,12 +68,13 @@ const SORT_UP: Record<FreqSort, boolean> = { freq: false, songs: false, dp: true
 
 const dispersionKey = (lemma: string, pos: string) => `${pos}\u{1f}${lemma}`;
 
-type Tab = "overview" | "words" | "ngrams" | "richness" | "compare" | "report" | "runs";
+type Tab = "overview" | "words" | "ngrams" | "morph" | "richness" | "compare" | "report" | "runs";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: tr("概览") },
   { key: "words", label: tr("词表") },
   { key: "ngrams", label: tr("词簇") },
+  { key: "morph", label: tr("活用·写法") },
   { key: "richness", label: tr("丰富度") },
   { key: "compare", label: tr("对比") },
   { key: "report", label: tr("报告") },
@@ -108,6 +110,8 @@ interface Props {
   onSearchWord: (lemma: string) => void;
   /** 跳到检索页查一个多词表达（`A+B+C`），按 field 匹配 */
   onSearchPhrase: (phrase: string, field: MatchField) => void;
+  /** 跳到检索页，按词元查一个词的某种活用形 */
+  onSearchInflected: (lemma: string, cform: string) => void;
   /** 词云在资料库里：点了跳过去 */
   onOpenCloud: () => void;
   onError: (message: string) => void;
@@ -122,6 +126,7 @@ export function AnalyticsPage({
   onNavigate,
   onSearchWord,
   onSearchPhrase,
+  onSearchInflected,
   onOpenCloud,
   onError,
 }: Props) {
@@ -383,6 +388,13 @@ export function AnalyticsPage({
       {visited.has("ngrams") && (
         <div className="analytics-tab" hidden={show("ngrams")}>
           <NgramCard filter={filter} onSearchPhrase={onSearchPhrase} onError={onError} />
+        </div>
+      )}
+
+      {visited.has("morph") && (
+        <div className="analytics-tab" hidden={show("morph")}>
+          <InflectionCard filter={filter} onSearchInflected={onSearchInflected} onError={onError} />
+          <OrthographyCard filter={filter} onSearch={onSearchPhrase} onError={onError} />
         </div>
       )}
 

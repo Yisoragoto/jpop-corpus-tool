@@ -40,6 +40,8 @@ struct Tok {
     surface: String,
     lemma: String,
     pos: String,
+    reading: String,
+    normalized: String,
 }
 
 impl Tok {
@@ -47,22 +49,24 @@ impl Tok {
         match field {
             MatchField::Surface => &self.surface,
             MatchField::Lemma => &self.lemma,
+            MatchField::Reading => &self.reading,
+            MatchField::Normalized => &self.normalized,
         }
     }
 }
 
 /// 关键词拆成模式：`A B` / `A|B` 是多个候选（在前端拆好），`A+B` 是**连续的多个词**——
 /// 「て+しまう」「なんて+ない」这类表达。`+` 两边按同一个字段（表层 / 词元）匹配。
-fn patterns(keywords: &[String]) -> Vec<Vec<String>> {
+fn patterns(keywords: &[String], field: MatchField) -> Vec<Vec<String>> {
     keywords
         .iter()
-        .map(|k| k.split('+').map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned).collect::<Vec<_>>())
+        .map(|k| k.split('+').map(str::trim).filter(|p| !p.is_empty()).map(|p| field.normalize_query(p)).collect::<Vec<_>>())
         .filter(|p| !p.is_empty())
         .collect()
 }
 
 pub(crate) fn kwic(conn: &Connection, query: &KwicQuery) -> Result<Vec<KwicHit>> {
-    let patterns = patterns(&query.keywords);
+    let patterns = patterns(&query.keywords, query.field);
     if patterns.is_empty() {
         return Ok(Vec::new());
     }
@@ -232,6 +236,11 @@ fn fetch_hits(conn: &Connection, query: &KwicQuery, patterns: &[Vec<String>], ra
         wheres.push_str(" AND t.pos = ?");
         params.push(Value::from(pos.to_string()));
     }
+    if let Some(cform) = query.cform.as_deref().map(str::trim).filter(|c| !c.is_empty() && single) {
+        wheres.push_str(" AND t.cform LIKE ? ESCAPE '\\'");
+        let escaped = cform.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        params.push(Value::from(format!("{escaped}%")));
+    }
     if !query.person_ids.is_empty() {
         // 走 track_credits 的索引，而不是对 songs.artist 做 LIKE 扫描
         wheres.push_str(&format!(
@@ -301,13 +310,16 @@ fn fetch_tokens(conn: &Connection, utterance_ids: &[i64]) -> Result<HashMap<i64,
     // SQLite 默认变量上限 999，分批取
     for chunk in utterance_ids.chunks(900) {
         let sql = format!(
-            "SELECT utterance_id, surface, lemma, COALESCE(pos,'') FROM tokens \
+            "SELECT utterance_id, surface, lemma, COALESCE(pos,''), COALESCE(reading,''), COALESCE(normalized,'') FROM tokens \
              WHERE utterance_id IN ({}) ORDER BY utterance_id, token_idx",
             placeholders(chunk.len())
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params_from_iter(chunk.iter()), |row| {
-            Ok((row.get::<_, i64>(0)?, Tok { surface: row.get(1)?, lemma: row.get(2)?, pos: row.get(3)? }))
+            Ok((
+                row.get::<_, i64>(0)?,
+                Tok { surface: row.get(1)?, lemma: row.get(2)?, pos: row.get(3)?, reading: row.get(4)?, normalized: row.get(5)? },
+            ))
         })?;
         for row in rows {
             let (id, tok) = row?;

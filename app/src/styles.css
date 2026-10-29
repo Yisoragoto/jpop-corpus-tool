@@ -13,6 +13,7 @@
   --script-katakana: #ffb86b;
   --script-latin: #c79bff;
   --script-other: #8a8a96;
+  --script-kana: #f2d36b;
 
   /* 窗口背后是系统亚克力（tauri.conf.json 的 windowEffects），这几层只是压一点暗保证字看得清。
      原来整个窗口先铺 72% 再在顶栏、播放条上叠 55%，叠起来接近不透明，毛玻璃完全透不上来。
@@ -1130,6 +1131,42 @@ button.kpi:hover { background: var(--panel-2); }
 .ov-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); opacity: .85; }
 .ov-bar.warn > span { background: var(--warn); }
 .analytics .cloud-moved { margin-top: 8px; }
+
+/* 活用·写法 */
+.morph-pending { margin: 0 0 10px; padding: 8px 12px; border-radius: 6px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.coarse-bar { display: flex; height: 26px; margin: 4px 0 6px; border-radius: 6px; overflow: hidden; font-size: 11.5px; }
+.coarse-seg {
+  display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; padding: 0 6px;
+  white-space: nowrap; overflow: hidden; color: var(--accent-ink);
+}
+.coarse-seg b { font-weight: 600; }
+.coarse-seg.c0 { background: var(--script-kanji); }
+.coarse-seg.c1 { background: var(--script-hiragana); }
+.coarse-seg.c2 { background: var(--script-katakana); }
+.coarse-seg.c3 { background: var(--script-latin); }
+.coarse-seg.c4 { background: var(--script-kana); }
+.coarse-seg.c5, .coarse-seg.c6, .coarse-seg.c7 { background: var(--script-other); }
+.cform-name { white-space: nowrap; font-size: 13.5px; }
+.chip-cell { display: flex; flex-wrap: wrap; gap: 4px; padding-block: 5px; }
+.chip-cell .chip { font-size: 12.5px; }
+.w-kanji { background: var(--script-kanji); }
+.w-hiragana { background: var(--script-hiragana); }
+.w-katakana { background: var(--script-katakana); }
+.w-kana { background: var(--script-kana); }
+.w-other { background: var(--script-other); }
+.variant-head { font-size: 15px; font-weight: 600; }
+.variant-col { min-width: 280px; }
+.variant-bar { display: flex; height: 6px; width: 100%; max-width: 260px; border-radius: 3px; overflow: hidden; margin: 2px 0 6px; }
+.variant-bar i { display: block; min-width: 2px; }
+.variant-forms { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.variant-form { display: inline-flex; align-items: baseline; gap: 4px; padding: 0; font-size: 14px; }
+.variant-form:hover { text-decoration: underline; }
+.variant-form .muted { font-size: 11.5px; }
+.w-kanji-text { color: var(--script-kanji); }
+.w-hiragana-text { color: var(--script-hiragana); }
+.w-katakana-text { color: var(--script-katakana); }
+.w-kana-text { color: var(--script-kana); }
+.w-other-text { color: var(--fg); }
 
 .table-wrap { max-height: 560px; overflow-y: auto; margin-top: 10px; border-top: 1px solid var(--line); }
 .stale { opacity: .55; transition: opacity .15s; }

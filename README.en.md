@@ -192,6 +192,8 @@ Counted naively, a good part of a frequency list is chorus. So every statistic o
   showing whether a word is spread through a song or packed into its chorus.
 - **Collocations**: logDice, MI, MI3, t-score, z-score, log-likelihood and ΔP in both directions.
 - **N-grams**: fixed sequences of 2–5 words that never cross a line break or punctuation, with a minimum number of songs.
+- **Conjugation and spelling**: conjugation forms (click a word to search it in that form) and spelling variants of the
+  same word (君 / きみ / キミ); concordance search can match by reading or normalized form.
 - **Chorus effect**: the same songs counted both ways, showing which words were pushed up the list by choruses.
 - **Sub-corpus comparison**: pick two sets of songs (one artist against the rest, the 2010s against the 2020s…) and
   find the words one side uses markedly more or less, by signed log-likelihood and Log Ratio; filter by p-value,
@@ -436,8 +438,15 @@ analyses follow standard practice in corpus linguistics. What follows is how the
 
 **Corpus and annotation.** Each song's lyrics are stored line by line and tokenised with Sudachi (split mode C);
 UniDic parts of speech are mapped to [Universal Dependencies UPOS](https://universaldependencies.org/u/pos/), and
-the lemma is Sudachi's dictionary form. Tokenisation you correct by hand is stored separately and re-applied by text
-after re-tokenisation.
+the lemma is Sudachi's dictionary form. Each token also keeps Japanese morphology: detailed part of speech,
+conjugation type and form, reading and normalized form (キミ → 君, 逢う → 会う); after an upgrade, existing tokens are
+annotated in the background by aligning to the original text, without changing their segmentation or POS.
+Tokenisation you correct by hand is stored separately and re-applied by text after re-tokenisation.
+
+**Conjugation and spelling.** Inflecting words are counted by conjugation form (imperative, volitional…), and
+concordance search can filter by form. Spellings of the same word (君 / きみ / キミ) are grouped by normalized form;
+all-kana spellings join the kanji spelling with the same reading and part of speech, and potential verbs (行ける) are
+kept apart from their base verbs (行く) by conjugation type. Search can also match by reading or normalized form.
 
 **Concordancing.** The KWIC (Key Word in Context) line is the basic form of corpus retrieval (Sinclair 1991): the
 keyword centred, its context to either side. Matching is by written form or by lemma, with multi-word sequences and

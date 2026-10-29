@@ -32,7 +32,7 @@ use rusqlite::Connection;
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///
 /// 格式是 `YYYYMMDD`：单调递增，一眼看得出先后。
-pub const CURRENT: i64 = 20_261_022;
+pub const CURRENT: i64 = 20_261_029;
 
 /// 一步迁移里的一个改动。
 enum Change {
@@ -167,6 +167,19 @@ const STEPS: &[Step] = &[
             Change::AddColumn { table: "lyric_versions", column: "sync_granularity", ddl: "TEXT NOT NULL DEFAULT 'unknown'" },
             Change::AddColumn { table: "lyric_versions", column: "timing_origin", ddl: "TEXT NOT NULL DEFAULT 'unknown'" },
             Change::AddColumn { table: "lyric_versions", column: "timing_validation_json", ddl: "TEXT NOT NULL DEFAULT '{}'" },
+        ],
+    },
+    Step {
+        version: 20_261_029,
+        what: "词的日语形态信息：细分词性、活用型、活用形、读音、正规化表记（语料分析第二阶段）",
+        // 只加空列；两条索引（normalized、reading）由随后的 schema.sql 建。存量的值由 jp-import 的 `annotate` 按原文重新分析后对齐填进去——
+        // 那是改数据，不归迁移管；已有的 surface / lemma / pos 一个字不动
+        changes: &[
+            Change::AddColumn { table: "tokens", column: "pos_ja", ddl: "TEXT" },
+            Change::AddColumn { table: "tokens", column: "ctype", ddl: "TEXT" },
+            Change::AddColumn { table: "tokens", column: "cform", ddl: "TEXT" },
+            Change::AddColumn { table: "tokens", column: "reading", ddl: "TEXT" },
+            Change::AddColumn { table: "tokens", column: "normalized", ddl: "TEXT" },
         ],
     },
 ];
@@ -360,6 +373,7 @@ mod tests {
                 "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
                 "歌曲与专辑的外部身份、音频指纹和厂牌来源",
                 "歌词原始格式、同步粒度、时间来源和验证报告",
+                "词的日语形态信息：细分词性、活用型、活用形、读音、正规化表记（语料分析第二阶段）",
             ]
         );
 
@@ -443,7 +457,8 @@ mod tests {
                 "歌词版本、分词器、修订历史、字段来源、分析记录（语料质量与来源追踪）",
                 "词级时间 word_timings（逐字歌词、从关键词开始放、手动校准）",
                 "歌曲与专辑的外部身份、音频指纹和厂牌来源",
-                "歌词原始格式、同步粒度、时间来源和验证报告"
+                "歌词原始格式、同步粒度、时间来源和验证报告",
+                "词的日语形态信息：细分词性、活用型、活用形、读音、正规化表记（语料分析第二阶段）"
             ],
             "没戳过就得把每一步都重跑一遍"
         );

@@ -84,8 +84,9 @@ songs(id, audio_path, duration_sec, year, album_id …)
   联网的都单开一条连接，不占会话那条。振假名 `lyricsFurigana`（同 Tauri 的 `lyrics_furigana`，现场用 Sudachi 取读音、不入库）。
 - 统计量：搭配有 logDice、MI、MI3、t、z、对数似然、双向 ΔP（2×2 表，期望值按实际窗口位置数算）；对比用带符号的对数似然和 log ratio（零频 0.5 平滑），
   另给 p 值（自由度 1 的卡方）、BIC、%DIFF，可按 p 阈值筛、可做 Bonferroni 校正。词频和 N-gram 带离散度（DP、DPnorm、Juilland D、ARF，
-  以歌为部分）。`jp-ffi` 另有 `ngrams`（N-gram，不跨行不跨标点）和 `lexicalProfile`（整体 / 每位演唱者 / 每首歌的 MATTR、MTLD、Yule's K
-  和文字种比例，`jp_corpus::lexical`）。KWIC 命中多了 `leftWords` / `rightWords`（排序用）和 `linePos` / `songLines`（分布图用）。
+  以歌为部分）。`jp-ffi` 另有 `inflection`（活用形分布）、`orthography`（表记变体，`jp_corpus::morphology`），`ngrams`（N-gram，不跨行不跨标点）和 `lexicalProfile`（整体 / 每位演唱者 / 每首歌的 MATTR、MTLD、Yule's K
+  和文字种比例，`jp_corpus::lexical`）。KWIC 命中多了 `leftWords` / `rightWords`（排序用）和 `linePos` / `songLines`（分布图用）；`MatchField` 多了
+  `reading`（读音，输入的平假名换成片假名）和 `normalized`（正规化表记），`KwicQuery.cform` 按活用形前缀筛选。
   这些指标都和 `scripts/analysis_reconcile.py` 的独立实现在真实库上逐项对过（`jp-corpus/examples/analysis_dump.rs` 出数据）。
 
 ## macOS 上建库：导入、分词词典、查词

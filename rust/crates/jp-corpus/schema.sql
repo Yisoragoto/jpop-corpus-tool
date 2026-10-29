@@ -171,7 +171,13 @@ CREATE TABLE IF NOT EXISTS tokens (
             lemma        TEXT NOT NULL,
             pos          TEXT,
             dep          TEXT,
-            head         TEXT
+            head         TEXT,
+            -- 日语形态信息（Sudachi，见 jp-import 的 annotate.rs）。NULL = 还没标，pos_ja 为 '' = 标不上
+            pos_ja       TEXT,
+            ctype        TEXT,
+            cform        TEXT,
+            reading      TEXT,
+            normalized   TEXT
         );
 
 CREATE TABLE IF NOT EXISTS track_credits (
@@ -420,6 +426,8 @@ CREATE INDEX IF NOT EXISTS idx_tokens_pos     ON tokens(pos);
 CREATE INDEX IF NOT EXISTS idx_tokens_surface ON tokens(surface);
 
 CREATE INDEX IF NOT EXISTS idx_tokens_utterance ON tokens(utterance_id);
+CREATE INDEX IF NOT EXISTS idx_tokens_normalized ON tokens(normalized);
+CREATE INDEX IF NOT EXISTS idx_tokens_reading ON tokens(reading);
 
 CREATE INDEX IF NOT EXISTS idx_tom_song             ON track_original_metadata(song_id);
 

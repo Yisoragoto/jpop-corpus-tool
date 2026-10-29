@@ -170,12 +170,15 @@ export interface LyricLine {
 
 // ────────────────────────────── 检索 ──────────────────────────────
 
-export type MatchField = "surface" | "lemma";
+/** surface 表层形；lemma 辞书形；reading 读音（片假名，输入平假名也行）；normalized 正规化表记（キミ→君） */
+export type MatchField = "surface" | "lemma" | "reading" | "normalized";
 
 export interface KwicQuery {
   keywords: string[];
   field: MatchField;
   pos?: string | null;
+  /** 活用形，按前缀匹配（「連用形」包括「連用形-促音便」） */
+  cform?: string | null;
   personIds?: number[];
   crossLine?: boolean;
   dedup?: boolean;
@@ -454,6 +457,67 @@ export interface LexicalRow {
   hapaxRatio: number;
   chars: number;
   scripts: ScriptShares;
+}
+
+/** 活用形分布（jp-corpus 的 morphology.rs） */
+export interface InflectionQuery {
+  scope?: AnalysisScope;
+  /** VERB / ADJ / AUX，空是全部有活用的词 */
+  pos?: string | null;
+  examples?: number;
+}
+
+export interface InflectionForm {
+  cform: string;
+  coarse: string;
+  freq: number;
+  share: number;
+  songs: number;
+  lemmas: [string, number][];
+  surfaces: [string, number][];
+}
+
+export interface InflectionResult {
+  total: number;
+  /** 还没补形态信息的词数（后台在补） */
+  unannotated: number;
+  forms: InflectionForm[];
+  provenance: Provenance;
+}
+
+export interface OrthographyQuery {
+  scope?: AnalysisScope;
+  minFreq?: number;
+  minFormFreq?: number;
+  contentOnly?: boolean;
+  limit?: number;
+}
+
+export type Writing = "kanji" | "hiragana" | "katakana" | "kana" | "other";
+
+export interface WritingForm {
+  lemma: string;
+  writing: Writing;
+  freq: number;
+  songs: number;
+  exampleUtteranceId: number;
+  exampleSongId: string;
+}
+
+export interface VariantGroup {
+  normalized: string;
+  reading: string;
+  pos: string;
+  freq: number;
+  forms: WritingForm[];
+  mergedByReading: boolean;
+}
+
+export interface OrthographyResult {
+  groups: VariantGroup[];
+  totalGroups: number;
+  unannotated: number;
+  provenance: Provenance;
 }
 
 export interface LexicalResult {
@@ -953,6 +1017,8 @@ export const api = {
   keyness: (query: KeynessQuery) => call<KeynessResult>("keyness", { query }),
   ngrams: (query: NgramQuery) => call<NgramResult>("ngrams", { query }),
   lexicalProfile: (query: LexicalQuery) => call<LexicalResult>("lexical_profile", { query }),
+  inflection: (query: InflectionQuery) => call<InflectionResult>("inflection", { query }),
+  orthography: (query: OrthographyQuery) => call<OrthographyResult>("orthography", { query }),
   songProfile: (songId: string, limit?: number) => call<SongProfile>("song_profile", { songId, limit }),
   searchLyrics: (text: string, limit?: number) =>
     call<LyricHit[]>("search_lyrics", { text, limit }),

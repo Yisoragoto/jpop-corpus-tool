@@ -426,6 +426,7 @@ pub fn tokenizer_run_id(conn: &Connection, analyzer: &jp_tokenizer::Analyzer) ->
 /// 滤掉之后逐词一致率 100.00%。不滤的话词频统计里会混进空格。
 ///
 /// pos 列存 UPOS——库里存量就是 NOUN/VERB 这套，写日语词性进去会让整个语料的词性统计对不上。
+/// 日语词性、活用、读音、正规化表记写进另外五列（`annotate::Morph`）。
 /// dep/head 留空：sudachi.rs 没有依存分析。
 pub(crate) fn write_line_tokens(
     tx: &Connection,
@@ -437,10 +438,11 @@ pub(crate) fn write_line_tokens(
     let meaningful = tokens.iter().filter(|t| !t.surface.trim().is_empty());
     let mut written = 0;
     for (token_idx, token) in meaningful.enumerate() {
+        let m = crate::annotate::Morph::of(token);
         tx.execute(
-            "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos) \
-             VALUES (?1,?2,?3,?4,?5)",
-            params![utterance_id, token_idx as i64, token.surface, token.lemma, token.upos],
+            "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos, pos_ja, ctype, cform, reading, normalized) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            params![utterance_id, token_idx as i64, token.surface, token.lemma, token.upos, m.pos_ja, m.ctype, m.cform, m.reading, m.normalized],
         )?;
         written += 1;
     }
@@ -540,10 +542,14 @@ fn attach_parsed(
     //
     // 没分词（analyzer 为 None）时不套：只给个别行写 token 会得到一首「半分词」的歌。
     // 校正行留在表里不会丢。
-    if analyzer.is_some() {
+    if let Some(analyzer) = analyzer {
         stats.corrections_restored =
             jp_corpus::corrections::restore_for_song(tx, song_id, artist, title)
                 .context("恢复分词校正失败")?;
+        // 套回去的校正行没有形态信息，按原文对齐补上
+        if stats.corrections_restored > 0 {
+            crate::annotate::annotate_song(tx, song_id, analyzer)?;
+        }
     }
 
     // ── 作词 / 作曲 / 编曲 ──

@@ -886,6 +886,9 @@ pub fn tokenize_song(
     stats.corrections_restored =
         jp_corpus::corrections::restore_for_song(conn, song_id, &artist, &title)
             .context("恢复分词校正失败")?;
+    if stats.corrections_restored > 0 {
+        crate::annotate::annotate_song(conn, song_id, analyzer)?;
+    }
     stats.songs = 1;
     Ok(stats)
 }
