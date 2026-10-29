@@ -71,6 +71,21 @@ fn kwic_folds_the_repeated_chorus_line_into_one_hit() {
 }
 
 #[test]
+fn kwic_gives_sort_context_nearest_first_and_the_line_position() {
+    let c = corpus();
+    let hits = kwic(&c, "風", |_| {});
+    let far = hits.iter().find(|h| h.song_id == "002").unwrap();
+    // 「遠くで風が鳴る」：左边由近到远
+    assert_eq!(far.left_words, vec!["で", "遠く"]);
+    assert_eq!(far.right_words, vec!["が", "鳴る"]);
+    // 「夜はまだ長い、」：右边不算标点
+    for h in kwic(&c, "夜", |q| q.dedup = false) {
+        assert!(h.right_words.iter().all(|w| w != "、"));
+        assert!(h.song_lines > 0 && (0..h.song_lines).contains(&h.line_pos));
+    }
+}
+
+#[test]
 fn kwic_cross_line_brings_in_the_neighbouring_lines() {
     let c = corpus();
     // 001 的第 2 行「君の声を思い出す」夹在「街の灯りが消えて」和「風が吹いている」中间

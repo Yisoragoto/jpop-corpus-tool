@@ -16,6 +16,9 @@
  * 「附近有这个词」的那些行——从统计回到具体的歌、具体的那一句。
  *
  * 结果能导出 CSV，列和编码照 PyQt 版 `export_csv`（utf-8-sig、七列、语境不截断）。
+ *
+ * 和 AntConc 一样能按关键词左右第几个词排序（`kwicSort.ts`），也能切到「分布图」：
+ * 每首歌一条，命中的行在歌里的位置画成刻度，一眼看出是散在全曲还是挤在副歌。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -27,6 +30,7 @@ import {
   POS_LABELS,
   type CollocationMeasure,
   type CollocationResult,
+  type Collocate,
   type KwicHit,
   type KwicQuery,
   type WordFrequency,
@@ -44,6 +48,8 @@ import { VirtualList } from "../components/VirtualList";
 import { TokenCorrectionDialog } from "../components/TokenCorrectionDialog";
 import { audition, isPlayingSpan, playFrom } from "../listen";
 import { kwicCsv } from "../pyFormat";
+import { KWIC_SORTS, sortKwic, type KwicSort } from "../kwicSort";
+import { KwicPlot } from "../components/KwicPlot";
 import type { LibraryActions } from "../useLibrary";
 import { tr } from "../i18n";
 
@@ -63,9 +69,28 @@ const KWIC_LIMIT = 5000;
 const MEASURES: { value: CollocationMeasure; label: string; title: string }[] = [
   { value: "logDice", label: "logDice", title: tr("不受语料大小影响，低频噪音少") },
   { value: "mi", label: "MI", title: tr("互信息：偏爱罕见的固定搭配") },
+  { value: "mi3", label: "MI3", title: tr("给共现次数加权的互信息：不那么偏爱只共现两三次的罕见词") },
   { value: "logLikelihood", label: "LL", title: tr("对数似然：显著性") },
+  { value: "deltaP", label: "ΔP", title: tr("ΔP（有方向）：看到关键词时，这个词出现的概率比平时高多少") },
   { value: "frequency", label: tr("次数"), title: tr("共现次数") },
 ];
+
+function measureValue(c: Collocate, measure: CollocationMeasure): string {
+  switch (measure) {
+    case "logDice":
+      return c.logDice.toFixed(2);
+    case "mi":
+      return c.mi.toFixed(2);
+    case "mi3":
+      return c.mi3.toFixed(1);
+    case "logLikelihood":
+      return c.logLikelihood.toFixed(1);
+    case "deltaP":
+      return c.deltaP.toFixed(3);
+    default:
+      return String(c.freq);
+  }
+}
 
 /** 别的页面要求查一个词（分析页的「检索」）。nonce 让同一个词点两次也会再查 */
 export interface KwicRequest {
@@ -122,6 +147,11 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
   const [suggestions, setSuggestions] = useState<WordFrequency[]>([]);
 
   const [kwicHits, setKwicHits] = useState<KwicHit[] | null>(null);
+  const [sort, setSort] = useState<KwicSort>("default");
+  const [view, setView] = useState<"list" | "plot">("list");
+  /** 上一次 KWIC 的完整查询。分布图用它不去重地再查一遍 */
+  const [lastQuery, setLastQuery] = useState<KwicQuery | null>(null);
+  const sortedHits = useMemo(() => (kwicHits ? sortKwic(kwicHits, sort) : null), [kwicHits, sort]);
   const [textHits, setTextHits] = useState<LyricHit[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [exportNote, setExportNote] = useState("");
@@ -169,6 +199,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           near: nearFilter,
         };
         setKwicHits(await api.kwic(q));
+        setLastQuery(q);
         setSearched({ query, field: matchField });
       } catch (err) {
         onError(err instanceof Error ? err.message : String(err));
@@ -190,6 +221,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
     setExportNote("");
     try {
       setKwicHits(null);
+      setLastQuery(null);
       setTextHits(await api.searchLyrics(query, 500));
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
@@ -306,12 +338,12 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
         filters: [{ name: tr("CSV 文件"), extensions: ["csv"] }],
       });
       if (!path) return;
-      await api.exportText(path, kwicCsv(kwicHits));
+      await api.exportText(path, kwicCsv(sortedHits ?? kwicHits));
       setExportNote(tr("已保存 {length} 条：{path}", { length: kwicHits.length, path }));
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     }
-  }, [kwicHits, text, onError]);
+  }, [kwicHits, sortedHits, text, onError]);
 
   const hitCount = kwicHits?.length ?? textHits?.length ?? null;
   const songCount = useMemo(() => (kwicHits ? new Set(kwicHits.map((h) => h.songId)).size : 0), [kwicHits]);
@@ -422,7 +454,29 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
             </span>
           )}
           {kwicHits && kwicHits.length > 0 && (
-            <button className="link-btn" onClick={() => void exportCsv()} title={tr("歌手、曲名、时刻、左右语境、全文，UTF-8（带 BOM）")}>{tr("导出 CSV")}</button>
+            <>
+              <div className="segmented small-seg">
+                <button className={view === "list" ? "on" : ""} onClick={() => setView("list")}>{tr("列表")}</button>
+                <button
+                  className={view === "plot" ? "on" : ""}
+                  onClick={() => setView("plot")}
+                  title={tr("每首歌一条：命中的行在歌里的位置。看它散在全曲还是挤在副歌")}
+                >{tr("分布图")}</button>
+              </div>
+              {view === "list" && (
+                <label className="kwic-sort" title={tr("按关键词左右第几个词排序；相同时接着比同一侧更远的词，再比另一侧")}>
+                  {tr("排序")}
+                  <select className="rate" value={sort} onChange={(e) => setSort(e.target.value as KwicSort)}>
+                    {KWIC_SORTS.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <button className="link-btn" onClick={() => void exportCsv()} title={tr("歌手、曲名、时刻、左右语境、全文，UTF-8（带 BOM）。按当前排序")}>{tr("导出 CSV")}</button>
+            </>
           )}
           {kwicHits && (
             <button
@@ -468,10 +522,14 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
       )}
 
       <div className="kwic-body">
-        {kwicHits && (
+        {kwicHits && view === "plot" && lastQuery && (
+          <KwicPlot query={lastQuery} onOpen={(h) => void open(h.songId, h.utteranceId, h.timeSec)} onError={onError} />
+        )}
+
+        {sortedHits && view === "list" && (
           <VirtualList
             className="results"
-            items={kwicHits}
+            items={sortedHits}
             itemHeight={KWIC_ROW_HEIGHT}
             itemKey={(hit, i) => `${hit.utteranceId}-${i}`}
             empty={<p className="muted pad">{tr("没有命中")}</p>}
@@ -621,14 +679,20 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                           </span>
                         </td>
                         <td className="num">{c.songs}</td>
-                        <td className="num">
-                          {measure === "logDice"
-                            ? c.logDice.toFixed(2)
-                            : measure === "mi"
-                              ? c.mi.toFixed(2)
-                              : measure === "logLikelihood"
-                                ? c.logLikelihood.toFixed(1)
-                                : c.freq}
+                        <td
+                          className="num"
+                          title={tr("logDice {logDice} · MI {mi} · MI3 {mi3} · LL {ll} · t {t} · z {z} · ΔP 关键词→此词 {dp} / 此词→关键词 {dpr}", {
+                            logDice: c.logDice.toFixed(2),
+                            mi: c.mi.toFixed(2),
+                            mi3: c.mi3.toFixed(1),
+                            ll: c.logLikelihood.toFixed(1),
+                            t: c.tScore.toFixed(2),
+                            z: c.zScore.toFixed(2),
+                            dp: c.deltaP.toFixed(3),
+                            dpr: c.deltaPReverse.toFixed(3),
+                          })}
+                        >
+                          {measureValue(c, measure)}
                         </td>
                         <td>
                           <button

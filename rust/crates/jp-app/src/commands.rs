@@ -382,6 +382,24 @@ pub async fn keyness<R: tauri::Runtime>(
     blocking(app, move |state| state.corpus().keyness(&query)).await
 }
 
+/// N-gram（词簇）
+#[tauri::command]
+pub async fn ngrams<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::analysis::NgramQuery,
+) -> CmdResult<jp_corpus::analysis::NgramResult> {
+    blocking(app, move |state| state.corpus().ngrams(&query)).await
+}
+
+/// 词汇丰富度与文字种（整体 / 每位演唱者 / 每首歌）
+#[tauri::command]
+pub async fn lexical_profile<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::lexical::LexicalQuery,
+) -> CmdResult<jp_corpus::lexical::LexicalResult> {
+    blocking(app, move |state| state.corpus().lexical_profile(&query)).await
+}
+
 /// 从一首歌进入语料分析：重复行、特征词
 #[tauri::command]
 pub async fn song_profile<R: tauri::Runtime>(

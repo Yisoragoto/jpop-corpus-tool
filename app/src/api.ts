@@ -261,6 +261,19 @@ export interface Provenance {
   params: unknown;
 }
 
+/**
+ * 离散度：一个词在各首歌之间分布得多均匀（以歌为部分，按歌长加权）。定义见 analysis.rs 模块文档
+ * - dp：Gries 的 DP，0 = 均匀、越接近 1 越集中；dpNorm 除以理论最大值，不同子语料之间可比
+ * - juillandD：1 = 均匀、0 = 集中，只有一首歌时是 null
+ * - arf：平均缩减频次，扎堆出现的次数折算掉之后「相当于均匀出现了几次」
+ */
+export interface Dispersion {
+  dp: number;
+  dpNorm: number;
+  juillandD: number | null;
+  arf: number;
+}
+
 export interface FrequencyItem {
   lemma: string;
   pos: string;
@@ -273,6 +286,7 @@ export interface FrequencyItem {
   songs: number;
   range: number;
   surfaces: string[];
+  dispersion: Dispersion;
 }
 
 export interface FrequencyResult {
@@ -287,7 +301,7 @@ export interface FrequencyQuery {
   limit?: number;
 }
 
-export type CollocationMeasure = "logDice" | "mi" | "logLikelihood" | "frequency";
+export type CollocationMeasure = "logDice" | "mi" | "mi3" | "logLikelihood" | "deltaP" | "frequency";
 
 export interface CollocationQuery {
   scope?: AnalysisScope;
@@ -314,6 +328,12 @@ export interface Collocate {
   mi: number;
   logLikelihood: number;
   tScore: number;
+  mi3: number;
+  zScore: number;
+  /** ΔP（节点 → 搭配词）：看到节点词时搭配词出现的概率高了多少 */
+  deltaP: number;
+  /** ΔP（搭配词 → 节点） */
+  deltaPReverse: number;
   exampleUtteranceId: number;
   exampleSongId: string;
 }
@@ -333,6 +353,10 @@ export interface KeynessQuery {
   pos?: string | null;
   minFreq?: number;
   limit?: number;
+  /** 只列 p 值不超过它的词；null 是不筛 */
+  maxP?: number | null;
+  /** 阈值按参与检验的词数做 Bonferroni 校正 */
+  bonferroni?: boolean;
 }
 
 export interface KeyItem {
@@ -346,6 +370,12 @@ export interface KeyItem {
   logLikelihood: number;
   logRatio: number;
   targetSongs: number;
+  /** 未校正的 p 值（自由度 1 的卡方） */
+  pValue: number;
+  /** G² − ln(N)：> 2 有证据，> 6 强，> 10 很强 */
+  bic: number;
+  /** 参照里没出现时是 null */
+  percentDiff: number | null;
 }
 
 export interface KeynessResult {
@@ -353,6 +383,82 @@ export interface KeynessResult {
   under: KeyItem[];
   target: Provenance;
   reference: Provenance;
+  /** 参与检验的词数 */
+  tested: number;
+  /** 实际用的 p 阈值（校正之后）；没筛时是 null */
+  pThreshold: number | null;
+}
+
+/** N-gram（analysis.rs 的 NgramQuery）。不跨行、不跨标点 */
+export interface NgramQuery {
+  scope?: AnalysisScope;
+  n?: number;
+  field?: MatchField;
+  minFreq?: number;
+  minSongs?: number;
+  contains?: string | null;
+  limit?: number;
+}
+
+export interface Ngram {
+  words: string[];
+  /** 最常见的实际写法 */
+  surface: string;
+  pos: string[];
+  freq: number;
+  per10k: number;
+  songs: number;
+  range: number;
+  dispersion: Dispersion;
+  exampleUtteranceId: number;
+  exampleSongId: string;
+}
+
+export interface NgramResult {
+  n: number;
+  types: number;
+  items: Ngram[];
+  provenance: Provenance;
+}
+
+export type LexicalGroup = "whole" | "performer" | "song";
+
+/** 词汇丰富度与文字种（jp-corpus 的 lexical.rs） */
+export interface LexicalQuery {
+  scope?: AnalysisScope;
+  group?: LexicalGroup;
+  /** MATTR 窗口 */
+  window?: number;
+  minTokens?: number;
+  limit?: number;
+}
+
+export interface ScriptShares {
+  kanji: number;
+  hiragana: number;
+  katakana: number;
+  latin: number;
+  other: number;
+}
+
+export interface LexicalRow {
+  key: string;
+  label: string;
+  songs: number;
+  tokens: number;
+  types: number;
+  ttr: number;
+  mattr: number | null;
+  mtld: number | null;
+  yuleK: number;
+  hapaxRatio: number;
+  chars: number;
+  scripts: ScriptShares;
+}
+
+export interface LexicalResult {
+  rows: LexicalRow[];
+  provenance: Provenance;
 }
 
 export interface SongProfile {
@@ -385,6 +491,13 @@ export interface KwicHit {
   endKind: SpanEnd | null;
   /** 关键词占几个 token，多词表达（て+しまう）大于 1 */
   matchLen: number;
+  /** 左边最近的几个词（不含标点），由近到远：[L1, L2, …] */
+  leftWords: string[];
+  /** 右边最近的几个词，由近到远：[R1, R2, …] */
+  rightWords: string[];
+  /** 这一行是这首歌的第几行（从 0 数）、这首歌一共几行 */
+  linePos: number;
+  songLines: number;
 }
 
 /** 分词校正里的一个词。键名和 Python 存进 token_corrections 的 JSON 一致。 */
@@ -838,6 +951,8 @@ export const api = {
     call<FrequencyResult>("corpus_frequency", { query }),
   collocations: (query: CollocationQuery) => call<CollocationResult>("collocations", { query }),
   keyness: (query: KeynessQuery) => call<KeynessResult>("keyness", { query }),
+  ngrams: (query: NgramQuery) => call<NgramResult>("ngrams", { query }),
+  lexicalProfile: (query: LexicalQuery) => call<LexicalResult>("lexical_profile", { query }),
   songProfile: (songId: string, limit?: number) => call<SongProfile>("song_profile", { songId, limit }),
   searchLyrics: (text: string, limit?: number) =>
     call<LyricHit[]>("search_lyrics", { text, limit }),

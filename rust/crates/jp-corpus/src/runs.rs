@@ -184,17 +184,22 @@ pub fn method(spec: &AnalysisSpec, filter: &StatsFilter) -> serde_json::Value {
             "freq": "按所选计数单位的频次；rawFreq 唱几遍算几遍，distinctFreq 同一首歌里重复的行只算一次",
             "repeatShare": "来自重复行的比例",
             "per10k": "每万词频次",
+            "dispersion": "以歌为部分、按歌长加权：DP（Gries 2008）、dpNorm（除以 1 − 最小部分比例）、Juilland D（总体标准差）、ARF（首尾相接成环）",
         }),
         AnalysisSpec::Collocations { query } => serde_json::json!({
             "rules": analysis::RULES_VERSION,
             "window": format!("左 {} 右 {} 个词，不跨行，跳过标点", query.left, query.right),
             "measure": query.measure,
             "measures": "logDice / MI / 对数似然 / t 值都算，按所选的排",
+            "extraMeasures": "MI3 = log2(O³/E)，z = (O − E)/√E，ΔP 两个方向都给，基于窗口内外 × 是否该词的 2×2 表",
         }),
         AnalysisSpec::Keyness { .. } => serde_json::json!({
             "rules": analysis::RULES_VERSION,
             "statistic": "对数似然（带符号：正 = 目标里偏多），效应大小是 log ratio（零频按 0.5 平滑）",
             "reference": "没给参照时是语料库里其余的歌",
+            "significance": "p 值按自由度 1 的卡方分布；可按 p 阈值筛，可选 Bonferroni 校正（阈值 ÷ 参与检验的词数）",
+            "bic": "G² − ln(两边词次之和)（Wilson 2013）",
+            "percentDiff": "(目标相对频率 − 参照相对频率) ÷ 参照相对频率 × 100；参照为 0 时无定义",
         }),
     };
     let mut out = common;

@@ -360,6 +360,8 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         }
         "collocations" => serde_json::to_value(corpus.collocations(&arg(&args, "query")?)?)?,
         "keyness" => serde_json::to_value(corpus.keyness(&arg(&args, "query")?)?)?,
+        "ngrams" => serde_json::to_value(corpus.ngrams(&arg(&args, "query")?)?)?,
+        "lexicalProfile" => serde_json::to_value(corpus.lexical_profile(&arg(&args, "query")?)?)?,
         "songProfile" => serde_json::to_value(
             corpus.song_profile(&arg::<String>(&args, "songId")?, arg_or(&args, "limit", 12)?)?,
         )?,
