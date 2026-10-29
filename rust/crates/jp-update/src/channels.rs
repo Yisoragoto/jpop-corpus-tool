@@ -1,4 +1,7 @@
 //! debug 是滚动包：版本相同也能有新构建；只有构建编号决定是否提醒，semver 只挡降级。
+//!
+//! 同一个 debug 发布里两个平台各有一份清单：Windows 读 `latest.json`（NSIS 安装包），
+//! macOS 读 `latest-macos.json`（.dmg）。两边的构建编号是同一次 CI 算出来的同一个值。
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use super::{API_BASE, AssetView, Channel, DOWNLOAD_PREFIX, ReleaseView, UpdateStatus, is_newer, parse_release};
@@ -6,6 +9,28 @@ use super::{API_BASE, AssetView, Channel, DOWNLOAD_PREFIX, ReleaseView, UpdateSt
 pub trait Transport { fn get(&self, url: &str) -> Result<Option<Vec<u8>>>; }
 pub struct OfficialTransport;
 impl Transport for OfficialTransport { fn get(&self, url: &str) -> Result<Option<Vec<u8>>> { super::get_optional(url) } }
+
+/// 检查更新的是哪个客户端。决定 debug 读哪份清单、认哪种安装包文件名
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Platform { Windows, MacOS }
+
+impl Platform {
+    /// 编译成哪个平台就是哪个（jp-ffi 只在 macOS 客户端里用，Windows 客户端走 jp-app）
+    pub const CURRENT: Platform = if cfg!(target_os = "macos") { Platform::MacOS } else { Platform::Windows };
+
+    fn debug_manifest(self) -> &'static str {
+        match self { Platform::Windows => "latest.json", Platform::MacOS => "latest-macos.json" }
+    }
+}
+
+/// debug 安装包的文件名里的版本号：Windows `JPOP.Corpus.Tool_<版本>-debug.exe`，
+/// macOS `JPOP.Corpus.Tool_<版本>-debug_macOS_arm64.dmg`。别的平台的包不认
+pub fn debug_asset_version_for(name: &str, platform: Platform) -> Option<&str> {
+    let suffix = match platform { Platform::Windows => "-debug.exe", Platform::MacOS => "-debug_macOS_arm64.dmg" };
+    let version = name.strip_prefix("JPOP.Corpus.Tool_")?.strip_suffix(suffix)?;
+    semver::Version::parse(version).ok()?;
+    Some(version)
+}
 
 pub(super) fn not_older(current: &str, candidate: &str) -> bool {
     match (semver::Version::parse(current.trim_start_matches(['v', 'V'])), semver::Version::parse(candidate)) {
@@ -18,23 +43,28 @@ pub(super) fn not_older(current: &str, candidate: &str) -> bool {
 #[serde(rename_all = "camelCase")]
 struct Manifest { build_id: String, version: String, file: String, sha256: String, size: u64 }
 
-fn debug(transport: &impl Transport) -> Result<Option<ReleaseView>> {
+fn debug(transport: &impl Transport, platform: Platform) -> Result<Option<ReleaseView>> {
     let Some(body) = transport.get(&format!("{API_BASE}/tags/debug"))? else { return Ok(None) };
     let release: serde_json::Value = serde_json::from_slice(&body).context("debug 发布信息不是有效 JSON")?;
     ensure!(release["tag_name"] == "debug" && release["prerelease"] == true && release["draft"] == false, "debug 发布必须是固定 tag 的非草稿预发布");
     let assets = release["assets"].as_array().context("debug 发布缺少资产列表")?;
     let prefix = format!("{DOWNLOAD_PREFIX}debug/");
-    let manifests: Vec<_> = assets.iter().filter(|a| a["name"] == "latest.json").collect();
-    ensure!(manifests.len() == 1, "debug 发布缺少唯一的 latest.json，不能安装");
+    let name = platform.debug_manifest();
+    let manifests: Vec<_> = assets.iter().filter(|a| a["name"] == name).collect();
+    if platform == Platform::MacOS && manifests.is_empty() {
+        anyhow::bail!("debug 发布里还没有 macOS 构建（main 合入新提交后会自动构建；Windows 包先发出，macOS 包随后挂上），稍后再检查");
+    }
+    ensure!(manifests.len() == 1, "debug 发布缺少唯一的 {name}，不能安装");
     let url = manifests[0]["browser_download_url"].as_str().context("debug 清单缺少下载地址")?;
-    ensure!(url == format!("{prefix}latest.json"), "debug 清单地址不在本仓库的 debug 发布下");
-    let bytes = transport.get(url)?.context("debug 的 latest.json 不存在，不能安装")?;
-    let manifest: Manifest = serde_json::from_slice(&bytes).context("debug 的 latest.json 缺少必要字段或格式损坏，不能安装")?;
+    ensure!(url == format!("{prefix}{name}"), "debug 清单地址不在本仓库的 debug 发布下");
+    let bytes = transport.get(url)?.with_context(|| format!("debug 的 {name} 不存在，不能安装"))?;
+    let manifest: Manifest = serde_json::from_slice(&bytes).with_context(|| format!("debug 的 {name} 缺少必要字段或格式损坏，不能安装"))?;
     ensure!(!manifest.build_id.is_empty() && manifest.build_id.len() <= 128 && manifest.build_id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')), "debug 构建编号无效，不能安装");
     ensure!(manifest.sha256.len() == 64 && manifest.sha256.bytes().all(|b| b.is_ascii_hexdigit()), "debug 缺少有效的 SHA-256，不能安装");
     ensure!(manifest.size > 0, "debug 清单里的安装包大小无效");
-    ensure!(super::debug_asset_version(&manifest.file) == Some(manifest.version.as_str()), "debug 清单版本与安装包文件名不一致");
-    super::check_asset_name(&manifest.file)?;
+    ensure!(debug_asset_version_for(&manifest.file, platform) == Some(manifest.version.as_str()), "debug 清单版本与安装包文件名不一致");
+    // Windows 会把安装包下到缓存目录再拉起来，文件名要过那道检查；macOS 只打开发布页让人自己下
+    if platform == Platform::Windows { super::check_asset_name(&manifest.file)?; }
     let files: Vec<_> = assets.iter().filter(|a| a["name"].as_str() == Some(&manifest.file)).collect();
     ensure!(files.len() == 1, "debug 发布缺少清单指定的唯一安装包");
     let url = files[0]["browser_download_url"].as_str().context("debug 安装包缺少下载地址")?;
@@ -56,9 +86,14 @@ fn stable(transport: &impl Transport) -> Result<Option<ReleaseView>> {
 }
 
 pub fn check_with(current: &str, build_id: &str, channel: Channel, transport: &impl Transport) -> Result<UpdateStatus> {
+    check_on(Platform::CURRENT, current, build_id, channel, transport)
+}
+
+/// 同 [`check_with`]，平台显式给出（测试两个平台的 debug 清单用）
+pub fn check_on(platform: Platform, current: &str, build_id: &str, channel: Channel, transport: &impl Transport) -> Result<UpdateStatus> {
     let (latest, effective) = match channel {
         Channel::Stable => (stable(transport)?, Channel::Stable),
-        Channel::Debug => match debug(transport)? {
+        Channel::Debug => match debug(transport, platform)? {
             Some(release) => (Some(release), Channel::Debug),
             None => (stable(transport)?, Channel::Stable),
         },
@@ -114,27 +149,72 @@ mod tests {
     }
     #[test]
     fn debug_compares_build_ids_even_when_the_version_is_equal() {
-        assert!(check_with("0.3.3", "old", Channel::Debug, &debug_script(debug_body(),manifest("new"))).unwrap().update_available);
-        assert!(!check_with("0.3.3", "new", Channel::Debug, &debug_script(debug_body(),manifest("new"))).unwrap().update_available);
-        assert!(!check_with("0.4.0", "old", Channel::Debug, &debug_script(debug_body(),manifest("new"))).unwrap().update_available);
+        let w = Platform::Windows;
+        assert!(check_on(w, "0.3.3", "old", Channel::Debug, &debug_script(debug_body(),manifest("new"))).unwrap().update_available);
+        assert!(!check_on(w, "0.3.3", "new", Channel::Debug, &debug_script(debug_body(),manifest("new"))).unwrap().update_available);
+        assert!(!check_on(w, "0.4.0", "old", Channel::Debug, &debug_script(debug_body(),manifest("new"))).unwrap().update_available);
+    }
+
+    const MAC_DMG: &str = "JPOP.Corpus.Tool_0.3.3-debug_macOS_arm64.dmg";
+    fn debug_body_with_mac() -> Value {
+        let mut body = debug_body();
+        body["assets"].as_array_mut().unwrap().extend([
+            json!({"name":"latest-macos.json","browser_download_url":format!("{DOWNLOAD_PREFIX}debug/latest-macos.json")}),
+            json!({"name":MAC_DMG,"size":34,"browser_download_url":format!("{DOWNLOAD_PREFIX}debug/{MAC_DMG}")}),
+        ]);
+        body
+    }
+    fn mac_manifest(id: &str) -> Value { json!({"buildId":id,"version":"0.3.3","file":MAC_DMG,"sha256":"cd".repeat(32),"size":34}) }
+    fn mac_script(body: Value, manifest: Value) -> Scripted {
+        script(vec![("https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases/tags/debug", Some(body)),
+            ("https://github.com/Yisoragoto/jpop-corpus-tool/releases/download/debug/latest-macos.json", Some(manifest))])
+    }
+
+    #[test]
+    fn macos_reads_its_own_manifest_and_dmg_from_the_shared_debug_release() {
+        let m = Platform::MacOS;
+        let status = check_on(m, "0.3.3", "old", Channel::Debug, &mac_script(debug_body_with_mac(), mac_manifest("new"))).unwrap();
+        assert!(status.update_available);
+        assert_eq!(status.channel, Channel::Debug);
+        let installer = status.latest.unwrap().installer.unwrap();
+        assert_eq!(installer.name, MAC_DMG);
+        assert_eq!(installer.size, 34);
+        assert!(!check_on(m, "0.3.3", "new", Channel::Debug, &mac_script(debug_body_with_mac(), mac_manifest("new"))).unwrap().update_available,
+            "同一次构建：不提醒");
+        // Windows 客户端在同一个发布里仍只看 latest.json 和 exe
+        let w = check_on(Platform::Windows, "0.3.3", "old", Channel::Debug, &debug_script(debug_body_with_mac(), manifest("new"))).unwrap();
+        assert_eq!(w.latest.unwrap().installer.unwrap().name, "JPOP.Corpus.Tool_0.3.3-debug.exe");
+    }
+
+    #[test]
+    fn macos_rejects_a_windows_package_and_explains_a_missing_mac_build() {
+        let m = Platform::MacOS;
+        let mut wrong = mac_manifest("new"); wrong["file"] = json!("JPOP.Corpus.Tool_0.3.3-debug.exe");
+        assert!(check_on(m, "0.3.3", "old", Channel::Debug, &mac_script(debug_body_with_mac(), wrong)).is_err(), "清单指向 exe：不认");
+        let only_windows = script(vec![("https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases/tags/debug", Some(debug_body()))]);
+        let err = check_on(m, "0.3.3", "old", Channel::Debug, &only_windows).unwrap_err().to_string();
+        assert!(err.contains("macOS"), "{err}");
+        assert_eq!(debug_asset_version_for(MAC_DMG, m), Some("0.3.3"));
+        assert_eq!(debug_asset_version_for(MAC_DMG, Platform::Windows), None);
     }
     #[test]
     fn debug_fails_closed_on_missing_manifest_hash_and_malformed_metadata() {
         let mut missing = debug_body(); missing["assets"] = json!([]);
         let transport = script(vec![("https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases/tags/debug",Some(missing))]);
-        assert!(check_with("0.3.2", "old", Channel::Debug, &transport).is_err());
+        let w = Platform::Windows;
+        assert!(check_on(w, "0.3.2", "old", Channel::Debug, &transport).is_err());
         for field in ["sha256", "buildId", "file", "size"] {
             let mut bad = manifest("new"); bad.as_object_mut().unwrap().remove(field);
-            assert!(check_with("0.3.2", "old", Channel::Debug, &debug_script(debug_body(),bad)).is_err(), "缺 {field}");
+            assert!(check_on(w, "0.3.2", "old", Channel::Debug, &debug_script(debug_body(),bad)).is_err(), "缺 {field}");
         }
         let mut bad = manifest("new"); bad["sha256"] = json!("00");
-        assert!(check_with("0.3.2", "old", Channel::Debug, &debug_script(debug_body(),bad)).is_err());
+        assert!(check_on(w, "0.3.2", "old", Channel::Debug, &debug_script(debug_body(),bad)).is_err());
     }
     #[test]
     fn only_an_absent_debug_release_falls_back_to_stable() {
         let transport = script(vec![("https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases/tags/debug",None),
             ("https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases/latest",Some(stable_body()))]);
-        let status = check_with("0.3.2", "old", Channel::Debug, &transport).unwrap();
+        let status = check_on(Platform::Windows, "0.3.2", "old", Channel::Debug, &transport).unwrap();
         assert_eq!(status.channel, Channel::Stable); assert!(status.update_available);
     }
     #[test]

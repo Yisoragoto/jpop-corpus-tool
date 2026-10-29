@@ -1,7 +1,12 @@
 # stable / debug 双轨更新
 
 只有两条轨道。`main` push 自动构建固定 tag `debug`，删旧 Release 和 tag 后重建预发布，
-用 `--latest=false`，资产恰好为 `JPOP.Corpus.Tool_<version>-debug.exe` 与 `latest.json`。
+用 `--latest=false`，资产恰好为 `JPOP.Corpus.Tool_<version>-debug.exe` 与 `latest.json`；
+Release 建好后 macOS 作业再挂上 `JPOP.Corpus.Tool_<version>-debug_macOS_arm64.dmg` 与 `latest-macos.json`
+（同样的五个字段）。两个平台的构建编号由 workflow 的 `identity` 作业算一次，两个包里嵌的是同一个值。
+Windows 客户端只读 `latest.json`、只认 `-debug.exe`；macOS 客户端只读 `latest-macos.json`、只认 `-debug_macOS_arm64.dmg`
+（`jp_update::Platform`）。macOS 包比 Windows 包晚几分钟挂上，这期间 macOS 客户端检查会说明「还没有 macOS 构建」。
+正式版同样两个平台都出：`JPOP.Corpus.Tool_<version>_macOS_arm64.dmg` 挂在 `v<version>` 上。
 正式版只能手动 `workflow_dispatch` 选择 stable，使用当前三处一致的版本，创建 `v<version>` 正式 Release 并标 Latest；
 默认不覆盖已有正式版。维护者明确授权同版本重发时，手动 stable 可选择 `replace_existing`，在构建检查与安装包完成后删除旧 Release/tag，再以本次源码重建。
 同版本重发不会让已安装用户收到 stable 版本比较的更新提示，发布说明须提醒手动覆盖安装。
