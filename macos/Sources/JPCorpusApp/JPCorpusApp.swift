@@ -53,6 +53,13 @@ struct JPCorpusApp: App {
                 Button("减小音量") { app.player.setVolume(app.player.volume - 0.05) }
                     .keyboardShortcut(.downArrow, modifiers: [])
                 Divider()
+                // 不用 ⌘← / ⌘→：输入框里那是「到行首 / 行尾」，菜单快捷键会先把它抢走
+                Button("上一首") { Task { await app.player.previous() } }
+                    .keyboardShortcut(.leftArrow, modifiers: [.option, .command])
+                    .disabled(app.player.track == nil)
+                Button("下一首") { Task { await app.player.next() } }
+                    .keyboardShortcut(.rightArrow, modifiers: [.option, .command])
+                    .disabled(!app.player.hasNext)
                 Button("上一行") { Task { await app.player.step(-1) } }
                     .keyboardShortcut(.upArrow, modifiers: [.option, .command])
                 Button("下一行") { Task { await app.player.step(1) } }

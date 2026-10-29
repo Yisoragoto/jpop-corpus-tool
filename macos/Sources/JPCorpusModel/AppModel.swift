@@ -328,15 +328,23 @@ public final class AppModel {
         if libraryPath.last != route { libraryPath.append(route) }
     }
 
-    /// 按 id 放一首歌（首页、搜索结果只有 id）
-    public func play(songId: String, at: Double? = nil, source: String = "library") async {
+    /// 按 id 放一首歌（首页、搜索结果只有 id）。
+    /// `queue` 是界面上这一组歌（专辑、歌手作品、曲库列表、检索结果），放完这首按顺序接着放
+    public func play(songId: String, at: Double? = nil, source: String = "library", queue: [Track]? = nil) async {
         do {
-            guard let track = try await track(songId) else { return }
+            let listed = queue?.first(where: { $0.id == songId })
+            guard let track = try await listed ?? self.track(songId) else { return }
             showLyrics = true
-            await player.open(track, at: at, autoplay: true, source: source)
+            await player.open(track, at: at, autoplay: true, source: source, queue: queue)
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// 检索结果里出现的歌，按第一次出现的顺序排成队列（曲库里找不到的跳过）
+    public func queue(songIds: [String]) -> [Track] {
+        var seen = Set<String>()
+        return songIds.compactMap { id in seen.insert(id).inserted ? tracksById[id] : nil }
     }
 
     /// 跳到检索页查一个词

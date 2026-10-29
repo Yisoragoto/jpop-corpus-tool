@@ -291,7 +291,8 @@ struct SearchView: View {
 
     private func open(_ hit: KwicHit) {
         app.showLyrics = true
-        Task { await app.player.playFrom(songId: hit.songId, utteranceId: hit.utteranceId, timeSec: hit.timeSec) }
+        let queue = app.queue(songIds: rows.map(\.hit.songId))
+        Task { await app.player.playFrom(songId: hit.songId, utteranceId: hit.utteranceId, timeSec: hit.timeSec, queue: queue) }
     }
 
     private func run(_ raw: String, _ field: MatchField) async {
@@ -383,7 +384,8 @@ private struct LyricTextSearchView: View {
     }
     private func open(_ hit: LyricHit) {
         app.showLyrics = true
-        Task { await app.player.playFrom(songId: hit.songId, utteranceId: hit.utteranceId, timeSec: hit.timeSec) }
+        let queue = app.queue(songIds: rows.map(\.songId))
+        Task { await app.player.playFrom(songId: hit.songId, utteranceId: hit.utteranceId, timeSec: hit.timeSec, queue: queue) }
     }
     private func search() async {
         guard let client = app.core else { return }

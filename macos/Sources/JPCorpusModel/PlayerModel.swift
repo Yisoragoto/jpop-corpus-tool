@@ -60,6 +60,16 @@ public final class PlayerModel {
     }
     public var lastError: String?
 
+    /// 播放队列：从专辑、歌手、曲库列表、检索结果开始放时，那一组歌按界面上的顺序进来。
+    /// 一首放完接下一首；单独放一首（不在队列里）时队列就只有它
+    public private(set) var queue: [Track] = [] { didSet { if oldValue.map(\.id) != queue.map(\.id) { publishNowPlaying() } } }
+    /// 当前这首在 `queue` 里的下标
+    public private(set) var queueIndex: Int? { didSet { if oldValue != queueIndex { publishNowPlaying() } } }
+    public var hasNext: Bool { queueIndex.map { $0 + 1 < queue.count } ?? false }
+    public var hasPrevious: Bool { (queueIndex ?? 0) > 0 }
+    /// 「上一首」在这一秒之后按，是回到本首开头（和 Apple 音乐一样）
+    public static let restartThreshold: Double = 3
+
     weak var app: AppModel?
 
     /// 系统的「正在播放」和媒体键（F7/F8/F9、耳机按键、控制中心）。只有真正的应用会接上，测试里是 nil
@@ -178,9 +188,12 @@ public final class PlayerModel {
         } catch { lastError = error.localizedDescription }
     }
 
-    /// 打开一首歌。`at` 有值就跳过去，`autoplay` 决定放不放
-    public func open(_ track: Track, at: Double? = nil, autoplay: Bool = true, focus: Int64? = nil, source: String = "library") async {
+    /// 打开一首歌。`at` 有值就跳过去，`autoplay` 决定放不放。
+    /// `queue` 有值就换成这组歌（应当包含 `track`）；没给时，这首在现有队列里就只挪位置，不在就只剩它一首
+    public func open(_ track: Track, at: Double? = nil, autoplay: Bool = true, focus: Int64? = nil,
+                     source: String = "library", queue newQueue: [Track]? = nil) async {
         guard let client = app?.client else { return }
+        placeInQueue(track, newQueue)
         loadSequence &+= 1
         let request = loadSequence
         defer { if request == loadSequence { loadingLyrics = false } }
@@ -269,11 +282,58 @@ public final class PlayerModel {
     }
 
     /// 从某一行接着往下放（不停）。KWIC 里双击 / 回车就是这个
-    public func playFrom(songId: String, utteranceId: Int64, timeSec: Double?, leadIn: Double = 0.4) async {
+    /// `queue` 是检索结果里的那组歌：这首放完接着放结果里的下一首
+    public func playFrom(songId: String, utteranceId: Int64, timeSec: Double?, leadIn: Double = 0.4, queue: [Track]? = nil) async {
         guard let track = try? await app?.track(songId) else { return }
         let start = timeSec.map { max(0, $0 - leadIn) }
-        await open(track, at: start, autoplay: timeSec != nil, focus: utteranceId, source: "search")
+        await open(track, at: start, autoplay: timeSec != nil, focus: utteranceId, source: "search", queue: queue)
         stopAt = nil
+    }
+
+    // MARK: - 队列
+
+    private func placeInQueue(_ track: Track, _ newQueue: [Track]?) {
+        if let newQueue {
+            var seen = Set<String>()
+            let unique = newQueue.filter { seen.insert($0.id).inserted }
+            queue = seen.contains(track.id) ? unique : [track]
+        }
+        if let index = queue.firstIndex(where: { $0.id == track.id }) {
+            queueIndex = index
+        } else {
+            queue = [track]
+            queueIndex = 0
+        }
+    }
+
+    /// 下一首。已经是最后一首就不动，返回 false
+    @discardableResult
+    public func next() async -> Bool { await advance(skipUnplayable: false) }
+
+    /// 上一首：这首放过 3 秒或已经是第一首，就回到这首开头；否则放前一首
+    public func previous() async {
+        guard let index = queueIndex else { return }
+        if index == 0 || timingPosition > Self.restartThreshold {
+            stopAt = nil
+            loop = nil
+            await seek(to: 0)
+            return
+        }
+        await open(queue[index - 1], autoplay: true, source: source)
+    }
+
+    /// 往后挪一首。自然放完时跳过找不到 / 放不了的歌，接着找能放的
+    private func advance(skipUnplayable: Bool) async -> Bool {
+        guard var target = queueIndex.map({ $0 + 1 }), target < queue.count else { return false }
+        while target < queue.count {
+            let song = queue[target]
+            await open(song, autoplay: true, source: source)
+            // 加载期间用户换了歌：让给用户
+            guard track?.id == song.id, queueIndex == target else { return true }
+            if canPlay || !skipUnplayable { return true }
+            target += 1
+        }
+        return true
     }
 
     // MARK: - 控制
@@ -405,7 +465,7 @@ public final class PlayerModel {
     private func publishNowPlaying() {
         systemMedia?.publish(NowPlayingState(
             track: track, duration: duration, position: position,
-            isPlaying: isPlaying, rate: rate
+            isPlaying: isPlaying, rate: rate, hasNext: hasNext
         ))
     }
 
@@ -442,6 +502,13 @@ public final class PlayerModel {
         if isPlaying, !engine.isPlaying, duration > 0, seconds >= duration - 0.05 {
             isPlaying = false
             flushHistory(completed: true)
+            // 队列里还有：接着放下一首（放完这一下之后用户没换歌才接）
+            guard hasNext else { return }
+            let request = loadSequence
+            Task {
+                guard request == loadSequence, !isPlaying else { return }
+                _ = await advance(skipUnplayable: true)
+            }
         }
     }
 
@@ -454,12 +521,25 @@ public final class PlayerModel {
             canPlay = false; setPosition(0); duration = 0; loop = nil; stopAt = nil; focusUtterance = nil
             spans = [:]; timelines = [:]; loadedClientID = nil
         }
+        // 删掉的歌也从队列里拿掉，当前这首的位置跟着挪
+        if let removed = queue.firstIndex(where: { $0.id == songId }) {
+            queue.remove(at: removed)
+            if track == nil {
+                queueIndex = nil
+                queue = []
+            } else if let index = queueIndex, removed < index {
+                queueIndex = index - 1
+            }
+        }
         await historyWrite?.value
         historyWrite = nil
     }
 
     public func refreshMetadata(_ tracks: [Track]) {
         if let id = track?.id, let updated = tracks.first(where: { $0.id == id }) { track = updated }
+        let byId = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let refreshed = queue.map { byId[$0.id] ?? $0 }
+        if refreshed != queue { queue = refreshed }
     }
 
     private func flushHistory(completed: Bool = false) {

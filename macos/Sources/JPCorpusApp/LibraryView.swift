@@ -126,12 +126,13 @@ private struct SongTable: View {
         .alternatingRowBackgrounds(.disabled)
         .contextMenu(forSelectionType: Track.ID.self) { ids in
             if let id = ids.first {
-                Button("播放") { Task { await app.play(songId: id) } }
+                Button("播放") { let queue = rows; Task { await app.play(songId: id, queue: queue) } }
                 Button("歌曲详情") { app.show(.song(id)) }
                 FavoriteMenuItem(songId: id)
             }
         } primaryAction: { ids in
-            if let id = ids.first { Task { await app.play(songId: id) } }
+            // 曲库列表按现在的筛选和排序成为队列
+            if let id = ids.first { let queue = rows; Task { await app.play(songId: id, queue: queue) } }
         }
     }
 }
@@ -216,7 +217,7 @@ struct AlbumDetailView: View {
                             .filter { !$0.isEmpty }.joined(separator: " · "))
                             .foregroundStyle(.secondary)
                         Button {
-                            if let first = tracks.first { Task { await app.play(songId: first.id) } }
+                            if let first = tracks.first { Task { await app.play(songId: first.id, queue: tracks) } }
                         } label: {
                             Label("播放", systemImage: "play.fill")
                         }
@@ -248,6 +249,8 @@ struct TrackList: View {
     let tracks: [Track]
     var showArtist = false
     var trailing: ((Track) -> String)?
+    /// 从这里开始放时的队列；不给就是这张列表本身（歌手页按分组列出，队列是全部作品）
+    var queue: [Track]?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -273,9 +276,9 @@ struct TrackList: View {
                 .padding(.vertical, 8)
                 .background(app.player.track?.id == t.id ? AnyShapeStyle(.tint.opacity(0.15)) : AnyShapeStyle(.clear))
                 .contentShape(Rectangle())
-                .onTapGesture(count: 2) { Task { await app.play(songId: t.id) } }
+                .onTapGesture(count: 2) { Task { await app.play(songId: t.id, queue: queue ?? tracks) } }
                 .contextMenu {
-                    Button("播放") { Task { await app.play(songId: t.id) } }
+                    Button("播放") { Task { await app.play(songId: t.id, queue: queue ?? tracks) } }
                     Button("歌曲详情") { app.show(.song(t.id)) }
                     FavoriteMenuItem(songId: t.id)
                 }
@@ -368,8 +371,9 @@ struct PersonDetailView: View {
                         }
                         HStack {
                             Button {
-                                if let first = shown.first(where: { $0.track.lineCount > 0 }) ?? shown.first {
-                                    Task { await app.play(songId: first.track.id) }
+                                let queue = LibraryIndex.sectionWorks(personId, shown, bands).flatMap { $0.works.map(\.track) }
+                                if let first = queue.first(where: { $0.lineCount > 0 }) ?? queue.first {
+                                    Task { await app.play(songId: first.id, queue: queue) }
                                 }
                             } label: {
                                 Label("播放", systemImage: "play.fill")
@@ -405,7 +409,8 @@ struct PersonDetailView: View {
                 }
                 let workSections = LibraryIndex.sectionWorks(personId, shown, bands)
                 PersonReleaseAxis(sections: workSections,ended: person?.ended ?? "")
-                ForEach(workSections) { section in PersonWorkSection(section: section) }
+                let workQueue = workSections.flatMap { $0.works.map(\.track) }
+                ForEach(workSections) { section in PersonWorkSection(section: section, queue: workQueue) }
 
                 if !collaborators.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
@@ -463,14 +468,15 @@ struct PersonDetailView: View {
 @MainActor
 private struct PersonWorkSection: View {
     let section: WorkSection
+    let queue: [Track]
     @State private var expanded: Bool
-    init(section: WorkSection) { self.section = section; _expanded = State(initialValue: !section.collapsed) }
+    init(section: WorkSection, queue: [Track]) { self.section = section; self.queue = queue; _expanded = State(initialValue: !section.collapsed) }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !section.title.isEmpty { Button { expanded.toggle() } label: { Label(section.title, systemImage: expanded ? "chevron.down" : "chevron.right") }.buttonStyle(.plain).font(.headline) }
             if expanded {
                 if !section.note.isEmpty { Text(section.note).font(.caption).foregroundStyle(.secondary) }
-                TrackList(tracks: section.works.map(\.track), showArtist: true)
+                TrackList(tracks: section.works.map(\.track), showArtist: true, queue: queue)
             }
         }
     }

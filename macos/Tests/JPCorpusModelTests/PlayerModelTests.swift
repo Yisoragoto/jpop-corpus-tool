@@ -360,7 +360,7 @@ extension PlayerModelTests {
         XCTAssertTrue(coarse.value)
     }
 
-    /// 媒体键：F8 播放 / 暂停，F7 / F9 上一行 / 下一行；系统「正在播放」只在状态变化时报
+    /// 媒体键：F8 播放 / 暂停，控制中心快进快退 5 秒；系统「正在播放」只在状态变化时报
     @MainActor
     func testSystemMediaCommandsAndNowPlayingOnlyOnStateChanges() async throws {
         let (app, engine, _, _) = try await fixture()
@@ -379,9 +379,9 @@ extension PlayerModelTests {
 
         await player.perform(.seek(4))
         XCTAssertEqual(engine.position, 4); XCTAssertEqual(media.states.last?.position, 4)
-        await player.perform(.nextLine)
-        XCTAssertEqual(engine.position, 4.8, accuracy: 0.000001, "下一行 = 从第二行（5 秒）前 0.2 秒放")
-        await player.perform(.skip(-5))
+        await player.perform(.skip(5))
+        XCTAssertEqual(engine.position, 9, accuracy: 0.000001)
+        await player.perform(.skip(-10))
         XCTAssertEqual(engine.position, 0)
         await player.perform(.pause)
         XCTAssertFalse(engine.isPlaying); XCTAssertEqual(media.states.last?.isPlaying, false)
@@ -392,5 +392,146 @@ extension PlayerModelTests {
         let handled = await player.perform(.play)
         XCTAssertFalse(handled, "没有能放的歌：交给系统转给别的应用")
         XCTAssertNil(media.states.last?.track)
+    }
+}
+
+// MARK: - 播放队列
+
+extension PlayerModelTests {
+    private func song(_ id: String, audio: String? = nil) throws -> Track {
+        let path = audio ?? "\(id).flac"
+        return try decoded(Track.self, #"{"id":"\#(id)","title":"曲\#(id)","artist":"歌手","album":"盘","year":"","genre":"","audioPath":"\#(path)","coverPath":"","durationSec":30,"lineCount":2}"#)
+    }
+
+    /// 等异步的切歌做完（自然放完后接下一首是另起的 Task）
+    @MainActor
+    private func waitUntil(_ what: String, _ condition: @MainActor () -> Bool) async throws {
+        for _ in 0..<400 {
+            if condition() { return }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTFail("等不到：\(what)")
+    }
+
+    /// 从专辑放：一首放完自动接下一首，放到最后一首就停
+    @MainActor
+    func testQueueAdvancesOnNaturalEndAndStopsAfterLast() async throws {
+        let (app, engine, _, _) = try await fixture()
+        let player = app.player
+        let album = try ["101", "102", "103"].map { try song($0) }
+        await app.play(songId: "101", queue: album)
+        XCTAssertEqual(player.queue.map(\.id), ["101", "102", "103"])
+        XCTAssertEqual(player.queueIndex, 0)
+        XCTAssertTrue(player.isPlaying); XCTAssertTrue(player.hasNext); XCTAssertFalse(player.hasPrevious)
+
+        engine.emit(30, ended: true)
+        try await waitUntil("放完接第二首") { player.track?.id == "102" && player.isPlaying }
+        XCTAssertEqual(player.queueIndex, 1); XCTAssertEqual(engine.position, 0)
+        XCTAssertTrue(player.hasPrevious)
+
+        engine.emit(30, ended: true)
+        try await waitUntil("放完接第三首") { player.track?.id == "103" && player.isPlaying }
+        XCTAssertFalse(player.hasNext)
+
+        engine.emit(30, ended: true)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(player.track?.id, "103", "最后一首放完就停，不绕回去")
+        XCTAssertFalse(player.isPlaying)
+        let moved = await player.next()
+        XCTAssertFalse(moved)
+    }
+
+    /// 循环一行到行尾：跳回行首，不算「放完了」，不能切歌
+    @MainActor
+    func testLoopDoesNotAdvanceQueue() async throws {
+        let (app, engine, _, _) = try await fixture()
+        let player = app.player
+        let album = try ["001", "102"].map { try song($0) }
+        await app.play(songId: "001", queue: album)
+        await player.toggleLoop(1)
+        engine.emit(5.01)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(player.track?.id, "001")
+        XCTAssertEqual(engine.position, 2, accuracy: 0.000001, "循环回到行首")
+    }
+
+    /// 自然放完时跳过找不到音频的歌；手动「下一首」停在那首上并提示，再按一次能离开
+    @MainActor
+    func testUnplayableSongsAreSkippedOnlyWhenAdvancingAutomatically() async throws {
+        let (app, engine, corpus, _) = try await fixture()
+        let player = app.player
+        await corpus.respondToLyrics("resolveMedia:missing.flac", json: "null")
+        let album = [try song("101"), try song("102", audio: "missing.flac"), try song("103")]
+
+        await app.play(songId: "101", queue: album)
+        engine.emit(30, ended: true)
+        try await waitUntil("跳过放不了的第二首") { player.track?.id == "103" && player.isPlaying }
+        XCTAssertEqual(player.queueIndex, 2)
+
+        await app.play(songId: "101", queue: album)
+        let moved = await player.perform(.nextTrack)
+        XCTAssertTrue(moved)
+        XCTAssertEqual(player.track?.id, "102"); XCTAssertFalse(player.canPlay)
+        XCTAssertTrue(player.lastError?.contains("找不到") == true)
+        let left = await player.perform(.nextTrack)
+        XCTAssertTrue(left, "这首放不了也能用「下一首」离开")
+        XCTAssertEqual(player.track?.id, "103"); XCTAssertTrue(player.isPlaying)
+    }
+
+    /// 上一首：放过 3 秒回到这首开头；开头附近才回到前一首；第一首只回开头
+    @MainActor
+    func testPreviousRestartsAfterThresholdThenGoesBack() async throws {
+        let (app, engine, _, _) = try await fixture()
+        let player = app.player
+        let album = try ["101", "102"].map { try song($0) }
+        await app.play(songId: "102", queue: album)
+        engine.emit(10)
+        await player.perform(.previousTrack)
+        XCTAssertEqual(player.track?.id, "102"); XCTAssertEqual(engine.position, 0)
+        XCTAssertTrue(player.isPlaying)
+
+        await player.perform(.previousTrack)
+        XCTAssertEqual(player.track?.id, "101"); XCTAssertEqual(player.queueIndex, 0)
+        engine.emit(1)
+        await player.previous()
+        XCTAssertEqual(player.track?.id, "101", "第一首：只回开头"); XCTAssertEqual(engine.position, 0)
+    }
+
+    /// 队列去重；放队列里的歌只挪位置，放队列外的歌队列就只剩它
+    @MainActor
+    func testOpeningInsideQueueMovesAndOutsideReplaces() async throws {
+        let (app, _, _, _) = try await fixture()
+        let player = app.player
+        XCTAssertEqual(player.queue.map(\.id), ["001"], "单独放一首：队列只有它")
+        let a = try song("101"), b = try song("102"), c = try song("103")
+        await app.play(songId: "102", queue: [a, b, a, c])
+        XCTAssertEqual(player.queue.map(\.id), ["101", "102", "103"]); XCTAssertEqual(player.queueIndex, 1)
+        await player.open(c)
+        XCTAssertEqual(player.queue.count, 3); XCTAssertEqual(player.queueIndex, 2)
+        await player.open(try song("109"))
+        XCTAssertEqual(player.queue.map(\.id), ["109"]); XCTAssertFalse(player.hasNext)
+        await player.open(a, queue: [b, c])
+        XCTAssertEqual(player.queue.map(\.id), ["101"], "给的队列里没有这首：不拿别的歌冒充")
+    }
+
+    /// 删掉队列里前面的歌，当前位置跟着挪；系统「正在播放」的「下一首」随队列变灰
+    @MainActor
+    func testDeletionShiftsQueueAndNowPlayingReportsNext() async throws {
+        let (app, _, _, _) = try await fixture()
+        let player = app.player
+        let media = MediaRecorder()
+        player.systemMedia = media
+        XCTAssertEqual(media.states.last?.hasNext, false)
+        let album = try ["101", "102", "103"].map { try song($0) }
+        await app.play(songId: "102", queue: album)
+        XCTAssertEqual(media.states.last?.hasNext, true)
+        await player.prepareDeletion("101")
+        XCTAssertEqual(player.queue.map(\.id), ["102", "103"]); XCTAssertEqual(player.queueIndex, 0)
+        XCTAssertEqual(player.track?.id, "102")
+        await player.prepareDeletion("103")
+        XCTAssertFalse(player.hasNext)
+        XCTAssertEqual(media.states.last?.hasNext, false)
+        let moved = await player.perform(.nextTrack)
+        XCTAssertFalse(moved)
     }
 }

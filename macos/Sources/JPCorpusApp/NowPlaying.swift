@@ -25,8 +25,8 @@ final class SystemMediaControls: SystemMediaPublishing {
         bind(center.playCommand, .play)
         bind(center.pauseCommand, .pause)
         bind(center.togglePlayPauseCommand, .toggle)
-        bind(center.nextTrackCommand, .nextLine)
-        bind(center.previousTrackCommand, .previousLine)
+        bind(center.nextTrackCommand, .nextTrack)
+        bind(center.previousTrackCommand, .previousTrack)
         center.skipForwardCommand.preferredIntervals = [5]
         center.skipBackwardCommand.preferredIntervals = [5]
         bind(center.skipForwardCommand, .skip(5))
@@ -56,7 +56,12 @@ final class SystemMediaControls: SystemMediaPublishing {
 
     /// 真正的跳转是异步的，这里只判断现在有没有能操作的歌
     private func run(_ action: MediaCommand) -> MPRemoteCommandHandlerStatus {
-        guard let player, player.track != nil, player.canPlay else { return .noActionableNowPlayingItem }
+        guard let player, player.track != nil else { return .noActionableNowPlayingItem }
+        switch action {
+        case .nextTrack: guard player.hasNext else { return .noSuchContent }
+        case .previousTrack: break
+        default: guard player.canPlay else { return .noActionableNowPlayingItem }
+        }
         Task { await player.perform(action) }
         return .success
     }
@@ -64,6 +69,8 @@ final class SystemMediaControls: SystemMediaPublishing {
     func publish(_ state: NowPlayingState) {
         guard state != last else { return }
         last = state
+        // 队列放到最后一首：系统的「下一首」变灰，不留一个按了没反应的按钮
+        MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = state.hasNext
         let center = MPNowPlayingInfoCenter.default()
         guard let track = state.track else {
             center.nowPlayingInfo = nil

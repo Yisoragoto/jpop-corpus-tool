@@ -24,9 +24,11 @@ actor FakeCorpus: CorpusCalling {
     var failScan = false
     var lyricResponses: [String: String] = [:]
     func respondToLyrics(_ method: String, json: String) { lyricResponses[method] = json }
+    /// 先找「方法名:参数」的专门回答（比如某一首的音频找不到），没有再用这个方法的通用回答
     func lyricValue<T: Decodable>(_ method: String, arguments: [String] = []) throws -> T {
         calls.append(Call(name: method, arguments: arguments))
-        guard let json = lyricResponses[method] else { throw FakeError.unexpected(method) }
+        let specific = lyricResponses["\(method):\(arguments.joined(separator: ","))"]
+        guard let json = specific ?? lyricResponses[method] else { throw FakeError.unexpected(method) }
         return try decoded(T.self, json)
     }
     func failScanning() { failScan = true }
