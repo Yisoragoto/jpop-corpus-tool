@@ -15,11 +15,17 @@ public final class UpdateModel {
     public var showChangelog = false
     public var confirmDebug = false
     public var autoCheck: Bool { didSet { defaults.set(autoCheck, forKey: "autoCheckUpdates") } }
+    /// 上次检查的时间和失败原因（nil = 成功）。启动时的自动检查失败不弹窗打扰，
+    /// 但设置里要看得出「没联网 / 清单坏了」和「已经是最新」不是一回事
+    public private(set) var lastCheckedAt: Date? { didSet { defaults.set(lastCheckedAt, forKey: "updateLastCheckedAt") } }
+    public private(set) var lastCheckError: String? { didSet { defaults.set(lastCheckError, forKey: "updateLastCheckError") } }
     @ObservationIgnored private let defaults: UserDefaults
     private var started = false
     public init(defaults: UserDefaults = .standard, client: (any UpdateCalling)? = nil) {
         self.defaults = defaults; self.client = client
         autoCheck = defaults.object(forKey: "autoCheckUpdates") as? Bool ?? true
+        lastCheckedAt = defaults.object(forKey: "updateLastCheckedAt") as? Date
+        lastCheckError = defaults.string(forKey: "updateLastCheckError")
     }
     public func load() async {
         do { preferences = try await client?.updatePreferences() }
@@ -35,8 +41,12 @@ public final class UpdateModel {
         defer { busy = false }
         do {
             let result = try await client.updateCheck(); status = result
+            lastCheckedAt = Date(); lastCheckError = nil
             if automatic && result.updateAvailable && !result.skipped { offerSkip = true; showDialog = true }
-        } catch { if !automatic { errorMessage = error.localizedDescription } }
+        } catch {
+            lastCheckedAt = Date(); lastCheckError = error.localizedDescription
+            if !automatic { errorMessage = error.localizedDescription }
+        }
     }
     public func setChannel(_ channel: UpdateChannel) async {
         guard !busy, let client else { return }; busy = true; errorMessage = nil

@@ -25,10 +25,10 @@ public protocol SystemMediaPublishing: AnyObject {
 }
 
 /// 媒体键、耳机按键、控制中心发来的命令。
-/// 没有播放队列，「上一首 / 下一首」按上一行 / 下一行处理：学歌词时最常用的就是这个
+/// 没有「上一首 / 下一首」：应用里还没有播放队列，把它们挪作上一行 / 下一行会让人以为切歌坏了，
+/// 所以不向系统提供这两个命令（跳行用 ⌥⌘↑ / ⌥⌘↓）
 public enum MediaCommand: Equatable, Sendable {
     case play, pause, toggle
-    case nextLine, previousLine
     case skip(Double)
     case seek(Double)
 }
@@ -42,8 +42,6 @@ extension PlayerModel {
         case .play: if !isPlaying { play() }
         case .pause: if isPlaying { pause() }
         case .toggle: toggle()
-        case .nextLine: await step(1)
-        case .previousLine: await step(-1)
         case .skip(let seconds): await nudge(seconds)
         case .seek(let seconds): await seek(to: seconds)
         }

@@ -116,8 +116,11 @@ enum MainWindow {
     static weak var window: NSWindow?
     static var open: OpenWindowAction?
     private static var media: SystemMediaControls?
+    /// 退出前要把这首的收听记进库
+    static weak var model: AppModel?
 
     static func installMediaControls(_ app: AppModel) {
+        model = app
         guard media == nil else { return }
         media = SystemMediaControls(player: app.player) { [weak app] track in
             guard let client = app?.client else { return nil }
@@ -157,11 +160,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if SmokeRun.isEnabled {
             let visible = sender.windows.filter { $0.isVisible }.count
             SmokeRun.trace("shouldTerminate，窗口数 \(sender.windows.count)，可见 \(visible)")
+            return .terminateNow
         }
-        return .terminateNow
+        guard let model = MainWindow.model else { return .terminateNow }
+        // 正在听的这首还没记进播放历史：写完再退（最多等 2 秒，写入卡住也不拦着退出）
+        let gate = TerminateGate(sender)
+        Task { @MainActor in
+            await model.player.finishHistory()
+            gate.reply()
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            gate.reply()
+        }
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         if SmokeRun.isEnabled { SmokeRun.trace("willTerminate") }
+    }
+}
+
+/// 退出时只回复系统一次：写完历史和 2 秒兜底，谁先到算谁
+@MainActor
+private final class TerminateGate {
+    private let app: NSApplication
+    private var replied = false
+    init(_ app: NSApplication) { self.app = app }
+    func reply() {
+        guard !replied else { return }
+        replied = true
+        app.reply(toApplicationShouldTerminate: true)
     }
 }

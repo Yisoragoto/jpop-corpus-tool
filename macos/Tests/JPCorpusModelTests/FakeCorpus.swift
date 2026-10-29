@@ -70,7 +70,12 @@ actor FakeCorpus: CorpusCalling {
     }
     func resolveMedia(_ stored: String) async throws -> String? { try lyricValue("resolveMedia", arguments: [stored]) }
     private(set) var recordedPlays: [PlayEvent] = []
-    func recordPlay(_ event: PlayEvent) async throws { recordedPlays.append(event) }
+    private var recordPlayFails = false
+    func failRecordPlay(_ fail: Bool) { recordPlayFails = fail }
+    func recordPlay(_ event: PlayEvent) async throws {
+        if recordPlayFails { throw FakeError.injected }
+        recordedPlays.append(event)
+    }
     func kwic(_ query: KwicQuery) async throws -> [KwicHit] { throw FakeError.unexpected("kwic") }
     func frequency(_ query: FrequencyQuery) async throws -> FrequencyResult { throw FakeError.unexpected("frequency") }
     func collocations(_ query: CollocationQuery) async throws -> CollocationResult { throw FakeError.unexpected("collocations") }

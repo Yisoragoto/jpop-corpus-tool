@@ -3,7 +3,7 @@ import JPCore
 import JPCorpusModel
 import MediaPlayer
 
-/// 系统的「正在播放」：媒体键（F7/F8/F9）、耳机线控、控制中心、锁屏都走这里。
+/// 系统的「正在播放」：媒体键（F8 播放 / 暂停）、耳机线控、控制中心、锁屏都走这里。
 ///
 /// macOS 只把媒体键发给「正在播放」的应用，而认不认你是正在播放的应用，看的是
 /// MPNowPlayingInfoCenter 有没有信息、`playbackState` 是不是 playing / paused。
@@ -25,8 +25,9 @@ final class SystemMediaControls: SystemMediaPublishing {
         bind(center.playCommand, .play)
         bind(center.pauseCommand, .pause)
         bind(center.togglePlayPauseCommand, .toggle)
-        bind(center.nextTrackCommand, .nextLine)
-        bind(center.previousTrackCommand, .previousLine)
+        // 没有播放队列：不接「上一首 / 下一首」，系统就不会显示能点却没反应（或者跳行）的切歌按钮
+        center.nextTrackCommand.isEnabled = false
+        center.previousTrackCommand.isEnabled = false
         center.skipForwardCommand.preferredIntervals = [5]
         center.skipBackwardCommand.preferredIntervals = [5]
         bind(center.skipForwardCommand, .skip(5))

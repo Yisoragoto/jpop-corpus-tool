@@ -1,6 +1,7 @@
 import Foundation
 import JPCore
 import Observation
+import os
 
 /// 播放器。音频走 AVFoundation（原生解码 FLAC / MP3 / AAC，系统的音量与输出设备），
 /// **定位规则走 Rust**：每行的起止（`lineSpans`）、试听窗口（`listenWindow`）都由
@@ -59,10 +60,13 @@ public final class PlayerModel {
          pitch == 0 ? nil : String(format: "%+d", pitch)].compactMap { $0 }.joined(separator: " · ")
     }
     public var lastError: String?
+    /// 播放历史最近一次没写进库的原因（写成功就清掉）。首页「继续听」和统计都靠这张表
+    public private(set) var historyError: String?
 
     weak var app: AppModel?
+    @ObservationIgnored private let log = Logger(subsystem: "org.jpcorpus.app", category: "history")
 
-    /// 系统的「正在播放」和媒体键（F7/F8/F9、耳机按键、控制中心）。只有真正的应用会接上，测试里是 nil
+    /// 系统的「正在播放」和媒体键（F8、耳机按键、控制中心）。只有真正的应用会接上，测试里是 nil
     @ObservationIgnored public var systemMedia: (any SystemMediaPublishing)? {
         didSet { publishNowPlaying() }
     }
@@ -106,18 +110,24 @@ public final class PlayerModel {
     /// 每行验证过的逐字单位和起点，歌词、时间轴、行区间变了才重算（渲染时会被反复问到）
     @ObservationIgnored private var unitCache: [Int64: (text: String, units: [LyricTimingUnit]?)] = [:]
     @ObservationIgnored private var lineStarts: [Double?] = []
+    /// 卡拉 OK 版式要的每行起止（和 `lines` 一一对应）。换歌词时算一次，全屏卡拉 OK 每帧只做查找
+    public private(set) var ktvLines: [KtvLine] = []
 
     private func rebuildLineIndex() {
         var cache: [Int64: (text: String, units: [LyricTimingUnit]?)] = [:]
         var starts: [Double?] = []
+        var ktv: [KtvLine] = []
         starts.reserveCapacity(lines.count)
+        ktv.reserveCapacity(lines.count)
         for line in lines {
             let units = validatedUnits(for: line)
             cache[line.utteranceId] = (line.text, units)
             starts.append(line.timeSec.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } ?? units?.first?.startSec)
+            ktv.append(KtvLine(start: units?.first?.startSec ?? line.timeSec, end: units?.last?.endSec))
         }
         unitCache = cache
         lineStarts = starts
+        if ktv != ktvLines { ktvLines = ktv }
         refreshCurrentLine()
     }
 
@@ -462,6 +472,13 @@ public final class PlayerModel {
         if let id = track?.id, let updated = tracks.first(where: { $0.id == id }) { track = updated }
     }
 
+    /// 退出前调：把这首已经听的时长记下，并等前面排着的写入做完
+    public func finishHistory() async {
+        flushHistory()
+        await historyWrite?.value
+    }
+
+    /// 记下的 client 是写入那一刻的库：换库之后，旧库的收听仍记回旧库
     private func flushHistory(completed: Bool = false) {
         guard let track, listened >= 2, let client = app?.client else { return }
         let event = PlayEvent(songId: track.id, listenedSec: listened, positionSec: position, completed: completed, source: source)
@@ -469,8 +486,17 @@ public final class PlayerModel {
         let previous = historyWrite
         historyWrite = Task<Void, Never> {
             await previous?.value
-            try? await client.recordPlay(event)
-            app?.homeVersion += 1
+            do {
+                try await client.recordPlay(event)
+                historyError = nil
+                app?.homeVersion += 1
+            } catch {
+                let message = error.localizedDescription
+                log.error("播放记录没写进去：\(event.songId, privacy: .public) \(event.listenedSec) 秒：\(message, privacy: .public)")
+                // 只在第一次失败时提示，不每暂停一次就弹一次
+                if historyError == nil { app?.notice = "播放记录没写进去（首页「继续听」和统计会缺这一笔）：\(message)" }
+                historyError = message
+            }
         }
     }
 }

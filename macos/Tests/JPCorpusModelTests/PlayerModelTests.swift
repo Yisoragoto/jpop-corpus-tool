@@ -264,6 +264,32 @@ final class PlayerModelTests: XCTestCase {
         XCTAssertTrue(app.player.lastError?.contains("播放失败") == true)
     }
 
+    /// 播放历史写不进去：要有提示（只提示一次），之后写成功就清掉
+    @MainActor
+    func testHistoryWriteFailureIsReportedOnceAndClearsOnSuccess() async throws {
+        let (app, engine, corpus, _) = try await fixture()
+        await corpus.failRecordPlay(true)
+        app.player.play()
+        for i in 0...30 { engine.emit(Double(i) / 10) }
+        app.player.pause()
+        await app.player.finishHistory()
+        XCTAssertNotNil(app.player.historyError)
+        XCTAssertEqual(app.notice?.contains("播放记录没写进去"), true)
+        app.notice = nil
+        app.player.play()
+        for i in 31...60 { engine.emit(Double(i) / 10) }
+        app.player.pause()
+        await app.player.finishHistory()
+        XCTAssertNil(app.notice, "连续失败不重复提示")
+        await corpus.failRecordPlay(false)
+        app.player.play()
+        for i in 61...90 { engine.emit(Double(i) / 10) }
+        await app.player.finishHistory()
+        XCTAssertNil(app.player.historyError)
+        let plays = await corpus.recordedPlays
+        XCTAssertEqual(plays.count, 1, "退出前的收集把正在听的这一段也记下")
+    }
+
     @MainActor
     func testRealUnitsAndEstimatedLoopTailSurviveTuning() async throws {
         let (app, engine, corpus, _) = try await fixture()
@@ -360,7 +386,7 @@ extension PlayerModelTests {
         XCTAssertTrue(coarse.value)
     }
 
-    /// 媒体键：F8 播放 / 暂停，F7 / F9 上一行 / 下一行；系统「正在播放」只在状态变化时报
+    /// 媒体键：F8 播放 / 暂停，控制中心快进快退 5 秒；系统「正在播放」只在状态变化时报
     @MainActor
     func testSystemMediaCommandsAndNowPlayingOnlyOnStateChanges() async throws {
         let (app, engine, _, _) = try await fixture()
@@ -379,9 +405,9 @@ extension PlayerModelTests {
 
         await player.perform(.seek(4))
         XCTAssertEqual(engine.position, 4); XCTAssertEqual(media.states.last?.position, 4)
-        await player.perform(.nextLine)
-        XCTAssertEqual(engine.position, 4.8, accuracy: 0.000001, "下一行 = 从第二行（5 秒）前 0.2 秒放")
-        await player.perform(.skip(-5))
+        await player.perform(.skip(5))
+        XCTAssertEqual(engine.position, 9, accuracy: 0.000001)
+        await player.perform(.skip(-10))
         XCTAssertEqual(engine.position, 0)
         await player.perform(.pause)
         XCTAssertFalse(engine.isPlaying); XCTAssertEqual(media.states.last?.isPlaying, false)

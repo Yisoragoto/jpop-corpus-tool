@@ -63,8 +63,13 @@ final class UpdateModelTests: XCTestCase {
         XCTAssertNil(model.status); XCTAssertEqual(model.preferences?.channel, .debug); XCTAssertFalse(model.busy)
     }
     func testOfflineErrorsReleaseBusyAndAutomaticFailureIsQuiet() async throws {
-        let model = UpdateModel(defaults: defaults(), client: try FakeUpdates(failed: true))
+        let store = defaults()
+        let model = UpdateModel(defaults: store, client: try FakeUpdates(failed: true))
         await model.startup(); XCTAssertNil(model.errorMessage); XCTAssertFalse(model.busy)
+        XCTAssertNotNil(model.lastCheckedAt, "自动检查失败不弹窗，但要记下来")
+        XCTAssertEqual(model.lastCheckError?.contains("离线"), true)
+        let reopened = UpdateModel(defaults: store)
+        XCTAssertEqual(reopened.lastCheckError, model.lastCheckError, "重启后设置里仍看得到上次失败")
         await model.check(); XCTAssertNotNil(model.errorMessage); XCTAssertFalse(model.busy)
         await model.changelog(); XCTAssertFalse(model.showChangelog); XCTAssertFalse(model.busy)
     }
