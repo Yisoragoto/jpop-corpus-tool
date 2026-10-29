@@ -28,6 +28,13 @@ struct UpdateSettingsView: View {
                     Button("查看新版本…") { updates.offerSkip = false; updates.showDialog = true }
                 }
             }.disabled(updates.busy || app.core == nil)
+            if let at = updates.lastCheckedAt {
+                let when = at.formatted(date: .abbreviated, time: .shortened)
+                Text(updates.lastCheckError.map { "上次检查 \(when) 失败：\($0)" } ?? "上次检查 \(when)")
+                    .font(.caption)
+                    .foregroundStyle(updates.lastCheckError == nil ? Color.secondary : Color.orange)
+                    .textSelection(.enabled)
+            }
             if let status = updates.status {
                 Text(status.message.isEmpty ? (status.updateAvailable ? "有新版本 \(status.latest?.identity ?? "")" : "已经是最新版（\(status.current)）") : status.message).font(.caption)
             }

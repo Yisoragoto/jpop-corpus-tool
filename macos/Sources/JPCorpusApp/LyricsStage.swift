@@ -343,13 +343,11 @@ struct LyricsStage: View {
     }
 
     private var karaokeLyrics: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !app.player.isPlaying)) { _ in
+        // 30 帧足够让扫亮看着连贯；每行的起止是换歌词时算好的（player.ktvLines），每帧只做一次查找
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !app.player.isPlaying)) { _ in
             let player = app.player
             let sec = player.timingPosition
-            let times = player.lines.map { line in
-                KtvLine(start: player.timingUnits(for: line)?.first?.startSec ?? line.timeSec,
-                        end: player.timingUnits(for: line)?.last?.endSec)
-            }
+            let times = player.ktvLines
             let layout = Karaoke.ktvLayout(times, sec)
             VStack(spacing: 28) {
                 Spacer()

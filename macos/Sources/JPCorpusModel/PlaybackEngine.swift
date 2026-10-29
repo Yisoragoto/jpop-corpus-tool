@@ -39,9 +39,8 @@ public final class NativePlaybackEngine: PlaybackEngine {
     private var scheduled = false
     private var tapped = false
     private var reconnectRequired = false
+    /// 只在播放时存在：暂停、卸载、放完就停，空闲时不再每 50ms 唤醒一次主线程
     private var timer: Timer?
-    /// 上一次报给界面的位置：暂停时位置不动就不报，不白白唤醒界面
-    private var lastReported: Double = -1
     private var configurationObserver: NSObjectProtocol?
     public var onTick: ((Double) -> Void)?
     public var onStateChange: (() -> Void)?
@@ -72,22 +71,33 @@ public final class NativePlaybackEngine: PlaybackEngine {
             // Leave the audio engine's notification stack before mutating its graph on the main thread.
             Task { @MainActor [weak self] in self?.configurationChanged() }
         }
+    }
+
+    /// 开始走时钟（播放时）。已经在走就不重开
+    private func startTicker() {
+        guard timer == nil else { return }
         let ticker = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if self.isPlaying && !self.engine.isRunning { self.configurationChanged() }
-                let seconds = self.position
-                // The render clock can disappear when the device stops. Keep the last source position (within one tick).
-                self.heldPosition = seconds
-                guard self.isPlaying || seconds != self.lastReported else { return }
-                self.lastReported = seconds
-                self.onTick?(seconds)
-            }
+            MainActor.assumeIsolated { self?.tickNow() }
         }
         // 允许系统把这个计时器和别的唤醒合并：省电，进度显示看不出差别
         ticker.tolerance = 0.01
         RunLoop.main.add(ticker, forMode: .common)
         timer = ticker
+    }
+
+    private func stopTicker() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func tickNow() {
+        guard isPlaying else { stopTicker(); return }
+        if !engine.isRunning { configurationChanged() }
+        let seconds = position
+        // The render clock can disappear when the device stops. Keep the last source position (within one tick).
+        heldPosition = seconds
+        onTick?(seconds)
+        if !isPlaying { stopTicker() }
     }
 
     deinit {
@@ -110,6 +120,7 @@ public final class NativePlaybackEngine: PlaybackEngine {
     public func unload() {
         generation &+= 1
         isPlaying = false
+        stopTicker()
         node.stop()
         engine.stop()
         removeTap()
@@ -130,12 +141,14 @@ public final class NativePlaybackEngine: PlaybackEngine {
         node.play()
         isPlaying = true
         lastError = nil
+        startTicker()
     }
 
     public func pause() {
         heldPosition = position
         node.pause()
         isPlaying = false
+        stopTicker()
     }
 
     public func seek(to seconds: Double) {
@@ -151,6 +164,7 @@ public final class NativePlaybackEngine: PlaybackEngine {
         schedule()
         if resume && scheduled { node.play() }
         isPlaying = resume && scheduled
+        if !isPlaying { stopTicker() }
     }
 
     private func schedule() {
@@ -174,6 +188,7 @@ public final class NativePlaybackEngine: PlaybackEngine {
                     if self.isPlaying { self.node.play() }
                 } else {
                     self.isPlaying = false
+                    self.stopTicker()
                     self.onTick?(self.heldPosition)
                 }
             }
@@ -200,6 +215,7 @@ public final class NativePlaybackEngine: PlaybackEngine {
             isPlaying = false
             lastError = "音频输出设备变化后无法恢复播放：\(error.localizedDescription)"
         }
+        if !isPlaying { stopTicker() }
         onStateChange?()
     }
 
