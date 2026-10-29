@@ -40,7 +40,6 @@ struct CloudSongPanel: View {
     }
     private func songRow(_ s: SongHits) -> some View {
         let start = WordTimingLogic.wordStart(s.first,timings)
-        let isNow = InterfaceLogic.isPlayingSpan(currentSong: app.player.track?.id,playing: app.player.isPlaying,position: app.player.position,songId: s.songId,startSec: start?.sec,endSec: s.first.endSec)
         return VStack(alignment: .leading,spacing: 6) {
             HStack(alignment: .top) {
                 Button { play(s,fullscreen: true) } label: { CoverImage(path: app.tracks.first { $0.id == s.songId }?.coverPath ?? "",size: 40,cornerRadius: 6) }.buttonStyle(.plain).help("播放并进入全屏歌词")
@@ -50,7 +49,7 @@ struct CloudSongPanel: View {
                         (Text(s.atStart ? "句首 · " : "")+Text(s.first.left)+Text(s.first.keyword).bold().foregroundColor(.accentColor)+Text(s.first.right)).font(.caption).lineLimit(3)
                     }.frame(maxWidth: .infinity,alignment: .leading)
                 }.buttonStyle(.plain)
-                Button { play(s) } label: { Image(systemName: isNow ? "speaker.wave.2.fill" : "play.fill") }.buttonStyle(.borderless)
+                Button { play(s) } label: { CloudPlayingIcon(songId: s.songId,startSec: start?.sec,endSec: s.first.endSec) }.buttonStyle(.borderless)
             }.contextMenu {
                 Button("从行首校准词首") { calibrating = s.songId; Task { await app.player.playFrom(songId: s.songId,utteranceId: s.first.utteranceId,timeSec: max(0,(s.first.timeSec ?? 0)-0.5),leadIn: 0) } }
                 Button("歌曲详情") { app.show(.song(s.songId)) }
@@ -88,5 +87,19 @@ struct CloudSongPanel: View {
     }
     private func search() {
         app.searchRequest = SearchRequest(keyword: word.variants.joined(separator: " | "),field: .lemma,scope: scope,pos: word.pos); app.section = .search
+    }
+}
+
+/// 「正在放这一句」的小喇叭。单独一个视图：只有它跟着播放位置重算，整张列表不跟着动
+@MainActor
+private struct CloudPlayingIcon: View {
+    @Environment(AppModel.self) private var app
+    let songId: String
+    let startSec: Double?
+    let endSec: Double?
+    var body: some View {
+        let player = app.player
+        let isNow = InterfaceLogic.isPlayingSpan(currentSong: player.track?.id,playing: player.isPlaying,position: player.coarsePosition,songId: songId,startSec: startSec,endSec: endSec)
+        Image(systemName: isNow ? "speaker.wave.2.fill" : "play.fill")
     }
 }

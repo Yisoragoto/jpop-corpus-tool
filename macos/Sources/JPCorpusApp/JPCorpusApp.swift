@@ -18,14 +18,20 @@ struct JPCorpusApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("JPOP Corpus") {
+        // 单个主窗口（不是 WindowGroup）：⌘W 关掉后，点 Dock 图标、「窗口」菜单里的「JPOP Corpus」都能把它开回来，
+        // 不会开出第二个窗口；播放、库都在 AppModel 里，窗口关了也不停
+        Window("JPOP Corpus", id: MainWindow.id) {
             ContentView()
                 .environment(app)
                 .frame(minWidth: 960, minHeight: 600)
                 .task {
+                    // 窗口关了再开会再走一遍：库已经开着就不再开一次（否则会换掉正在用的连接）
+                    guard !MainWindow.started else { return }
+                    MainWindow.started = true
                     if SmokeRun.isEnabled {
                         await SmokeRun.run(app)
                     } else {
+                        MainWindow.installMediaControls(app)
                         await app.restore()
                     }
                 }
@@ -58,7 +64,11 @@ struct JPCorpusApp: App {
                 Divider()
                 Button(app.showLyrics ? "隐藏歌词面板" : "显示歌词面板") { app.showLyrics.toggle() }
                     .keyboardShortcut("y", modifiers: [.command])
-                Button(app.showStage ? "退出全屏歌词" : "全屏歌词") { app.showStage.toggle() }
+                Button(app.showStage ? "退出全屏歌词" : "全屏歌词") {
+                    app.showStage.toggle()
+                    // 平时由主窗口开全屏歌词窗口；主窗口被关掉时自己开
+                    if app.showStage, MainWindow.window?.isVisible != true { MainWindow.open?(id: "stage") }
+                }
                     .keyboardShortcut("f", modifiers: [.command, .shift])
                     .disabled(app.player.track == nil)
                 Toggle("振假名", isOn: Binding(get: { app.showFurigana }, set: { app.showFurigana = $0 }))
@@ -98,9 +108,46 @@ struct JPCorpusApp: App {
     }
 }
 
-/// 只为冒烟模式记生命周期：CI 上应用一闪而过时，要知道是没开出窗口、还是被谁要求退出
+/// 主窗口：记住它和打开它的办法，Dock 图标被点时用
+@MainActor
+enum MainWindow {
+    static let id = "main"
+    static var started = false
+    static weak var window: NSWindow?
+    static var open: OpenWindowAction?
+    private static var media: SystemMediaControls?
+
+    static func installMediaControls(_ app: AppModel) {
+        guard media == nil else { return }
+        media = SystemMediaControls(player: app.player) { [weak app] track in
+            guard let client = app?.client else { return nil }
+            return (try? await client.resolveMedia(track.coverPath)) ?? nil
+        }
+    }
+
+    /// 主窗口在就拿到前面（最小化了就还原），不在就重新开
+    static func show() {
+        if let window, window.isVisible || window.isMiniaturized {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            open?(id: id)
+        }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+}
+
+/// 记生命周期（冒烟模式）；Dock 图标被点时把主窗口开回来
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// 主窗口被 ⌘W 关掉以后点 Dock 图标：开回主窗口。全屏歌词还开着（在另一个桌面）时系统认为
+    /// 「有窗口」，不会自己开，所以这里看的是主窗口本身
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard MainWindow.window?.isVisible != true else { return true }
+        MainWindow.show()
+        return false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard SmokeRun.isEnabled else { return }
         SmokeRun.trace("didFinishLaunching，窗口数 \(NSApplication.shared.windows.count)")

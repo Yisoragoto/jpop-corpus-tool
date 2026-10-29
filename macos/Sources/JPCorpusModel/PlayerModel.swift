@@ -10,13 +10,29 @@ import Observation
 @MainActor
 @Observable
 public final class PlayerModel {
-    public private(set) var track: Track?
-    public private(set) var lines: [LyricLine] = []
-    public private(set) var timelines: [Int64: LineTimeline] = [:]
-    public private(set) var spans: [Int64: LineSpan] = [:]
-    public private(set) var position: Double = 0
-    public private(set) var duration: Double = 0
-    public private(set) var isPlaying = false
+    public private(set) var track: Track? { didSet { refreshCurrentLine(); if oldValue != track { publishNowPlaying() } } }
+    public private(set) var lines: [LyricLine] = [] { didSet { rebuildLineIndex() } }
+    public private(set) var timelines: [Int64: LineTimeline] = [:] { didSet { rebuildLineIndex() } }
+    public private(set) var spans: [Int64: LineSpan] = [:] { didSet { rebuildLineIndex() } }
+    /// 源音频秒数。只在真的变了时才写：@Observable 的属性一写就通知，暂停时也每 50ms 写一次同样的值，
+    /// 读它的界面就会白白重算
+    public private(set) var position: Double = 0 {
+        didSet {
+            let quarter = (position * 4).rounded(.down) / 4
+            if quarter != coarsePosition { coarsePosition = quarter }
+            refreshCurrentLine()
+        }
+    }
+    /// `position` 取整到 0.25 秒。进度条、检索结果的「正在放」只要这个精度，
+    /// 读它的视图每秒最多重算 4 次，而不是 20 次
+    public private(set) var coarsePosition: Double = 0
+    /// 当前唱到哪一行：最后一个时间不晚于当前位置的行。存起来而不是每次现算：
+    /// 歌词面板每一行都要问一次，现算就是每个时钟周期 O(行数²)
+    public private(set) var currentUtterance: Int64?
+    /// `currentUtterance` 在 `lines` 里的下标
+    public private(set) var currentIndex: Int?
+    public private(set) var duration: Double = 0 { didSet { if oldValue != duration { publishNowPlaying() } } }
+    public private(set) var isPlaying = false { didSet { if oldValue != isPlaying { publishNowPlaying() } } }
     /// 正在循环的那一行
     public private(set) var loop: LineSpan?
     /// 试听一句：播到这里自动停
@@ -25,7 +41,7 @@ public final class PlayerModel {
     public var focusUtterance: Int64?
     public static let rateSteps: [Float] = [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2]
     public static let pitchSteps = Array(-6...6)
-    public private(set) var rate: Float = 1
+    public private(set) var rate: Float = 1 { didSet { if oldValue != rate { publishNowPlaying() } } }
     public private(set) var pitch: Int = 0
     public private(set) var volume: Float
     public var showRemaining = true
@@ -45,6 +61,11 @@ public final class PlayerModel {
     public var lastError: String?
 
     weak var app: AppModel?
+
+    /// 系统的「正在播放」和媒体键（F7/F8/F9、耳机按键、控制中心）。只有真正的应用会接上，测试里是 nil
+    @ObservationIgnored public var systemMedia: (any SystemMediaPublishing)? {
+        didSet { publishNowPlaying() }
+    }
 
     @ObservationIgnored private let engine: any PlaybackEngine
     @ObservationIgnored private let defaults: UserDefaults
@@ -74,7 +95,7 @@ public final class PlayerModel {
         audio.onTick = { [weak self] seconds in self?.tick(seconds) }
         audio.onStateChange = { [weak self] in
             guard let self else { return }
-            self.position = self.engine.position
+            self.setPosition(self.engine.position)
             self.isPlaying = self.engine.isPlaying
             self.lastTick = nil
             if let error = self.engine.lastError { self.lastError = error }
@@ -82,25 +103,48 @@ public final class PlayerModel {
         }
     }
 
-    /// 当前唱到哪一行：最后一个时间不晚于当前位置的行
-    public var currentUtterance: Int64? {
-        guard track != nil else { return nil }
-        var current: Int64?
-        var latest = -Double.infinity
+    /// 每行验证过的逐字单位和起点，歌词、时间轴、行区间变了才重算（渲染时会被反复问到）
+    @ObservationIgnored private var unitCache: [Int64: (text: String, units: [LyricTimingUnit]?)] = [:]
+    @ObservationIgnored private var lineStarts: [Double?] = []
+
+    private func rebuildLineIndex() {
+        var cache: [Int64: (text: String, units: [LyricTimingUnit]?)] = [:]
+        var starts: [Double?] = []
+        starts.reserveCapacity(lines.count)
         for line in lines {
-            let start = line.timeSec.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
-                ?? timingUnits(for: line)?.first?.startSec
-            guard let t = start, t <= position, t >= latest else { continue }
-            latest = t
-            current = line.utteranceId
+            let units = validatedUnits(for: line)
+            cache[line.utteranceId] = (line.text, units)
+            starts.append(line.timeSec.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } ?? units?.first?.startSec)
         }
-        return current
+        unitCache = cache
+        lineStarts = starts
+        refreshCurrentLine()
     }
 
-    public func timingUnits(for line: LyricLine) -> [LyricTimingUnit]? {
+    private func refreshCurrentLine() {
+        var index: Int?
+        if track != nil {
+            var latest = -Double.infinity
+            for (i, start) in lineStarts.enumerated() {
+                guard let t = start, t <= position, t >= latest else { continue }
+                latest = t
+                index = i
+            }
+        }
+        let id = index.flatMap { $0 < lines.count ? lines[$0].utteranceId : nil }
+        if currentIndex != index { currentIndex = index }
+        if currentUtterance != id { currentUtterance = id }
+    }
+
+    private func validatedUnits(for line: LyricLine) -> [LyricTimingUnit]? {
         // The estimated listen/loop window is not a bound on real source clocks.
         let bound = spans[line.utteranceId].flatMap { $0.endKind == .estimated ? nil : $0.endSec }
         return timelines[line.utteranceId]?.validatedUnits(for: line, endSec: bound)
+    }
+
+    public func timingUnits(for line: LyricLine) -> [LyricTimingUnit]? {
+        if let cached = unitCache[line.utteranceId], cached.text == line.text { return cached.units }
+        return validatedUnits(for: line)
     }
 
     public func displayMode(for line: LyricLine) -> LyricTimelineMode {
@@ -147,7 +191,7 @@ public final class PlayerModel {
             pause()
             loop = nil
             stopAt = nil
-            position = 0
+            setPosition(0)
             lastTick = nil
             lines = []
             spans = [:]
@@ -249,7 +293,7 @@ public final class PlayerModel {
 
     public func pause() {
         engine.pause()
-        position = engine.position
+        setPosition(engine.position)
         isPlaying = false
         lastTick = nil
         // 暂停也记一笔：首页「继续听」要停在这里
@@ -267,8 +311,9 @@ public final class PlayerModel {
         let load = loadSequence
         engine.seek(to: min(duration, max(0, seconds)))
         guard request == seekSequence, load == loadSequence else { return }
-        position = engine.position
+        setPosition(engine.position)
         lastTick = nil
+        publishNowPlaying()
     }
 
     public func nudge(_ seconds: Double) async { await seek(to: timingPosition + seconds) }
@@ -352,9 +397,21 @@ public final class PlayerModel {
 
     // MARK: - 时钟
 
+    private func setPosition(_ seconds: Double) {
+        if position != seconds { position = seconds }
+    }
+
+    /// 播放状态、曲目、时长、速度、跳转时才报给系统；系统按速度自己往前推进度，不用每个时钟周期都报
+    private func publishNowPlaying() {
+        systemMedia?.publish(NowPlayingState(
+            track: track, duration: duration, position: position,
+            isPlaying: isPlaying, rate: rate
+        ))
+    }
+
     private func tick(_ seconds: Double) {
         guard seconds.isFinite else { return }
-        position = seconds
+        setPosition(seconds)
         // A stopped engine must not leave the UI playing, even if it did not send a state callback.
         // Natural EOF still goes through the loop/completion paths below.
         if isPlaying, !engine.isPlaying, engine.lastError != nil || seconds < duration - 0.05 {
@@ -394,7 +451,7 @@ public final class PlayerModel {
     public func prepareDeletion(_ songId: String) async {
         if track?.id == songId {
             pause(); engine.unload(); track = nil; lines = []; isPlaying = false; loadSequence += 1
-            canPlay = false; position = 0; duration = 0; loop = nil; stopAt = nil; focusUtterance = nil
+            canPlay = false; setPosition(0); duration = 0; loop = nil; stopAt = nil; focusUtterance = nil
             spans = [:]; timelines = [:]; loadedClientID = nil
         }
         await historyWrite?.value

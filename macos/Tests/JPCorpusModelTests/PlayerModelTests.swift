@@ -1,5 +1,6 @@
 import Foundation
 import JPCore
+import Observation
 import XCTest
 @testable import JPCorpusModel
 
@@ -304,5 +305,92 @@ final class PlayerModelTests: XCTestCase {
         XCTAssertFalse(engine.isPlaying)
         XCTAssertFalse(app.player.isPlaying)
         XCTAssertEqual(engine.position, 30)
+    }
+}
+
+/// 记下报给系统「正在播放」的每一次
+@MainActor
+private final class MediaRecorder: SystemMediaPublishing {
+    var states: [NowPlayingState] = []
+    func publish(_ state: NowPlayingState) { states.append(state) }
+}
+
+private final class Flag: @unchecked Sendable { var value = false }
+
+extension PlayerModelTests {
+    /// 当前行是存起来的：只在跨过行首时变，跳转后立即跟上
+    @MainActor
+    func testCurrentLineIsStoredAndOnlyChangesAtLineBoundaries() async throws {
+        let (app, engine, _, _) = try await fixture()
+        let player = app.player
+        XCTAssertNil(player.currentUtterance); XCTAssertNil(player.currentIndex)
+        player.play()
+        engine.emit(2); XCTAssertEqual(player.currentUtterance, 1); XCTAssertEqual(player.currentIndex, 0)
+        engine.emit(4.9); XCTAssertEqual(player.currentUtterance, 1)
+        engine.emit(5); XCTAssertEqual(player.currentUtterance, 2); XCTAssertEqual(player.currentIndex, 1)
+        await player.seek(to: 0.5)
+        XCTAssertNil(player.currentUtterance)
+        XCTAssertEqual(player.coarsePosition, 0.5)
+        engine.emit(5.37)
+        XCTAssertEqual(player.coarsePosition, 5.25, "粗位置取整到 0.25 秒")
+        XCTAssertEqual(player.position, 5.37)
+    }
+
+    /// 暂停时时钟照走，但位置没变就不能通知界面（以前每 50ms 重算一次整个歌词面板）
+    @MainActor
+    func testUnchangedClockDoesNotInvalidateObservers() async throws {
+        let (app, engine, _, _) = try await fixture()
+        engine.emit(3)
+        let fired = Flag()
+        withObservationTracking {
+            _ = app.player.position
+            _ = app.player.coarsePosition
+            _ = app.player.currentUtterance
+        } onChange: { fired.value = true }
+        engine.emit(3); engine.emit(3)
+        XCTAssertFalse(fired.value, "位置没变：不通知")
+        engine.emit(3.1)
+        XCTAssertTrue(fired.value)
+
+        let coarse = Flag()
+        withObservationTracking { _ = app.player.coarsePosition; _ = app.player.currentUtterance } onChange: { coarse.value = true }
+        engine.emit(3.15); engine.emit(3.2)
+        XCTAssertFalse(coarse.value, "同一个 0.25 秒内、同一行里：只看粗位置和当前行的视图不重算")
+        engine.emit(3.3)
+        XCTAssertTrue(coarse.value)
+    }
+
+    /// 媒体键：F8 播放 / 暂停，F7 / F9 上一行 / 下一行；系统「正在播放」只在状态变化时报
+    @MainActor
+    func testSystemMediaCommandsAndNowPlayingOnlyOnStateChanges() async throws {
+        let (app, engine, _, _) = try await fixture()
+        let player = app.player
+        let media = MediaRecorder()
+        player.systemMedia = media
+        XCTAssertEqual(media.states.last?.track?.id, "001")
+        XCTAssertEqual(media.states.last?.duration, 30)
+
+        let toggled = await player.perform(.toggle)
+        XCTAssertTrue(toggled); XCTAssertTrue(engine.isPlaying)
+        XCTAssertEqual(media.states.last?.isPlaying, true)
+        let published = media.states.count
+        for i in 0..<20 { engine.emit(Double(i) / 10) }
+        XCTAssertEqual(media.states.count, published, "时钟走动不报：系统按播放速度自己推进度")
+
+        await player.perform(.seek(4))
+        XCTAssertEqual(engine.position, 4); XCTAssertEqual(media.states.last?.position, 4)
+        await player.perform(.nextLine)
+        XCTAssertEqual(engine.position, 4.8, accuracy: 0.000001, "下一行 = 从第二行（5 秒）前 0.2 秒放")
+        await player.perform(.skip(-5))
+        XCTAssertEqual(engine.position, 0)
+        await player.perform(.pause)
+        XCTAssertFalse(engine.isPlaying); XCTAssertEqual(media.states.last?.isPlaying, false)
+        player.setRate(1.5)
+        XCTAssertEqual(media.states.last?.rate, 1.5)
+
+        await player.prepareDeletion("001")
+        let handled = await player.perform(.play)
+        XCTAssertFalse(handled, "没有能放的歌：交给系统转给别的应用")
+        XCTAssertNil(media.states.last?.track)
     }
 }

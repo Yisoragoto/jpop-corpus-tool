@@ -40,6 +40,8 @@ public final class NativePlaybackEngine: PlaybackEngine {
     private var tapped = false
     private var reconnectRequired = false
     private var timer: Timer?
+    /// 上一次报给界面的位置：暂停时位置不动就不报，不白白唤醒界面
+    private var lastReported: Double = -1
     private var configurationObserver: NSObjectProtocol?
     public var onTick: ((Double) -> Void)?
     public var onStateChange: (() -> Void)?
@@ -77,9 +79,13 @@ public final class NativePlaybackEngine: PlaybackEngine {
                 let seconds = self.position
                 // The render clock can disappear when the device stops. Keep the last source position (within one tick).
                 self.heldPosition = seconds
+                guard self.isPlaying || seconds != self.lastReported else { return }
+                self.lastReported = seconds
                 self.onTick?(seconds)
             }
         }
+        // 允许系统把这个计时器和别的唤醒合并：省电，进度显示看不出差别
+        ticker.tolerance = 0.01
         RunLoop.main.add(ticker, forMode: .common)
         timer = ticker
     }

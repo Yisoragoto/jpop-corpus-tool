@@ -333,7 +333,7 @@ private struct PlayingMark: View {
 
     var body: some View {
         let player = app.player
-        let playing = InterfaceLogic.isPlayingSpan(currentSong: player.track?.id,playing: player.isPlaying,position: player.position,songId: hit.songId,startSec: hit.timeSec,endSec: hit.endSec)
+        let playing = InterfaceLogic.isPlayingSpan(currentSong: player.track?.id,playing: player.isPlaying,position: player.coarsePosition,songId: hit.songId,startSec: hit.timeSec,endSec: hit.endSec)
         Image(systemName: playing ? "speaker.wave.2.fill" : "play.fill")
             .font(.system(size: 9))
             .foregroundStyle(playing ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))

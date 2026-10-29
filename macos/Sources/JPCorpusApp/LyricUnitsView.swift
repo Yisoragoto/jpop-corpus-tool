@@ -48,6 +48,25 @@ struct TimedLyricText: View {
     }
 }
 
+/// 一行逐字歌词。只有 `live` 的那一行读播放位置（跟着时钟重算）；其余行用定好的 `frozen`
+/// （唱过的给一个很大的数 = 全亮，没唱的给 -1 = 全暗），整首歌词不会每个时钟周期都重排一遍
+@MainActor
+struct TimedLyricLine: View {
+    @Environment(AppModel.self) private var app
+    let text: String
+    let units: [LyricTimingUnit]
+    let live: Bool
+    let frozen: Double
+    var size: CGFloat = 15
+    var highlight: Color = .accentColor
+    let seek: (LyricTimingUnit) -> Void
+
+    var body: some View {
+        TimedLyricText(text: text, units: units, position: live ? app.player.position : frozen,
+                       size: size, highlight: highlight, seek: seek)
+    }
+}
+
 /// Wrap at actual unit boundaries without inserting whitespace into Japanese.
 private struct LyricUnitLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

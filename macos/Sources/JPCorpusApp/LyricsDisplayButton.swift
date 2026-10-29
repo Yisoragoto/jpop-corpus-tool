@@ -78,6 +78,7 @@ struct LyricsDisplayButton: View {
             let catalog = try await client.lyricsFontCatalog(imported: app.importedLyricFonts)
             files = catalog.files; problems = catalog.problems
             for path in Set(files.map(\.path)) { CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: path) as CFURL, .process, nil) }
+            resetLyricFontCache()
             let display = app.lyricsDisplay
             app.lyricsDisplay = display
         } catch { self.error = error.localizedDescription }
@@ -99,8 +100,25 @@ struct LyricsDisplayButton: View {
     }
 }
 
+/// 歌词每个字都要一份字体：按字体、备用字体、字号、字重缓存。不缓存时一行几十个字、
+/// 每次重算都去 NSFontManager 找一遍，是歌词视图的主要 CPU 开销之一
+@MainActor private var lyricFontCache: [String: Font] = [:]
+
+/// 注册了新字体后要清掉：同名字族可能刚变成能用
+@MainActor func resetLyricFontCache() { lyricFontCache.removeAll() }
+
 @MainActor
 func lyricFont(_ display: LyricsDisplay, size: Double, weight: NSFont.Weight = .bold) -> Font {
+    let key = [display.fontFamily, display.fallbackFamily, "\(size)", "\(weight.rawValue)"].joined(separator: "|")
+    if let hit = lyricFontCache[key] { return hit }
+    if lyricFontCache.count > 256 { lyricFontCache.removeAll() }
+    let font = makeLyricFont(display, size: size, weight: weight)
+    lyricFontCache[key] = font
+    return font
+}
+
+@MainActor
+private func makeLyricFont(_ display: LyricsDisplay, size: Double, weight: NSFont.Weight) -> Font {
     func chosen(_ family: String) -> NSFont? {
         guard !family.isEmpty else { return nil }
         return NSFont(name: family, size: size) ?? NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size)

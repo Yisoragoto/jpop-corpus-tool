@@ -38,7 +38,10 @@ struct CoverImage: View {
             image = nil
             guard !path.isEmpty, let client = app.client else { return }
             let resolved = (try? await client.resolveMedia(path)) ?? nil
-            image = loadImage(atPath: resolved)
+            // 后台解码成显示尺寸（Retina 两倍）：曲库、首页一屏几十张封面，主线程上读原图会卡
+            let decoded = await Artwork.image(atPath: resolved, maxPixel: Int(size * 2))
+            guard !Task.isCancelled else { return }
+            image = decoded
         }
     }
 }
