@@ -187,11 +187,17 @@ Counted naively, a good part of a frequency list is chorus. So every statistic o
 **every token**, or count **each repeated line within a song once**.
 
 - **Frequency**: lemma × part of speech with JLPT level; both counts side by side, plus the share coming from
-  repeated lines.
-- **Collocations**: logDice, MI, t-score and log-likelihood.
+  repeated lines and dispersion (DP, ARF).
+- **KWIC sorting and plot**: sort by the nth word left or right of the keyword; the plot draws one bar per song,
+  showing whether a word is spread through a song or packed into its chorus.
+- **Collocations**: logDice, MI, MI3, t-score, z-score, log-likelihood and ΔP in both directions.
+- **N-grams**: fixed sequences of 2–5 words that never cross a line break or punctuation, with a minimum number of songs.
 - **Chorus effect**: the same songs counted both ways, showing which words were pushed up the list by choruses.
 - **Sub-corpus comparison**: pick two sets of songs (one artist against the rest, the 2010s against the 2020s…) and
-  find the words one side uses markedly more or less, by signed log-likelihood and Log Ratio.
+  find the words one side uses markedly more or less, by signed log-likelihood and Log Ratio; filter by p-value,
+  optionally Bonferroni-corrected.
+- **Lexical richness and scripts**: MATTR, MTLD and Yule's K for the whole selection, each performer or each song,
+  with the share of kanji, hiragana, katakana and Latin letters.
 - **Song profile**: how much of a song is repeated, and its characteristic words compared with the other songs.
 - Frequency table, a timeline by year, TTR / standardised TTR, and a corpus report as TXT.
 
@@ -435,16 +441,32 @@ after re-tokenisation.
 
 **Concordancing.** The KWIC (Key Word in Context) line is the basic form of corpus retrieval (Sinclair 1991): the
 keyword centred, its context to either side. Matching is by written form or by lemma, with multi-word sequences and
-a co-occurrence ("near") filter.
+a co-occurrence ("near") filter; lines can be sorted by the *n*th word left or right of the keyword, or drawn as a
+plot (one bar per song, a tick where each hit falls).
 
 **Counting unit.** What sets lyrics apart from written corpora is repetition: a chorus is sung several times
 verbatim. Lines with identical text within one song form a repeat group, and every statistic can count every token
 or each group once, reporting the difference (the share coming from repeated lines). This is de-duplication at the
 song level, and it tells you whether a word is frequent because many songs use it or because a few choruses repeat it.
 
-**Frequency.** Raw and per-10,000-token frequencies of lemma × part of speech. Lexical diversity is given as TTR
-(types ÷ tokens) and standardised TTR (the mean over fixed-length segments, as in Scott's WordSmith), because TTR
-falls as a corpus grows and sub-corpora of different sizes cannot be compared directly.
+**Frequency and dispersion.** Raw and per-10,000-token frequencies of lemma × part of speech. Frequency alone cannot
+tell "used in many songs" from "repeated in a few", so dispersion is given with each song as a corpus part, weighted
+by song length:
+
+| Measure | Definition | Source |
+|---|---|---|
+| DP | ½ Σ \|vᵢ/f − sᵢ\|, 0 = even, 1 = concentrated; DPnorm divides by 1 − min sᵢ | Gries 2008; Lijffijt & Gries 2012 |
+| Juilland's D | 1 − CV / √(n − 1), CV of the songs' relative frequencies | Juilland & Chang-Rodríguez 1964 |
+| ARF | the token stream as a circle; gaps between occurrences longer than N/f are capped | Savický & Hlaváčová 2002 |
+
+**N-grams.** Sequences of *n* consecutive words (lexical bundles, Biber et al.) that never cross a line break or
+punctuation, with an optional minimum number of songs to leave out sequences repeated only in one chorus.
+
+**Lexical richness.** TTR (types ÷ tokens) and standardised TTR (the mean over fixed-length segments, as in Scott's
+WordSmith) fall as a text grows, so texts of different size cannot be compared with them. Three measures that depend
+much less on length are added: MATTR (window 50, Covington & McFall 2010), MTLD (threshold 0.72, mean of a forward
+and a backward pass, McCarthy & Jarvis 2010) and Yule's K. Scripts are counted by character: kanji, hiragana,
+katakana, Latin letters and other.
 
 **Collocation.** Co-occurrences are counted within *n* words either side of the node, with expected frequencies
 based on the actual number of window positions:
@@ -455,14 +477,20 @@ based on the actual number of window positions:
 | t-score | (O − E) / √O | Church et al. 1991 |
 | logDice | 14 + log₂(2·O / (f₁ + f₂)) | Rychlý 2008 |
 | Log-likelihood G² | 2×2 contingency table | Dunning 1993 |
+| MI3 | log₂(O³ / E) | Daille 1994 |
+| z-score | (O − E) / √E | Berry-Rogghe 1973 |
+| ΔP | P(collocate \| node window) − P(collocate \| elsewhere), both directions | Gries 2013 |
 
 MI favours rare words and the t-score frequent ones; logDice does not depend on corpus size, which makes it suitable
-for comparing sub-corpora.
+for comparing sub-corpora. ΔP is directional and separates "A predicts B" from "B predicts A".
 
 **Keywords and sub-corpus comparison.** Two sets of songs are compared word by word: log-likelihood G² (the two-cell
 calculation of Rayson & Garside 2000) says whether a difference is significant, signed by its direction; Log Ratio
 (Hardie 2014: the log₂ of the ratio of relative frequencies, zero counts smoothed to 0.5) says how large it is.
 Significance and effect size are kept apart, so a tiny difference in a large corpus is not taken for a keyword.
+p-values come from the chi-squared distribution with one degree of freedom, with an optional threshold and Bonferroni
+correction (thousands of words are tested at once); BIC (Wilson 2013) and %DIFF (Gabrielatos & Marchi 2012) are
+given as well.
 
 **Reproducibility.** A corpus changes — songs are added, lyrics replaced, tokens corrected — so every analysis
 records the library fingerprint, rule version and parameters; an archived analysis can be re-run as it was, compared
@@ -470,14 +498,26 @@ item by item, with the differences attributed to the data or to the rules.
 
 References:
 
+- Berry-Rogghe, G. L. M. (1973). The computation of collocations and their relevance in lexical studies. In A. J. Aitken et al. (Eds.), *The Computer and Literary Studies* (pp. 103–112). Edinburgh University Press.
+- Biber, D., Johansson, S., Leech, G., Conrad, S., & Finegan, E. (1999). *Longman Grammar of Spoken and Written English*. Longman.
 - Church, K. W., & Hanks, P. (1990). Word association norms, mutual information, and lexicography. *Computational Linguistics*, 16(1), 22–29.
 - Church, K. W., Gale, W., Hanks, P., & Hindle, D. (1991). Using statistics in lexical analysis. In U. Zernik (Ed.), *Lexical Acquisition* (pp. 115–164). Erlbaum.
+- Covington, M. A., & McFall, J. D. (2010). Cutting the Gordian knot: The moving-average type–token ratio (MATTR). *Journal of Quantitative Linguistics*, 17(2), 94–100.
+- Daille, B. (1994). *Approche mixte pour l'extraction automatique de terminologie*. PhD thesis, Université Paris 7.
 - Dunning, T. (1993). Accurate methods for the statistics of surprise and coincidence. *Computational Linguistics*, 19(1), 61–74.
+- Gabrielatos, C., & Marchi, A. (2012). Keyness: Appropriate metrics and practical issues. CADS International Conference, University of Bologna.
+- Gries, S. Th. (2008). Dispersions and adjusted frequencies in corpora. *International Journal of Corpus Linguistics*, 13(4), 403–437.
+- Gries, S. Th. (2013). 50-something years of work on collocations. *International Journal of Corpus Linguistics*, 18(1), 137–165.
 - Hardie, A. (2014). Log Ratio: An informal introduction. ESRC Centre for Corpus Approaches to Social Science (CASS).
+- Juilland, A., & Chang-Rodríguez, E. (1964). *Frequency Dictionary of Spanish Words*. Mouton.
+- Lijffijt, J., & Gries, S. Th. (2012). Correction to Stefan Th. Gries' "Dispersions and adjusted frequencies in corpora". *International Journal of Corpus Linguistics*, 17(1), 147–149.
+- McCarthy, P. M., & Jarvis, S. (2010). MTLD, vocd-D, and HD-D: A validation study of sophisticated approaches to lexical diversity assessment. *Behavior Research Methods*, 42(2), 381–392.
 - Rayson, P., & Garside, R. (2000). Comparing corpora using frequency profiling. In *Proceedings of the Workshop on Comparing Corpora* (pp. 1–6).
 - Rychlý, P. (2008). A lexicographer-friendly association score. In *Proceedings of RASLAN 2008* (pp. 6–9).
+- Savický, P., & Hlaváčová, J. (2002). Measures of word commonness. *Journal of Quantitative Linguistics*, 9(3), 215–231.
 - Scott, M. WordSmith Tools help: Standardised type/token ratio.
 - Sinclair, J. (1991). *Corpus, Concordance, Collocation*. Oxford University Press.
+- Wilson, A. (2013). Embracing Bayes factors for key item analysis in corpus linguistics. In M. Bieswanger & A. Koll-Stobbe (Eds.), *New Approaches to the Study of Linguistic Variability* (pp. 3–11). Peter Lang.
 
 ## Libraries
 

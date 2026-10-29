@@ -28,6 +28,28 @@
 //! 每个结果都带 [`Provenance`]：库的指纹（行数、词数、最大 id、校正数）、子语料的描述、
 //! 计数单位、全部参数、规则版本。指纹和参数相同，结果就相同；分词校正或导入新歌之后指纹会变，
 //! 界面据此提示「结果基于旧数据」。
+//!
+//! ## 离散度
+//!
+//! 「出现在几首歌里」（range）只看有没有，不看多少。一个词在 30 首歌里各出现 1 次，
+//! 和在 1 首歌里出现 40 次、另外 29 首各 1 次，range 一样。所以词频和 N-gram 还给三个
+//! 常用的离散度指标（[`Dispersion`]），都以「一首歌」为一个部分，按歌的大小加权：
+//!
+//! - **DP**（Gries 2008）：`0.5 × Σ|vᵢ/f − sᵢ|`，vᵢ 是词在第 i 首歌里的次数，sᵢ 是这首歌占子语料的比例。
+//!   0 = 完全按歌的大小均匀分布，越接近 1 越集中。`dpNorm` 再除以理论最大值 `1 − min(sᵢ)`
+//!   （Lijffijt & Gries 2012），不同子语料之间才能比；
+//! - **Juilland D**：`1 − CV / √(n−1)`，CV 是各歌相对频率（vᵢ / 歌长）的变异系数，标准差按总体算。
+//!   1 = 均匀，0 = 全在一首歌里。只有一首歌时没有意义，是 `None`；
+//! - **ARF**（平均缩减频次，Savický & Hlaváčová 2002）：把子语料的词流首尾相接看成一个环，
+//!   出现位置之间的距离超过 `N / f` 的部分不算——扎堆出现的次数被折算掉，
+//!   结果是「相当于均匀出现了几次」。副歌堆出来的高频词 ARF 会明显低于频次。
+//!
+//! 「部分」只算子语料里按所选计数单位还剩词的歌；词流顺序和读入顺序一致（歌 id、行号）。
+//!
+//! ## 统计量
+//!
+//! 搭配和子语料对比的打分都基于同一张 2×2 列联表，公式见各字段的注释。
+//! 对数似然的 p 值按自由度 1 的卡方分布算（`p = erfc(√(G²/2))`）。
 
 use std::collections::{HashMap, HashSet};
 
@@ -39,7 +61,11 @@ use crate::subcorpus::Subcorpus;
 use crate::MatchField;
 
 /// 规则版本。改了计数或打分的规则就加一，旧结果的出处里能看出是按哪套规则算的
-pub const RULES_VERSION: &str = "analysis-1";
+///
+/// - `analysis-1`：重复感知的词频、搭配（logDice / MI / 对数似然 / t 值）、子语料对比（对数似然 + log ratio）
+/// - `analysis-2`：词频加离散度（DP / Juilland D / ARF）；搭配加 MI3、z 值、双向 ΔP；
+///   对比加 p 值、BIC、%DIFF 和显著性筛选；新增 N-gram、词汇丰富度与文字种。原有指标的算法没变
+pub const RULES_VERSION: &str = "analysis-2";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -168,24 +194,35 @@ impl Fnv64 {
 // ────────────────────────────── token 流 ──────────────────────────────
 
 #[derive(Debug, Clone)]
-struct Tok {
-    surface: String,
-    lemma: String,
-    pos: String,
+pub(crate) struct Tok {
+    pub(crate) surface: String,
+    pub(crate) lemma: String,
+    pub(crate) pos: String,
+    /// 和前一个词之间去掉过标点、符号或非日文词。N-gram 不跨过这种地方
+    pub(crate) gap_before: bool,
+}
+
+impl Tok {
+    pub(crate) fn field(&self, field: MatchField) -> &str {
+        match field {
+            MatchField::Lemma => &self.lemma,
+            MatchField::Surface => &self.surface,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-struct Line {
-    song_id: String,
-    utterance_id: i64,
+pub(crate) struct Line {
+    pub(crate) song_id: String,
+    pub(crate) utterance_id: i64,
     /// 同一首歌里前面已经有一行文本完全相同
-    repeat: bool,
+    pub(crate) repeat: bool,
     /// 已去掉标点、符号（以及 jp_only 时的非日文词）
-    tokens: Vec<Tok>,
+    pub(crate) tokens: Vec<Tok>,
 }
 
 /// 读出一个子语料的全部行和词，按歌、行号排好
-fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> {
+pub(crate) fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> {
     let (clause, params) = scope.subcorpus.and_clause("u.song_id");
     let sql = format!(
         "SELECT u.song_id, u.id, u.text, t.surface, t.lemma, COALESCE(t.pos,'') \
@@ -197,6 +234,7 @@ fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> {
     let mut rows = stmt.query(params_from_iter(params))?;
     let mut lines: Vec<Line> = Vec::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut gap = false;
     while let Some(row) = rows.next()? {
         let utterance_id: i64 = row.get(1)?;
         if lines.last().map(|l| l.utterance_id) != Some(utterance_id) {
@@ -204,26 +242,32 @@ fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> {
             let text: String = row.get(2)?;
             let repeat = !seen.insert((song_id.clone(), text));
             lines.push(Line { song_id, utterance_id, repeat, tokens: Vec::new() });
+            gap = false;
         }
         let pos: String = row.get(5)?;
         if pos == "PUNCT" || pos == "SYM" {
+            gap = true;
             continue;
         }
         let lemma: String = row.get(4)?;
         if scope.jp_only && !crate::stats::is_japanese(&lemma) {
+            gap = true;
             continue;
         }
         let line = lines.last_mut().expect("刚 push 过");
-        line.tokens.push(Tok { surface: row.get(3)?, lemma, pos });
+        // 行首的词前面去掉了什么都不算断点：N-gram 本来就不跨行
+        let gap_before = gap && !line.tokens.is_empty();
+        line.tokens.push(Tok { surface: row.get(3)?, lemma, pos, gap_before });
+        gap = false;
     }
     Ok(lines)
 }
 
-fn counted(line: &Line, unit: CountUnit) -> bool {
+pub(crate) fn counted(line: &Line, unit: CountUnit) -> bool {
     unit == CountUnit::Tokens || !line.repeat
 }
 
-fn provenance(conn: &Connection, scope: &Scope, lines: &[Line], params: serde_json::Value) -> Result<Provenance> {
+pub(crate) fn provenance(conn: &Connection, scope: &Scope, lines: &[Line], params: serde_json::Value) -> Result<Provenance> {
     let songs: HashSet<&str> = lines.iter().map(|l| l.song_id.as_str()).collect();
     let tokens = lines.iter().filter(|l| counted(l, scope.unit)).map(|l| l.tokens.len() as i64).sum();
     Ok(Provenance {
@@ -239,6 +283,124 @@ fn provenance(conn: &Connection, scope: &Scope, lines: &[Line], params: serde_js
 
 fn per_10k(freq: i64, total: i64) -> f64 {
     if total <= 0 { 0.0 } else { freq as f64 * 10_000.0 / total as f64 }
+}
+
+// ────────────────────────────── 离散度 ──────────────────────────────
+
+/// 一个词（或 N-gram）在子语料各首歌之间分布得有多均匀。定义见模块文档「离散度」
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Dispersion {
+    /// Gries 的 DP：0 = 按歌的大小均匀分布，越接近 1 越集中
+    pub dp: f64,
+    /// DP ÷ (1 − 最小的歌所占比例)，落在 0~1，不同子语料之间可比
+    pub dp_norm: f64,
+    /// Juilland 的 D：1 = 均匀，0 = 集中。子语料只有一首歌时没有意义
+    pub juilland_d: Option<f64>,
+    /// 平均缩减频次：扎堆出现的次数折算掉之后「相当于均匀出现了几次」，≤ 频次
+    pub arf: f64,
+}
+
+/// 子语料切成「部分」（一首歌一个部分），以及词流的总长。离散度都基于它
+pub(crate) struct Parts {
+    /// 歌 id → 部分的下标
+    index: HashMap<String, usize>,
+    /// 每个部分的词次
+    sizes: Vec<f64>,
+    total: usize,
+    min_share: f64,
+}
+
+impl Parts {
+    /// 只算按 `unit` 计入的行；没有词的歌不算一个部分
+    pub(crate) fn new(lines: &[Line], unit: CountUnit) -> Self {
+        let mut index = HashMap::new();
+        let mut sizes: Vec<f64> = Vec::new();
+        let mut total = 0usize;
+        for line in lines.iter().filter(|l| counted(l, unit) && !l.tokens.is_empty()) {
+            let i = *index.entry(line.song_id.clone()).or_insert_with(|| {
+                sizes.push(0.0);
+                sizes.len() - 1
+            });
+            sizes[i] += line.tokens.len() as f64;
+            total += line.tokens.len();
+        }
+        let min_share = if total == 0 {
+            0.0
+        } else {
+            sizes.iter().copied().fold(f64::INFINITY, f64::min) / total as f64
+        };
+        Self { index, sizes, total, min_share }
+    }
+
+    pub(crate) fn part(&self, song_id: &str) -> Option<usize> {
+        self.index.get(song_id).copied()
+    }
+}
+
+/// 累计一个词的出现：在哪些部分各几次、在词流里的位置
+#[derive(Default)]
+pub(crate) struct Occurrences {
+    per_part: HashMap<usize, i64>,
+    positions: Vec<usize>,
+}
+
+impl Occurrences {
+    pub(crate) fn add(&mut self, part: usize, position: usize) {
+        *self.per_part.entry(part).or_default() += 1;
+        self.positions.push(position);
+    }
+
+    pub(crate) fn freq(&self) -> i64 {
+        self.positions.len() as i64
+    }
+
+    pub(crate) fn dispersion(&self, parts: &Parts) -> Dispersion {
+        let f = self.positions.len();
+        let n_parts = parts.sizes.len();
+        if f == 0 || parts.total == 0 {
+            return Dispersion::default();
+        }
+        let total = parts.total as f64;
+        let ff = f as f64;
+
+        // DP：没出现的部分各贡献 |0 − sᵢ| = sᵢ，合起来是 1 − 出现过的部分所占比例
+        let mut abs_sum = 0.0;
+        let mut covered = 0.0;
+        // Juilland：相对频率 vᵢ / 歌长，没出现的部分是 0，不影响两个求和
+        let mut rel_sum = 0.0;
+        let mut rel_sq = 0.0;
+        for (&part, &v) in &self.per_part {
+            let size = parts.sizes[part];
+            let share = size / total;
+            abs_sum += (v as f64 / ff - share).abs();
+            covered += share;
+            let rel = v as f64 / size;
+            rel_sum += rel;
+            rel_sq += rel * rel;
+        }
+        let dp = (0.5 * (abs_sum + (1.0 - covered).max(0.0))).clamp(0.0, 1.0);
+        let dp_norm = if parts.min_share < 1.0 { (dp / (1.0 - parts.min_share)).clamp(0.0, 1.0) } else { 0.0 };
+        let juilland_d = (n_parts >= 2).then(|| {
+            let n = n_parts as f64;
+            let mean = rel_sum / n;
+            let sd = (rel_sq / n - mean * mean).max(0.0).sqrt();
+            (1.0 - sd / mean / (n - 1.0).sqrt()).clamp(0.0, 1.0)
+        });
+
+        // ARF：位置首尾相接成环，相邻两次出现的距离超过 N/f 的部分截掉
+        let mut positions = self.positions.clone();
+        positions.sort_unstable();
+        let v = total / ff;
+        let mut reduced = 0.0;
+        for pair in positions.windows(2) {
+            reduced += ((pair[1] - pair[0]) as f64).min(v);
+        }
+        reduced += ((positions[0] + parts.total - positions[f - 1]) as f64).min(v);
+        let arf = reduced / v;
+
+        Dispersion { dp, dp_norm, juilland_d, arf }
+    }
 }
 
 // ────────────────────────────── 词频 ──────────────────────────────
@@ -273,6 +435,9 @@ pub struct FrequencyItem {
     pub range: f64,
     /// 最常见的几个写法，按频次降序
     pub surfaces: Vec<String>,
+    /// 按所选单位算的离散度
+    #[serde(default)]
+    pub dispersion: Dispersion,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,10 +457,20 @@ pub fn frequency(conn: &Connection, query: &FrequencyQuery) -> Result<FrequencyR
         distinct: i64,
         songs: HashSet<String>,
         surfaces: HashMap<String, i64>,
+        occurrences: Occurrences,
     }
+    let parts = Parts::new(&lines, query.scope.unit);
     let mut acc: HashMap<(String, String), Acc> = HashMap::new();
+    // 词流里的位置：只数计入的行，和 Parts 的总长一致
+    let mut position = 0usize;
     for line in &lines {
+        let is_counted = counted(line, query.scope.unit);
+        let part = if is_counted { parts.part(&line.song_id) } else { None };
         for tok in &line.tokens {
+            let here = position;
+            if is_counted {
+                position += 1;
+            }
             if pos.is_some_and(|p| p != tok.pos) {
                 continue;
             }
@@ -304,8 +479,11 @@ pub fn frequency(conn: &Connection, query: &FrequencyQuery) -> Result<FrequencyR
             if !line.repeat {
                 a.distinct += 1;
             }
-            if counted(line, query.scope.unit) {
+            if is_counted {
                 a.songs.insert(line.song_id.clone());
+            }
+            if let Some(part) = part {
+                a.occurrences.add(part, here);
             }
             *a.surfaces.entry(tok.surface.clone()).or_default() += 1;
         }
@@ -322,7 +500,9 @@ pub fn frequency(conn: &Connection, query: &FrequencyQuery) -> Result<FrequencyR
             };
             let mut surfaces: Vec<(String, i64)> = a.surfaces.into_iter().collect();
             surfaces.sort_by(|x, y| y.1.cmp(&x.1).then_with(|| x.0.cmp(&y.0)));
+            debug_assert_eq!(a.occurrences.freq(), freq);
             FrequencyItem {
+                dispersion: a.occurrences.dispersion(&parts),
                 lemma,
                 pos,
                 freq,
@@ -356,6 +536,10 @@ pub enum CollocationMeasure {
     Mi,
     /// 对数似然：显著性
     LogLikelihood,
+    /// MI³：给共现次数加权的互信息，不那么偏爱只共现两三次的罕见词
+    Mi3,
+    /// ΔP（节点 → 搭配词）：看到节点词时，搭配词出现的概率比平时高多少。有方向
+    DeltaP,
     /// 共现次数
     Frequency,
 }
@@ -415,6 +599,18 @@ pub struct Collocate {
     pub mi: f64,
     pub log_likelihood: f64,
     pub t_score: f64,
+    /// log₂(O³ / E)
+    #[serde(default)]
+    pub mi3: f64,
+    /// (O − E) / √E
+    #[serde(default)]
+    pub z_score: f64,
+    /// ΔP（节点 → 搭配词）= P(搭配词 | 节点窗口里) − P(搭配词 | 窗口外)
+    #[serde(default)]
+    pub delta_p: f64,
+    /// ΔP（搭配词 → 节点）= P(在节点窗口里 | 是这个搭配词) − P(在节点窗口里 | 是别的词)
+    #[serde(default)]
+    pub delta_p_reverse: f64,
     /// 第一次共现的那一行，点了直接去听
     pub example_utterance_id: i64,
     pub example_song_id: String,
@@ -509,6 +705,11 @@ pub fn collocations(conn: &Connection, query: &CollocationQuery) -> Result<Collo
             let a21 = (fc as f64 - ofl).max(0.0);
             let a22 = (n - window_slots as f64 - a21).max(0.0);
             let log_likelihood = g2(&[a11, a12, a21, a22]);
+            let mi3 = if expected > 0.0 { (ofl.powi(3) / expected).log2() } else { 0.0 };
+            let z_score = if expected > 0.0 { (ofl - expected) / expected.sqrt() } else { 0.0 };
+            let ratio = |x: f64, y: f64| if x + y > 0.0 { x / (x + y) } else { 0.0 };
+            let delta_p = ratio(a11, a12) - ratio(a21, a22);
+            let delta_p_reverse = ratio(a11, a21) - ratio(a12, a22);
             let (example_utterance_id, example_song_id) = a.example.unwrap_or_default();
             Some(Collocate {
                 lemma,
@@ -522,6 +723,10 @@ pub fn collocations(conn: &Connection, query: &CollocationQuery) -> Result<Collo
                 mi,
                 log_likelihood,
                 t_score,
+                mi3,
+                z_score,
+                delta_p,
+                delta_p_reverse,
                 example_utterance_id,
                 example_song_id,
             })
@@ -531,6 +736,8 @@ pub fn collocations(conn: &Connection, query: &CollocationQuery) -> Result<Collo
         CollocationMeasure::LogDice => c.log_dice,
         CollocationMeasure::Mi => c.mi,
         CollocationMeasure::LogLikelihood => c.log_likelihood,
+        CollocationMeasure::Mi3 => c.mi3,
+        CollocationMeasure::DeltaP => c.delta_p,
         CollocationMeasure::Frequency => c.freq as f64,
     };
     collocates.sort_by(|a, b| {
@@ -586,6 +793,11 @@ pub struct KeynessQuery {
     /// 两边合计少于这个数的词不列出
     pub min_freq: i64,
     pub limit: Option<usize>,
+    /// 只列 p 值不超过它的词（0.05、0.01……）。None 是不按显著性筛
+    pub max_p: Option<f64>,
+    /// 显著性按 Bonferroni 校正：阈值除以参与检验的词数。
+    /// 一次检验几千个词，不校正的话 p < 0.05 里有上百个是碰巧
+    pub bonferroni: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -603,6 +815,16 @@ pub struct KeyItem {
     pub log_ratio: f64,
     /// 目标里出现在几首歌
     pub target_songs: i64,
+    /// 对数似然的 p 值（自由度 1 的卡方分布），未校正
+    #[serde(default)]
+    pub p_value: f64,
+    /// BIC 近似（Wilson 2013）：G² − ln(两边词次之和)。> 2 算有证据，> 6 强，> 10 很强；≤ 0 说明这点差异不值一提
+    #[serde(default)]
+    pub bic: f64,
+    /// %DIFF（Gabrielatos & Marchi 2012）：(目标相对频率 − 参照相对频率) ÷ 参照相对频率 × 100。
+    /// 参照里没出现时没有定义，是 None
+    #[serde(default)]
+    pub percent_diff: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -614,6 +836,12 @@ pub struct KeynessResult {
     pub under: Vec<KeyItem>,
     pub target: Provenance,
     pub reference: Provenance,
+    /// 参与检验的词数（过了 min_freq 的）。Bonferroni 校正除的就是它
+    #[serde(default)]
+    pub tested: usize,
+    /// 实际用的 p 值阈值（校正之后）。没筛显著性时是 None
+    #[serde(default)]
+    pub p_threshold: Option<f64>,
 }
 
 pub fn keyness(conn: &Connection, query: &KeynessQuery) -> Result<KeynessResult> {
@@ -682,6 +910,7 @@ pub fn keyness(conn: &Connection, query: &KeynessQuery) -> Result<KeynessResult>
             ll *= 2.0;
             let log_ratio = (((af.max(0.5)) / c) / ((bf.max(0.5)) / d)).log2();
             let signed = if af / c >= bf / d { ll } else { -ll };
+            let percent_diff = (b > 0).then(|| (af / c - bf / d) / (bf / d) * 100.0);
             Some(KeyItem {
                 lemma: key.0.clone(),
                 pos: key.1.clone(),
@@ -692,9 +921,17 @@ pub fn keyness(conn: &Connection, query: &KeynessQuery) -> Result<KeynessResult>
                 log_likelihood: signed,
                 log_ratio,
                 target_songs: songs,
+                p_value: chi2_p(ll),
+                bic: ll - (c + d).ln(),
+                percent_diff,
             })
         })
         .collect();
+    let tested = items.len();
+    let p_threshold = query.max_p.filter(|p| *p > 0.0).map(|p| if query.bonferroni { p / tested.max(1) as f64 } else { p });
+    if let Some(threshold) = p_threshold {
+        items.retain(|i| i.p_value <= threshold);
+    }
     let by_strength = |x: &KeyItem, y: &KeyItem| {
         y.log_likelihood
             .abs()
@@ -716,7 +953,170 @@ pub fn keyness(conn: &Connection, query: &KeynessQuery) -> Result<KeynessResult>
         under,
         target: provenance(conn, &target_scope, &target_lines, params.clone())?,
         reference: provenance(conn, &reference_scope, &reference_lines, params)?,
+        tested,
+        p_threshold,
     })
+}
+
+/// 自由度 1 的卡方分布的上尾概率：P(χ² ≥ x) = erfc(√(x/2))
+pub fn chi2_p(x: f64) -> f64 {
+    if x <= 0.0 { 1.0 } else { erfc((x / 2.0).sqrt()).clamp(0.0, 1.0) }
+}
+
+/// 互补误差函数。Numerical Recipes 的 Chebyshev 近似 `erfcc`，处处相对误差 < 1.2e-7——
+/// 拿来和 0.05、0.001 这类阈值比绰绰有余
+fn erfc(x: f64) -> f64 {
+    let z = x.abs();
+    let t = 1.0 / (1.0 + 0.5 * z);
+    let poly = -z * z - 1.265_512_23
+        + t * (1.000_023_68
+            + t * (0.374_091_96
+                + t * (0.096_784_18
+                    + t * (-0.186_288_06
+                        + t * (0.278_868_07 + t * (-1.135_203_98 + t * (1.488_515_87 + t * (-0.822_152_23 + t * 0.170_872_77))))))));
+    let r = t * poly.exp();
+    if x >= 0.0 { r } else { 2.0 - r }
+}
+
+// ────────────────────────────── N-gram ──────────────────────────────
+
+/// 连续 n 个词的组合（AntConc 的 Clusters / N-Grams，Biber 的 lexical bundles）。
+///
+/// 不跨行，也不跨过标点、符号和被「只看日文」去掉的词——「、」两边不算连着。
+/// 默认要求至少出现在两首歌里：只在一首歌里反复出现的是那首歌的副歌，不是惯用的说法。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NgramQuery {
+    pub scope: Scope,
+    /// 2~6
+    pub n: usize,
+    /// 按词元还是表层形组合
+    pub field: MatchField,
+    pub min_freq: i64,
+    /// 至少出现在几首歌里
+    pub min_songs: i64,
+    /// 只列包含这个词（按 `field`）的 N-gram
+    pub contains: Option<String>,
+    pub limit: Option<usize>,
+}
+
+impl Default for NgramQuery {
+    fn default() -> Self {
+        Self {
+            scope: Scope::default(),
+            n: 3,
+            field: MatchField::Lemma,
+            min_freq: 3,
+            min_songs: 2,
+            contains: None,
+            limit: Some(200),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ngram {
+    /// 组成的词（按 `field`）
+    pub words: Vec<String>,
+    /// 最常见的实际写法（表层形拼起来）
+    pub surface: String,
+    pub pos: Vec<String>,
+    /// 按所选单位的次数
+    pub freq: i64,
+    pub per_10k: f64,
+    pub songs: i64,
+    pub range: f64,
+    pub dispersion: Dispersion,
+    pub example_utterance_id: i64,
+    pub example_song_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NgramResult {
+    pub n: usize,
+    /// 过筛选前一共有多少种 N-gram
+    pub types: usize,
+    pub items: Vec<Ngram>,
+    pub provenance: Provenance,
+}
+
+pub fn ngrams(conn: &Connection, query: &NgramQuery) -> Result<NgramResult> {
+    let n = query.n.clamp(2, 6);
+    let unit = query.scope.unit;
+    let lines = load_lines(conn, &query.scope)?;
+    let parts = Parts::new(&lines, unit);
+    let contains = query.contains.as_deref().map(str::trim).filter(|w| !w.is_empty());
+
+    #[derive(Default)]
+    struct Acc {
+        occurrences: Occurrences,
+        songs: HashSet<usize>,
+        surfaces: HashMap<String, i64>,
+        pos: Vec<String>,
+        example: Option<(i64, String)>,
+    }
+    let mut acc: HashMap<Vec<String>, Acc> = HashMap::new();
+    let mut position = 0usize;
+    for line in lines.iter().filter(|l| counted(l, unit)) {
+        let Some(part) = parts.part(&line.song_id) else { continue };
+        let toks = &line.tokens;
+        for start in 0..toks.len() {
+            let here = position + start;
+            if start + n > toks.len() || toks[start + 1..start + n].iter().any(|t| t.gap_before) {
+                continue;
+            }
+            let window = &toks[start..start + n];
+            let key: Vec<String> = window.iter().map(|t| t.field(query.field).to_string()).collect();
+            if contains.is_some_and(|w| !key.iter().any(|k| k == w)) {
+                continue;
+            }
+            let a = acc.entry(key).or_default();
+            a.occurrences.add(part, here);
+            a.songs.insert(part);
+            *a.surfaces.entry(window.iter().map(|t| t.surface.as_str()).collect()).or_default() += 1;
+            if a.example.is_none() {
+                a.example = Some((line.utterance_id, line.song_id.clone()));
+                a.pos = window.iter().map(|t| t.pos.clone()).collect();
+            }
+        }
+        position += toks.len();
+    }
+
+    let types = acc.len();
+    let song_total = parts.sizes.len().max(1) as f64;
+    let mut items: Vec<Ngram> = acc
+        .into_iter()
+        .filter(|(_, a)| a.occurrences.freq() >= query.min_freq.max(1) && a.songs.len() as i64 >= query.min_songs.max(1))
+        .map(|(words, a)| {
+            let freq = a.occurrences.freq();
+            let mut surfaces: Vec<(String, i64)> = a.surfaces.into_iter().collect();
+            surfaces.sort_by(|x, y| y.1.cmp(&x.1).then_with(|| x.0.cmp(&y.0)));
+            let (example_utterance_id, example_song_id) = a.example.unwrap_or_default();
+            Ngram {
+                words,
+                surface: surfaces.into_iter().next().map(|s| s.0).unwrap_or_default(),
+                pos: a.pos,
+                freq,
+                per_10k: per_10k(freq, parts.total as i64),
+                songs: a.songs.len() as i64,
+                range: a.songs.len() as f64 / song_total,
+                dispersion: a.occurrences.dispersion(&parts),
+                example_utterance_id,
+                example_song_id,
+            }
+        })
+        .collect();
+    items.sort_by(|a, b| {
+        b.freq
+            .cmp(&a.freq)
+            .then_with(|| b.songs.cmp(&a.songs))
+            .then_with(|| a.words.cmp(&b.words))
+    });
+    items.truncate(query.limit.unwrap_or(200));
+    let provenance = provenance(conn, &query.scope, &lines, serde_json::to_value(query)?)?;
+    Ok(NgramResult { n, types, items, provenance })
 }
 
 // ────────────────────────────── 一首歌的语料画像 ──────────────────────────────
@@ -753,6 +1153,8 @@ pub fn song_profile(conn: &Connection, song_id: &str, limit: usize) -> Result<So
             min_freq: 2,
             // 先多取一些：功能词（だ、て、の）筛掉之后还要剩够 limit 个
             limit: Some(limit * 4),
+            max_p: None,
+            bonferroni: false,
         },
     )?;
     // 特征词只要实词。「だ」「て」在某首歌里偏多说明不了这首歌写了什么
@@ -860,6 +1262,129 @@ mod tests {
         assert_eq!(res.target.songs, 1);
         assert!(res.over.iter().all(|k| k.log_likelihood > 0.0 && k.target_freq > 0));
         assert!(res.under.iter().all(|k| k.log_likelihood < 0.0));
+    }
+
+    fn line(song: &str, lemmas: &[&str]) -> Line {
+        Line {
+            song_id: song.into(),
+            utterance_id: 0,
+            repeat: false,
+            tokens: lemmas
+                .iter()
+                .map(|l| Tok { surface: (*l).into(), lemma: (*l).into(), pos: "NOUN".into(), gap_before: false })
+                .collect(),
+        }
+    }
+
+    /// 在手写的小语料上把 `word` 的出现位置喂给离散度
+    fn disperse(lines: &[Line], word: &str) -> Dispersion {
+        let parts = Parts::new(lines, CountUnit::Tokens);
+        let mut occ = Occurrences::default();
+        let mut pos = 0;
+        for l in lines {
+            for t in &l.tokens {
+                if t.lemma == word {
+                    occ.add(parts.part(&l.song_id).unwrap(), pos);
+                }
+                pos += 1;
+            }
+        }
+        occ.dispersion(&parts)
+    }
+
+    #[test]
+    fn dispersion_is_even_or_concentrated_at_the_extremes() {
+        // 两首一样长的歌各一次、位置等距：完全均匀
+        let even = [line("a", &["x", "y"]), line("b", &["x", "y"])];
+        let d = disperse(&even, "x");
+        assert!(d.dp.abs() < 1e-12 && d.dp_norm.abs() < 1e-12);
+        assert!((d.juilland_d.unwrap() - 1.0).abs() < 1e-12);
+        assert!((d.arf - 2.0).abs() < 1e-12, "均匀出现两次，ARF 就是 2");
+
+        // 全挤在一首歌里：DP = 1 − 这首歌的比例；dpNorm 到顶；D = 0；ARF 接近 1
+        let lumpy = [line("a", &["x", "x", "x"]), line("b", &["y", "y", "y", "y", "y", "y", "y", "y", "y"])];
+        let d = disperse(&lumpy, "x");
+        assert!((d.dp - 0.75).abs() < 1e-12);
+        assert!((d.dp_norm - 1.0).abs() < 1e-12);
+        assert!(d.juilland_d.unwrap().abs() < 1e-12);
+        // N = 12、f = 3、v = 4：距离 1、1、10 → (1 + 1 + 4) / 4
+        assert!((d.arf - 1.5).abs() < 1e-12);
+
+        // 只有一首歌：Juilland D 没有意义
+        assert_eq!(disperse(&[line("a", &["x", "y"])], "x").juilland_d, None);
+    }
+
+    #[test]
+    fn frequency_dispersion_matches_the_stats_table_counts() {
+        // 分析页的词频表（stats.rs）和这里的离散度在前端按 词元 × 词性 拼在一起，次数和曲数必须一致
+        let corpus = conn();
+        for jp_only in [false, true] {
+            let filter = crate::stats::StatsFilter { jp_only, ..Default::default() };
+            let rows = crate::stats::frequency_table(corpus.connection(), None, &filter, 5000).unwrap();
+            let res = frequency(
+                corpus.connection(),
+                &FrequencyQuery { scope: Scope { jp_only, ..Default::default() }, limit: Some(100_000), ..Default::default() },
+            )
+            .unwrap();
+            let by_key: HashMap<(&str, &str), &FrequencyItem> =
+                res.items.iter().map(|i| ((i.lemma.as_str(), i.pos.as_str()), i)).collect();
+            assert_eq!(rows.len(), res.items.len());
+            for row in &rows {
+                let item = by_key[&(row.word.lemma.as_str(), row.word.pos.as_str())];
+                assert_eq!((item.raw_freq, item.songs), (row.word.freq, row.word.song_count), "{}", row.word.lemma);
+                assert!(item.dispersion.arf <= item.freq as f64 + 1e-9);
+                assert!((0.0..=1.0).contains(&item.dispersion.dp));
+            }
+        }
+    }
+
+    #[test]
+    fn ngrams_do_not_cross_punctuation_and_respect_the_song_threshold() {
+        let corpus = conn();
+        let all = ngrams(
+            corpus.connection(),
+            &NgramQuery { n: 2, min_freq: 1, min_songs: 1, limit: Some(100_000), ..Default::default() },
+        )
+        .unwrap();
+        assert!(!all.items.is_empty());
+        assert_eq!(all.items.len(), all.types);
+        let total: i64 = all.items.iter().map(|g| g.freq).sum();
+        // 每行 k 个词最多 k − 1 个二元组；有标点断开时更少
+        assert!(total < all.provenance.tokens);
+        assert!(all.items.iter().all(|g| g.words.len() == 2 && g.pos.len() == 2));
+        let strict = ngrams(corpus.connection(), &NgramQuery { n: 2, min_freq: 1, min_songs: 2, ..Default::default() }).unwrap();
+        assert!(strict.items.iter().all(|g| g.songs >= 2));
+        let first = &all.items[0].words[0];
+        let with = ngrams(
+            corpus.connection(),
+            &NgramQuery { n: 2, min_freq: 1, min_songs: 1, contains: Some(first.clone()), ..Default::default() },
+        )
+        .unwrap();
+        assert!(with.items.iter().all(|g| g.words.contains(first)));
+    }
+
+    #[test]
+    fn keyness_significance_filter_and_bonferroni_only_shrink_the_list() {
+        let corpus = conn();
+        let target = Subcorpus { song_ids: vec!["001".into()], ..Default::default() };
+        let base = KeynessQuery { target, min_freq: 1, limit: Some(10_000), ..Default::default() };
+        let all = keyness(corpus.connection(), &base).unwrap();
+        let p05 = keyness(corpus.connection(), &KeynessQuery { max_p: Some(0.05), ..base.clone() }).unwrap();
+        let bonf = keyness(corpus.connection(), &KeynessQuery { max_p: Some(0.05), bonferroni: true, ..base }).unwrap();
+        let count = |r: &KeynessResult| r.over.len() + r.under.len();
+        assert!(count(&bonf) <= count(&p05) && count(&p05) <= count(&all));
+        assert_eq!(all.p_threshold, None);
+        assert!((bonf.p_threshold.unwrap() - 0.05 / bonf.tested as f64).abs() < 1e-15);
+        assert!(p05.over.iter().chain(&p05.under).all(|k| k.p_value <= 0.05 && k.log_likelihood.abs() >= 3.84));
+    }
+
+    #[test]
+    fn chi2_p_matches_the_textbook_critical_values() {
+        // 自由度 1：3.841 → 0.05，6.635 → 0.01，10.828 → 0.001
+        for (x, p) in [(3.841_458_820_694_124, 0.05), (6.634_896_601_021_214, 0.01), (10.827_566_170_662_733, 0.001)] {
+            assert!((chi2_p(x) - p).abs() / p < 1e-6, "{x}: {}", chi2_p(x));
+        }
+        assert_eq!(chi2_p(0.0), 1.0);
     }
 
     #[test]

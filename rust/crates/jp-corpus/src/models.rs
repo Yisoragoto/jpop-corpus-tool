@@ -297,6 +297,17 @@ pub struct KwicHit {
     /// 关键词占几个 token。多词表达（`て+しまう`）大于 1
     #[serde(default = "one")]
     pub match_len: i64,
+    /// 关键词左边最近的几个词（表层形，不含标点、符号），**由近到远**：`[L1, L2, …]`。KWIC 按左边排序用
+    #[serde(default)]
+    pub left_words: Vec<String>,
+    /// 关键词右边最近的几个词，由近到远：`[R1, R2, …]`
+    #[serde(default)]
+    pub right_words: Vec<String>,
+    /// 这一行是这首歌的第几行（从 0 数，按行号）和这首歌一共几行。分布图用
+    #[serde(default)]
+    pub line_pos: i64,
+    #[serde(default)]
+    pub song_lines: i64,
 }
 
 fn one() -> i64 {

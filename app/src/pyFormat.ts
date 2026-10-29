@@ -65,6 +65,15 @@ export function csvRow(values: (string | number | null)[]): string {
 /** utf-8-sig 写出的文件开头那个 BOM。写成码位，源码里不放看不见的字符 */
 const BOM = String.fromCharCode(0xfeff);
 
+/**
+ * 一般的表格 CSV（词频表、N-gram、词汇丰富度）：utf-8-sig、CRLF，和检索结果的 CSV 一样能直接用 Excel 打开。
+ * 数字原样写（整数不加 `.0`），null 写成空字段
+ */
+export function tableCsv(header: string[], rows: (string | number | null)[][]): string {
+  const cell = (v: string | number | null) => (v === null ? "" : typeof v === "number" ? String(v) : v);
+  return BOM + [header, ...rows].map((r) => r.map((v) => csvField(cell(v))).join(",") + "\r\n").join("");
+}
+
 export interface KwicCsvHit {
   artist: string;
   title: string;

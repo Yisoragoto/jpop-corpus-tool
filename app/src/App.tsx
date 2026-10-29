@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { api, NO_DICTIONARY, type HealthReport, type NewAudio, type Overview, type QuickHit, type ReleaseInfo } from "./api";
+import { api, NO_DICTIONARY, type HealthReport, type MatchField, type NewAudio, type Overview, type QuickHit, type ReleaseInfo } from "./api";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { LanguagePicker } from "./components/LanguagePicker";
 import { needsLanguageChoice } from "./i18n";
@@ -53,7 +53,7 @@ const ROUTES: { key: Route; label: string; hint: string }[] = [
   { key: "home", label: tr("首页"), hint: tr("继续听 · 今日 · 语料库") },
   { key: "kwic", label: tr("检索"), hint: tr("KWIC 语境检索与歌词全文") },
   { key: "library", label: tr("资料库"), hint: tr("音乐人 · 专辑 · 歌曲 · 关系网 · 时间轴 · 词云") },
-  { key: "analytics", label: tr("分析"), hint: tr("总览 · 时间线 · 词频统计 · 语料报告") },
+  { key: "analytics", label: tr("分析"), hint: tr("词表 · 词簇 · 丰富度 · 对比 · 报告") },
   { key: "import", label: tr("导入"), hint: tr("扫描目录 · 复核 · 写入语料") },
   { key: "scrape", label: tr("刮削"), hint: tr("识别 · 补 metadata · 封面") },
   { key: "anki", label: "Anki", hint: tr("选词 · 用语料例句做卡片") },
@@ -221,6 +221,11 @@ export default function App() {
     // 词云里合并了几种写法（想い出・思い出）时每种都查，和词云弹出的歌一致
     const keyword = jump && jump.variants.length > 1 ? jump.variants.join(" ") : lemma;
     setKwicRequest(jump ? { keyword, field: "lemma", nonce: Date.now(), jump } : { keyword, field: "lemma", nonce: Date.now() });
+    setRoute("kwic");
+  }, []);
+  // N-gram 点「检索」：整个词组当一个多词表达（A+B+C）查
+  const searchPhrase = useCallback((keyword: string, field: MatchField) => {
+    setKwicRequest({ keyword, field, nonce: Date.now() });
     setRoute("kwic");
   }, []);
   const consumeKwicRequest = useCallback(() => setKwicRequest(null), []);
@@ -516,6 +521,7 @@ export default function App() {
             actions={actions}
             onNavigate={goLibrary}
             onSearchWord={searchWord}
+            onSearchPhrase={searchPhrase}
             onOpenCloud={openCloud}
             onError={onError}
           />

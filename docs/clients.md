@@ -60,7 +60,7 @@ songs(id, audio_path, duration_sec, year, album_id …)
 - **子语料**（`jp_corpus::subcorpus`）：演唱者、年份、专辑、流派、指定歌曲；条件之间 AND、同一条件内 OR。
   KWIC、词频、搭配、对比共用这一个定义。
 - **出处**（`analysis::Provenance`）：每个分析结果带库指纹（行数、词数、最大 id、校正数、元数据的哈希）、
-  规则版本（`analysis-1`）、范围描述、计数单位和原样回显的参数。指纹与参数相同，结果就相同；
+  规则版本（`analysis-2`）、范围描述、计数单位和原样回显的参数。指纹与参数相同，结果就相同；
   导入新歌、校正分词后指纹会变。
 - **存档与来源追踪**（`jp_corpus::runs`、`jp_corpus::lineage`，见 [provenance.md](provenance.md)）：
   出处回答「是不是现在的库算的」，存档回答「当时怎么来的、为什么变了」，可以把上面任何一种分析存档后原样重跑对比。
@@ -82,7 +82,11 @@ songs(id, audio_path, duration_sec, year, album_id …)
   `jp-ffi` 的方法：`scrapeSummary`、`completeness`、`scrapeStart` / `scrapeArtistsStart` / `scrapeProgress` / `scrapeCancel`、
   `scrapeTrack`、`scrapeReviewQueue`、`scrapeAccept`、`scrapeSkip`、`scrapeRetryFailed`、`scrapeArtist`、`scrapeBackfillCovers`；
   联网的都单开一条连接，不占会话那条。振假名 `lyricsFurigana`（同 Tauri 的 `lyrics_furigana`，现场用 Sudachi 取读音、不入库）。
-- 统计量：搭配有 logDice、MI、t、对数似然（2×2 表，期望值按实际窗口位置数算）；对比用带符号的对数似然和 log ratio（零频 0.5 平滑）。
+- 统计量：搭配有 logDice、MI、MI3、t、z、对数似然、双向 ΔP（2×2 表，期望值按实际窗口位置数算）；对比用带符号的对数似然和 log ratio（零频 0.5 平滑），
+  另给 p 值（自由度 1 的卡方）、BIC、%DIFF，可按 p 阈值筛、可做 Bonferroni 校正。词频和 N-gram 带离散度（DP、DPnorm、Juilland D、ARF，
+  以歌为部分）。`jp-ffi` 另有 `ngrams`（N-gram，不跨行不跨标点）和 `lexicalProfile`（整体 / 每位演唱者 / 每首歌的 MATTR、MTLD、Yule's K
+  和文字种比例，`jp_corpus::lexical`）。KWIC 命中多了 `leftWords` / `rightWords`（排序用）和 `linePos` / `songLines`（分布图用）。
+  这些指标都和 `scripts/analysis_reconcile.py` 的独立实现在真实库上逐项对过（`jp-corpus/examples/analysis_dump.rs` 出数据）。
 
 ## macOS 上建库：导入、分词词典、查词
 

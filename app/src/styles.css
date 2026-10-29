@@ -7,6 +7,12 @@
   --accent-deep: #0078d4;
   --accent-ink: #001a29;
   --accent-soft: rgba(76, 194, 255, .16);
+  /* 分析页「文字构成」的五类文字 */
+  --script-kanji: #4cc2ff;
+  --script-hiragana: #9be18e;
+  --script-katakana: #ffb86b;
+  --script-latin: #c79bff;
+  --script-other: #8a8a96;
 
   /* 窗口背后是系统亚克力（tauri.conf.json 的 windowEffects），这几层只是压一点暗保证字看得清。
      原来整个窗口先铺 72% 再在顶栏、播放条上叠 55%，叠起来接近不透明，毛玻璃完全透不上来。
@@ -1051,11 +1057,80 @@ input[type="range"] { accent-color: var(--accent); }
 
 /* 词频统计 / 语料报告 */
 .card-tools { display: flex; align-items: center; gap: 10px; }
-.stats-filters {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  position: sticky; top: -16px; z-index: 5; margin: 0 -4px;
-  padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
+/* ── 分析页：范围条 + 分页 ──
+   范围条是页面的一部分，不吸顶、不浮在内容上（以前吸顶的半透明条会和表头叠在一起）。 */
+.scope-bar { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 0; }
+.scope-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.scope-label { font-size: 13px; font-weight: 600; margin-right: 2px; }
+.scope-more { gap: 6px; }
+.scope-more.open { background-color: var(--btn-fill-hover); }
+.scope-badge {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; line-height: 18px; text-align: center;
+  background: var(--accent); color: var(--accent-ink); font-variant-numeric: tabular-nums;
 }
+.scope-sep { width: 1px; height: 20px; background: var(--line-strong); margin: 0 2px; }
+.scope-size { margin-left: auto; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.scope-extra { padding: 10px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.scope-extra .year-range input { width: 76px; }
+.scope-save { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.scope-desc { margin: 0; }
+
+/* WinUI 的 SelectorBar：纯文字的页签，选中的下面一道短的强调色圆条 */
+.selector-bar {
+  display: flex; gap: 2px; margin: 0 0 8px; border-bottom: 1px solid var(--line);
+  overflow-x: auto; scrollbar-width: none;
+}
+.selector-bar button {
+  position: relative; flex: 0 0 auto; height: 40px; padding: 0 14px; font-size: 14px; color: var(--muted);
+  border-radius: var(--ctl-radius) var(--ctl-radius) 0 0; transition: color 120ms, background 120ms;
+}
+.selector-bar button:hover { color: var(--fg); background: var(--btn-fill); }
+.selector-bar button.on { color: var(--fg); font-weight: 600; }
+.selector-bar button::after {
+  content: ""; position: absolute; left: 50%; bottom: -1px; width: 0; height: 3px; border-radius: 2px;
+  background: var(--accent); transform: translateX(-50%); transition: width 200ms var(--spring);
+}
+.selector-bar button.on::after { width: 18px; }
+.analytics-tab[hidden] { display: none; }
+/* 分析页是纵向 flex 的滚动容器：子块不许被压扁（带 overflow 的页签条会被压成 0 高） */
+.analytics > * { flex-shrink: 0; }
+/* 分页里的表格跟着页面滚，表头吸在顶上；不再套一个固定高度的小滚动框 */
+.analytics-tab .table-wrap { max-height: none; overflow: visible; }
+
+/* 概览 */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 0 0 26px; }
+.kpi {
+  display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 8px; text-align: left;
+  background: var(--panel); border: 1px solid var(--line);
+}
+.kpi b { font-size: 24px; font-weight: 600; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
+.kpi span { font-size: 12px; color: var(--muted); }
+button.kpi { cursor: pointer; transition: background 120ms; }
+button.kpi:hover { background: var(--panel-2); }
+.ov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 28px 40px; margin: 0 0 32px; }
+.ov-block { min-width: 0; }
+.ov-block > header { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; }
+.ov-block > header h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.ov-block > header .link-btn { margin-left: auto; }
+.ov-block .timeline { margin-top: 0; height: 120px; }
+.script-bar.big { width: 100%; height: 14px; border-radius: 4px; }
+.script-figures { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px 14px; margin: 14px 0 0; padding: 0; }
+.script-figures li { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.script-figures b { margin-left: auto; color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ov-list { list-style: none; margin: 0; padding: 0; counter-reset: ov; }
+.ov-list li {
+  display: grid; grid-template-columns: 22px minmax(70px, auto) 56px minmax(60px, 1fr) 52px 76px; align-items: center; gap: 10px;
+  height: 30px; font-size: 13px; counter-increment: ov;
+}
+.ov-list li::before { content: counter(ov); color: var(--muted); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.ov-list .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ov-word { text-align: left; font-size: 14px; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-word:hover { color: var(--accent-text); }
+.ov-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.ov-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); opacity: .85; }
+.ov-bar.warn > span { background: var(--warn); }
+.analytics .cloud-moved { margin-top: 8px; }
+
 .table-wrap { max-height: 560px; overflow-y: auto; margin-top: 10px; border-top: 1px solid var(--line); }
 .stale { opacity: .55; transition: opacity .15s; }
 table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -2662,9 +2737,6 @@ button.primary:not(:disabled):active { transform: scale(.96); transition-duratio
 }
 
 /* ── 子语料 / 语料质量 / 分析记录 / 来源与校验（docs/provenance.md）── */
-.subcorpus { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; }
-.subcorpus-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.subcorpus .year-range input { width: 76px; }
 .inline-form { display: inline-flex; align-items: center; gap: 6px; }
 .inline-form input { width: 200px; }
 .label-input { width: 160px; }
@@ -2746,6 +2818,45 @@ table.data tr.current td { background: var(--accent-soft); }
 .compare-label { min-width: 2.5em; }
 .key-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 28px; }
 .key-col h3 { margin: 4px 0 6px; font-size: 13px; font-weight: 600; }
+.key-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 0 8px; }
+
+/* ── 分析页：词频表的排序和离散度、N-gram、词汇丰富度 ── */
+table.data th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+table.data th.sortable:hover { color: var(--fg); }
+.dp-cell {
+  display: inline-block; min-width: 40px; padding: 0 4px; border-radius: 3px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, transparent) var(--dp), transparent var(--dp));
+}
+.segmented.small-seg button { height: var(--ctl-h-sm); padding: 0 10px; font-size: 12px; }
+.ngram-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 4px 0 12px; }
+.ngram-controls .year-input { width: 48px; margin: 0 4px; }
+.ngram-contains { width: 180px; }
+.ngram-word + .ngram-word::before { content: "·"; margin: 0 4px; color: var(--muted); }
+.script-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 8px; }
+.script-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.script-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.lexical-name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.script-col { width: 180px; }
+.script-bar { display: flex; width: 160px; height: 10px; border-radius: 3px; overflow: hidden; background: var(--line); }
+.script-bar i { display: block; height: 100%; }
+.s-kanji { background: var(--script-kanji); }
+.s-hiragana { background: var(--script-hiragana); }
+.s-katakana { background: var(--script-katakana); }
+.s-latin { background: var(--script-latin); }
+.s-other { background: var(--script-other); }
+
+/* ── KWIC：排序、分布图 ── */
+.kwic-sort { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.kwic-plot { flex: 1; min-width: 0; overflow-y: auto; padding: 6px 16px 24px; }
+.plot-row { display: grid; grid-template-columns: minmax(120px, 260px) 36px 1fr; align-items: center; gap: 10px; height: 26px; }
+.plot-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.plot-count { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.plot-track { position: relative; height: 14px; border-radius: 3px; background: var(--panel); border: 1px solid var(--line); }
+.plot-tick {
+  position: absolute; top: -1px; width: 3px; height: 14px; margin-left: -1px; padding: 0; border: 0; border-radius: 1px;
+  background: var(--accent); opacity: .8; cursor: pointer;
+}
+.plot-tick:hover, .plot-tick:focus-visible { opacity: 1; transform: scaleY(1.35); background: var(--accent-text); }
 
 /* 例句旁边的试听键、曲库右栏的语料画像 */
 .example-row { display: flex; align-items: center; gap: 2px; }

@@ -336,7 +336,6 @@ export const en2: Record<string, string> = {
   "同一首歌里文本相同的行只算第一次：看「用了哪些词」时开，看「听到多少次」时关": "Count identical lines in a song only once. Turn on to see which words are used; turn off to see how often you hear them",
   "副歌只算一遍": "Count choruses once",
   "范围：{filter}": "Scope: {filter}",
-  " · {songCount} 首 / {lineCount} 行": " · {songCount} {songCount|song|songs} / {lineCount} {lineCount|line|lines}",
   "存为子语料…": "Save as subcorpus…",
   "删除「{name}」": "Delete “{name}”",
   "名字，比如「2010 年代」": "Name, e.g. “2010s”",

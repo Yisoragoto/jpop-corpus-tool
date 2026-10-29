@@ -6,6 +6,10 @@
  * 指纹变了（导入了新歌、校正了分词）就说明结果是旧数据上算的，要重算。
  *
  * 每个词都能点「检索」去 KWIC 看具体是哪几句、点 ▶ 听；分析不是终点。
+ *
+ * 子语料对比的做法照现在关键词分析的通行建议：先用显著性把「可能只是碰巧」的词筛掉
+ * （一次检验几千个词，默认做 Bonferroni 校正），再按效应量（Log Ratio）或对数似然排。
+ * 对数似然只说明「有没有差别」，Log Ratio 才说明「差多少」（差 1 = 相对频率差一倍）。
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -178,6 +182,16 @@ interface SideState {
 
 const EMPTY_SIDE: SideState = { performerIds: [], yearFrom: "", yearTo: "", saved: null };
 
+/** 显著性门槛 */
+type Significance = "none" | "0.05" | "0.01" | "0.001";
+/** 每边显示几个词 */
+const KEY_SHOWN = 25;
+
+function formatP(p: number): string {
+  if (p < 0.0001) return "<.0001";
+  return p.toFixed(4).replace(/^0/, "");
+}
+
 function toSubcorpus(side: SideState): Subcorpus {
   const year = (s: string) => (/^\d{4}$/.test(s.trim()) ? Number(s.trim()) : null);
   return mergeSubcorpus({ performerIds: side.performerIds, yearFrom: year(side.yearFrom), yearTo: year(side.yearTo) }, side.saved);
@@ -262,18 +276,31 @@ function KeyTable({ title, items, onSearchWord }: { title: string; items: KeyIte
               <th className="num" title={tr("每万词")}>{tr("目标")}</th>
               <th className="num" title={tr("每万词")}>{tr("参照")}</th>
               <th className="num" title={tr("对数似然（显著性）")}>LL</th>
+              <th className="num" title={tr("Log Ratio（效应量）：log₂(目标相对频率 ÷ 参照相对频率)。差 1 就是相差一倍")}>LR</th>
+              <th className="num" title={tr("未校正的 p 值")}>p</th>
               <th />
             </tr>
           </thead>
           <tbody>
             {items.map((k) => (
-              <tr key={`${k.lemma}:${k.pos}`} title={tr("{v} · 目标 {targetFreq} 次 / 参照 {referenceFreq} 次 · log ratio {logRatio}", { v: POS_LABELS[k.pos] ?? k.pos, targetFreq: k.targetFreq, referenceFreq: k.referenceFreq, logRatio: k.logRatio.toFixed(2) })}>
+              <tr
+                key={`${k.lemma}:${k.pos}`}
+                title={tr("{v} · 目标 {targetFreq} 次 / 参照 {referenceFreq} 次 · %DIFF {diff} · BIC {bic}", {
+                  v: POS_LABELS[k.pos] ?? k.pos,
+                  targetFreq: k.targetFreq,
+                  referenceFreq: k.referenceFreq,
+                  diff: k.percentDiff === null ? "∞" : `${k.percentDiff.toFixed(0)}%`,
+                  bic: k.bic.toFixed(1),
+                })}
+              >
                 <td>
                   {k.lemma} <span className="muted small">{POS_LABELS[k.pos] ?? k.pos}</span>
                 </td>
                 <td className="num">{k.targetPer10k.toFixed(1)}</td>
                 <td className="num">{k.referencePer10k.toFixed(1)}</td>
                 <td className="num">{Math.abs(k.logLikelihood).toFixed(1)}</td>
+                <td className="num">{k.logRatio.toFixed(2)}</td>
+                <td className="num muted">{formatP(k.pValue)}</td>
                 <td className="row-actions">
                   <button className="link-btn" onClick={() => onSearchWord(k.lemma)}>{tr("检索")}</button>
                 </td>
@@ -284,6 +311,12 @@ function KeyTable({ title, items, onSearchWord }: { title: string; items: KeyIte
       )}
     </div>
   );
+}
+
+/** 每边取前 KEY_SHOWN 个：按对数似然（后端已经排好）或按 Log Ratio 的绝对值 */
+function rank(items: KeyItem[], by: "ll" | "lr"): KeyItem[] {
+  const sorted = by === "ll" ? items : [...items].sort((a, b) => Math.abs(b.logRatio) - Math.abs(a.logRatio) || Math.abs(b.logLikelihood) - Math.abs(a.logLikelihood));
+  return sorted.slice(0, KEY_SHOWN);
 }
 
 export function KeynessCard({
@@ -298,6 +331,9 @@ export function KeynessCard({
   const [target, setTarget] = useState<SideState>({ ...EMPTY_SIDE, yearFrom: "2020" });
   const [reference, setReference] = useState<SideState>(EMPTY_SIDE);
   const [unit, setUnit] = useState<CountUnit>("distinctLines");
+  const [significance, setSignificance] = useState<Significance>("0.05");
+  const [bonferroni, setBonferroni] = useState(true);
+  const [rankBy, setRankBy] = useState<"ll" | "lr">("ll");
   const [result, setResult] = useState<KeynessResult | null>(null);
   const [lastQuery, setLastQuery] = useState<KeynessQuery | null>(null);
   const [busy, setBusy] = useState(false);
@@ -315,7 +351,10 @@ export function KeynessCard({
         unit,
         jpOnly,
         minFreq: 5,
-        limit: 25,
+        // 多取一些：按 Log Ratio 排时要从全部显著的词里挑，不是从对数似然前 25 个里挑
+        limit: 1000,
+        maxP: significance === "none" ? null : Number(significance),
+        bonferroni: significance !== "none" && bonferroni,
       };
       setResult(await api.keyness(query));
       setLastQuery(query);
@@ -334,7 +373,7 @@ export function KeynessCard({
           {result && lastQuery && <ArchiveButton spec={{ kind: "keyness", query: lastQuery }} label={tr("子语料对比")} onError={onError} />}
         </div>
       </div>
-      <p className="muted small">{tr("选两批歌（存过的子语料，或者按歌手、年份），看哪些词在「目标」里明显偏多、偏少。参照不选就是语料库里其余的歌。 按对数似然排序，两边合计少于 5 次的词不列出。")}</p>
+      <p className="muted small">{tr("选两批歌（存过的子语料，或者按歌手、年份），看哪些词在「目标」里明显偏多、偏少。参照不选就是语料库里其余的歌。 按对数似然排序，两边合计少于 5 次的词不列出。")}{" "}{tr("先按 p 值筛掉可能只是碰巧的词，再按对数似然（差别有多确定）或 Log Ratio（差多少）排。")}</p>
       <div className="compare-form">
         <SidePicker label={tr("目标")} side={target} onChange={setTarget} onError={onError} />
         <SidePicker label={tr("参照")} side={reference} onChange={setReference} onError={onError} />
@@ -347,6 +386,21 @@ export function KeynessCard({
             >{tr("去掉重复行")}</button>
             <button className={unit === "tokens" ? "on" : ""} onClick={() => setUnit("tokens")} title={tr("唱几遍算几遍")}>{tr("全部词次")}</button>
           </div>
+          <select
+            className="rate"
+            value={significance}
+            onChange={(e) => setSignificance(e.target.value as Significance)}
+            title={tr("只列差别显著的词")}
+          >
+            <option value="none">{tr("不筛显著性")}</option>
+            <option value="0.05">p &lt; 0.05</option>
+            <option value="0.01">p &lt; 0.01</option>
+            <option value="0.001">p &lt; 0.001</option>
+          </select>
+          <label className="check" title={tr("一次检验几千个词，不校正的话 p < 0.05 里会有不少是碰巧。校正 = 阈值除以检验的词数")}>
+            <input type="checkbox" checked={bonferroni} disabled={significance === "none"} onChange={(e) => setBonferroni(e.target.checked)} />
+            Bonferroni
+          </label>
           <button className="primary" disabled={busy} onClick={() => void run()}>
             {busy ? tr("计算中…") : tr("对比")}
           </button>
@@ -354,9 +408,20 @@ export function KeynessCard({
       </div>
       {result && (
         <>
+          <div className="key-meta">
+            <span className="muted small">
+              {tr("检验了 {tested} 个词", { tested: result.tested.toLocaleString() })}
+              {result.pThreshold !== null && tr("，门槛 p ≤ {threshold}", { threshold: result.pThreshold.toPrecision(2) })}
+              {tr("；显著偏多 {over}、偏少 {under}", { over: result.over.length, under: result.under.length })}
+            </span>
+            <div className="segmented small-seg">
+              <button className={rankBy === "ll" ? "on" : ""} onClick={() => setRankBy("ll")} title={tr("差别有多确定")}>{tr("按 LL 排")}</button>
+              <button className={rankBy === "lr" ? "on" : ""} onClick={() => setRankBy("lr")} title={tr("差多少（效应量）")}>{tr("按 Log Ratio 排")}</button>
+            </div>
+          </div>
           <div className="key-cols">
-            <KeyTable title={tr("目标里偏多")} items={result.over} onSearchWord={onSearchWord} />
-            <KeyTable title={tr("目标里偏少")} items={result.under} onSearchWord={onSearchWord} />
+            <KeyTable title={tr("目标里偏多")} items={rank(result.over, rankBy)} onSearchWord={onSearchWord} />
+            <KeyTable title={tr("目标里偏少")} items={rank(result.under, rankBy)} onSearchWord={onSearchWord} />
           </div>
           <p className="muted small">{tr("目标")}</p>
           <ProvenanceLine p={result.target} />

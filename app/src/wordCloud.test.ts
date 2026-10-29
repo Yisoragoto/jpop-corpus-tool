@@ -105,7 +105,7 @@ describe("layoutCloud", () => {
 describe("groupHitsBySong", () => {
   const hit = (songId: string, repeatCount = 1, utteranceId = 1): KwicHit => ({
     songId, artist: "A", title: `t${songId}`, audioPath: "", utteranceId, lineIdx: 0, timeSec: null,
-    text: "", left: "", keyword: "", right: "", repeatCount, corrected: false, endSec: null, endKind: null, matchLen: 1,
+    text: "", left: "", keyword: "", right: "", repeatCount, corrected: false, endSec: null, endKind: null, matchLen: 1, leftWords: [], rightWords: [], linePos: 0, songLines: 1,
   });
   const mid = (songId: string, left: string, utteranceId = 1): KwicHit => ({ ...hit(songId, 1, utteranceId), left });
 

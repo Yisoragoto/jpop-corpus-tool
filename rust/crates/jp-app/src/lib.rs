@@ -75,6 +75,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::corpus_frequency,
             commands::collocations,
             commands::keyness,
+            commands::ngrams,
+            commands::lexical_profile,
             commands::song_profile,
             commands::search_lyrics,
             commands::quick_search,

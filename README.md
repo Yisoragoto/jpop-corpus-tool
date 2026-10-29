@@ -155,11 +155,14 @@ Releases 取，校验 SHA-256 之后直接覆盖安装（不用先卸载旧版�
 J-pop 的副歌会反复唱：真实语料里重复行占了约 23% 的行、20% 的词次。直接数的话，高频词表里有不少是副歌堆出来的。
 所以分析页的每种统计都可以选两种口径——**全部词次**，或者**同一首歌里重复的行只算一次**。
 
-- **词频**：词元 × 词性，带 JLPT 等级；两种口径的数都给，外加「来自重复行的比例」。
-- **搭配**：logDice、MI、t 值、对数似然。
+- **词频**：词元 × 词性，带 JLPT 等级；两种口径的数都给，外加「来自重复行的比例」和离散度（DP、ARF）。
+- **KWIC 排序与分布图**：按关键词左右第几个词排序；分布图里每首歌一条，看一个词散在全曲还是挤在副歌。
+- **搭配**：logDice、MI、MI3、t 值、z 值、对数似然、双向 ΔP。
+- **N-gram**：连续 2~5 个词的固定组合，不跨行、不跨标点，可以要求至少出现在几首歌里。
 - **副歌效应**：同一批歌两种口径各算一遍，看哪些词的排名是被副歌推上去的。
 - **子语料对比**：圈两批歌（一位歌手和其余所有歌，或者 2010 年代和 2020 年代），用带符号的对数似然和 Log Ratio
-  找出哪边明显多用、少用哪些词。
+  找出哪边明显多用、少用哪些词；按 p 值筛选，可做 Bonferroni 校正。
+- **词汇丰富度与文字**：整体、每位演唱者、每首歌的 MATTR、MTLD、Yule's K，以及汉字、平假名、片假名、拉丁字母的比例。
 - **歌曲画像**：一首歌有多少行是重复的、相对其余歌的特征词。
 - 词频统计、按年份的时间线、TTR / 标准化 TTR、语料报告 TXT 导出。
 
@@ -377,14 +380,28 @@ examples/      不含版权内容的数据格式示例
 你改过的分词作为校正单独存，重新分词后按原文套回。
 
 **检索。** KWIC（Key Word in Context）语境行是语料库检索的基本形式（Sinclair 1991）：关键词居中，左右是上下文。
-可以按写法或词元匹配，支持多词序列和「附近有某词」的共现过滤。
+可以按写法或词元匹配，支持多词序列和「附近有某词」的共现过滤；能按关键词左右第 *n* 个词排序，
+也能画成分布图（每首歌一条，命中的行按位置画刻度）。
 
 **计数口径。** 歌词和书面语料最大的不同是重复：副歌会原样唱好几遍。这里把「同一首歌里文字完全相同的行」
 当作一个重复组，所有统计都可以选全部词次或每组只算一次，并给出两者之差（来自重复行的比例）。
 这相当于在歌这一层做的去重，用来检验一个词的高频是来自很多歌，还是来自少数几首歌的副歌。
 
-**频率。** 词元 × 词性的绝对频率与每万词频率；词汇丰富度给 TTR（词种 ÷ 词次）和标准化 TTR
-（按固定长度分段取平均，Scott 的 WordSmith 做法），因为 TTR 会随语料变大而下降，不同规模的子语料不能直接比。
+**频率与离散度。** 词元 × 词性的绝对频率与每万词频率。只看频率分不清「很多歌都用」和「少数几首反复用」，
+所以以一首歌为一个部分、按歌长加权给离散度：
+
+| 指标 | 定义 | 出处 |
+|---|---|---|
+| DP | ½ Σ \|vᵢ/f − sᵢ\|，0 = 均匀，1 = 集中；DPnorm 再除以 1 − min sᵢ | Gries 2008；Lijffijt & Gries 2012 |
+| Juilland D | 1 − CV / √(n − 1)，CV 是各歌相对频率的变异系数 | Juilland & Chang-Rodríguez 1964 |
+| ARF | 词流首尾相接成环，相邻两次出现的距离超过 N/f 的部分不算 | Savický & Hlaváčová 2002 |
+
+**N-gram。** 连续 *n* 个词的组合（Biber 等的 lexical bundles），不跨行、不跨标点，可以要求最少出现曲数，
+排除只在一首歌的副歌里重复的组合。
+
+**词汇丰富度。** TTR（词种 ÷ 词次）和标准化 TTR（按固定长度分段取平均，Scott 的 WordSmith 做法）会随文本变长而下降，
+不同规模的文本不能直接比，所以另给三个受长度影响小的指标：MATTR（窗口 50，Covington & McFall 2010）、
+MTLD（阈值 0.72，正反两遍取平均，McCarthy & Jarvis 2010）、Yule's K。文字种按字符数分汉字、平假名、片假名、拉丁字母和其他。
 
 **搭配。** 在关键词左右各 *n* 个词的窗口里数共现，期望频率按实际窗口位置数算：
 
@@ -394,26 +411,43 @@ examples/      不含版权内容的数据格式示例
 | t 值 | (O − E) / √O | Church et al. 1991 |
 | logDice | 14 + log₂(2·O / (f₁ + f₂)) | Rychlý 2008 |
 | 对数似然 G² | 2×2 列联表 | Dunning 1993 |
+| MI3 | log₂(O³ / E) | Daille 1994 |
+| z 值 | (O − E) / √E | Berry-Rogghe 1973 |
+| ΔP | P(搭配词 \| 节点窗口) − P(搭配词 \| 窗口外)，两个方向都给 | Gries 2013 |
 
-MI 偏向低频词，t 值偏向高频词，logDice 不受语料大小影响，适合在不同子语料之间比较。
+MI 偏向低频词，t 值偏向高频词，logDice 不受语料大小影响，适合在不同子语料之间比较；ΔP 有方向，
+能分出「A 引出 B」和「B 引出 A」。
 
 **关键词与子语料对比。** 两批歌之间逐词比较：用对数似然 G²（Rayson & Garside 2000 的两格算法）判断差异是否显著，
 按方向加上正负号；用 Log Ratio（Hardie 2014，两边频率比的 log₂，零频按 0.5 平滑）表示差异有多大。
-显著性和效应量分开看，避免大语料里一点小差异也被当成「关键词」。
+显著性和效应量分开看，避免大语料里一点小差异也被当成「关键词」。p 值按自由度 1 的卡方分布算，
+可设门槛并做 Bonferroni 校正（一次检验几千个词）；另给 BIC（Wilson 2013）和 %DIFF（Gabrielatos & Marchi 2012）。
 
 **可复现。** 语料会变（加歌、换歌词、改分词），所以每次分析都记下库的指纹、规则版本和参数；存档的分析可以原样重跑，
 逐项对比结果，并说明差异来自数据还是来自规则。
 
 参考文献：
 
+- Berry-Rogghe, G. L. M. (1973). The computation of collocations and their relevance in lexical studies. In A. J. Aitken et al. (Eds.), *The Computer and Literary Studies* (pp. 103–112). Edinburgh University Press.
+- Biber, D., Johansson, S., Leech, G., Conrad, S., & Finegan, E. (1999). *Longman Grammar of Spoken and Written English*. Longman.
 - Church, K. W., & Hanks, P. (1990). Word association norms, mutual information, and lexicography. *Computational Linguistics*, 16(1), 22–29.
 - Church, K. W., Gale, W., Hanks, P., & Hindle, D. (1991). Using statistics in lexical analysis. In U. Zernik (Ed.), *Lexical Acquisition* (pp. 115–164). Erlbaum.
+- Covington, M. A., & McFall, J. D. (2010). Cutting the Gordian knot: The moving-average type–token ratio (MATTR). *Journal of Quantitative Linguistics*, 17(2), 94–100.
+- Daille, B. (1994). *Approche mixte pour l'extraction automatique de terminologie*. PhD thesis, Université Paris 7.
 - Dunning, T. (1993). Accurate methods for the statistics of surprise and coincidence. *Computational Linguistics*, 19(1), 61–74.
+- Gabrielatos, C., & Marchi, A. (2012). Keyness: Appropriate metrics and practical issues. CADS International Conference, University of Bologna.
+- Gries, S. Th. (2008). Dispersions and adjusted frequencies in corpora. *International Journal of Corpus Linguistics*, 13(4), 403–437.
+- Gries, S. Th. (2013). 50-something years of work on collocations. *International Journal of Corpus Linguistics*, 18(1), 137–165.
 - Hardie, A. (2014). Log Ratio: An informal introduction. ESRC Centre for Corpus Approaches to Social Science (CASS).
+- Juilland, A., & Chang-Rodríguez, E. (1964). *Frequency Dictionary of Spanish Words*. Mouton.
+- Lijffijt, J., & Gries, S. Th. (2012). Correction to Stefan Th. Gries' "Dispersions and adjusted frequencies in corpora". *International Journal of Corpus Linguistics*, 17(1), 147–149.
+- McCarthy, P. M., & Jarvis, S. (2010). MTLD, vocd-D, and HD-D: A validation study of sophisticated approaches to lexical diversity assessment. *Behavior Research Methods*, 42(2), 381–392.
 - Rayson, P., & Garside, R. (2000). Comparing corpora using frequency profiling. In *Proceedings of the Workshop on Comparing Corpora* (pp. 1–6).
 - Rychlý, P. (2008). A lexicographer-friendly association score. In *Proceedings of RASLAN 2008* (pp. 6–9).
+- Savický, P., & Hlaváčová, J. (2002). Measures of word commonness. *Journal of Quantitative Linguistics*, 9(3), 215–231.
 - Scott, M. WordSmith Tools 帮助文档：Standardised type/token ratio.
 - Sinclair, J. (1991). *Corpus, Concordance, Collocation*. Oxford University Press.
+- Wilson, A. (2013). Embracing Bayes factors for key item analysis in corpus linguistics. In M. Bieswanger & A. Koll-Stobbe (Eds.), *New Approaches to the Study of Linguistic Variability* (pp. 3–11). Peter Lang.
 
 ## 依赖
 

@@ -107,7 +107,7 @@ pub(crate) fn kwic(conn: &Connection, query: &KwicQuery) -> Result<Vec<KwicHit>>
 
     // 和 Python 一样一次批量查出来，不逐行查
     let corrected = crate::corrections::corrected_among(conn, &utterance_ids)?;
-    let spans = spans_for(conn, &raw)?;
+    let (spans, positions) = spans_for(conn, &raw)?;
 
     let mut hits: Vec<KwicHit> = raw
         .into_iter()
@@ -117,6 +117,10 @@ pub(crate) fn kwic(conn: &Connection, query: &KwicQuery) -> Result<Vec<KwicHit>>
             if let Some(span) = spans.get(&out.utterance_id) {
                 out.end_sec = Some(span.end_sec);
                 out.end_kind = Some(span.end_kind);
+            }
+            if let Some(&(pos, lines)) = positions.get(&out.utterance_id) {
+                out.line_pos = pos;
+                out.song_lines = lines;
             }
             out
         })
@@ -166,11 +170,15 @@ fn fold_repeats(raw: Vec<RawHit>) -> Vec<RawHit> {
     order.into_iter().filter_map(|k| groups.remove(&k)).collect()
 }
 
-/// 每条命中那一行的音频区间。一次查完所有涉及的歌
-fn spans_for(conn: &Connection, hits: &[RawHit]) -> Result<HashMap<i64, crate::segments::LineSpan>> {
+/// 行在歌里的位置：（第几行，一共几行）
+type LinePositions = HashMap<i64, (i64, i64)>;
+
+/// 每条命中那一行的音频区间，以及这一行在歌里的位置。一次查完所有涉及的歌
+fn spans_for(conn: &Connection, hits: &[RawHit]) -> Result<(HashMap<i64, crate::segments::LineSpan>, LinePositions)> {
     let mut songs: Vec<String> = hits.iter().map(|h| h.song_id.clone()).collect::<HashSet<_>>().into_iter().collect();
     songs.sort();
     let mut out = HashMap::new();
+    let mut positions = LinePositions::new();
     for chunk in songs.chunks(400) {
         let marks = placeholders(chunk.len());
         let mut durations: HashMap<String, Option<f64>> = HashMap::new();
@@ -195,13 +203,16 @@ fn spans_for(conn: &Connection, hits: &[RawHit]) -> Result<HashMap<i64, crate::s
             by_song.entry(song).or_default().push(line);
         }
         for (song, lines) in by_song {
+            for (i, line) in lines.iter().enumerate() {
+                positions.insert(line.0, (i as i64, lines.len() as i64));
+            }
             let duration = durations.get(&song).copied().flatten();
             for span in crate::segments::spans_from_lines(&lines, duration).into_iter().flatten() {
                 out.insert(span.utterance_id, span);
             }
         }
     }
-    Ok(out)
+    Ok((out, positions))
 }
 
 /// 第一次查询：命中的行 + 曲目元数据。`raw_rows` 为真时不折叠、不截断（后面还要在 Rust 里筛）
@@ -354,6 +365,10 @@ fn build(
         .unwrap_or_default();
     let idx = hit.token_idx.max(0) as usize;
     let last = idx + hit.match_len.max(1) - 1;
+    let (left_words, right_words) = tokens
+        .get(&hit.utterance_id)
+        .map(|line| context_words(line, idx, last))
+        .unwrap_or_default();
 
     // 优先按原文偏移切：`tokens` 表里没有空白 token（分词时被丢掉了），
     // 直接拼 surface 会把原句里的空格吃掉——
@@ -404,8 +419,23 @@ fn build(
         end_sec: None,
         end_kind: None,
         match_len: hit.match_len as i64,
+        left_words,
+        right_words,
+        line_pos: 0,
+        song_lines: 0,
     }
 }
+
+/// 排序用的左右语境：关键词两边各最多 [`CONTEXT_WORDS`] 个词，跳过标点、符号，由近到远
+fn context_words(line: &[Tok], idx: usize, last: usize) -> (Vec<String>, Vec<String>) {
+    let content = |t: &&Tok| t.pos != "PUNCT" && t.pos != "SYM";
+    let left = line[..idx.min(line.len())].iter().rev().filter(content).take(CONTEXT_WORDS).map(|t| t.surface.clone()).collect();
+    let right = line[(last + 1).min(line.len())..].iter().filter(content).take(CONTEXT_WORDS).map(|t| t.surface.clone()).collect();
+    (left, right)
+}
+
+/// KWIC 每边给几个词用来排序（AntConc 默认排到 3，这里多给两个做次级键）
+const CONTEXT_WORDS: usize = 5;
 
 // ────────────────────────────── 全文检索 ──────────────────────────────
 

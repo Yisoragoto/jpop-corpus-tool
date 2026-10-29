@@ -42,6 +42,7 @@ pub mod runs;
 pub mod stats;
 // 语料分析与播放器的连接层。两个客户端（Tauri、macOS）都只经过这几个模块，规则只写一处
 pub mod analysis;
+pub mod lexical;
 pub mod media;
 pub mod segments;
 pub mod subcorpus;
@@ -456,6 +457,14 @@ impl Corpus {
 
     pub fn keyness(&self, query: &analysis::KeynessQuery) -> Result<analysis::KeynessResult> {
         analysis::keyness(&self.conn, query)
+    }
+
+    pub fn ngrams(&self, query: &analysis::NgramQuery) -> Result<analysis::NgramResult> {
+        analysis::ngrams(&self.conn, query)
+    }
+
+    pub fn lexical_profile(&self, query: &lexical::LexicalQuery) -> Result<lexical::LexicalResult> {
+        lexical::lexical_profile(&self.conn, query)
     }
 
     pub fn song_profile(&self, song_id: &str, limit: usize) -> Result<analysis::SongProfile> {

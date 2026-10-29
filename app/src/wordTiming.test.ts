@@ -5,7 +5,7 @@ import { pickLine, timedLines } from "./usePlayback";
 
 const hit = (text: string, left: string, keyword: string, timeSec: number | null = 10, endSec: number | null = 14): KwicHit => ({
   songId: "001", artist: "A", title: "test", audioPath: "", utteranceId: 7, lineIdx: 0, timeSec, text, left, keyword,
-  right: "", repeatCount: 1, corrected: false, endSec, endKind: "nextLine", matchLen: 1,
+  right: "", repeatCount: 1, corrected: false, endSec, endKind: "nextLine", matchLen: 1, leftWords: [], rightWords: [], linePos: 0, songLines: 1,
 });
 const timing = (charStart: number, charEnd: number, startSec: number, source = "lrc", endSec: number | null = null): WordTiming => ({
   utteranceId: 7, charStart, charEnd, startSec, endSec, source,
