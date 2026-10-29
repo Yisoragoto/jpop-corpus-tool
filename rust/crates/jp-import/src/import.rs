@@ -438,7 +438,7 @@ pub(crate) fn write_line_tokens(
     let meaningful = tokens.iter().filter(|t| !t.surface.trim().is_empty());
     let mut written = 0;
     for (token_idx, token) in meaningful.enumerate() {
-        let m = crate::annotate::Morph::of(&token);
+        let m = crate::annotate::Morph::of(token);
         tx.execute(
             "INSERT INTO tokens (utterance_id, token_idx, surface, lemma, pos, pos_ja, ctype, cform, reading, normalized) \
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
