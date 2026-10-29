@@ -52,7 +52,7 @@ xattr -dr com.apple.quarantine "/Applications/JPOP Corpus.app"
 
 **更新**：启动时查到新版会弹窗写明改了什么，由你选「立即更新」「稍后」或「跳过这个版本」。Windows 上安装包只从本仓库的
 Releases 取，校验 SHA-256 之后直接覆盖安装（不用先卸载旧版），装完自动重新打开。默认跟正式版（stable）；
-想抢先试用可以在设置里切到 debug 轨道，它跟着 main 的每次提交更新。macOS 版会提示有新版，到 Releases 下载新的 `.dmg` 覆盖即可。
+想抢先试用可以在设置里切到 debug 轨道，它跟着 main 的每次提交更新，Windows 和 macOS 都有。macOS 版会提示有新版，到 Releases 下载新的 `.dmg` 覆盖即可。
 
 旧版（PyQt6）的 Python 代码留在仓库的 `legacy/` 下作参考，数据库 `corpus.db` 通用。
 

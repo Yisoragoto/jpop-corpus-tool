@@ -1,4 +1,4 @@
-name: Windows stable / debug
+name: Windows / macOS stable / debug
 on:
   push:
     branches: [main]
@@ -22,7 +22,30 @@ concurrency:
   group: windows-release-${{ inputs.channel || 'debug' }}
   cancel-in-progress: false
 jobs:
+  # 两个平台共用的发布身份：策略（这次出不出包、发哪个轨道）和构建编号。
+  # 构建编号在这里算一次：Windows 包、macOS 包里嵌的是同一个值，客户端的 debug 轨道按它判断有没有新构建
+  identity:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.policy.outputs.build }}
+      publish: ${{ steps.policy.outputs.publish }}
+      channel: ${{ steps.policy.outputs.channel }}
+      tag: ${{ steps.policy.outputs.tag }}
+      build_id: ${{ steps.id.outputs.build_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release policy
+        id: policy
+        shell: pwsh
+        env:
+          INPUT_CHANNEL: ${{ inputs.channel || 'debug' }}
+        run: ./scripts/check-release-policy.ps1
+      - name: Build identity
+        id: id
+        run: echo "build_id=${GITHUB_SHA:0:12}-$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
+
   windows:
+    needs: identity
     runs-on: windows-latest
     permissions:
       contents: write
@@ -38,9 +61,11 @@ jobs:
       - name: Build identity
         if: steps.policy.outputs.build == 'true'
         shell: pwsh
+        env:
+          BUILD_ID: ${{ needs.identity.outputs.build_id }}
         run: |
-          $buildId = "$($env:GITHUB_SHA.Substring(0, 12))-$([DateTime]::UtcNow.ToString('yyyyMMddHHmm'))"
-          "JPOP_BUILD_ID=$buildId" >> $env:GITHUB_ENV
+          if (-not $env:BUILD_ID) { throw '缺少共用的构建编号' }
+          "JPOP_BUILD_ID=$env:BUILD_ID" >> $env:GITHUB_ENV
       - uses: actions/setup-node@v4
         if: steps.policy.outputs.build == 'true'
         with:
@@ -141,11 +166,18 @@ jobs:
           path: release-assets/*
           if-no-files-found: error
 
-  # 正式版附带 macOS 安装包（Apple Silicon，未签名、未公证）。和 Windows 同时构建；
-  # Release 由上面的 windows 作业建，建好之后再把 .dmg 挂上去。debug 轨道不出 macOS 包。
+  # macOS 安装包（Apple Silicon，未签名、未公证），两个轨道都出，和 Windows 同时构建。
+  # Release 由上面的 windows 作业建（debug 是删掉重建），建好之后再把 .dmg 挂上去：
+  #   stable：JPOP.Corpus.Tool_<版本>_macOS_arm64.dmg
+  #   debug ：JPOP.Corpus.Tool_<版本>-debug_macOS_arm64.dmg + latest-macos.json（macOS 客户端的 debug 轨道读它，
+  #           格式和 Windows 的 latest.json 一样；构建编号和 Windows 包是同一个）
   macos:
-    if: github.event_name == 'workflow_dispatch' && inputs.channel == 'stable'
+    needs: identity
+    if: needs.identity.outputs.publish == 'true'
     runs-on: macos-14
+    env:
+      JPOP_BUILD_ID: ${{ needs.identity.outputs.build_id }}
+      CHANNEL: ${{ needs.identity.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -153,7 +185,9 @@ jobs:
         with:
           workspaces: rust -> target
       - name: Build libjp_ffi.a
-        run: ./macos/scripts/build-rust.sh
+        run: |
+          test -n "$JPOP_BUILD_ID"
+          ./macos/scripts/build-rust.sh
       - name: App bundle
         working-directory: macos
         run: ./scripts/bundle.sh
@@ -161,22 +195,34 @@ jobs:
         run: |
           version="$(node -p "require('./app/package.json').version")"
           test -n "$version"
+          if [ "$CHANNEL" = debug ]; then file="JPOP.Corpus.Tool_${version}-debug_macOS_arm64.dmg"
+          else file="JPOP.Corpus.Tool_${version}_macOS_arm64.dmg"; fi
           stage="$RUNNER_TEMP/dmg"
           mkdir -p "$stage" release-assets
           cp -R "macos/build/JPOP Corpus.app" "$stage/"
           ln -s /Applications "$stage/Applications"
-          hdiutil create -volname "JPOP Corpus" -srcfolder "$stage" -ov -format UDZO \
-            "release-assets/JPOP.Corpus.Tool_${version}_macOS_arm64.dmg"
+          hdiutil create -volname "JPOP Corpus" -srcfolder "$stage" -ov -format UDZO "release-assets/$file"
+          if [ "$CHANNEL" = debug ]; then
+            python3 - "$version" "$file" <<'PY'
+          import hashlib, json, os, sys
+          version, file = sys.argv[1], sys.argv[2]
+          path = os.path.join("release-assets", file)
+          digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+          manifest = {"buildId": os.environ["JPOP_BUILD_ID"], "version": version, "file": file,
+                      "sha256": digest, "size": os.path.getsize(path)}
+          open("release-assets/latest-macos.json", "w").write(json.dumps(manifest, indent=2))
+          PY
+          fi
           ls -la release-assets
       - uses: actions/upload-artifact@v4
         with:
           name: jpop-corpus-tool-macos
-          path: release-assets/*.dmg
+          path: release-assets/*
           if-no-files-found: error
 
   macos-publish:
-    needs: [windows, macos]
-    if: github.event_name == 'workflow_dispatch' && inputs.channel == 'stable'
+    needs: [identity, windows, macos]
+    if: needs.identity.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -189,6 +235,7 @@ jobs:
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.identity.outputs.tag }}
         run: |
-          version="$(node -p "require('./app/package.json').version")"
-          gh release upload "v${version}" release-assets/*.dmg --clobber
+          test -n "$TAG"
+          gh release upload "$TAG" release-assets/* --clobber

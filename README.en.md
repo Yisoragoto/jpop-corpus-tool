@@ -58,7 +58,7 @@ The interface comes in **English and Simplified Chinese**: pick one on first lau
 or **Skip this version**. On Windows the installer is pulled from this repository's Releases, its SHA-256 is
 verified, and it installs over the current version (no uninstall step) and reopens the app. You follow stable
 releases by default; to try changes early, switch to the debug channel in Settings, which follows every push to
-main. The macOS app tells you about a new version; download the new `.dmg` from Releases and install over the old one.
+main on both Windows and macOS. The macOS app tells you about a new version; download the new `.dmg` from Releases and install over the old one.
 
 The old PyQt6 Python code is kept under `legacy/` for reference; `corpus.db` works with it too.
 

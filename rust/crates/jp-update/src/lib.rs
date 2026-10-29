@@ -30,7 +30,7 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 pub use jp_corpus::update_settings::{Channel, Preferences};
 pub mod channels;
-pub use channels::{Transport, check_with};
+pub use channels::{Platform, Transport, check_on, check_with};
 
 pub const CURRENT_VERSION: &str = env!("JPOP_APP_VERSION");
 
