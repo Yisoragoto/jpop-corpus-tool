@@ -256,8 +256,11 @@ public final class AppModel {
         guard let client else { return [] }
         var names: [String] = []
         if importer.scanning { names.append("扫描导入文件") }
-        if importer.importing || (try? await client.importProgress())?.running == true { names.append("导入") }
-        if importer.downloading || (try? await client.tokenizerProgress())?.running == true { names.append("下载分词词典") }
+        // 不写成 `a || (try? await …)`：|| 的右边是不支持 async 的自动闭包
+        let importRunning = (try? await client.importProgress())?.running == true
+        if importer.importing || importRunning { names.append("导入") }
+        let tokenizerRunning = (try? await client.tokenizerProgress())?.running == true
+        if importer.downloading || tokenizerRunning { names.append("下载分词词典") }
         if let core {
             if (try? await core.dictImportProgress())?.running == true { names.append("导入词典") }
             if (try? await core.scrapeProgress())?.running == true { names.append("刮削") }

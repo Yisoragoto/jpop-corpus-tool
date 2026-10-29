@@ -91,7 +91,12 @@ final class PlayerModelTests: XCTestCase {
 
     @MainActor
     private func waitParked(_ corpus: FakeCorpus, _ key: String) async {
-        for _ in 0..<1000 where !(await corpus.isParked(key)) { await Task.yield() }
+        var tries = 0
+        while tries < 1000 {
+            if await corpus.isParked(key) { return }
+            await Task.yield()
+            tries += 1
+        }
     }
 
     /// 连点两条试听：先点的那条慢，不能在后点的那首上设停止点、也不能把歌换回去
