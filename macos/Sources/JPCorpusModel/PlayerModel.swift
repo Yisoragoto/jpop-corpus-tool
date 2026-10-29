@@ -76,7 +76,7 @@ public final class PlayerModel {
     weak var app: AppModel?
     @ObservationIgnored private let log = Logger(subsystem: "org.jpcorpus.app", category: "history")
 
-    /// 系统的「正在播放」和媒体键（F8、耳机按键、控制中心）。只有真正的应用会接上，测试里是 nil
+    /// 系统的「正在播放」和媒体键（F7/F8/F9、耳机按键、控制中心）。只有真正的应用会接上，测试里是 nil
     @ObservationIgnored public var systemMedia: (any SystemMediaPublishing)? {
         didSet { publishNowPlaying() }
     }

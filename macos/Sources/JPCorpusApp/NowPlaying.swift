@@ -3,7 +3,7 @@ import JPCore
 import JPCorpusModel
 import MediaPlayer
 
-/// 系统的「正在播放」：媒体键（F8 播放 / 暂停）、耳机线控、控制中心、锁屏都走这里。
+/// 系统的「正在播放」：媒体键（F7 上一首 / F8 播放暂停 / F9 下一首）、耳机线控、控制中心、锁屏都走这里。
 ///
 /// macOS 只把媒体键发给「正在播放」的应用，而认不认你是正在播放的应用，看的是
 /// MPNowPlayingInfoCenter 有没有信息、`playbackState` 是不是 playing / paused。
