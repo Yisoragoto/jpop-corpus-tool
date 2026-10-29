@@ -13,7 +13,12 @@ import JPCorpusModel
 @MainActor
 struct LyricsStage: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openWindow) private var openWindow
     @State private var cover: NSImage?
+    /// 预先虚化好的封面（见 Artwork）：全屏的实时模糊是播放时 GPU 占用的大头
+    @State private var blurredCover: NSImage?
+    @State private var coverPath: String?
     @State private var karaoke = false
     @State private var credits: [Credit] = []
     @State private var colors = ArtworkColors()
@@ -69,7 +74,7 @@ struct LyricsStage: View {
         }
         .background { backdrop.ignoresSafeArea() }
         .environment(\.colorScheme, .dark)
-        .onAppear { karaoke = app.stageKaraoke }
+        .onAppear { karaoke = app.stageKaraoke; MainWindow.open = MainWindow.open ?? openWindow }
         .onChange(of: karaoke) { _, value in app.stageKaraoke = value; lookup = nil }
         .onExitCommand { if selectionLine != nil { selectionLine = nil } else { close() } }
         .popover(item: $selectionLine) { line in
@@ -79,7 +84,7 @@ struct LyricsStage: View {
             }
         }
         .task(id: "\(player.track?.id ?? "")|\(player.track?.coverPath ?? "")") {
-            cover = nil; colors = ArtworkColors()
+            cover = nil; coverPath = nil; colors = ArtworkColors()
             let track = player.track
             let fetchedCredits = (try? await app.core?.trackCredits(track?.id ?? "")) ?? []
             guard !Task.isCancelled else { return }
@@ -87,20 +92,32 @@ struct LyricsStage: View {
             guard let track, !track.coverPath.isEmpty, let client = app.client else { return }
             let path = (try? await client.resolveMedia(track.coverPath)) ?? nil
             guard !Task.isCancelled else { return }
-            cover = loadImage(atPath: path)
-            colors = ArtworkColors(image: cover)
+            let image = await Artwork.image(atPath: path, maxPixel: 1024)
+            guard !Task.isCancelled else { return }
+            cover = image
+            coverPath = path
+            colors = ArtworkColors(image: image)
+        }
+        // 模糊半径是设置里能调的：换了就重算一次（只算一次，不是每帧）
+        .task(id: "\(coverPath ?? "")|\(app.stageCoverBlur)|\(Int(app.stageBlurRadius))") {
+            guard app.stageCoverBlur, let coverPath else { blurredCover = nil; return }
+            let blurred = await Artwork.blurred(atPath: coverPath, radius: app.stageBlurRadius, saturation: 1.4, displayWidth: 1500)
+            guard !Task.isCancelled else { return }
+            blurredCover = blurred
         }
         .background(PlaybackKeyboard(app: app, exit: { close() }))
         .background(WindowReader { window = $0 })
         .onChange(of: window) { _, w in enterFullScreen(w) }
         // 窗口被关掉（红色按钮、⇧⌘F、Esc）都会走到这里：把状态收回来
         .onDisappear { app.showStage = false }
+        // 菜单里「退出全屏歌词」时主窗口可能已经关了：自己收窗口
+        .onChange(of: app.showStage) { _, on in if !on { dismissWindow(id: "stage") } }
     }
 
     // MARK: - 各块
 
     private var backdrop: some View {
-        StageBackdrop(cover: cover, colors: colors, blurCover: app.stageCoverBlur, radius: app.stageBlurRadius)
+        StageBackdrop(blurredCover: app.stageCoverBlur ? blurredCover : nil, colors: colors, drifting: app.player.isPlaying)
     }
 
     private func lookupDivider(width: Double, height: CGFloat) -> some View {
@@ -214,11 +231,13 @@ struct LyricsStage: View {
         let player = app.player
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                // 行距跟歌词显示设置走（和歌词面板同一个滑块），按全屏的字号等比放大；默认值 6 时还是原来的 18
+                LazyVStack(alignment: .leading, spacing: 4 + CGFloat(app.lyricsDisplay.lineGap) * 34 / 15) {
                     // 上下各留半屏空，第一行和最后一行也能滚到中间
                     Color.clear.frame(height: 260)
-                    ForEach(player.lines) { line in
-                        stageLine(line, current: line.utteranceId == player.currentUtterance)
+                    let active = player.currentIndex
+                    ForEach(Array(player.lines.enumerated()), id: \.element.id) { index, line in
+                        stageLine(line, index: index, active: active)
                             .id(line.utteranceId)
                     }
                     Color.clear.frame(height: 320)
@@ -270,41 +289,55 @@ struct LyricsStage: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func stageLine(_ line: LyricLine, current: Bool) -> some View {
-        let active = app.player.lines.firstIndex { $0.utteranceId == app.player.currentUtterance } ?? 0
-        let index = app.player.lines.firstIndex { $0.utteranceId == line.utteranceId } ?? 0
-        let distance = min(5, abs(index - active))
+    private func lookUp(_ line: LyricLine, token index: Int) {
+        lookup = LookupRequest(text: LyricSegments.lookupText(line.tokens, from: index), songId: app.player.track?.id,
+                               utteranceId: line.utteranceId, tokenIndex: index)
+    }
+
+    private func stageLine(_ line: LyricLine, index: Int, active: Int?) -> some View {
+        let current = index == active
+        let distance = min(5, abs(index - (active ?? 0)))
+        let units = app.karaokeLyrics ? app.player.timingUnits(for: line) : nil
         return Group {
-            if app.karaokeLyrics, let units = app.player.timingUnits(for: line) {
-                TimedLyricText(text: line.text, units: units, position: app.player.position, size: 34, highlight: .white) { unit in
+            if let units {
+                TimedLyricLine(text: line.text, units: units, live: current,
+                               frozen: index < (active ?? 0) ? .greatestFiniteMagnitude : -1,
+                               size: 34, highlight: .white) { unit in
                     Task { await app.player.playUnit(unit, in: line) }
                 }
             } else {
-                FuriganaText(text: line.text, rubies: app.furigana[line.utteranceId] ?? [], size: 34, weight: .bold)
-                    .contentShape(Rectangle())
-                    .onTapGesture { Task { await app.player.playLine(line) } }
+                // 点词查词（右边打开查词栏）；点行里别的地方从这一句放
+                FuriganaText(text: line.text, rubies: app.furigana[line.utteranceId] ?? [], size: 34, weight: .bold,
+                             tokens: line.tokens, onToken: { lookUp(line, token: $0) })
             }
         }
             .foregroundStyle(.white)
             .opacity(current ? 1 : max(0.22, 0.65 - Double(distance) * 0.09))
             .scaleEffect(current ? 1 : 0.94, anchor: .leading)
-            .blur(radius: current ? 0 : Double(distance) * 0.35)
             .animation(reduceMotion ? nil : .spring(duration: 0.4), value: current)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .help(line.timeSec.map { "点一下从 \(formatTime($0)) 放" } ?? "这一行没有时间戳")
+            .onTapGesture { if units == nil { Task { await app.player.playLine(line) } } }
+            .help(line.timeSec.map { "点词查词，点空白处从 \(formatTime($0)) 放" } ?? "点词查词（这一行没有时间戳）")
             .contextMenu {
                 Button("从这里放") { Task { await app.player.playLine(line) } }.disabled(line.timeSec == nil)
                 Button(app.player.loop?.utteranceId == line.utteranceId ? "取消循环" : "循环这一句") {
                     Task { await app.player.toggleLoop(line.utteranceId) }
                 }.disabled(app.player.spans[line.utteranceId] == nil)
                 Button("选择原文 / 查选中文本") { selectionLine = line }
-                ForEach(Array(line.tokens.enumerated()).filter { ["NOUN", "PROPN", "VERB", "ADJ", "ADV"].contains($0.element.pos) }, id: \.offset) { index, token in
-                    Button("查词「\(token.surface)」") {
-                        lookup = LookupRequest(text: line.tokens[index...].map(\.surface).joined(), songId: app.player.track?.id,
-                                               utteranceId: line.utteranceId, tokenIndex: index)
+                let candidates = LyricSegments.lookupCandidates(line.tokens)
+                if !candidates.isEmpty {
+                    Divider()
+                    ForEach(candidates, id: \.self) { index in
+                        Button("查词「\(line.tokens[index].surface)」") { lookUp(line, token: index) }
                     }
-                    Button("检索「\(token.lemma)」") { app.search(token.lemma) }
+                }
+                let lemmas = Array(Set(line.tokens.filter { ["NOUN", "PROPN", "VERB", "ADJ", "ADV"].contains($0.pos) }.map(\.lemma))).sorted()
+                if !lemmas.isEmpty {
+                    Divider()
+                    ForEach(lemmas, id: \.self) { lemma in
+                        Button("检索「\(lemma)」") { app.search(lemma) }
+                    }
                 }
             }
     }
@@ -365,34 +398,40 @@ struct LyricsStage: View {
         window.toggleFullScreen(nil)
     }
 
+    /// 自己关掉窗口：主窗口被 ⌘W 关了的时候，没有别人替全屏歌词收窗口
     private func close() {
         app.showStage = false
+        dismissWindow(id: "stage")
     }
 }
 
+/// 全屏的底：预先虚化的封面 + 三团慢慢漂的颜色。
+///
+/// 以前这里每秒 20 帧重画，三团颜色各挂一个半径 80 的模糊、封面再挂一个可调半径的模糊，暂停时也照画：
+/// 全屏下每一帧都要把整屏模糊几遍。现在封面是算好的静态图；色块本身就是径向渐变（边缘已经是虚的），
+/// 不再叠模糊；只在播放时漂，每秒 10 帧（移动很慢，看不出差别）
 @MainActor
 private struct StageBackdrop: View {
-    let cover: NSImage?
+    let blurredCover: NSImage?
     let colors: ArtworkColors
-    let blurCover: Bool
-    let radius: Double
+    let drifting: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 10, paused: reduceMotion || !drifting)) { timeline in
             let phase = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate / 14
             GeometryReader { geo in
                 ZStack {
                     colors.backdrop
-                    if blurCover, let cover {
-                        Image(nsImage: cover).resizable().scaledToFill()
+                    if let blurredCover {
+                        Image(nsImage: blurredCover).resizable().scaledToFill()
                             .frame(width: geo.size.width, height: geo.size.height)
-                            .blur(radius: radius).saturation(1.4).opacity(0.6)
+                            .opacity(0.6)
                     }
                     ForEach(0..<3, id: \.self) { index in
                         Circle().fill(RadialGradient(colors: [index == 1 ? colors.secondary : colors.highlight, .clear],
-                                                     center: .center, startRadius: 0, endRadius: geo.size.width * 0.38))
+                                                     center: .center, startRadius: 0, endRadius: geo.size.width * 0.4))
                             .frame(width: geo.size.width * 0.8, height: geo.size.width * 0.8)
-                            .blur(radius: 80).opacity(0.3)
+                            .opacity(0.3)
                             .position(x: geo.size.width * CGFloat(0.5 + 0.35 * sin(phase + Double(index) * 2)),
                                       y: geo.size.height * CGFloat(0.5 + 0.35 * cos(phase * 0.8 + Double(index) * 2)))
                     }

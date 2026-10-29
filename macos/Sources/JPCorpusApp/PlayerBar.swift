@@ -9,6 +9,8 @@ struct PlayerBar: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var cover: NSImage?
+    /// 预先虚化好的封面（见 Artwork）：不在视图上挂实时 .blur
+    @State private var blurredCover: NSImage?
     @State private var colors = ArtworkColors()
     @State private var compactToolsOpen = false
 
@@ -42,10 +44,10 @@ struct PlayerBar: View {
                 ZStack {
                     GlassBackground(material: .hudWindow, blending: .withinWindow)
                     colors.backdrop.opacity(0.5)
-                    if let cover {
-                        Image(nsImage: cover).resizable().scaledToFill()
+                    if let blurredCover {
+                        Image(nsImage: blurredCover).resizable().scaledToFill()
                             .frame(width: geo.size.width, height: geo.size.height)
-                            .blur(radius: 50).saturation(1.6).opacity(0.3)
+                            .opacity(0.3)
                             .transition(.opacity)
                     }
                 }
@@ -73,11 +75,16 @@ struct PlayerBar: View {
                 .frame(height: 1).padding(.horizontal, 14).allowsHitTesting(false)
         }
         .task(id: app.player.track?.coverPath) {
-            cover = nil; colors = ArtworkColors()
+            cover = nil; blurredCover = nil; colors = ArtworkColors()
             guard let track = app.player.track, !track.coverPath.isEmpty, let client = app.client,
                   let path = try? await client.resolveMedia(track.coverPath), !Task.isCancelled else { return }
-            cover = loadImage(atPath: path)
-            colors = ArtworkColors(image: cover)
+            let image = await Artwork.image(atPath: path, maxPixel: 256)
+            guard !Task.isCancelled else { return }
+            cover = image
+            colors = ArtworkColors(image: image)
+            let blurred = await Artwork.blurred(atPath: path, radius: 50, saturation: 1.6, displayWidth: 1000)
+            guard !Task.isCancelled else { return }
+            blurredCover = blurred
         }
     }
 
@@ -179,7 +186,8 @@ struct PlayerProgress: View {
 
     var body: some View {
         let player = app.player
-        let value = scrubbing ?? player.position
+        // 0.25 秒的精度就够：进度条一秒挪不了一个像素，没必要每 50ms 重画
+        let value = scrubbing ?? player.coarsePosition
         VStack(spacing: 2) {
             GeometryReader { geo in
                 let fraction = min(1, max(0, value / max(1, player.duration)))
@@ -248,10 +256,10 @@ struct PlayerTools: View {
     var body: some View {
         HStack(spacing: 3) {
             Button { Task { await app.player.toggleLoop(nil) } } label: { Image(systemName: "repeat.1") }
-                .foregroundStyle(app.player.loop == nil ? Color.secondary : Color.accentColor)
-                .disabled(app.player.loop == nil)
-                .help(app.player.loop.map { "单句循环 \(formatTime($0.startSec))–\(formatTime($0.endSec))，点击取消" } ?? "在歌词里选择一句开启循环（⌘L）")
-                .accessibilityLabel("取消单句循环")
+                .foregroundStyle(app.player.loop == nil ? Color.primary : Color.accentColor)
+                .disabled(app.player.loop == nil && app.player.currentUtterance == nil)
+                .help(app.player.loop.map { "单句循环 \(formatTime($0.startSec))–\(formatTime($0.endSec))，点击取消（⌘L）" } ?? "循环正在唱的这一句（⌘L）")
+                .accessibilityLabel(app.player.loop == nil ? "循环当前这一句" : "取消单句循环")
             PlayerTune()
             Button { app.showLyrics.toggle() } label: { Image(systemName: "quote.bubble.fill") }
                 .help("歌词面板（⌘Y）").accessibilityLabel("歌词面板")

@@ -76,6 +76,8 @@ struct ContentView: View {
             }
         }
         .background(GlassWindowConfigurator())
+        .background(WindowReader { MainWindow.window = $0 })
+        .onAppear { MainWindow.open = openWindow }
         .background(PlaybackKeyboard(app: app))
         .background(UpdatePresentation())
         // 全屏歌词是单独一个窗口（JPCorpusApp 里的 Window("stage")）：盖在主窗口上做的话，

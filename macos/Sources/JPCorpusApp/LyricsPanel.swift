@@ -21,6 +21,8 @@ struct LyricsPanel: View {
 
     /// 当前这首的封面（磁盘上的文件，库从别的机器拷来时按目录尾巴找）
     @State private var cover: NSImage?
+    /// 预先虚化好的封面（见 Artwork）
+    @State private var blurredCover: NSImage?
 
     var body: some View {
         let player = app.player
@@ -44,8 +46,9 @@ struct LyricsPanel: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: app.lyricsDisplay.lineGap) {
-                            ForEach(player.lines) { line in
-                                row(line, current: line.utteranceId == player.currentUtterance)
+                            let currentIndex = player.currentIndex
+                            ForEach(Array(player.lines.enumerated()), id: \.element.id) { index, line in
+                                row(line, current: index == currentIndex, before: currentIndex.map { index < $0 } ?? false)
                                     .id(line.utteranceId)
                             }
                         }
@@ -111,10 +114,15 @@ struct LyricsPanel: View {
             }
         }
         .task(id: player.track?.id) {
-            cover = nil
+            cover = nil; blurredCover = nil
             guard let track = player.track, !track.coverPath.isEmpty, let client = app.client else { return }
-            let path = try? await client.resolveMedia(track.coverPath)
-            cover = loadImage(atPath: path ?? nil)
+            let path = (try? await client.resolveMedia(track.coverPath)) ?? nil
+            let image = await Artwork.image(atPath: path, maxPixel: 256)
+            guard !Task.isCancelled else { return }
+            cover = image
+            let blurred = await Artwork.blurred(atPath: path, radius: 70, saturation: 1.4, displayWidth: 800)
+            guard !Task.isCancelled else { return }
+            blurredCover = blurred
         }
     }
 
@@ -122,19 +130,17 @@ struct LyricsPanel: View {
     private var backdrop: some View {
         ZStack {
             GlassBackground(material: .sidebar)
-            if let cover {
-                Image(nsImage: cover)
+            if let blurredCover {
+                Image(nsImage: blurredCover)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .blur(radius: 70, opaque: true)
-                    .saturation(1.4)
                     .opacity(0.55)
                     .clipped()
                     .transition(.opacity)
             }
         }
         .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.6), value: cover != nil)
+        .animation(.easeInOut(duration: 0.6), value: blurredCover != nil)
     }
 
     private func header(_ track: Track) -> some View {
@@ -184,28 +190,39 @@ struct LyricsPanel: View {
         .padding(.bottom, 6)
     }
 
-    private func row(_ line: LyricLine, current: Bool) -> some View {
+    private func lookUp(_ line: LyricLine, token index: Int) {
+        lookup = LookupRequest(
+            text: LyricSegments.lookupText(line.tokens, from: index),
+            songId: app.player.track?.id,
+            utteranceId: line.utteranceId,
+            tokenIndex: index
+        )
+    }
+
+    private func row(_ line: LyricLine, current: Bool, before: Bool) -> some View {
         let player = app.player
         let looping = player.loop?.utteranceId == line.utteranceId
         let focused = player.focusUtterance == line.utteranceId
         let units = player.timingUnits(for: line)
         let mode = player.displayMode(for: line)
         let lineTime = line.timeSec.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
-        let hint = units != nil ? "真实逐字时间 · 点单位从词首放，右键选择原文 / 查词 / 循环"
-            : lineTime.map { formatTime($0) + " · 点一下从这里放，右键检索 / 查词 / 循环" } ?? "纯文本 · 右键选择原文 / 查词"
+        let karaoke = app.karaokeLyrics && units != nil
+        let hint = karaoke ? "真实逐字时间 · 点单位从词首放，右键选择原文 / 查词 / 循环"
+            : lineTime.map { formatTime($0) + " · 点词查词，点空白处从这里放，右键检索 / 循环" } ?? "纯文本 · 点词查词，右键选择原文"
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if app.karaokeLyrics, let units {
-                TimedLyricText(text: line.text, units: units, position: player.position) { unit in
+            if karaoke, let units {
+                // 只有当前行跟着播放位置走；其余行的进度是定的（唱过的满、没唱的空），不跟着时钟重算
+                TimedLyricLine(text: line.text, units: units, live: current, frozen: before ? .greatestFiniteMagnitude : -1) { unit in
                     Task { await player.playUnit(unit, in: line) }
                 }
                 .opacity(current ? 1 : 0.55)
             } else {
-                FuriganaText(text: line.text, rubies: app.furigana[line.utteranceId] ?? [])
+                FuriganaText(text: line.text, rubies: app.furigana[line.utteranceId] ?? [],
+                             tokens: line.tokens, onToken: { lookUp(line, token: $0) })
                     .foregroundStyle(current && mode == .lineSynced ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                     .opacity(mode == .plain ? 0.65 : (current ? 1 : 0.5))
                     .scaleEffect(current ? 1.0 : 0.97, anchor: .leading)
                     .fixedSize(horizontal: false, vertical: true)
-                    .onTapGesture { if mode != .plain { Task { await player.playLine(line) } } }
             }
             if looping {
                 Image(systemName: "repeat").font(.callout.weight(.semibold)).foregroundStyle(.tint)
@@ -220,6 +237,8 @@ struct LyricsPanel: View {
         )
         .animation(.easeInOut(duration: 0.25), value: current)
         .contentShape(Rectangle())
+        // 点词由词自己接住（查词）；点到行里别的地方才跳过去放
+        .onTapGesture { if !karaoke, mode != .plain { Task { await player.playLine(line) } } }
         .help(hint)
         .contextMenu {
             Button("从这里放") { Task { await player.playLine(line) } }
@@ -234,16 +253,12 @@ struct LyricsPanel: View {
                 ForEach(Array(Set(words.map(\.lemma))).sorted(), id: \.self) { lemma in
                     Button("检索「\(lemma)」") { app.search(lemma) }
                 }
+            }
+            let candidates = LyricSegments.lookupCandidates(line.tokens)
+            if !candidates.isEmpty {
                 Divider()
-                ForEach(Array(line.tokens.enumerated()).filter { Self.contentPOS.contains($0.element.pos) }, id: \.offset) { index, token in
-                    Button("查词「\(token.surface)」") {
-                        lookup = LookupRequest(
-                            text: line.tokens[index...].map(\.surface).joined(),
-                            songId: player.track?.id,
-                            utteranceId: line.utteranceId,
-                            tokenIndex: index
-                        )
-                    }
+                ForEach(candidates, id: \.self) { index in
+                    Button("查词「\(line.tokens[index].surface)」") { lookUp(line, token: index) }
                 }
             }
         }
