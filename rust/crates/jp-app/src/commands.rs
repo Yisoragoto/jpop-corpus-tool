@@ -400,6 +400,39 @@ pub async fn lexical_profile<R: tauri::Runtime>(
     blocking(app, move |state| state.corpus().lexical_profile(&query)).await
 }
 
+/// CQL 检索（按属性组合条件找词串），结果和 KWIC 同一个形状
+#[tauri::command]
+pub async fn cql_search<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::cql::CqlQuery,
+) -> CmdResult<Vec<jp_corpus::KwicHit>> {
+    blocking(app, move |state| state.corpus().cql(&query)).await
+}
+
+/// 只检查 CQL 写得对不对（边输边提示），不碰库
+#[tauri::command]
+pub fn cql_check(query: String) -> CmdResult<()> {
+    Ok(jp_corpus::cql::check(&query)?)
+}
+
+/// 一个检索按年份 / 演唱者分解，折成每万词
+#[tauri::command]
+pub async fn kwic_breakdown<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::explore::BreakdownQuery,
+) -> CmdResult<jp_corpus::explore::BreakdownResult> {
+    blocking(app, move |state| state.corpus().breakdown(&query)).await
+}
+
+/// 节点词周围的搭配网络
+#[tauri::command]
+pub async fn collocation_network<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::explore::NetworkQuery,
+) -> CmdResult<jp_corpus::explore::NetworkResult> {
+    blocking(app, move |state| state.corpus().collocation_network(&query)).await
+}
+
 /// 活用形分布（命令形、意志推量形……）
 #[tauri::command]
 pub async fn inflection<R: tauri::Runtime>(

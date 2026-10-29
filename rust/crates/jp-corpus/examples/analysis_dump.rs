@@ -14,6 +14,8 @@ use jp_corpus::analysis::{
 };
 use jp_corpus::lexical::{LexicalGroup, LexicalQuery};
 use jp_corpus::morphology::{InflectionQuery, OrthographyQuery};
+use jp_corpus::cql::CqlQuery;
+use jp_corpus::explore::{BreakdownQuery, GroupBy, NetworkQuery};
 use jp_corpus::subcorpus::Subcorpus;
 use jp_corpus::{Corpus, MatchField};
 use serde_json::json;
@@ -113,7 +115,44 @@ fn main() -> anyhow::Result<()> {
         limit: Some(1_000_000),
     })?;
 
+    // 第三阶段：CQL、频率分解、搭配网络
+    let cql_queries = [
+        r#"[lemma="君"] [pos="ADP"]"#,
+        r#"[pos="VERB" & cform="命令形.*"]"#,
+        r#"[lemma="て"] []{0,2} [lemma="しまう"]"#,
+        r#"[pos!="PUNCT" & pos!="SYM"]{6,}"#,
+        r#"[reading="きみ"]"#,
+        r#"[norm="会う"] [lemma="たい"]"#,
+        r#""夢" []? [pos="NOUN"]"#,
+        r#"[(pos="VERB" | pos="ADJ") & !cform="連用形.*"] [lemma="よ|ね"]"#,
+    ];
+    let mut cql = Vec::new();
+    for q in cql_queries {
+        let hits = corpus.cql(&CqlQuery { query: q.into(), dedup: false, ..Default::default() })?;
+        let rows: Vec<_> = hits.iter().map(|h| json!([h.utterance_id, h.match_len, h.keyword])).collect();
+        cql.push(json!({ "query": q, "hits": rows }));
+    }
+    let kwic_dream = jp_corpus::KwicQuery { keywords: vec!["夢".into()], field: jp_corpus::MatchField::Lemma, ..Default::default() };
+    let mut breakdowns = Vec::new();
+    for by in [GroupBy::Year, GroupBy::Performer] {
+        breakdowns.push(json!({ "source": "kwic:夢", "by": by, "result": corpus.breakdown(&BreakdownQuery { by, kwic: Some(kwic_dream.clone()), cql: None })? }));
+    }
+    breakdowns.push(json!({ "source": "cql:命令形", "by": GroupBy::Year, "result": corpus.breakdown(&BreakdownQuery {
+        by: GroupBy::Year,
+        kwic: None,
+        cql: Some(CqlQuery { query: cql_queries[1].into(), ..Default::default() }),
+    })? }));
+    let network = corpus.collocation_network(&NetworkQuery {
+        collocation: CollocationQuery { node: "君".into(), field: MatchField::Lemma, content_only: true, ..Default::default() },
+        size: 20,
+        min_pair: 2,
+        per_node: 3,
+    })?;
+
     let dump = json!({
+        "cql": cql,
+        "breakdowns": breakdowns,
+        "network": network,
         "inflection": inflection,
         "orthography": orthography,
         "recent": recent,

@@ -31,6 +31,7 @@ const MAIN_THREAD_OK: &[(&str, &str)] = &[
     ("dict_import_cancel", "置一个取消标志"),
     ("dict_is_importing", "读一个标志"),
     ("cancel_import", "置取消标志、清掉内存里的扫描结果"),
+    ("cql_check", "只解析一个查询字符串，不碰库"),
 ];
 
 /// 源码里所有 `#[tauri::command]`：(名字, 是否同步)。

@@ -459,6 +459,74 @@ export interface LexicalRow {
   scripts: ScriptShares;
 }
 
+/** CQL 检索（jp-corpus 的 cql.rs）。结果和 KWIC 同形 */
+export interface CqlQuery {
+  query: string;
+  subcorpus?: Subcorpus;
+  dedup?: boolean;
+  crossLine?: boolean;
+  limit?: number | null;
+}
+
+/** 检索结果按年份 / 演唱者分解（jp-corpus 的 explore.rs）。kwic 和 cql 给一个 */
+export interface BreakdownQuery {
+  by: "year" | "performer";
+  kwic?: KwicQuery;
+  cql?: CqlQuery;
+}
+
+export interface BreakdownRow {
+  key: string;
+  /** 年份或演唱者名；没有年份的那组是空串 */
+  label: string;
+  hits: number;
+  hitSongs: number;
+  tokens: number;
+  songs: number;
+  per10k: number;
+  ratio: number;
+}
+
+export interface BreakdownResult {
+  by: "year" | "performer";
+  rows: BreakdownRow[];
+  hits: number;
+  tokens: number;
+  songs: number;
+  per10k: number;
+}
+
+export interface NetworkQuery {
+  collocation: CollocationQuery;
+  size?: number;
+  minPair?: number;
+  perNode?: number;
+}
+
+export interface NetworkNode {
+  lemma: string;
+  pos: string;
+  freq: number;
+  cofreq: number;
+  logDice: number;
+  score: number;
+}
+
+export interface NetworkEdge {
+  a: number;
+  b: number;
+  freq: number;
+  logDice: number;
+}
+
+export interface NetworkResult {
+  node: string;
+  nodeFreq: number;
+  nodes: NetworkNode[];
+  edges: NetworkEdge[];
+  provenance: Provenance;
+}
+
 /** 活用形分布（jp-corpus 的 morphology.rs） */
 export interface InflectionQuery {
   scope?: AnalysisScope;
@@ -1018,6 +1086,11 @@ export const api = {
   ngrams: (query: NgramQuery) => call<NgramResult>("ngrams", { query }),
   lexicalProfile: (query: LexicalQuery) => call<LexicalResult>("lexical_profile", { query }),
   inflection: (query: InflectionQuery) => call<InflectionResult>("inflection", { query }),
+  cqlSearch: (query: CqlQuery) => call<KwicHit[]>("cql_search", { query }),
+  /** 只检查语法，不检索。写错了 reject，消息里说第几个字符、哪里错 */
+  cqlCheck: (query: string) => call<void>("cql_check", { query }),
+  kwicBreakdown: (query: BreakdownQuery) => call<BreakdownResult>("kwic_breakdown", { query }),
+  collocationNetwork: (query: NetworkQuery) => call<NetworkResult>("collocation_network", { query }),
   orthography: (query: OrthographyQuery) => call<OrthographyResult>("orthography", { query }),
   songProfile: (songId: string, limit?: number) => call<SongProfile>("song_profile", { songId, limit }),
   searchLyrics: (text: string, limit?: number) =>

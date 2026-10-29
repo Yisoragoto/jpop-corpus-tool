@@ -363,6 +363,9 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         "ngrams" => serde_json::to_value(corpus.ngrams(&arg(&args, "query")?)?)?,
         "lexicalProfile" => serde_json::to_value(corpus.lexical_profile(&arg(&args, "query")?)?)?,
         "inflection" => serde_json::to_value(corpus.inflection(&arg(&args, "query")?)?)?,
+        "cqlSearch" => serde_json::to_value(corpus.cql(&arg(&args, "query")?)?)?,
+        "kwicBreakdown" => serde_json::to_value(corpus.breakdown(&arg(&args, "query")?)?)?,
+        "collocationNetwork" => serde_json::to_value(corpus.collocation_network(&arg(&args, "query")?)?)?,
         "orthography" => serde_json::to_value(corpus.orthography(&arg(&args, "query")?)?)?,
         "songProfile" => serde_json::to_value(
             corpus.song_profile(&arg::<String>(&args, "songId")?, arg_or(&args, "limit", 12)?)?,

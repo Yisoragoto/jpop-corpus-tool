@@ -455,6 +455,163 @@ if dump.get("orthography"):
         same("表记变体", f"{key} 读音", g["reading"], main_reading(w))
         same("表记变体", f"{key} 并过", g["mergedByReading"], key in merged)
 
+# ────────────── 第三阶段：CQL、频率分解、搭配网络 ──────────────
+
+full_rows = con.execute(
+    "SELECT u.id, t.surface, t.lemma, COALESCE(t.pos,''), COALESCE(t.pos_ja,''), COALESCE(t.ctype,''), "
+    "COALESCE(t.cform,''), COALESCE(t.reading,''), COALESCE(t.normalized,'') FROM tokens t JOIN utterances u ON u.id = t.utterance_id "
+    "ORDER BY u.id, t.token_idx"
+).fetchall()
+full_by_line = defaultdict(list)
+for uid, *t in full_rows:
+    full_by_line[uid].append(dict(zip(("word", "lemma", "pos", "tag", "ctype", "cform", "reading", "norm"), t)))
+
+import re as _re
+
+
+def full(attr, pattern):
+    rx = _re.compile(pattern)
+    return lambda t: rx.fullmatch(t[attr]) is not None
+
+
+ANY = lambda t: True  # noqa: E731
+NOT_PUNCT = lambda t: t["pos"] not in ("PUNCT", "SYM")  # noqa: E731
+# 每个查询手工写成（条件, 最少, 最多）的序列，和 Rust 的解析器无关
+CQL_EXPECT = {
+    '[lemma="君"] [pos="ADP"]': [(full("lemma", "君"), 1, 1), (full("pos", "ADP"), 1, 1)],
+    '[pos="VERB" & cform="命令形.*"]': [(lambda t: t["pos"] == "VERB" and t["cform"].startswith("命令形"), 1, 1)],
+    '[lemma="て"] []{0,2} [lemma="しまう"]': [(full("lemma", "て"), 1, 1), (ANY, 0, 2), (full("lemma", "しまう"), 1, 1)],
+    '[pos!="PUNCT" & pos!="SYM"]{6,}': [(NOT_PUNCT, 6, None)],
+    '[reading="きみ"]': [(full("reading", "キミ"), 1, 1)],
+    '[norm="会う"] [lemma="たい"]': [(full("norm", "会う"), 1, 1), (full("lemma", "たい"), 1, 1)],
+    '"夢" []? [pos="NOUN"]': [(full("word", "夢"), 1, 1), (ANY, 0, 1), (full("pos", "NOUN"), 1, 1)],
+    '[(pos="VERB" | pos="ADJ") & !cform="連用形.*"] [lemma="よ|ね"]': [
+        (lambda t: t["pos"] in ("VERB", "ADJ") and not t["cform"].startswith("連用形"), 1, 1),
+        (lambda t: t["lemma"] in ("よ", "ね"), 1, 1),
+    ],
+}
+
+
+def longest(items, toks, i):
+    # 递归回溯：返回从 i 起能匹配到的最远位置
+    if not items:
+        return i
+    pred, lo, hi = items[0]
+    best = None
+    k = 0
+    ends = []
+    while True:
+        if k >= lo:
+            ends.append(i + k)
+        if (hi is not None and k >= hi) or i + k >= len(toks) or not pred(toks[i + k]):
+            break
+        k += 1
+    for e in ends:
+        r = longest(items[1:], toks, e)
+        if r is not None and (best is None or r > best):
+            best = r
+    return best
+
+
+for case in dump.get("cql", []):
+    items = CQL_EXPECT[case["query"]]
+    want = Counter()
+    for uid, toks in full_by_line.items():
+        i = 0
+        while i < len(toks):
+            end = longest(items, toks, i)
+            if end is not None and end > i:
+                want[(uid, end - i, _re.sub(r"\s", "", "".join(t["word"] for t in toks[i:end])))] += 1
+                i = end
+            else:
+                i += 1
+    # 关键词按原文切出来（含空格），这边按写法拼（库里还有 GiNZA 的空白 token）：两边都去掉空白再比
+    got = Counter((uid, n, _re.sub(r"\s", "", kw)) for uid, n, kw in case["hits"])
+    same("CQL", f"{case['query']} 命中数", sum(got.values()), sum(want.values()))
+    same("CQL", f"{case['query']} 逐条", sorted(got.items()) == sorted(want.items()), True)
+    if got != want:
+        diff = list((got - want).items())[:3] + list((want - got).items())[:3]
+        problems.append(f"CQL {case['query']} 差异样例 {diff}")
+
+year_of = {sid: (y or "")[:4] for sid, y in con.execute("SELECT id, year FROM songs")}
+year_of = {k: (v if len(v) == 4 and v.isdigit() else "") for k, v in year_of.items()}
+performers_of = defaultdict(list)
+for sid, pid in con.execute("SELECT song_id, person_id FROM track_credits WHERE role = 'performer' ORDER BY song_id, position, person_id"):
+    if str(pid) not in performers_of[sid]:
+        performers_of[sid].append(str(pid))
+song_tokens = Counter()
+for line in raw_lines:
+    song_tokens[line["song"]] += sum(1 for t in line["toks"] if t[2] not in ("PUNCT", "SYM"))
+song_of_line = {line["uid"]: line["song"] for line in raw_lines}
+for case in dump.get("breakdowns", []):
+    res = case["result"]
+    if case["source"] == "kwic:夢":
+        hit_songs = [line["song"] for line in raw_lines for t in line["toks"] if t[1] == "夢"]
+    else:
+        items = CQL_EXPECT['[pos="VERB" & cform="命令形.*"]']
+        hit_songs = []
+        for uid, toks in full_by_line.items():
+            for t in toks:
+                if items[0][0](t):
+                    hit_songs.append(song_of_line[uid])
+    group = (lambda s: [year_of.get(s, "")]) if case["by"] == "year" else (lambda s: performers_of.get(s, []))
+    hits, tokens, songs, hsongs = Counter(), Counter(), Counter(), defaultdict(set)
+    for s, n in song_tokens.items():
+        if n == 0:
+            continue
+        for g in group(s):
+            tokens[g] += n
+            songs[g] += 1
+    for s in hit_songs:
+        for g in group(s):
+            hits[g] += 1
+            hsongs[g].add(s)
+    total_tokens = sum(n for n in song_tokens.values())
+    overall = len(hit_songs) * 1e4 / total_tokens
+    tag = f"{case['source']} 按{case['by']}"
+    same("频率分解", f"{tag} 总命中", res["hits"], len(hit_songs))
+    same("频率分解", f"{tag} 组数", len(res["rows"]), len([g for g in tokens if tokens[g] > 0]))
+    for r in res["rows"]:
+        g = r["key"]
+        same("频率分解", f"{tag} {g} hits", r["hits"], hits[g])
+        same("频率分解", f"{tag} {g} tokens", r["tokens"], tokens[g])
+        same("频率分解", f"{tag} {g} songs", r["songs"], songs[g])
+        same("频率分解", f"{tag} {g} hitSongs", r["hitSongs"], len(hsongs[g]))
+        close("频率分解", f"{tag} {g} per10k", r["per10k"], hits[g] * 1e4 / tokens[g])
+        close("频率分解", f"{tag} {g} ratio", r["ratio"], hits[g] * 1e4 / tokens[g] / overall)
+
+if dump.get("network"):
+    net = dump["network"]
+    idx = {(n["lemma"], n["pos"]): i for i, n in enumerate(net["nodes"])}
+    pairs = Counter()
+    for song, uid, toks in stream("tokens", False):
+        ids = [idx.get((t[1], t[2])) for t in toks]
+        for i, a in enumerate(ids):
+            if a is None:
+                continue
+            for b in ids[i + 1:i + 4]:
+                if b is not None and b != a:
+                    pairs[(min(a, b), max(a, b))] += 1
+    cand = []
+    for (a, b), n in pairs.items():
+        if n >= 2:
+            fa, fb = net["nodes"][a]["freq"], net["nodes"][b]["freq"]
+            cand.append((14 + math.log2(2 * n / (fa + fb)), a, b, n))
+    cand.sort(key=lambda x: (-x[0], x[1], x[2]))
+    kept, per = [], Counter()
+    for ld, a, b, n in cand:
+        keep = False
+        for end in (a, b):
+            if per[end] < 3:
+                per[end] += 1
+                keep = True
+        if keep:
+            kept.append((a, b, n, ld))
+    same("搭配网络", "边数", len(net["edges"]), len(kept))
+    for e, (a, b, n, ld) in zip(net["edges"], kept):
+        same("搭配网络", f"边 {a}-{b}", (e["a"], e["b"], e["freq"]), (a, b, n))
+        close("搭配网络", f"边 {a}-{b} logDice", e["logDice"], ld)
+
 for cat, (count, err) in stats.items():
     print(f"{cat:12} {count:>9,} 项  最大绝对误差 {err:.3g}")
 print(f"不一致 {len(problems)} 项")
