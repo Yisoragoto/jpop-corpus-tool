@@ -26,6 +26,7 @@ export const backendEn: Record<string, string> = {
   "数据库提交失败，移除新歌词文件失败；旧文件保存在 .previous 文件": "The database commit failed and the new lyrics file could not be removed. The old file is saved in the .previous file",
   "数据库提交失败，恢复旧歌词文件失败；请保留 .previous 文件": "The database commit failed and the old lyrics file could not be restored. Keep the .previous file",
   "歌词原始格式、同步粒度、时间来源和验证报告": "Original lyrics format, synchronization precision, timing source and validation report",
+  "词的日语形态信息：细分词性、活用型、活用形、读音、正规化表记（语料分析第二阶段）": "Japanese morphology for tokens: detailed part of speech, conjugation type and form, reading, normalized form (corpus analysis stage 2)",
   "Apple 地区应为两位字母": "The Apple storefront must be two letters",
   "Apple 元数据需要有效的 Developer Token": "Apple metadata requires a valid Developer Token",
   "Apple 目录请求失败，请检查网络、令牌有效期、地区或限额": "The Apple catalog request failed. Check the network, token expiry, storefront or quota",

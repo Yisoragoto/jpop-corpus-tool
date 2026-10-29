@@ -133,6 +133,11 @@ pub fn snapshot(conn: &Connection) -> Result<CorpusSnapshot> {
     let credits: i64 = conn
         .query_row("SELECT COUNT(*) FROM track_credits", [], |r| r.get(0))
         .unwrap_or(0);
+    // 形态信息是后台慢慢补的（jp-import 的 annotate）：补到一半时按读音、正规化表记、活用形算的结果
+    // 和补完时不一样，所以标了多少也进指纹。老库没有这一列时是 0
+    let annotated: i64 = conn
+        .query_row("SELECT COUNT(*) FROM tokens WHERE pos_ja IS NOT NULL", [], |r| r.get(0))
+        .unwrap_or(0);
     let mut h = Fnv64::new();
     for part in [
         schema_version.to_string(),
@@ -145,6 +150,7 @@ pub fn snapshot(conn: &Connection) -> Result<CorpusSnapshot> {
         latest,
         credits.to_string(),
         meta,
+        annotated.to_string(),
     ] {
         h.write(part.as_bytes());
         h.write(b"|");
@@ -200,6 +206,11 @@ pub(crate) struct Tok {
     pub(crate) pos: String,
     /// 和前一个词之间去掉过标点、符号或非日文词。N-gram 不跨过这种地方
     pub(crate) gap_before: bool,
+    /// 形态信息（20261029 起）。还没标、标不上的是空串
+    pub(crate) reading: String,
+    pub(crate) normalized: String,
+    pub(crate) ctype: String,
+    pub(crate) cform: String,
 }
 
 impl Tok {
@@ -207,6 +218,8 @@ impl Tok {
         match field {
             MatchField::Lemma => &self.lemma,
             MatchField::Surface => &self.surface,
+            MatchField::Reading => &self.reading,
+            MatchField::Normalized => &self.normalized,
         }
     }
 }
@@ -225,7 +238,8 @@ pub(crate) struct Line {
 pub(crate) fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> {
     let (clause, params) = scope.subcorpus.and_clause("u.song_id");
     let sql = format!(
-        "SELECT u.song_id, u.id, u.text, t.surface, t.lemma, COALESCE(t.pos,'') \
+        "SELECT u.song_id, u.id, u.text, t.surface, t.lemma, COALESCE(t.pos,''), \
+                COALESCE(t.reading,''), COALESCE(t.normalized,''), COALESCE(t.ctype,''), COALESCE(t.cform,'') \
          FROM utterances u JOIN tokens t ON t.utterance_id = u.id \
          WHERE 1{clause} \
          ORDER BY u.song_id, u.line_idx, u.id, t.token_idx"
@@ -257,7 +271,16 @@ pub(crate) fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> 
         let line = lines.last_mut().expect("刚 push 过");
         // 行首的词前面去掉了什么都不算断点：N-gram 本来就不跨行
         let gap_before = gap && !line.tokens.is_empty();
-        line.tokens.push(Tok { surface: row.get(3)?, lemma, pos, gap_before });
+        line.tokens.push(Tok {
+            surface: row.get(3)?,
+            lemma,
+            pos,
+            gap_before,
+            reading: row.get(6)?,
+            normalized: row.get(7)?,
+            ctype: row.get(8)?,
+            cform: row.get(9)?,
+        });
         gap = false;
     }
     Ok(lines)
@@ -626,15 +649,13 @@ pub struct CollocationResult {
 }
 
 fn matches(tok: &Tok, field: MatchField, node: &str) -> bool {
-    match field {
-        MatchField::Lemma => tok.lemma == node,
-        MatchField::Surface => tok.surface == node,
-    }
+    tok.field(field) == node
 }
 
 pub fn collocations(conn: &Connection, query: &CollocationQuery) -> Result<CollocationResult> {
     let lines = load_lines(conn, &query.scope)?;
-    let node = query.node.trim();
+    let node = query.field.normalize_query(query.node.trim());
+    let node = node.as_str();
     let unit = query.scope.unit;
 
     #[derive(Default)]
@@ -1271,7 +1292,16 @@ mod tests {
             repeat: false,
             tokens: lemmas
                 .iter()
-                .map(|l| Tok { surface: (*l).into(), lemma: (*l).into(), pos: "NOUN".into(), gap_before: false })
+                .map(|l| Tok {
+                    surface: (*l).into(),
+                    lemma: (*l).into(),
+                    pos: "NOUN".into(),
+                    gap_before: false,
+                    reading: String::new(),
+                    normalized: String::new(),
+                    ctype: String::new(),
+                    cform: String::new(),
+                })
                 .collect(),
         }
     }

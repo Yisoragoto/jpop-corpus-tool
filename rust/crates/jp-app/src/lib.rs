@@ -77,6 +77,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::keyness,
             commands::ngrams,
             commands::lexical_profile,
+            commands::inflection,
+            commands::orthography,
             commands::song_profile,
             commands::search_lyrics,
             commands::quick_search,
@@ -291,6 +293,8 @@ pub fn run() {
     let app = register(tauri::Builder::default())
         .setup(move |app| {
             allow_media_dirs(app.handle(), &media);
+            // 存量 token 的形态信息（20261029 起有的五列）在后台补，不挡启动
+            commands::spawn_annotate_backlog(app.handle().clone());
             #[cfg(all(windows, target_pointer_width = "64"))]
             {
                 use tauri::Manager;

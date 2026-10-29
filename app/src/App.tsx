@@ -53,7 +53,7 @@ const ROUTES: { key: Route; label: string; hint: string }[] = [
   { key: "home", label: tr("首页"), hint: tr("继续听 · 今日 · 语料库") },
   { key: "kwic", label: tr("检索"), hint: tr("KWIC 语境检索与歌词全文") },
   { key: "library", label: tr("资料库"), hint: tr("音乐人 · 专辑 · 歌曲 · 关系网 · 时间轴 · 词云") },
-  { key: "analytics", label: tr("分析"), hint: tr("词表 · 词簇 · 丰富度 · 对比 · 报告") },
+  { key: "analytics", label: tr("分析"), hint: tr("词表 · 词簇 · 活用与写法 · 丰富度 · 对比") },
   { key: "import", label: tr("导入"), hint: tr("扫描目录 · 复核 · 写入语料") },
   { key: "scrape", label: tr("刮削"), hint: tr("识别 · 补 metadata · 封面") },
   { key: "anki", label: "Anki", hint: tr("选词 · 用语料例句做卡片") },
@@ -226,6 +226,11 @@ export default function App() {
   // N-gram 点「检索」：整个词组当一个多词表达（A+B+C）查
   const searchPhrase = useCallback((keyword: string, field: MatchField) => {
     setKwicRequest({ keyword, field, nonce: Date.now() });
+    setRoute("kwic");
+  }, []);
+  // 分析页「活用形」点例词：按词元查，只看这种活用形
+  const searchInflected = useCallback((keyword: string, cform: string) => {
+    setKwicRequest({ keyword, field: "lemma", nonce: Date.now(), cform });
     setRoute("kwic");
   }, []);
   const consumeKwicRequest = useCallback(() => setKwicRequest(null), []);
@@ -522,6 +527,7 @@ export default function App() {
             onNavigate={goLibrary}
             onSearchWord={searchWord}
             onSearchPhrase={searchPhrase}
+            onSearchInflected={searchInflected}
             onOpenCloud={openCloud}
             onError={onError}
           />

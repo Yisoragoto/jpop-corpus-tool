@@ -199,6 +199,10 @@ pub enum MatchField {
     Surface,
     /// 词元：搜「駆ける」连「駆け」「駆けた」一起命中
     Lemma,
+    /// 读音（片假名）：搜「きみ」命中「君」「きみ」「キミ」。输入的平假名先换成片假名
+    Reading,
+    /// 正规化表记：搜「君」也命中「キミ」，搜「会う」也命中「逢う」（Sudachi 的 normalized_form）
+    Normalized,
 }
 
 impl MatchField {
@@ -206,8 +210,28 @@ impl MatchField {
         match self {
             MatchField::Surface => "surface",
             MatchField::Lemma => "lemma",
+            MatchField::Reading => "reading",
+            MatchField::Normalized => "normalized",
         }
     }
+
+    /// 把输入的检索词换成库里存的样子：读音一律是片假名，输入的平假名换过去
+    pub fn normalize_query(self, word: &str) -> String {
+        match self {
+            MatchField::Reading => to_katakana(word),
+            _ => word.to_string(),
+        }
+    }
+}
+
+/// 平假名换成片假名（ぁ〜ゖ、ゝゞ），其余字符不动
+pub fn to_katakana(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '\u{3041}'..='\u{3096}' | '\u{309D}' | '\u{309E}' => char::from_u32(c as u32 + 0x60).unwrap_or(c),
+            _ => c,
+        })
+        .collect()
 }
 
 /// KWIC 查询条件。
@@ -218,6 +242,9 @@ pub struct KwicQuery {
     pub field: MatchField,
     /// UPOS 过滤，空表示不限
     pub pos: Option<String>,
+    /// 活用形过滤（`命令形`、`連用形`…），按前缀匹配：`連用形` 包括 `連用形-促音便`。
+    /// 和词性过滤一样只对单词检索有用
+    pub cform: Option<String>,
     /// 按人筛选。用 `people.id` 而不是歌手字符串——
     /// 旧实现是 `'/'||artist||'/' LIKE '%/'||?||'/%'`，走不了索引，
     /// 合作曲还得靠拼字符串。
@@ -257,6 +284,7 @@ impl Default for KwicQuery {
             keywords: Vec::new(),
             field: MatchField::Surface,
             pos: None,
+            cform: None,
             person_ids: Vec::new(),
             cross_line: false,
             dedup: true,

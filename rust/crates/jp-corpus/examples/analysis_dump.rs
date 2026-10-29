@@ -13,6 +13,7 @@ use jp_corpus::analysis::{
     CollocationMeasure, CollocationQuery, CountUnit, FrequencyQuery, KeynessQuery, NgramQuery, Scope,
 };
 use jp_corpus::lexical::{LexicalGroup, LexicalQuery};
+use jp_corpus::morphology::{InflectionQuery, OrthographyQuery};
 use jp_corpus::subcorpus::Subcorpus;
 use jp_corpus::{Corpus, MatchField};
 use serde_json::json;
@@ -101,7 +102,20 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    // 形态信息（第二阶段）：库要先补过（jp-import 的 annotate_copy 例子），否则两张表都是空的
+    let tokens_scope = Scope { unit: CountUnit::Tokens, ..Default::default() };
+    let inflection = corpus.inflection(&InflectionQuery { scope: tokens_scope.clone(), pos: None, examples: Some(6) })?;
+    let orthography = corpus.orthography(&OrthographyQuery {
+        scope: tokens_scope,
+        min_freq: 1,
+        min_form_freq: 1,
+        content_only: true,
+        limit: Some(1_000_000),
+    })?;
+
     let dump = json!({
+        "inflection": inflection,
+        "orthography": orthography,
         "recent": recent,
         "frequency": frequency,
         "collocations": collocations,

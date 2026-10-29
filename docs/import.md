@@ -222,6 +222,20 @@ PART → ADP    360
 `legacy/scripts/04_export_processed_from_db.py` 那个导出脚本，
 Rust 侧、前端、`legacy/gui.py` 的查询都没引用过。
 
+### 形态信息（20261029 起）
+
+`tokens` 多了五列：`pos_ja`（日语词性前四级，`名詞-普通名詞-一般`）、`ctype`（活用型）、`cform`（活用形）、
+`reading`（片假名读音）、`normalized`（正规化表记）。导入和补分词时 `write_line_tokens` 直接写；
+存量的 token 由 `jp_import::annotate` 补：重新分析这一行原文，**按字符区间和写法**对齐到库里已有的 token，
+只填这五列，surface / lemma / pos 不动（GiNZA 时代的 UPOS 和 Sudachi 只有 90.55% 一致，整首重分会改掉分析结果）。
+对不上区间的，把这个词单独分析一次；还不行的标成「标不上」（`pos_ja = ''`）。`pos_ja IS NULL` 是还没标。
+
+jp-app 启动后在后台一首一个事务地补；分词校正保存、撤销后补那一行；校正在导入 / 补分词时套回来后补那首歌。
+
+真实库副本实测（`jp-import/examples/annotate_copy.rs`）：66,427 个 token，按位置对齐 66,379，单独分析 0，
+标不上 48——全是 GiNZA 存进来的空白 token（U+3000 和半角空格），Sudachi 本来就不把空白当词。用时 1.2 秒。
+`scripts/annotation_reconcile.py` 拿 SudachiPy（Python 原版）用自己的字符位置独立对齐，五列逐个比，0 处不一致。
+
 ### 存量语料里的脏数据
 
 上面查出来的两处，**现有 `corpus.db` 里还是脏的**（本次没有改动真库）：

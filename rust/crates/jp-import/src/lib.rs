@@ -16,6 +16,7 @@
 //! 前三层**只读取和推断，不写库**，所以能在没有数据库的情况下完整测试；
 //! `import` 是唯一写库的一层，一首歌一个事务。
 
+pub mod annotate;
 pub mod embedded;
 pub mod filename;
 pub mod import;

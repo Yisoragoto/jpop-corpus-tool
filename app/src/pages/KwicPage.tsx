@@ -99,7 +99,20 @@ export interface KwicRequest {
   nonce: number;
   /** 从词云来的：歌手、年份、词性和词云一样。没有就沿用这一页现有的筛选 */
   jump?: WordJump;
+  /** 只看这种活用形（分析页「活用形」点进来的）。不给就是不限 */
+  cform?: string;
 }
+
+/** 匹配字段 */
+const FIELDS: { value: MatchField; label: string; title: string }[] = [
+  { value: "surface", label: tr("表层"), title: tr("按词在歌词里的实际写法匹配") },
+  { value: "lemma", label: tr("词元"), title: tr("按辞书形匹配，能把「駆ける/駆けた/駆けろ」归到一起") },
+  { value: "reading", label: tr("读音"), title: tr("按读音匹配：输入「きみ」能找到「君」「きみ」「キミ」。平假名、片假名都行") },
+  { value: "normalized", label: tr("表记"), title: tr("按正规化表记匹配：「君」也找到「キミ」，「会う」也找到「逢う」") },
+];
+
+/** 可筛选的活用形（大类，按前缀匹配）。用日语语法名，和 Sudachi / UniDic 一致 */
+const CFORMS = ["", "命令形", "意志推量形", "仮定形", "未然形", "連用形", "終止形", "連体形"] as const;
 
 /**
  * 多个关键词：空格分隔，或者 PyQt 版的 `A|B|C`、`(A|B|C)` 写法。
@@ -134,6 +147,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
   const [text, setText] = useState("");
   const [field, setField] = useState<MatchField>("surface");
   const [pos, setPos] = useState("");
+  const [cform, setCform] = useState("");
   const [crossLine, setCrossLine] = useState(false);
   const [dedup, setDedup] = useState(true);
   const [jpOnly, setJpOnly] = useState(false);
@@ -179,7 +193,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
       matchField: MatchField,
       nearFilter: NearFilter | null = near,
       // 刚从别处带着筛选跳过来时，state 还没更新到这一轮，直接用带来的
-      given?: { subcorpus: Subcorpus; pos: string },
+      given?: { subcorpus: Subcorpus; pos: string; cform: string },
     ) => {
       const keywords = parseKeywords(query);
       if (!keywords.length) return;
@@ -191,6 +205,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           keywords,
           field: matchField,
           pos: (given ? given.pos : pos) || null,
+          cform: (given ? given.cform : cform) || null,
           crossLine,
           dedup,
           jpOnly,
@@ -207,7 +222,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
         setBusy(false);
       }
     },
-    [pos, crossLine, dedup, jpOnly, subcorpus, near, onError],
+    [pos, cform, crossLine, dedup, jpOnly, subcorpus, near, onError],
   );
 
   const search = useCallback(async () => {
@@ -244,7 +259,9 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
     setText(request.keyword);
     setField(request.field);
     setNear(null);
-    let given: { subcorpus: Subcorpus; pos: string } | undefined;
+    const wantCform = request.cform ?? "";
+    setCform(wantCform);
+    let given: { subcorpus: Subcorpus; pos: string; cform: string } = { subcorpus, pos, cform: wantCform };
     const jump = request.jump;
     if (jump) {
       const from = jump.yearFrom === null ? "" : String(jump.yearFrom);
@@ -254,10 +271,12 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
       setYearFrom(from);
       setYearTo(to);
       setPos(p);
-      given = { subcorpus: mergeSubcorpus(yearSubcorpus(from, to, jump.performerIds), scope), pos: p };
+      given = { subcorpus: mergeSubcorpus(yearSubcorpus(from, to, jump.performerIds), scope), pos: p, cform: wantCform };
     }
     onRequestConsumed();
     void runKwic(request.keyword, request.field, null, given);
+    // 只在来了新请求时跑；subcorpus / pos 是当时的值
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request, runKwic, onRequestConsumed, scope]);
 
   // 搭配：只对单个词有意义（多个候选词、多词表达都没有唯一的节点）
@@ -377,21 +396,28 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
         {mode === "kwic" && (
           <>
             <div className="segmented">
-              <button
-                className={field === "surface" ? "on" : ""}
-                onClick={() => setField("surface")}
-                title={tr("按词在歌词里的实际写法匹配")}
-              >{tr("表层")}</button>
-              <button
-                className={field === "lemma" ? "on" : ""}
-                onClick={() => setField("lemma")}
-                title={tr("按辞书形匹配，能把「駆ける/駆けた/駆けろ」归到一起")}
-              >{tr("词元")}</button>
+              {FIELDS.map((f) => (
+                <button key={f.value} className={field === f.value ? "on" : ""} onClick={() => setField(f.value)} title={f.title}>
+                  {f.label}
+                </button>
+              ))}
             </div>
             <select className="rate" value={pos} onChange={(e) => setPos(e.target.value)}>
               {POS_FILTERS.map((p) => (
                 <option key={p} value={p}>
                   {p === "" ? tr("全部词性") : (POS_LABELS[p] ?? p)}
+                </option>
+              ))}
+            </select>
+            <select
+              className="rate"
+              value={cform}
+              onChange={(e) => setCform(e.target.value)}
+              title={tr("只看这种活用形（动词、形容词、助动词）。「連用形」包括「連用形-促音便」等细类")}
+            >
+              {CFORMS.map((c) => (
+                <option key={c} value={c}>
+                  {c === "" ? tr("全部活用形") : c}
                 </option>
               ))}
             </select>

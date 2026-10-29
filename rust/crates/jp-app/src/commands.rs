@@ -400,6 +400,24 @@ pub async fn lexical_profile<R: tauri::Runtime>(
     blocking(app, move |state| state.corpus().lexical_profile(&query)).await
 }
 
+/// 活用形分布（命令形、意志推量形……）
+#[tauri::command]
+pub async fn inflection<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::morphology::InflectionQuery,
+) -> CmdResult<jp_corpus::morphology::InflectionResult> {
+    blocking(app, move |state| state.corpus().inflection(&query)).await
+}
+
+/// 表记变体（君 / きみ / キミ）
+#[tauri::command]
+pub async fn orthography<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::morphology::OrthographyQuery,
+) -> CmdResult<jp_corpus::morphology::OrthographyResult> {
+    blocking(app, move |state| state.corpus().orthography(&query)).await
+}
+
 /// 从一首歌进入语料分析：重复行、特征词
 #[tauri::command]
 pub async fn song_profile<R: tauri::Runtime>(
@@ -833,12 +851,61 @@ fn tokenize_backlog<R: tauri::Runtime>(
     Ok(report)
 }
 
+/// 给还没有形态信息（细分词性、活用、读音、正规化表记）的 token 补上。
+///
+/// 一首歌一个事务、每首之间放开语料库的锁：全库第一次补要分析一万多行，
+/// 一个大事务会让界面上所有要读库的操作一直等着。中途关掉程序也不要紧，
+/// 已补的歌提交了，没补的下次启动接着补（`pos_ja IS NULL` 的就是没补的）。
+/// 只写 tokens 的五个新列，surface / lemma / pos 不动（见 jp-import 的 `annotate`）。
+pub(crate) fn annotate_backlog(state: &AppState) -> anyhow::Result<jp_import::annotate::Annotated> {
+    let mut total = jp_import::annotate::Annotated::default();
+    let Some(analyzer) = state.analyzer() else {
+        return Ok(total);
+    };
+    let songs = jp_import::annotate::songs_needing_annotation(state.corpus().connection())?;
+    if songs.is_empty() {
+        return Ok(total);
+    }
+    let started = std::time::Instant::now();
+    for song in &songs {
+        let mut corpus = state.corpus();
+        let tx = corpus.connection_mut().transaction()?;
+        let one = jp_import::annotate::annotate_song(&tx, song, &analyzer)?;
+        tx.commit()?;
+        total.add(&one);
+    }
+    crate::log::info(format!(
+        "补形态信息：{} 首、{} 行、{} 个词（按位置对齐 {}、单独分析 {}、标不上 {}），用时 {:.1} 秒",
+        total.songs,
+        total.lines,
+        total.tokens,
+        total.aligned,
+        total.fallback,
+        total.unknown,
+        started.elapsed().as_secs_f64()
+    ));
+    Ok(total)
+}
+
+/// 在后台线程里补形态信息，失败只记日志（不影响别的功能，下次启动还会再补）
+pub(crate) fn spawn_annotate_backlog<R: tauri::Runtime>(handle: tauri::AppHandle<R>) {
+    std::thread::spawn(move || {
+        use tauri::Manager;
+        let state = handle.state::<AppState>();
+        if let Err(err) = annotate_backlog(&state) {
+            crate::log::warn(format!("补形态信息失败（已补的保留，下次启动接着补）：{err:#}"));
+        }
+    });
+}
+
 /// 词典刚装上之后顺手补的分词。补失败不算装失败：词典确实装好了，
 /// 失败原因放进 `tokenize_error`，设置页「补齐缺失分词」那张卡还能再点。
 fn backlog_after_install<R: tauri::Runtime>(
     state: &AppState,
     handle: &tauri::AppHandle<R>,
 ) -> (jp_import::maintain::Tokenized, String) {
+    // 词典刚装上：存量 token 的形态信息也补上（后台跑，不占这次安装的时间）
+    spawn_annotate_backlog(handle.clone());
     match tokenize_backlog(state, handle) {
         Ok(report) => (report, String::new()),
         Err(err) => {
@@ -2409,15 +2476,27 @@ pub fn save_token_correction(
     utterance_id: i64,
     tokens: Vec<jp_corpus::TokenEdit>,
 ) -> CmdResult<()> {
-    Ok(state
-        .corpus()
-        .save_token_correction(utterance_id, &tokens)?)
+    state.corpus().save_token_correction(utterance_id, &tokens)?;
+    annotate_line(&state, utterance_id);
+    Ok(())
+}
+
+/// 校正改写了一行的 token：给这一行补上形态信息。没词典或失败时留空，后台作业下次会补
+fn annotate_line(state: &AppState, utterance_id: i64) {
+    let Some(analyzer) = state.analyzer() else { return };
+    if let Err(err) = jp_import::annotate::annotate_utterance(state.corpus().connection(), utterance_id, &analyzer) {
+        crate::log::warn(format!("校正后补形态信息失败（第 {utterance_id} 行）：{err:#}"));
+    }
 }
 
 /// 撤销校正，回到第一次校正前的分词。返回是否真的撤销了。
 #[tauri::command(async)]
 pub fn revert_token_correction(state: State<'_, AppState>, utterance_id: i64) -> CmdResult<bool> {
-    Ok(state.corpus().revert_token_correction(utterance_id)?)
+    let reverted = state.corpus().revert_token_correction(utterance_id)?;
+    if reverted {
+        annotate_line(&state, utterance_id);
+    }
+    Ok(reverted)
 }
 
 // ---------------------------------------------------------------- 词典（Yomitan 格式）

@@ -352,6 +352,109 @@ for case in dump["lexical"]:
         for k in ("kanji", "hiragana", "katakana", "latin", "other"):
             close("文字种", f"{label} {k}", row["scripts"][k], g["chars"][k] / chars)
 
+# ────────────── 活用形、表记变体（第二阶段；库要先补过形态信息） ──────────────
+
+morph_rows = con.execute(
+    "SELECT u.id, t.surface, t.lemma, COALESCE(t.pos,''), COALESCE(t.reading,''), COALESCE(t.normalized,''), "
+    "COALESCE(t.ctype,''), COALESCE(t.cform,'') FROM utterances u JOIN tokens t ON t.utterance_id = u.id "
+    "ORDER BY u.song_id, u.line_idx, u.id, t.token_idx"
+).fetchall()
+morph_by_line = defaultdict(list)
+for uid, *rest in morph_rows:
+    morph_by_line[uid].append(rest)
+morph_tokens = []  # (song, uid, surface, lemma, pos, reading, normalized, ctype, cform)，只要计入的
+for line in raw_lines:
+    for surface, lemma, pos, reading, normalized, ctype, cform in morph_by_line[line["uid"]]:
+        if pos in ("PUNCT", "SYM"):
+            continue
+        morph_tokens.append((line["song"], line["uid"], surface, lemma, pos, reading, normalized, ctype, cform))
+
+if dump.get("inflection"):
+    forms = defaultdict(lambda: {"freq": 0, "songs": set(), "lemmas": Counter()})
+    for song, _, surface, lemma, pos, reading, normalized, ctype, cform in morph_tokens:
+        if ctype and cform:
+            f = forms[cform]
+            f["freq"] += 1
+            f["songs"].add(song)
+            f["lemmas"][lemma] += 1
+    total = sum(f["freq"] for f in forms.values())
+    got = dump["inflection"]
+    same("活用形", "分母", got["total"], total)
+    same("活用形", "种数", len(got["forms"]), len(forms))
+    for f in got["forms"]:
+        want = forms[f["cform"]]
+        same("活用形", f"{f['cform']} freq", f["freq"], want["freq"])
+        same("活用形", f"{f['cform']} songs", f["songs"], len(want["songs"]))
+        close("活用形", f"{f['cform']} share", f["share"], want["freq"] / total)
+        top = sorted(want["lemmas"].items(), key=lambda x: (-x[1], x[0]))[:6]
+        same("活用形", f"{f['cform']} 例词", [tuple(x) for x in f["lemmas"]], top)
+
+if dump.get("orthography"):
+    def writing(text):
+        kinds = {script(c) for c in text}
+        if "kanji" in kinds:
+            return "kanji"
+        if kinds == {"hiragana"}:
+            return "hiragana"
+        if kinds == {"katakana"}:
+            return "katakana"
+        if kinds == {"hiragana", "katakana"}:
+            return "kana"
+        return "other"
+
+    groups = {}
+    function_pos = {"ADP", "AUX", "SCONJ", "CCONJ", "PART", "DET"}
+    for song, uid, surface, lemma, pos, reading, normalized, ctype, cform in morph_tokens:
+        if not normalized or pos in function_pos:
+            continue
+        # 活用型也进键：行ける（下一段）不和 行く（五段）算一组
+        g = groups.setdefault((normalized, pos, ctype), {"forms": {}, "readings": Counter(), "inflecting": False})
+        g["inflecting"] |= bool(ctype)
+        g["readings"][reading] += 1
+        f = g["forms"].setdefault(lemma, {"freq": 0, "songs": set()})
+        f["freq"] += 1
+        f["songs"].add(song)
+
+    def main_reading(g):
+        return min(g["readings"].items(), key=lambda x: (-x[1], x[0]))[0]
+
+    kanji_groups = defaultdict(list)
+    for key, g in groups.items():
+        if not g["inflecting"] and writing(key[0]) == "kanji":
+            kanji_groups[(main_reading(g), key[1], key[2])].append(key)
+    merged = set()
+    for key in [k for k, g in groups.items() if not g["inflecting"] and writing(k[0]) in ("hiragana", "katakana", "kana")]:
+        targets = kanji_groups.get((main_reading(groups[key]), key[1], key[2]), [])
+        if len(targets) != 1:
+            continue
+        src = groups.pop(key)
+        dst = groups[targets[0]]
+        for lemma, f in src["forms"].items():
+            d = dst["forms"].setdefault(lemma, {"freq": 0, "songs": set()})
+            d["freq"] += f["freq"]
+            d["songs"] |= f["songs"]
+        dst["readings"].update(src["readings"])
+        merged.add(targets[0])
+    want = {k: g for k, g in groups.items() if len(g["forms"]) >= 2}
+    got = dump["orthography"]
+    same("表记变体", "组数", got["totalGroups"], len(want))
+    # Rust 输出的组不带活用型：按（正规化表记，词性）配，同一键下可能有几组（行く / 行ける 各一组），按写法集合认
+    want_by_np = defaultdict(list)
+    for k, w in want.items():
+        want_by_np[(k[0], k[1])].append((k, w))
+    for g in got["groups"]:
+        lemmas = {f["lemma"] for f in g["forms"]}
+        match = [(k, w) for k, w in want_by_np.get((g["normalized"], g["pos"]), []) if set(w["forms"]) == lemmas]
+        if len(match) != 1:
+            problems.append(f"表记变体 对不上 {(g['normalized'], g['pos'])} {sorted(lemmas)}")
+            continue
+        key, w = match[0]
+        forms_want = sorted(((l, f["freq"], len(f["songs"])) for l, f in w["forms"].items()), key=lambda x: (-x[1], x[0]))
+        same("表记变体", f"{key} 写法", [(f["lemma"], f["freq"], f["songs"]) for f in g["forms"]], forms_want)
+        same("表记变体", f"{key} 文字", [f["writing"] for f in g["forms"]], [writing(l) for l, _, _ in forms_want])
+        same("表记变体", f"{key} 读音", g["reading"], main_reading(w))
+        same("表记变体", f"{key} 并过", g["mergedByReading"], key in merged)
+
 for cat, (count, err) in stats.items():
     print(f"{cat:12} {count:>9,} 项  最大绝对误差 {err:.3g}")
 print(f"不一致 {len(problems)} 项")
