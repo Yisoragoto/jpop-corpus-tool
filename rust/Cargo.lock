@@ -1974,6 +1974,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "jp-normalize",
+ "regex",
  "rodio",
  "rusqlite",
  "serde",

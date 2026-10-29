@@ -21,18 +21,18 @@ use crate::models::{KwicHit, KwicQuery, LyricHit, MatchField};
 
 /// 一条命中的骨架，token 文本还没填。
 #[derive(Clone)]
-struct RawHit {
-    song_id: String,
-    artist: String,
-    title: String,
-    audio_path: String,
-    utterance_id: i64,
-    line_idx: i64,
-    time_sec: Option<f64>,
-    text: String,
-    token_idx: i64,
-    repeat_count: i64,
-    match_len: usize,
+pub(crate) struct RawHit {
+    pub(crate) song_id: String,
+    pub(crate) artist: String,
+    pub(crate) title: String,
+    pub(crate) audio_path: String,
+    pub(crate) utterance_id: i64,
+    pub(crate) line_idx: i64,
+    pub(crate) time_sec: Option<f64>,
+    pub(crate) text: String,
+    pub(crate) token_idx: i64,
+    pub(crate) repeat_count: i64,
+    pub(crate) match_len: usize,
 }
 
 /// 行内的一个 token
@@ -103,20 +103,43 @@ pub(crate) fn kwic(conn: &Connection, query: &KwicQuery) -> Result<Vec<KwicHit>>
         }
     }
 
-    let neighbours = if query.cross_line {
-        fetch_neighbours(conn, &raw)?
-    } else {
-        HashMap::new()
-    };
+    let mut hits = finish_with(conn, raw, query.cross_line, &tokens, &utterance_ids)?;
+    if query.jp_only {
+        // 要看切出来的关键词才知道算不算日文，所以 SQL 里没截断，这里筛完再截
+        hits.retain(|hit| crate::stats::is_japanese(&hit.keyword));
+        if let Some(n) = query.limit.filter(|n| *n > 0) {
+            hits.truncate(n as usize);
+        }
+    }
+    Ok(hits)
+}
+
+/// 命中的骨架 → 完整的 KWIC 行：切左右语境、拼相邻行、标校正、算音频区间和行在歌里的位置。
+/// KWIC 和 CQL 检索共用
+pub(crate) fn finish(conn: &Connection, raw: Vec<RawHit>, cross_line: bool) -> Result<Vec<KwicHit>> {
+    let mut utterance_ids: Vec<i64> = raw.iter().map(|h| h.utterance_id).collect::<HashSet<_>>().into_iter().collect();
+    utterance_ids.sort_unstable();
+    let tokens = fetch_tokens(conn, &utterance_ids)?;
+    finish_with(conn, raw, cross_line, &tokens, &utterance_ids)
+}
+
+fn finish_with(
+    conn: &Connection,
+    raw: Vec<RawHit>,
+    cross_line: bool,
+    tokens: &HashMap<i64, Vec<Tok>>,
+    utterance_ids: &[i64],
+) -> Result<Vec<KwicHit>> {
+    let neighbours = if cross_line { fetch_neighbours(conn, &raw)? } else { HashMap::new() };
 
     // 和 Python 一样一次批量查出来，不逐行查
-    let corrected = crate::corrections::corrected_among(conn, &utterance_ids)?;
+    let corrected = crate::corrections::corrected_among(conn, utterance_ids)?;
     let (spans, positions) = spans_for(conn, &raw)?;
 
-    let mut hits: Vec<KwicHit> = raw
+    Ok(raw
         .into_iter()
         .map(|hit| {
-            let mut out = build(hit, &tokens, &neighbours);
+            let mut out = build(hit, tokens, &neighbours);
             out.corrected = corrected.contains(&out.utterance_id);
             if let Some(span) = spans.get(&out.utterance_id) {
                 out.end_sec = Some(span.end_sec);
@@ -128,15 +151,7 @@ pub(crate) fn kwic(conn: &Connection, query: &KwicQuery) -> Result<Vec<KwicHit>>
             }
             out
         })
-        .collect();
-    if query.jp_only {
-        // 要看切出来的关键词才知道算不算日文，所以 SQL 里没截断，这里筛完再截
-        hits.retain(|hit| crate::stats::is_japanese(&hit.keyword));
-        if let Some(n) = query.limit.filter(|n| *n > 0) {
-            hits.truncate(n as usize);
-        }
-    }
-    Ok(hits)
+        .collect())
 }
 
 /// 从 `idx` 开始能匹配上哪个模式，返回匹配的 token 数（取最长的）
@@ -158,7 +173,7 @@ fn near_ok(line: &[Tok], idx: usize, len: usize, near: &crate::models::NearFilte
 }
 
 /// 同一首歌里文本相同的行折叠成一条（保留最早的那次），和 SQL 那条路的 GROUP BY 同一个规则
-fn fold_repeats(raw: Vec<RawHit>) -> Vec<RawHit> {
+pub(crate) fn fold_repeats(raw: Vec<RawHit>) -> Vec<RawHit> {
     let mut order: Vec<(String, String)> = Vec::new();
     let mut groups: HashMap<(String, String), RawHit> = HashMap::new();
     for hit in raw {

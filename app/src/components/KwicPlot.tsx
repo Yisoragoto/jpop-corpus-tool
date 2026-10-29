@@ -8,11 +8,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { api, type KwicHit, type KwicQuery } from "../api";
+import type { KwicHit } from "../api";
 import { tr } from "../i18n";
 
 interface Props {
-  query: KwicQuery;
+  /** 不去重地再查一遍（关键词检索或 CQL 都行）。queryKey 变了才重查 */
+  fetch: () => Promise<KwicHit[]>;
+  queryKey: string;
+  /** 上限，到了就提示已截断 */
+  limit: number;
   onOpen: (hit: KwicHit) => void;
   onError: (message: string) => void;
 }
@@ -24,21 +28,20 @@ interface Row {
   hits: KwicHit[];
 }
 
-export function KwicPlot({ query, onOpen, onError }: Props) {
+export function KwicPlot({ fetch, queryKey, limit, onOpen, onError }: Props) {
   const [hits, setHits] = useState<KwicHit[] | null>(null);
-  const key = JSON.stringify(query);
+  const key = queryKey;
 
   useEffect(() => {
     let cancelled = false;
     setHits(null);
-    api
-      .kwic({ ...query, dedup: false })
+    fetch()
       .then((h) => !cancelled && setHits(h))
       .catch((e) => !cancelled && onError(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;
     };
-    // key 就是 query 的内容
+    // key 代表查询的内容；fetch 每次渲染都是新的函数
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, onError]);
 
@@ -65,7 +68,7 @@ export function KwicPlot({ query, onOpen, onError }: Props) {
           hits: hits.length,
           songs: rows.length,
         })}
-        {query.limit && hits.length >= query.limit ? tr("（已截断到 {limit} 条）", { limit: query.limit }) : ""}
+        {hits.length >= limit ? tr("（已截断到 {limit} 条）", { limit }) : ""}
       </p>
       {rows.map((row) => (
         <div className="plot-row" key={row.songId}>

@@ -19,6 +19,10 @@
  *
  * 和 AntConc 一样能按关键词左右第几个词排序（`kwicSort.ts`），也能切到「分布图」：
  * 每首歌一条，命中的行在歌里的位置画成刻度，一眼看出是散在全曲还是挤在副歌。
+ *
+ * 「CQL」模式按词的属性组合条件找词串（`[lemma="君"] [pos="ADP"]`，语法见 Rust 的 `cql.rs`），
+ * 边输边检查语法。结果和关键词检索同一个形状，排序、分布图、导出都照用。
+ * 还能按年份 / 演唱者分解（每万词），单个关键词时能看搭配网络（`KwicExplore.tsx`）。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -31,6 +35,7 @@ import {
   type CollocationMeasure,
   type CollocationResult,
   type Collocate,
+  type CqlQuery,
   type KwicHit,
   type KwicQuery,
   type WordFrequency,
@@ -50,10 +55,22 @@ import { audition, isPlayingSpan, playFrom } from "../listen";
 import { kwicCsv } from "../pyFormat";
 import { KWIC_SORTS, sortKwic, type KwicSort } from "../kwicSort";
 import { KwicPlot } from "../components/KwicPlot";
+import { CollocationNetwork, KwicBreakdown, type SearchSpec } from "../components/KwicExplore";
 import type { LibraryActions } from "../useLibrary";
 import { tr } from "../i18n";
 
-type Mode = "kwic" | "fulltext";
+type Mode = "kwic" | "cql" | "fulltext";
+
+/** CQL 的例子：点一下填进去查 */
+const CQL_EXAMPLES: { query: string; note: string }[] = [
+  { query: '[lemma="君"] [pos="ADP"]', note: tr("「君」后面紧跟一个助词") },
+  { query: '[pos="VERB" & cform="命令形.*"]', note: tr("所有命令形的动词") },
+  { query: '[lemma="て"] []{0,2} [lemma="しまう"]', note: tr("て……しまう，中间最多隔两个词") },
+  { query: '[reading="きみ"]', note: tr("读音是 きみ 的词，各种写法都算") },
+  { query: '[norm="会う"] [lemma="たい"]', note: tr("「会いたい」「逢いたい」…") },
+  { query: '[pos="ADJ"] [pos="NOUN"]', note: tr("形容词 + 名词") },
+  { query: '"夢" []? [pos="NOUN"]', note: tr("「夢」后面隔零到一个词跟名词") },
+];
 
 /** 可筛选的词性。只列实词——助词做 KWIC 没有研究价值。 */
 const POS_FILTERS = ["", "NOUN", "PROPN", "VERB", "ADJ", "ADV"] as const;
@@ -162,9 +179,11 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
 
   const [kwicHits, setKwicHits] = useState<KwicHit[] | null>(null);
   const [sort, setSort] = useState<KwicSort>("default");
-  const [view, setView] = useState<"list" | "plot">("list");
-  /** 上一次 KWIC 的完整查询。分布图用它不去重地再查一遍 */
-  const [lastQuery, setLastQuery] = useState<KwicQuery | null>(null);
+  const [view, setView] = useState<"list" | "plot" | "breakdown" | "network">("list");
+  /** 上一次检索的完整条件（关键词或 CQL）。分布图、分解用它再查一遍 */
+  const [lastSearch, setLastSearch] = useState<SearchSpec | null>(null);
+  /** CQL 的语法错误（边输边查） */
+  const [cqlError, setCqlError] = useState("");
   const sortedHits = useMemo(() => (kwicHits ? sortKwic(kwicHits, sort) : null), [kwicHits, sort]);
   const [textHits, setTextHits] = useState<LyricHit[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -214,7 +233,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           near: nearFilter,
         };
         setKwicHits(await api.kwic(q));
-        setLastQuery(q);
+        setLastSearch({ kind: "kwic", query: q });
         setSearched({ query, field: matchField });
       } catch (err) {
         onError(err instanceof Error ? err.message : String(err));
@@ -225,6 +244,45 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
     [pos, cform, crossLine, dedup, jpOnly, subcorpus, near, onError],
   );
 
+  const runCql = useCallback(
+    async (query: string) => {
+      setBusy(true);
+      setExportNote("");
+      try {
+        setTextHits(null);
+        const q: CqlQuery = { query, subcorpus, dedup, crossLine, limit: KWIC_LIMIT };
+        setKwicHits(await api.cqlSearch(q));
+        setLastSearch({ kind: "cql", query: q });
+        // 搭配、网络都要一个单独的节点词，CQL 没有
+        setSearched(null);
+        setShowColloc(false);
+        setNear(null);
+        setView((v) => (v === "network" ? "list" : v));
+        setCqlError("");
+      } catch (err) {
+        setCqlError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [subcorpus, dedup, crossLine],
+  );
+
+  // CQL 边输边查语法（停手 300 毫秒后）
+  useEffect(() => {
+    if (mode !== "cql" || !text.trim()) {
+      setCqlError("");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      api
+        .cqlCheck(text)
+        .then(() => setCqlError(""))
+        .catch((err) => setCqlError(err instanceof Error ? err.message : String(err)));
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [mode, text]);
+
   const search = useCallback(async () => {
     const query = text.trim();
     if (!query) return;
@@ -232,18 +290,22 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
       await runKwic(query, field);
       return;
     }
+    if (mode === "cql") {
+      await runCql(query);
+      return;
+    }
     setBusy(true);
     setExportNote("");
     try {
       setKwicHits(null);
-      setLastQuery(null);
+      setLastSearch(null);
       setTextHits(await api.searchLyrics(query, 500));
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
-  }, [mode, text, field, runKwic, onError]);
+  }, [mode, text, field, runKwic, runCql, onError]);
 
   useEffect(() => {
     api
@@ -375,6 +437,13 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
             KWIC
           </button>
           <button
+            className={mode === "cql" ? "on" : ""}
+            onClick={() => setMode("cql")}
+            title={tr("按词的属性组合条件找词串：[lemma=\"君\"] [pos=\"ADP\"]")}
+          >
+            CQL
+          </button>
+          <button
             className={mode === "fulltext" ? "on" : ""}
             onClick={() => setMode("fulltext")}
             title={tr("对歌词原文做全文检索（FTS5）")}
@@ -383,7 +452,14 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
 
         <input
           className="search grow"
-          placeholder={mode === "kwic" ? tr("词元 / 表层形；空格或 | 分隔多个，+ 连接多词表达（て+しまう）") : tr("歌词原文片段")}
+          placeholder={
+            mode === "kwic"
+              ? tr("词元 / 表层形；空格或 | 分隔多个，+ 连接多词表达（て+しまう）")
+              : mode === "cql"
+                ? '[lemma="君"] [pos="ADP"]'
+                : tr("歌词原文片段")
+          }
+          spellCheck={false}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -392,9 +468,14 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           onKeyDown={(e) => e.key === "Enter" && void search()}
           autoFocus
         />
+        <button className="primary" onClick={() => void search()} disabled={busy || !text.trim() || (mode === "cql" && !!cqlError)}>
+          {busy ? tr("检索中…") : tr("检索")}
+        </button>
 
-        {mode === "kwic" && (
+        {mode !== "fulltext" && (
           <>
+            {mode === "kwic" && (
+            <>
             <div className="segmented">
               {FIELDS.map((f) => (
                 <button key={f.value} className={field === f.value ? "on" : ""} onClick={() => setField(f.value)} title={f.title}>
@@ -421,6 +502,8 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                 </option>
               ))}
             </select>
+            </>
+            )}
             <PerformerPicker selected={personIds} onChange={setPersonIds} onError={onError} />
             <SubcorpusPicker onError={onError} />
             <span className="year-range" title={tr("按歌曲年份筛选（含两端）。没有年份的歌在设了年份时不计入")}>
@@ -454,19 +537,20 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                 checked={dedup}
                 onChange={(e) => setDedup(e.target.checked)}
               />{tr("去重")}</label>
+            {mode === "kwic" && (
             <label className="check" title={tr("只留关键词含假名或汉字的命中（去掉英文、数字）")}>
               <input
                 type="checkbox"
                 checked={jpOnly}
                 onChange={(e) => setJpOnly(e.target.checked)}
               />{tr("仅日文")}</label>
+            )}
           </>
         )}
 
-        <button className="primary" onClick={() => void search()} disabled={busy || !text.trim()}>
-          {busy ? tr("检索中…") : tr("检索")}
-        </button>
       </div>
+
+      {mode === "cql" && cqlError && <p className="cql-error pad-x">{cqlError}</p>}
 
       {hitCount !== null && (
         <div className="hit-bar pad-x">
@@ -488,6 +572,18 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                   onClick={() => setView("plot")}
                   title={tr("每首歌一条：命中的行在歌里的位置。看它散在全曲还是挤在副歌")}
                 >{tr("分布图")}</button>
+                <button
+                  className={view === "breakdown" ? "on" : ""}
+                  onClick={() => setView("breakdown")}
+                  title={tr("按年份、演唱者分组，折成每万词")}
+                >{tr("年份·歌手")}</button>
+                {node && (
+                  <button
+                    className={view === "network" ? "on" : ""}
+                    onClick={() => setView("network")}
+                    title={tr("关键词和它的搭配词，以及搭配词彼此之间的共现")}
+                  >{tr("网络")}</button>
+                )}
               </div>
               {view === "list" && (
                 <label className="kwic-sort" title={tr("按关键词左右第几个词排序；相同时接着比同一侧更远的词，再比另一侧")}>
@@ -518,7 +614,39 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
         </div>
       )}
 
-      {hitCount === null && !busy && (
+      {hitCount === null && !busy && mode === "cql" && (
+        <div className="kwic-intro cql-help">
+          <p className="muted">{tr("CQL 按词的属性找词串：方括号里写一个词的条件，几个方括号连起来是相邻的几个词。值是正则表达式，要整个匹配。")}</p>
+          <div className="cql-examples">
+            {CQL_EXAMPLES.map((ex) => (
+              <button
+                key={ex.query}
+                className="cql-example"
+                onClick={() => {
+                  setText(ex.query);
+                  void runCql(ex.query);
+                }}
+              >
+                <code>{ex.query}</code>
+                <span className="muted small">{ex.note}</span>
+              </button>
+            ))}
+          </div>
+          <table className="cql-ref small">
+            <tbody>
+              <tr><td><code>word</code> <code>lemma</code></td><td>{tr("写法、辞书形")}</td></tr>
+              <tr><td><code>pos</code></td><td>{tr("词性（UPOS）：NOUN VERB ADJ ADV ADP AUX PRON PART PUNCT …")}</td></tr>
+              <tr><td><code>tag</code> <code>ctype</code> <code>cform</code></td><td>{tr("日语词性（名詞-普通名詞-一般）、活用型、活用形")}</td></tr>
+              <tr><td><code>reading</code> <code>norm</code></td><td>{tr("读音（平假名也行）、正规化表记")}</td></tr>
+              <tr><td><code>&amp;</code> <code>|</code> <code>!</code> <code>!=</code></td><td>{tr("且、或、非、不等于；可以加括号")}</td></tr>
+              <tr><td><code>[]</code> <code>?</code> <code>*</code> <code>+</code> <code>{"{m,n}"}</code></td><td>{tr("任意一个词；出现 0~1 次、0 次以上、1 次以上、m~n 次")}</td></tr>
+            </tbody>
+          </table>
+          <p className="muted small">{tr("不跨行；标点也是词；每个起点取最长的匹配，匹配之间不重叠。")}</p>
+        </div>
+      )}
+
+      {hitCount === null && !busy && mode !== "cql" && (
         <div className="kwic-intro">
           <p className="muted">{tr("KWIC 把关键词居中对齐，一眼能看出它在不同歌里的搭配。 ▶ 原地试听那一句，⟲ 连前后各一行一起听；单击一条跳到那首歌的那一行接着放。 右键一条可以校正分词。用")}{" "}<code>+</code>{" "}{tr("连接可以查多词表达，比如")}{" "}<code>て+しまう</code>{tr("（选「词元」）。")}</p>
           {suggestions.length > 0 && (
@@ -548,8 +676,35 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
       )}
 
       <div className="kwic-body">
-        {kwicHits && view === "plot" && lastQuery && (
-          <KwicPlot query={lastQuery} onOpen={(h) => void open(h.songId, h.utteranceId, h.timeSec)} onError={onError} />
+        {kwicHits && view === "plot" && lastSearch && (
+          <KwicPlot
+            queryKey={JSON.stringify(lastSearch)}
+            limit={KWIC_LIMIT}
+            fetch={() =>
+              lastSearch.kind === "cql"
+                ? api.cqlSearch({ ...lastSearch.query, dedup: false })
+                : api.kwic({ ...lastSearch.query, dedup: false })
+            }
+            onOpen={(h) => void open(h.songId, h.utteranceId, h.timeSec)}
+            onError={onError}
+          />
+        )}
+
+        {kwicHits && view === "breakdown" && lastSearch && <KwicBreakdown search={lastSearch} onError={onError} />}
+
+        {kwicHits && view === "network" && node && searched && (
+          <CollocationNetwork
+            node={node}
+            field={searched.field}
+            scope={{ subcorpus, unit: dedup ? "distinctLines" : "tokens", jpOnly }}
+            measure={measure}
+            contentOnly={contentOnly}
+            onPick={(lemma) => {
+              setView("list");
+              pickCollocate(lemma);
+            }}
+            onError={onError}
+          />
         )}
 
         {sortedHits && view === "list" && (

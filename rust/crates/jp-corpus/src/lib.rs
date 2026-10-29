@@ -42,6 +42,8 @@ pub mod runs;
 pub mod stats;
 // 语料分析与播放器的连接层。两个客户端（Tauri、macOS）都只经过这几个模块，规则只写一处
 pub mod analysis;
+pub mod cql;
+pub mod explore;
 pub mod lexical;
 pub mod morphology;
 pub mod media;
@@ -269,6 +271,11 @@ impl Corpus {
     // ── 检索 ──
 
     /// KWIC 检索。无论多少条结果都只发 3 次查询（旧实现是 N+1）。
+    /// CQL 检索（见 [`cql`]）
+    pub fn cql(&self, query: &cql::CqlQuery) -> Result<Vec<KwicHit>> {
+        cql::search(&self.conn, query)
+    }
+
     pub fn kwic(&self, query: &KwicQuery) -> Result<Vec<KwicHit>> {
         search::kwic(&self.conn, query)
     }
@@ -474,6 +481,14 @@ impl Corpus {
 
     pub fn orthography(&self, query: &morphology::OrthographyQuery) -> Result<morphology::OrthographyResult> {
         morphology::orthography(&self.conn, query)
+    }
+
+    pub fn breakdown(&self, query: &explore::BreakdownQuery) -> Result<explore::BreakdownResult> {
+        explore::breakdown(&self.conn, query)
+    }
+
+    pub fn collocation_network(&self, query: &explore::NetworkQuery) -> Result<explore::NetworkResult> {
+        explore::network(&self.conn, query)
     }
 
     pub fn song_profile(&self, song_id: &str, limit: usize) -> Result<analysis::SongProfile> {

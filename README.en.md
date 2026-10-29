@@ -191,6 +191,11 @@ Counted naively, a good part of a frequency list is chorus. So every statistic o
 - **KWIC sorting and plot**: sort by the nth word left or right of the keyword; the plot draws one bar per song,
   showing whether a word is spread through a song or packed into its chorus.
 - **Collocations**: logDice, MI, MI3, t-score, z-score, log-likelihood and ΔP in both directions.
+- **CQL search**: find word sequences by token attributes, e.g. `[lemma="君"] [pos="ADP"]`,
+  `[pos="VERB" & cform="命令形.*"]`, `[lemma="て"] []{0,2} [lemma="しまう"]`, with live syntax checking.
+- **Breakdown by year or artist**: how often a search hits per 10,000 tokens in each year or each performer's songs,
+  with small groups flagged.
+- **Collocation network**: the keyword, its 20 strongest collocates, and how those collocates co-occur with each other.
 - **N-grams**: fixed sequences of 2–5 words that never cross a line break or punctuation, with a minimum number of songs.
 - **Conjugation and spelling**: conjugation forms (click a word to search it in that form) and spelling variants of the
   same word (君 / きみ / キミ); concordance search can match by reading or normalized form.
@@ -442,6 +447,17 @@ the lemma is Sudachi's dictionary form. Each token also keeps Japanese morpholog
 conjugation type and form, reading and normalized form (キミ → 君, 逢う → 会う); after an upgrade, existing tokens are
 annotated in the background by aligning to the original text, without changing their segmentation or POS.
 Tokenisation you correct by hand is stored separately and re-applied by text after re-tokenisation.
+
+**CQL search.** The syntax is a subset of the Corpus Query Language used by Sketch Engine and CQP: square brackets
+hold the conditions for one token (`word` `lemma` `pos` `tag` `ctype` `cform` `reading` `norm`; values are regular
+expressions matched in full, combined with `&` `|` `!`), `[]` is any token, and `?` `*` `+` `{m,n}` repeat it.
+Matches never cross a line, punctuation counts as a token, and the longest match is taken at each start without overlap.
+
+**Breakdown and collocation network.** Search hits can be grouped by year or performer and normalised per 10,000
+tokens (hits and denominators both count every token, punctuation excluded from the denominator), with the ratio to
+the overall rate; groups under 1,000 tokens are flagged as small samples. The collocation network takes the top 20
+collocates of the node and counts how often they co-occur with each other in the same window, keeping each word's
+three strongest links by logDice.
 
 **Conjugation and spelling.** Inflecting words are counted by conjugation form (imperative, volitional…), and
 concordance search can filter by form. Spellings of the same word (君 / きみ / キミ) are grouped by normalized form;

@@ -22,7 +22,8 @@ fn dependencies(toml: &str) -> BTreeSet<String> {
 #[test]
 fn the_core_only_depends_on_its_explicit_allowlist() {
     let actual = dependencies(include_str!("../Cargo.toml"));
-    let allowed: BTreeSet<String> = ["anyhow", "serde", "serde_json", "rusqlite", "jp-normalize", "rodio", "sha2"]
+    // regex：CQL 的属性值按规范就是正则（cql.rs）。纯 Rust、已在依赖树里（jp-import 用），不碰 UI 和网络
+    let allowed: BTreeSet<String> = ["anyhow", "serde", "serde_json", "rusqlite", "jp-normalize", "rodio", "sha2", "regex"]
         .into_iter().map(String::from).collect();
     assert!(!actual.iter().any(|s| s == "jp-app" || s.starts_with("tauri")), "核心不能依赖壳：{actual:?}");
     assert!(actual.is_subset(&allowed), "新增依赖要先审查白名单：{actual:?}");
