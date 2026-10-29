@@ -3,7 +3,7 @@ import JPCore
 import JPCorpusModel
 import MediaPlayer
 
-/// 系统的「正在播放」：媒体键（F8 播放 / 暂停）、耳机线控、控制中心、锁屏都走这里。
+/// 系统的「正在播放」：媒体键（F7 上一首 / F8 播放暂停 / F9 下一首）、耳机线控、控制中心、锁屏都走这里。
 ///
 /// macOS 只把媒体键发给「正在播放」的应用，而认不认你是正在播放的应用，看的是
 /// MPNowPlayingInfoCenter 有没有信息、`playbackState` 是不是 playing / paused。
@@ -25,9 +25,8 @@ final class SystemMediaControls: SystemMediaPublishing {
         bind(center.playCommand, .play)
         bind(center.pauseCommand, .pause)
         bind(center.togglePlayPauseCommand, .toggle)
-        // 没有播放队列：不接「上一首 / 下一首」，系统就不会显示能点却没反应（或者跳行）的切歌按钮
-        center.nextTrackCommand.isEnabled = false
-        center.previousTrackCommand.isEnabled = false
+        bind(center.nextTrackCommand, .nextTrack)
+        bind(center.previousTrackCommand, .previousTrack)
         center.skipForwardCommand.preferredIntervals = [5]
         center.skipBackwardCommand.preferredIntervals = [5]
         bind(center.skipForwardCommand, .skip(5))
@@ -57,7 +56,12 @@ final class SystemMediaControls: SystemMediaPublishing {
 
     /// 真正的跳转是异步的，这里只判断现在有没有能操作的歌
     private func run(_ action: MediaCommand) -> MPRemoteCommandHandlerStatus {
-        guard let player, player.track != nil, player.canPlay else { return .noActionableNowPlayingItem }
+        guard let player, player.track != nil else { return .noActionableNowPlayingItem }
+        switch action {
+        case .nextTrack: guard player.hasNext else { return .noSuchContent }
+        case .previousTrack: break
+        default: guard player.canPlay else { return .noActionableNowPlayingItem }
+        }
         Task { await player.perform(action) }
         return .success
     }
@@ -65,6 +69,8 @@ final class SystemMediaControls: SystemMediaPublishing {
     func publish(_ state: NowPlayingState) {
         guard state != last else { return }
         last = state
+        // 队列放到最后一首：系统的「下一首」变灰，不留一个按了没反应的按钮
+        MPRemoteCommandCenter.shared().nextTrackCommand.isEnabled = state.hasNext
         let center = MPNowPlayingInfoCenter.default()
         guard let track = state.track else {
             center.nowPlayingInfo = nil

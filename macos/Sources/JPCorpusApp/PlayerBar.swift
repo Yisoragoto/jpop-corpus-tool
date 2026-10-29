@@ -151,7 +151,11 @@ struct PlayerTransport: View {
     var large = false
     var body: some View {
         HStack(spacing: large ? 20 : 3) {
+            Button { Task { await app.player.previous() } } label: { Image(systemName: "backward.fill") }
+                .help("上一首（⌥⌘←）；这首放过 3 秒时回到开头").accessibilityLabel("上一首")
+                .disabled(app.player.track == nil)
             Button { Task { await app.player.nudge(-5) } } label: { Image(systemName: "gobackward.5") }
+                .disabled(!app.player.canPlay)
                 .help("后退 5 秒（←）").accessibilityLabel("后退 5 秒")
             Button { app.player.toggle() } label: {
                 ZStack {
@@ -165,12 +169,17 @@ struct PlayerTransport: View {
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: app.player.isPlaying)
             }
             .help("播放 / 暂停（空格）").accessibilityLabel(app.player.isPlaying ? "暂停" : "播放")
+            .disabled(!app.player.canPlay)
             Button { Task { await app.player.nudge(5) } } label: { Image(systemName: "goforward.5") }
                 .help("前进 5 秒（→）").accessibilityLabel("前进 5 秒")
+                .disabled(!app.player.canPlay)
+            // 这首找不到音频时也能切走，所以只看队列
+            Button { Task { await app.player.next() } } label: { Image(systemName: "forward.fill") }
+                .help("下一首（⌥⌘→）").accessibilityLabel("下一首")
+                .disabled(!app.player.hasNext)
         }
         .font(.system(size: large ? 23 : 18, weight: .semibold))
         .buttonStyle(PlayerGlyphStyle(diameter: large ? 48 : 32))
-        .disabled(!app.player.canPlay)
     }
 }
 
