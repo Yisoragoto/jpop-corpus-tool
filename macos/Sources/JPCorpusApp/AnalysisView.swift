@@ -11,25 +11,37 @@ struct AnalysisView: View {
     @State private var filter = StatsFilter()
     private var scope: Subcorpus { SubcorpusScope.subcorpus(filter) }
     private var scopeName: String { SubcorpusScope.describeFilter(filter) }
+    /// 分页（tag 沿用以前存下的值）。顺序和 Windows 版一样：概览在最前，存档在最后
+    private static let tabs: [(tag: Int, title: String)] = [
+        (5, "概览"), (0, "词表"), (1, "对比"), (4, "副歌效应"), (6, "报告"), (3, "质量"), (2, "存档"),
+    ]
+    /// 跟着上面范围走的分页
+    private var scoped: Bool { [5, 0, 1, 4, 6].contains(tab) }
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Picker("",selection: $tab) {
-                    Text("总览").tag(5); Text("词频").tag(0); Text("子语料对比").tag(1); Text("存档").tag(2); Text("语料质量").tag(3); Text("副歌效应").tag(4); Text("报告").tag(6)
-                }.pickerStyle(.menu).labelsHidden().frame(width: 160)
-                if tab < 2 || tab == 4 || tab == 6 { SubcorpusFilters(filter: $filter) }
-            }.padding(10)
-            if tab < 2 || tab == 4 || tab == 6 { Text(scopeName).font(.caption).foregroundStyle(.secondary).padding(.bottom,6) }
-            Divider()
-            switch tab {
-            case 0: FrequencyPane(scope: scope,scopeName: scopeName,jpOnly: $filter.jpOnly,distinctLines: $filter.distinctLines)
-            case 1: KeynessPane(scope: scope,scopeName: scopeName,jpOnly: filter.jpOnly)
-            case 2: ArchivePane()
-            case 4: RepeatEffectPane(scope: scope,jpOnly: filter.jpOnly)
-            case 5: AnalyticsOverview()
-            case 6: StatsReportPane(filter: filter)
-            default: QualityPane()
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("分析").font(.largeTitle.bold())
+                    if scoped { Text(scopeName).font(.callout).foregroundStyle(.secondary).lineLimit(1) }
+                }
+                if scoped { SubcorpusFilters(filter: $filter) }
+                AnalysisTabBar(tabs: Self.tabs, selection: $tab)
             }
+            .padding(.horizontal, 24)
+            .padding(.top, 18)
+            Divider()
+            Group {
+                switch tab {
+                case 0: FrequencyPane(scope: scope,scopeName: scopeName,jpOnly: $filter.jpOnly,distinctLines: $filter.distinctLines)
+                case 1: KeynessPane(scope: scope,scopeName: scopeName,jpOnly: filter.jpOnly)
+                case 2: ArchivePane()
+                case 4: RepeatEffectPane(scope: scope,jpOnly: filter.jpOnly)
+                case 5: AnalyticsOverview(filter: filter) { tab = $0 }
+                case 6: StatsReportPane(filter: filter)
+                default: QualityPane()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }.navigationTitle("分析")
         .task(id: app.libraryURL) { do { if let core = app.core { try await app.scopes.reload(core) } } catch { app.errorMessage = error.localizedDescription } }
         .onChange(of: app.analysisScope) { _, request in apply(request) }
@@ -37,6 +49,37 @@ struct AnalysisView: View {
     }
     private func apply(_ request: ScopeRequest?) {
         if let request { filter.performerIds = request.performerIds; app.analysisScope = nil }
+    }
+}
+
+/// 横排的分页：文字 + 选中时下面一道强调色短线（Windows 的 .tabs）
+@MainActor
+private struct AnalysisTabBar: View {
+    let tabs: [(tag: Int, title: String)]
+    @Binding var selection: Int
+    @Namespace private var underline
+    var body: some View {
+        HStack(spacing: 22) {
+            ForEach(tabs.indices, id: \.self) { index in
+                let item = tabs[index]
+                let on = item.tag == selection
+                Button { withAnimation(.snappy(duration: 0.22)) { selection = item.tag } } label: {
+                    VStack(spacing: 6) {
+                        Text(item.title)
+                            .font(.system(size: 13, weight: on ? .semibold : .regular))
+                            .foregroundStyle(on ? .primary : .secondary)
+                        ZStack {
+                            Capsule().fill(.clear).frame(height: 3)
+                            if on { Capsule().fill(Color.accentColor).frame(width: 18, height: 3).matchedGeometryEffect(id: "tab", in: underline) }
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+            Spacer(minLength: 0)
+        }
     }
 }
 

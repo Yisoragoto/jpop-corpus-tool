@@ -304,7 +304,60 @@ public struct FrequencyItem: Codable, Hashable, Identifiable, Sendable {
     public var songs: Int64
     public var range: Double
     public var surfaces: [String]
+    /// 在各首歌之间分布得有多均匀（老存档里没有）
+    public var dispersion: Dispersion?
     public var id: String { "\(lemma)|\(pos)" }
+}
+
+/// 离散度，定义见 Rust jp-corpus analysis.rs
+public struct Dispersion: Codable, Hashable, Sendable {
+    /// Gries 的 DP：0 = 均匀，越接近 1 越集中
+    public var dp: Double
+    public var dpNorm: Double
+    public var juillandD: Double?
+    /// 平均缩减频次
+    public var arf: Double
+}
+
+/// 词汇丰富度 / 文字构成（Rust lexicalProfile）
+public struct LexicalQuery: Codable, Hashable, Sendable {
+    public enum Group: String, Codable, Sendable { case whole, performer, song }
+    public var scope: AnalysisScope
+    public var group: Group
+    public var window: Int
+    public var minTokens: Int
+    public var limit: Int?
+    public init(scope: AnalysisScope, group: Group = .whole, window: Int = 50, minTokens: Int = 1, limit: Int? = nil) {
+        self.scope = scope; self.group = group; self.window = window; self.minTokens = minTokens; self.limit = limit
+    }
+}
+
+public struct ScriptShares: Codable, Hashable, Sendable {
+    public var kanji: Double
+    public var hiragana: Double
+    public var katakana: Double
+    public var latin: Double
+    public var other: Double
+}
+
+public struct LexicalRow: Codable, Hashable, Sendable {
+    public var key: String
+    public var label: String
+    public var songs: Int64
+    public var tokens: Int64
+    public var types: Int64
+    public var ttr: Double
+    public var mattr: Double?
+    public var mtld: Double?
+    public var yuleK: Double
+    public var hapaxRatio: Double
+    public var chars: Int64
+    public var scripts: ScriptShares
+}
+
+public struct LexicalResult: Codable, Hashable, Sendable {
+    public var rows: [LexicalRow]
+    public var provenance: Provenance
 }
 
 public struct FrequencyResult: Codable, Hashable, Sendable {
