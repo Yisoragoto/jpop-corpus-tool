@@ -85,6 +85,13 @@ enum SmokeRun {
             app.search("夜", field: .lemma)
             await settle(2)
             shot("02-kwic", into: out, note: note)
+            // 切到 CQL：以前这一下整个窗口卡死。能走到下一行就说明主线程没被排版拖住
+            UserDefaults.standard.set("cql", forKey: "search.mode")
+            await settle(2)
+            shot("02b-cql", into: out, note: note)
+            try require(true, "cql-page", "responsive=true")
+            UserDefaults.standard.set("kwic", forKey: "search.mode")
+            await settle(1)
             guard let client = app.client else { throw SmokeFailure.step("missing-client") }
             let hits = try await client.kwic(KwicQuery(keywords: ["夜"], field: .lemma))
             try require(!hits.isEmpty, "kwic", "hits=\(hits.count)")

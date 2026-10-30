@@ -158,6 +158,8 @@ jobs:
           cat "$out/smoke.txt" 2>/dev/null || true
           ls -la "$out"
           test -f "$out/02-kwic.png"
+          test -f "$out/02b-cql.png"
+          grep -Eq '^\[step\] cql-page responsive=true status=pass$' "$out/smoke.txt"
           test -f "$out/07-single-file-plan.png"
           test -f "$out/09-imported-library.png"
           test -f "$out/04g-graph.png"

@@ -53,16 +53,24 @@ struct CqlExamplesView: View {
         Example(query: #""夢" []? [pos="NOUN"]"#, note: "「夢」后面隔零到一个词跟名词"),
     ]
 
+    // 不用 DisclosureGroup、长说明不让它自由换行：macOS 上 DisclosureGroup 里的多行 Text
+    // 放在检索页的竖排里，排版会来回量个不停，整个窗口卡死、一片空白（切到 CQL 就会碰到）
     var body: some View {
-        DisclosureGroup("CQL 示例", isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            Button { expanded.toggle() } label: {
+                Label("CQL 示例", systemImage: expanded ? "chevron.down" : "chevron.right")
+            }
+            .buttonStyle(.borderless)
+            if expanded {
                 Text("CQL 按词的属性找词串：方括号里写一个词的条件，几个方括号连起来是相邻的几个词。值是正则表达式，要整个匹配。")
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(examples) { example in
                     Button { onPick(example.query) } label: {
                         HStack(spacing: 12) {
-                            Text(example.query).font(.system(.caption, design: .monospaced))
-                            Text(example.note).foregroundStyle(.secondary)
+                            Text(example.query).font(.system(.caption, design: .monospaced)).lineLimit(1)
+                            Text(example.note).foregroundStyle(.secondary).lineLimit(1)
                             Spacer(minLength: 0)
                         }
                         .contentShape(Rectangle())
@@ -71,9 +79,11 @@ struct CqlExamplesView: View {
                 }
                 Text("不跨行；标点也是词；每个起点取最长的匹配，匹配之间不重叠。")
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .font(.caption)
-            .padding(.top, 6)
+        }
+        .font(.caption)
+        .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
