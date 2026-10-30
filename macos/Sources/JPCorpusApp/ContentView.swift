@@ -85,6 +85,10 @@ struct ContentView: View {
         }
         .toolbar(app.showStage ? .hidden : .automatic, for: .windowToolbar)
         .animation(.easeInOut(duration: 0.25), value: app.showStage)
+        // 从没有歌到有歌（第一次播放、试听）时打开歌词栏。之后用户自己关了，换歌不再弹出来
+        .onChange(of: app.player.track?.id) { old, new in
+            if old == nil, new != nil, !app.showLyrics { app.showLyrics = true }
+        }
         .task(id: "\(app.player.track?.id ?? "")|\(app.showFurigana)|\(app.furiganaMode.rawValue)") {
             await app.loadFurigana()
         }

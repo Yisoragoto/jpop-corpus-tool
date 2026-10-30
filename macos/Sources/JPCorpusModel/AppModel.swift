@@ -126,7 +126,8 @@ public final class AppModel {
     public var quickSearchSeed = ""
     /// 收藏、播放记录变了就加一，首页据此重读
     public var homeVersion = 0
-    public var showLyrics = true
+    /// 右边的歌词栏。启动时关着（还没有歌，开着只是一块空白）；第一次有歌开始放时自动打开
+    public var showLyrics = false
     public var searchRequest: SearchRequest?
     public var errorMessage: String?
     public var notice: String?
