@@ -19,11 +19,8 @@ struct LibraryArtistBrowser: View {
         let writers = LibraryIndex.filterBehind(directory.behind, role, filter)
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
-                LibraryHero(title: behind ? "幕后" : "音乐人", kind: "资料库",
-                            subtitle: "\(behind ? directory.behind.count : directory.musicians.count) 人",
-                            imagePath: (behind ? writers.first?.imagePath : musicians.first?.row.entry.imagePath) ?? "",
-                            circle: true, placeholder: "person.fill") { EmptyView() }
-                controls.padding(.horizontal, 28).padding(.vertical, 22)
+                // 不放「音乐人 · 19 人」的大标题：曲库顶上的切换栏已经说明在看音乐人，大标题只占地方
+                controls.padding(.horizontal, 28).padding(.top, 16).padding(.bottom, 18)
                 if loading {
                     ProgressView("加载中…").frame(maxWidth: .infinity, minHeight: 120)
                 } else if behind {

@@ -17,6 +17,7 @@ struct ImportView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
+                openExistingBar
                 TokenizerCard(model: model, onPickDictionary: { pick.present(.dictionary) })
                 sourceBar
                 if app.client != nil {
@@ -60,6 +61,18 @@ struct ImportView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+    }
+
+    /// 导入页是导音乐的；已经有库（比如从 Windows 拷来的 corpus.db）直接打开，不用再导一遍
+    private var openExistingBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "externaldrive").foregroundStyle(.secondary)
+            Text("已经有语料库（比如从 Windows 拷来的 corpus.db）？直接打开，不用再导入。")
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Button("打开已有语料库…") { app.showLibraryPicker = true }
+        }
+        .font(.callout)
     }
 
     private var sourceBar: some View {

@@ -16,6 +16,7 @@ pub(super) fn dispatch(s: &Session, method: &str, args: &Value) -> Result<Option
                 jp_import::migrate::MigrateOptions::default(),
             )?;
             let slot = Arc::clone(&s.analyzer);
+            let resolve = s.media_resolver()?;
             s.library_job.spawn("资料库维护", move |job| {
                 let mut corpus = open_worker(&db)?;
                 let result = match method.as_str() {
@@ -25,7 +26,8 @@ pub(super) fn dispatch(s: &Session, method: &str, args: &Value) -> Result<Option
                     }
                     "fillAlbumArtwork" => {
                         job.report(0, 0, "正在补专辑封面…");
-                        json!(jp_scrape::fill_album_artwork(corpus.connection())?)
+                        // 专辑图找不到文件也算缺（从别的电脑拷来的库），换成同专辑里这台电脑上找得到的歌曲封面
+                        json!(jp_scrape::fill_album_artwork_with(corpus.connection(), &resolve)?)
                     }
                     _ => {
                         let source = PathBuf::from(source.ok_or_else(|| anyhow!("没给源目录"))?);

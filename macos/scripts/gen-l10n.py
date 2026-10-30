@@ -146,11 +146,16 @@ def write(out):
 
 def check():
     table = merged()
-    missing = [(lit, f) for lit, f in literals_in_sources().items() if lit not in table]
+    found = literals_in_sources()
+    # 两个插值紧挨着（"\(a)\(b) 首"）：运行时按模板匹配时分不出两个值的边界，会把一个词切成两半
+    adjacent = [(lit, f) for lit, f in found.items() if re.search(r"\{\d+\}\{\d+\}", lit)]
+    for lit, f in adjacent:
+        print(f"{f}: 两个插值相邻，拆成两段 Text 再拼：{json.dumps(lit, ensure_ascii=False)}")
+    missing = [(lit, f) for lit, f in found.items() if lit not in table]
     for lit, f in missing:
         print(f"{f}: {json.dumps(lit, ensure_ascii=False)}")
     print(f"l10n check: {len(missing)} Chinese literals without English")
-    return 1 if missing else 0
+    return 1 if missing or adjacent else 0
 
 
 def main():

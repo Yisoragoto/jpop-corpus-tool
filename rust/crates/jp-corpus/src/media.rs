@@ -6,7 +6,8 @@
 //!
 //! 1. 原路径还在，就用它；
 //! 2. 相对路径按语料库目录解析；
-//! 3. 在用户指定的若干「音频根目录」里按**文件名**找（递归，限深度）。
+//! 3. 按路径的最后几段在语料库目录和音频根目录里找；
+//! 4. 音频再按**文件名**找（递归，限深度）。图片不这样找：封面文件名是编号，会撞名。
 //!
 //! Windows 风格的路径在 macOS 上用 `Path` 拆不出文件名（`\` 不是分隔符），所以文件名自己拆。
 
@@ -54,12 +55,23 @@ pub fn resolve(stored: &str, library_root: Option<&Path>, search_roots: &[PathBu
             }
         }
     }
+    // 图片不按文件名找：封面、歌手照片的文件名是 `001.jpg` 这种编号，每个歌手目录里都有一张，
+    // 只看文件名会拿到别人的图（在 Mac 上打开从 Windows 拷来的库时，专辑页和曲目显示成别的歌的封面）。
+    // 尾巴对不上就照实说找不到，让「在线补齐封面」重新下
+    if is_image(name) {
+        return None;
+    }
     for root in roots {
         if let Some(found) = find_by_name(&root, name, MAX_DEPTH) {
             return Some(found);
         }
     }
     None
+}
+
+fn is_image(name: &str) -> bool {
+    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "tif" | "tiff" | "heic" | "avif")
 }
 
 fn find_by_name(dir: &Path, name: &str, depth: usize) -> Option<PathBuf> {
@@ -115,6 +127,9 @@ mod tests {
         // Windows 那台机器上的绝对路径，拷到别处之后按目录尾巴对上
         let found = resolve(r"C:\Users\x\AppData\Local\JPOP Corpus Tool\raw\covers\Vaundy\001.jpg", Some(&root), &[]);
         assert_eq!(found, Some(root.join("raw").join("covers").join("Vaundy").join("001.jpg")));
+        // 这个歌手的目录不在：不能退回按文件名拿到 Aimer 的 001.jpg
+        let missing = resolve(r"C:\Users\x\AppData\Local\JPOP Corpus Tool\raw\covers\サカナクション\001.jpg", Some(&root), &[]);
+        assert_eq!(missing, None);
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

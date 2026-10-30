@@ -52,7 +52,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     var embedded = false
-    @AppStorage(NavStyle.key) private var navStyle: NavStyle = .sidebar
+    @AppStorage(NavStyle.key) private var navStyle: NavStyle = NavStyle.defaultStyle
     @AppStorage("settings.category") private var selectedCategory = SettingsCategory.appearance.rawValue
     private enum PickKind { case library, audio }
     @State private var pick = FilePickState<PickKind>()
@@ -78,7 +78,7 @@ struct SettingsView: View {
             }
         }
         .fileImporter(isPresented: $pick.isPresented, allowedContentTypes: pick.intent == .library
-                      ? [.folder, UTType(filenameExtension: "db") ?? .data, UTType(filenameExtension: "sqlite") ?? .data]
+                      ? libraryPickerTypes
                       : [.folder]) { result in
             let kind = pick.finish()
             switch result {
@@ -324,6 +324,13 @@ private struct LyricsPreferencesView: View {
     @State private var importing = false
     @State private var files: [LyricsFontFile] = []
     @State private var problems: [String] = []
+    /// 字体菜单里的选项（自带 / 导入的 + 常用的 + 本机全部）。算好存着，不在每次重画时现拼
+    @State private var families: [FontChoice] = []
+
+    struct FontChoice: Hashable {
+        let family: String
+        let label: String
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -335,7 +342,10 @@ private struct LyricsPreferencesView: View {
                 ForEach(problems, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             }
         }
-        .task(id: app.libraryURL) { await refresh() }
+        .task(id: app.libraryURL) {
+            if families.isEmpty { families = buildFamilies() }
+            await refresh()
+        }
         .fileImporter(isPresented: $importing,
                       allowedContentTypes: ["ttf", "otf", "ttc", "zip"].map {
                           UTType(filenameExtension: $0) ?? UTType(importedAs: "org.jpcorpus.font.\($0)")
@@ -435,14 +445,18 @@ private struct LyricsPreferencesView: View {
         }
     }
 
-    private var families: [String] {
+    private func buildFamilies() -> [FontChoice] {
         var names = files.map(\.family)
-        let installed = NSFontManager.shared.availableFontFamilies.sorted()
+        let installed = InstalledFonts.families
         let preferred = ["Klee One", "LXGW WenKai", "Meiryo", "Noto Sans CJK SC", "Noto Sans CJK JP", "Source Han Sans SC", "Source Han Sans JP", "BIZ UDPGothic"]
-        names += preferred.filter { installed.contains($0) }
+        let installedSet = Set(installed)
+        names += preferred.filter { installedSet.contains($0) }
         names += installed
         var seen = Set<String>()
-        return names.filter { seen.insert($0).inserted }
+        let kinds = Dictionary(files.map { ($0.family, $0.bundled) }, uniquingKeysWith: { first, _ in first })
+        return names.filter { seen.insert($0).inserted }.map { name in
+            FontChoice(family: name, label: name + (kinds[name].map { L10n.t($0 ? "（自带）" : "（导入）") } ?? ""))
+        }
     }
 
     private var brokenFonts: [String] {
@@ -452,11 +466,11 @@ private struct LyricsPreferencesView: View {
     private func fontPicker(_ title: String, selection: Binding<String>) -> some View {
         Picker(title, selection: selection) {
             Text("默认").tag("")
-            if !selection.wrappedValue.isEmpty && !families.contains(selection.wrappedValue) {
+            if !selection.wrappedValue.isEmpty && !families.contains(where: { $0.family == selection.wrappedValue }) {
                 Text("\(selection.wrappedValue)（本机没有）").tag(selection.wrappedValue)
             }
-            ForEach(families, id: \.self) { name in
-                Text(name + (files.first { $0.family == name }.map { $0.bundled ? "（自带）" : "（导入）" } ?? "")).tag(name)
+            ForEach(families, id: \.self) { choice in
+                Text(verbatim: choice.label).tag(choice.family)
             }
         }.frame(width: 190)
     }
@@ -467,6 +481,7 @@ private struct LyricsPreferencesView: View {
             let catalog = try await client.lyricsFontCatalog(imported: app.importedLyricFonts)
             files = catalog.files
             problems = catalog.problems
+            families = buildFamilies()
             for path in Set(files.map(\.path)) {
                 CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: path) as CFURL, .process, nil)
             }

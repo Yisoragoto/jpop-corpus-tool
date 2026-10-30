@@ -22,21 +22,23 @@ struct DictionaryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                // 查词是这一页最常用的，放最上面；词典列表是偶尔才管的
+                probeSection
                 dictionariesSection
-                if !legacy.isEmpty {
+                // 旧版（Python 版）记下的词典包：只列这台电脑上找得到、还没导入的。
+                // 从 Windows 拷来的库里记的都是 Windows 路径，在 Mac 上一条都找不到，以前整页都是「文件不存在」
+                let importable = legacy.filter { !$0.imported && $0.exists }
+                if !importable.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("从旧版迁移词典").font(.headline)
-                        ForEach(legacy) { source in
+                        ForEach(importable) { source in
                             HStack {
                                 Text(source.name); Spacer()
-                                if source.imported { Text("已导入").foregroundStyle(.secondary) }
-                                else if !source.exists { Text("文件不存在，请重新选择词典包").foregroundStyle(.secondary) }
-                                else { Button("导入") { Task { await importDictionaries([URL(fileURLWithPath: source.path)]) } }.disabled(importing) }
+                                Button("导入") { Task { await importDictionaries([URL(fileURLWithPath: source.path)]) } }.disabled(importing)
                             }
                         }
                     }
                 }
-                probeSection
             }
             .padding(24)
             .frame(maxWidth: 900, alignment: .leading)
@@ -158,7 +160,7 @@ struct DictionaryView: View {
 
     private var probeSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "试查", detail: "和歌词面板里右键「查词」同一套查法（会把活用形还原）")
+            SectionHeader(title: "查词", detail: "和歌词面板里右键「查词」同一套查法（会把活用形还原）")
             HStack {
                 TextField("输入一个词或一段话，从开头查", text: $probe)
                     .textFieldStyle(.roundedBorder)
@@ -168,7 +170,7 @@ struct DictionaryView: View {
             }
             if let probeRequest {
                 LookupPane(request: probeRequest) { self.probeRequest = nil }
-                    .frame(height: 260)
+                    .frame(height: 440)
                     .glassCard(cornerRadius: 12)
             }
         }

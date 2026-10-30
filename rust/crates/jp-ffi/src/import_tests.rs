@@ -353,3 +353,37 @@ fn yomitan_fixture() -> PathBuf {
     std::fs::write(dir.join("term_bank_1.json"), terms).unwrap();
     dir
 }
+
+/// 先打开库、后把 sudachi/ 拷进库目录（从 Windows 拷库时常见）：同一个会话里振假名要能用上，
+/// 不能一直说「找不到词典」直到重开程序。以前第一次没找到就记成「没有」，设置页却显示已就绪
+#[test]
+fn a_dictionary_copied_in_after_opening_is_picked_up() {
+    let Some(source) = dictionary_source() else {
+        eprintln!("跳过：没有 Sudachi 词典（设 JP_SUDACHI_SOURCE）");
+        return;
+    };
+    let dir = temp_dir("late-dict");
+    let db = jp_corpus::fixture::write_to(&dir).unwrap();
+    let s = Session::open(db.to_str().unwrap()).unwrap();
+
+    let err = s.call("lyricsFurigana", json!({ "songId": "004", "mode": "kanji" })).unwrap_err();
+    assert!(err.to_string().contains("找不到 Sudachi 词典"), "{err}");
+
+    // 用户自己把词典文件夹拷进来（不经 tokenizerInstall）
+    let (resources, dict) = jp_tokenizer::find_sudachipy_source(&source).unwrap();
+    let target = dir.join(jp_tokenizer::BUNDLED_DIR);
+    std::fs::create_dir_all(&target).unwrap();
+    for entry in std::fs::read_dir(&resources).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            std::fs::copy(&path, target.join(path.file_name().unwrap())).unwrap();
+        }
+    }
+    std::fs::copy(&dict, target.join("system.dic")).unwrap();
+
+    let lines = s.call("lyricsFurigana", json!({ "songId": "004", "mode": "kanji" })).unwrap();
+    let first = &lines[0]["rubies"];
+    assert!(first.as_array().unwrap().iter().any(|r| r["reading"] == "よる"), "{first}");
+    assert_eq!(s.call("health", json!({})).unwrap()["tokenizerReady"], json!(true));
+    std::fs::remove_dir_all(dir).ok();
+}

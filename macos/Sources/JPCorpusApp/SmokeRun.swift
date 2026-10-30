@@ -95,11 +95,11 @@ enum SmokeRun {
             try require(true, "cql-page", "responsive=true")
             UserDefaults.standard.set("kwic", forKey: "search.mode")
             await settle(1)
-            // 导航换成顶部胶囊栏，再换回来：两种都截一张
-            UserDefaults.standard.set("top", forKey: "nav.style")
-            await settle(2)
-            shot("02c-topnav", into: out, note: note)
+            // 默认是顶部胶囊栏；换成侧边栏截一张，再回到默认
             UserDefaults.standard.set("sidebar", forKey: "nav.style")
+            await settle(2)
+            shot("02c-sidebar", into: out, note: note)
+            UserDefaults.standard.set("top", forKey: "nav.style")
             await settle(1)
             guard let client = app.client else { throw SmokeFailure.step("missing-client") }
             let hits = try await client.kwic(KwicQuery(keywords: ["夜"], field: .lemma))
@@ -145,6 +145,12 @@ enum SmokeRun {
                 await settle(0.8)
             }
 
+            // 先在没有词典时开振假名：歌词栏里要出现「下载词典」的提示（从别的电脑只拷了 corpus.db 就是这样）
+            app.showFurigana = true
+            await settle(2)
+            note("没有词典时：needsDictionary=\(app.furiganaNeedsDictionary)，错误：\(app.furiganaError ?? "无")")
+            if app.furiganaNeedsDictionary { shot("03a-furigana-no-dictionary", into: out, note: note) }
+
             // 振假名要分词词典：CI 把缓存的那份目录传进来，装进示例库（和导入页「选已有的词典」同一条路）
             if let sudachi = ProcessInfo.processInfo.environment["JPCORPUS_SMOKE_SUDACHI"], !sudachi.isEmpty, let client = app.core {
                 do {
@@ -154,7 +160,8 @@ enum SmokeRun {
                     note("分词词典装不上：\(error.localizedDescription)")
                 }
             }
-            app.showFurigana = true
+            // 开关没变，注音不会自己重取：装好词典后主动取一次（歌词页下载词典那条路也是这样做的）
+            await app.loadFurigana()
             await settle(2)
             let rubyCount = app.furigana.values.map { $0.count }.reduce(0, +)
             note("振假名：\(rubyCount) 段，错误：\(app.furiganaError ?? "无")")

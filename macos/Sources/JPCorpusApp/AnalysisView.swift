@@ -691,7 +691,9 @@ struct ProvenanceFooter: View {
     var label: String?
 
     var body: some View {
-        Text("\(label.map { "\($0)：" } ?? "")\(p.scope) · \(p.songs) 首 / \(p.tokens) 词（\(p.unit == .distinctLines ? "重复行只算一次" : "全部词次")）· 规则 \(p.rules) · 指纹 \(String(p.snapshot.fingerprint.prefix(8)))")
+        // 前缀单独一段：和后面的范围名连在一起时，英文模板分不清两个值的边界（「全部歌曲」被切成「全」+「部歌曲」）
+        (Text(label.map { "\($0)：" } ?? "")
+            + Text("\(p.scope) · \(p.songs) 首 / \(p.tokens) 词（\(p.unit == .distinctLines ? "重复行只算一次" : "全部词次")）· 规则 \(p.rules) · 指纹 \(String(p.snapshot.fingerprint.prefix(8)))"))
             .font(.caption2)
             .foregroundStyle(.tertiary)
             .textSelection(.enabled)

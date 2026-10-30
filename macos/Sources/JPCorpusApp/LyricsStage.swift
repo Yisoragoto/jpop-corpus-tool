@@ -80,6 +80,10 @@ struct LyricsStage: View {
             }
             }
         }
+        // 开着振假名却没有词典：在全屏歌词里也说清楚，并且能直接下载（以前这里什么都不提示）
+        .overlay(alignment: .top) {
+            FuriganaDictionaryNotice(style: .card).padding(.top, Self.topHeight + 8).padding(.horizontal, 28)
+        }
         .background {
             if karaoke { karaokeBackdrop.ignoresSafeArea() } else { backdrop.ignoresSafeArea() }
         }
@@ -312,7 +316,7 @@ struct LyricsStage: View {
             if let units {
                 TimedLyricLine(text: line.text, units: units, live: current,
                                frozen: index < (active ?? 0) ? .greatestFiniteMagnitude : -1,
-                               size: 34, highlight: .white) { unit in
+                               size: 34, highlight: .white, rubies: app.furigana[line.utteranceId] ?? []) { unit in
                     // 和普通行一样：点到的是词就查词、不动进度；标点之类查不了的才从这个字放
                     if let token = LyricSegments.tokenIndex(atChar: unit.charStart, text: line.text, tokens: line.tokens),
                        LyricSegments.lookupCandidates(line.tokens).contains(token) {

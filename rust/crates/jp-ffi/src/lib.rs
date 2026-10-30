@@ -84,33 +84,55 @@ pub struct Session {
     translator: jp_dict::translator::Translator,
 }
 
-/// 分词器的三种状态：还没找过（外层 None）、找过但没有、有。
+/// 分词器：还没找过（None）、找过（`Loaded`，可能没找到）。
 #[derive(Default)]
-struct AnalyzerSlot(Mutex<Option<Option<Arc<Analyzer>>>>);
+struct AnalyzerSlot(Mutex<Option<Loaded>>);
+
+struct Loaded {
+    analyzer: Option<Arc<Analyzer>>,
+    /// 上次找到（并试着加载）的是哪一份 system.dic；没找到时为 None
+    dict: Option<PathBuf>,
+}
 
 impl AnalyzerSlot {
+    /// 上次没有分词器时，每次都再看一眼磁盘：词典文件出现了（或换了一份）就重新加载。
+    ///
+    /// 以前「没有」一记下就到关库为止：先打开库、后把 sudachi/ 拷进库目录（从 Windows 拷库时
+    /// 很常见），设置里显示「分词词典已就绪」（那边每次都看磁盘），振假名却一直说找不到词典，
+    /// 重开程序才好。看一眼只是几次 stat，不加载 207MB 的词典
     fn get(&self, root: &Path) -> Option<Arc<Analyzer>> {
         let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if slot.is_none() {
+        let stale = match slot.as_ref() {
+            None => true,
+            Some(loaded) if loaded.analyzer.is_none() => {
+                jp_tokenizer::locate_sudachipy(root).map(|(_, dict)| dict) != loaded.dict
+            }
+            Some(_) => false,
+        };
+        if stale {
             *slot = Some(load_analyzer(root));
         }
-        slot.clone().flatten()
+        slot.as_ref().and_then(|loaded| loaded.analyzer.clone())
     }
 
     /// 重新找一次（装好词典之后）。返回现在有没有
     fn reload(&self, root: &Path) -> bool {
         let loaded = load_analyzer(root);
-        let ready = loaded.is_some();
+        let ready = loaded.analyzer.is_some();
         *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(loaded);
         ready
     }
 }
 
 /// 和 Tauri 客户端同一个找法：语料库目录里的 `sudachi/`（或 0.1.x 的 venv），再是随程序带的
-fn load_analyzer(root: &Path) -> Option<Arc<Analyzer>> {
-    jp_tokenizer::locate_sudachipy(root)
-        .and_then(|(res, dict)| Analyzer::from_sudachipy(&res, &dict).ok())
-        .map(Arc::new)
+fn load_analyzer(root: &Path) -> Loaded {
+    match jp_tokenizer::locate_sudachipy(root) {
+        Some((res, dict)) => Loaded {
+            analyzer: Analyzer::from_sudachipy(&res, &dict).ok().map(Arc::new),
+            dict: Some(dict),
+        },
+        None => Loaded { analyzer: None, dict: None },
+    }
 }
 
 /// 后台作业自己的连接。结构已经由会话打开时迁移好了，这里只开、只设等待
@@ -213,6 +235,14 @@ impl Session {
 
     fn artists_dir(&self) -> PathBuf {
         self.library_root().join("raw").join("artists")
+    }
+
+    /// 库里的音频、封面路径在这台电脑上对应哪个文件（见 `jp_corpus::media::resolve`）。
+    /// 拿走的是一份快照，能带进后台作业的线程
+    fn media_resolver(&self) -> Result<impl Fn(&str) -> Option<PathBuf> + Send + 'static> {
+        let roots = self.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
+        let root = self.root.clone();
+        Ok(move |stored: &str| jp_corpus::media::resolve(stored, root.as_deref(), &roots))
     }
 
     /// 要联网的单次操作用的连接：自己开一条，不占会话那条（识别要排 MusicBrainz 的队，封面一张十几秒）
@@ -620,7 +650,10 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
             let total = targets.len();
             if total > 0 {
                 let db = session.db_path.clone();
-                start_scrape(session, move |cancelled, progress| jp_scrape::run_album_fill(&db, targets, cancelled, progress))?;
+                let resolve = session.media_resolver()?;
+                start_scrape(session, move |cancelled, progress| {
+                    jp_scrape::run_album_fill_with(&db, targets, &resolve, cancelled, progress)
+                })?;
             }
             json!(total)
         }
@@ -631,7 +664,10 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
             };
             let total = ids.len();
             let (db, covers) = (session.db_path.clone(), session.covers_dir());
-            start_scrape(session, move |cancelled, progress| jp_scrape::run_batch(&db, &covers, &ids, None, cancelled, progress))?;
+            let resolve = session.media_resolver()?;
+            start_scrape(session, move |cancelled, progress| {
+                jp_scrape::run_batch_with(&db, &covers, &ids, None, &resolve, cancelled, progress)
+            })?;
             json!(total)
         }
         "scrapeArtistsStart" => {
@@ -655,7 +691,8 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         "scrapeTrack" => {
             let song_id: String = arg(args, "songId")?;
             let conn = session.network_connection()?;
-            serde_json::to_value(jp_scrape::scrape_track(conn.connection(), &session.covers_dir(), &song_id, None)?)?
+            let resolve = session.media_resolver()?;
+            serde_json::to_value(jp_scrape::scrape_track_with(conn.connection(), &session.covers_dir(), &song_id, None, &resolve)?)?
         }
         "scrapeAccept" => {
             let file_path: String = arg(args, "filePath")?;
@@ -670,7 +707,14 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         }
         "scrapeBackfillCovers" => {
             let conn = session.network_connection()?;
-            serde_json::to_value(jp_scrape::backfill_and_fill_albums(conn.connection(), &session.covers_dir())?)?
+            // 库可能是从别的电脑拷来的：封面路径不空但这台电脑上没有那个文件，也算缺
+            let resolve = session.media_resolver()?;
+            serde_json::to_value(jp_scrape::backfill_and_fill_albums_with(conn.connection(), &session.covers_dir(), &resolve)?)?
+        }
+        "mediaStatus" => {
+            let conn = session.network_connection()?;
+            let roots = session.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
+            serde_json::to_value(media_status(conn.connection(), session.root.as_deref(), &roots)?)?
         }
 
         // ── 词典管理（同 Tauri 的 dict_import_* / dict_set_* / dict_delete）──
@@ -736,6 +780,57 @@ fn mine(
         jp_corpus::media::resolve(stored, session.root.as_deref(), &audio_roots).map(|p| p.display().to_string())
     });
     jp_anki::lyric_mine::send(anki, &store, &prepared, request)
+}
+
+/// 库里的音频、封面、歌手照片在这台电脑上找不找得到（按播放、显示用的同一套规则找）。
+/// 只数「记了路径却找不到」的：本来就没有封面、没有音频的不算
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaStatus {
+    songs: usize,
+    audio_missing: usize,
+    covers_missing: usize,
+    albums_missing: usize,
+    artists_missing: usize,
+    /// 找不到的音频原来在哪些文件夹（库里记的路径去掉文件名），按歌数从多到少，最多 6 个
+    missing_audio_folders: Vec<MissingFolder>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MissingFolder {
+    folder: String,
+    songs: usize,
+}
+
+fn media_status(conn: &rusqlite::Connection, root: Option<&Path>, roots: &[PathBuf]) -> Result<MediaStatus> {
+    let found = |stored: &str| stored.trim().is_empty() || jp_corpus::media::resolve(stored, root, roots).is_some();
+    let column = |sql: &str| -> Result<Vec<String>> {
+        Ok(conn.prepare(sql)?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+    };
+    let audio = column("SELECT COALESCE(audio_path,'') FROM songs")?;
+    let mut folders: Vec<MissingFolder> = Vec::new();
+    let mut audio_missing = 0;
+    for stored in audio.iter().filter(|s| !found(s)) {
+        audio_missing += 1;
+        let name = jp_corpus::media::file_name_of(stored);
+        let folder = stored[..stored.len() - name.len()].trim_end_matches(['\\', '/']).to_string();
+        match folders.iter_mut().find(|f| f.folder == folder) {
+            Some(f) => f.songs += 1,
+            None => folders.push(MissingFolder { folder, songs: 1 }),
+        }
+    }
+    folders.sort_by(|a, b| b.songs.cmp(&a.songs).then_with(|| a.folder.cmp(&b.folder)));
+    folders.truncate(6);
+    let missing = |sql: &str| -> Result<usize> { Ok(column(sql)?.iter().filter(|s| !found(s)).count()) };
+    Ok(MediaStatus {
+        songs: audio.len(),
+        audio_missing,
+        covers_missing: missing("SELECT COALESCE(cover_path,'') FROM songs")?,
+        albums_missing: missing("SELECT COALESCE(artwork_path,'') FROM albums")?,
+        artists_missing: missing("SELECT COALESCE(image_path,'') FROM artists")?,
+        missing_audio_folders: folders,
+    })
 }
 
 /// 批量刮削的外壳：进度存进作业状态等界面来问。`stage` 是刚刮完的那首（或那位歌手），
@@ -1136,6 +1231,30 @@ mod tests {
         std::fs::write(&half, &bytes[..bytes.len() / 2]).unwrap();
         let message = Session::open(half.to_str().unwrap()).err().expect("half opened").to_string();
         assert!(message.contains("不完整或已损坏"), "{message}");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn media_status_counts_files_this_computer_cannot_find() {
+        let (s, dir) = session();
+        // 示例库记的都是另一台电脑的路径（E:/music/…）
+        let status = s.call("mediaStatus", json!({})).unwrap();
+        assert_eq!(status["songs"], 4);
+        assert_eq!(status["audioMissing"], 4);
+        assert_eq!(status["coversMissing"], 1);
+        assert_eq!(status["albumsMissing"], 0, "空的专辑图不算缺");
+        assert_eq!(status["artistsMissing"], 1);
+        assert_eq!(status["missingAudioFolders"], json!([{"folder": "E:/music", "songs": 4}]));
+        // 音乐拷到这台电脑、加成音频目录；封面拷到库目录下：按路径末尾找得到
+        let copied = dir.join("copied");
+        std::fs::create_dir_all(copied.join("music")).unwrap();
+        std::fs::write(copied.join("music/001.flac"), b"x").unwrap();
+        std::fs::create_dir_all(dir.join("covers")).unwrap();
+        std::fs::write(dir.join("covers/004.jpg"), b"x").unwrap();
+        s.call("setAudioRoots", json!({"roots": [copied.display().to_string()]})).unwrap();
+        let status = s.call("mediaStatus", json!({})).unwrap();
+        assert_eq!(status["audioMissing"], 3);
+        assert_eq!(status["coversMissing"], 0);
         std::fs::remove_dir_all(dir).ok();
     }
 

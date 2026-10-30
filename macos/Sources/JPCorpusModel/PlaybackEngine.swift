@@ -49,8 +49,8 @@ public final class NativePlaybackEngine: PlaybackEngine {
     public var outputAvailable: Bool { engine.outputNode.outputFormat(forBus: 0).channelCount > 0 }
     public var isLoaded: Bool { file != nil }
     public var duration: Double { file.map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0 }
-    public var rate: Float = 1 { didSet { timePitch.rate = rate } }
-    public var pitch: Int = 0 { didSet { timePitch.pitch = Float(pitch * 100) } }
+    public var rate: Float = 1 { didSet { timePitch.rate = rate; updateBypass() } }
+    public var pitch: Int = 0 { didSet { timePitch.pitch = Float(pitch * 100); updateBypass() } }
     public var volume: Float = 1 { didSet { engine.mainMixerNode.outputVolume = volume } }
     public var spectrumEnabled = true { didSet { updateTap() } }
     public var spectrum: [Float] { isPlaying && spectrumEnabled ? analyzer.snapshot() : Array(repeating: 0, count: 48) }
@@ -243,10 +243,17 @@ public final class NativePlaybackEngine: PlaybackEngine {
         engine.connect(engine.mainMixerNode, to: engine.outputNode, format: outputFormat)
         timePitch.rate = rate
         timePitch.pitch = Float(pitch * 100)
+        updateBypass()
         engine.mainMixerNode.outputVolume = volume
         updateTap()
         seek(to: seconds)
         reconnectRequired = false
+    }
+
+    /// 原速、原调时跳过变速变调：TimePitch 在 1.0× / 0 音分时也照样逐帧做时频处理，
+    /// 白占一份 CPU，还会轻微改变音色
+    private func updateBypass() {
+        timePitch.bypass = rate == 1 && pitch == 0
     }
 
     private func updateTap() {

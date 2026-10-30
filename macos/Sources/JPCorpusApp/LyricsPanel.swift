@@ -88,7 +88,11 @@ struct LyricsPanel: View {
                     .glassCard(cornerRadius: 12)
                     .padding(10)
             }
-            if app.showFurigana, let error = app.furiganaError {
+            if app.showFurigana, app.furiganaNeedsDictionary || app.furiganaDictionaryDownloading {
+                FuriganaDictionaryNotice(style: .card)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+            } else if app.showFurigana, let error = app.furiganaError {
                 Text("振假名：\(error)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -213,7 +217,8 @@ struct LyricsPanel: View {
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
             if karaoke, let units {
                 // 只有当前行跟着播放位置走；其余行的进度是定的（唱过的满、没唱的空），不跟着时钟重算
-                TimedLyricLine(text: line.text, units: units, live: current, frozen: before ? .greatestFiniteMagnitude : -1) { unit in
+                TimedLyricLine(text: line.text, units: units, live: current, frozen: before ? .greatestFiniteMagnitude : -1,
+                               rubies: app.furigana[line.utteranceId] ?? []) { unit in
                     Task { await player.playUnit(unit, in: line) }
                 }
                 .opacity(current ? 1 : 0.55)
