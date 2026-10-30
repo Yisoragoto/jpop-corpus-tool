@@ -85,7 +85,10 @@ enum SmokeRun {
             app.search("夜", field: .lemma)
             await settle(2)
             shot("02-kwic", into: out, note: note)
-            // 切到 CQL：以前这一下整个窗口卡死。能走到下一行就说明主线程没被排版拖住
+            // 切到 CQL：以前这一下整个窗口卡死。能走到下一行就说明主线程没被排版拖住。
+            // 输入框里先留一个 KWIC 的词（用户就是这样切过去的）：它不是合法的 CQL，切过去马上出一行红字报错
+            app.search("夜")
+            await settle(1)
             UserDefaults.standard.set("cql", forKey: "search.mode")
             await settle(2)
             shot("02b-cql", into: out, note: note)
