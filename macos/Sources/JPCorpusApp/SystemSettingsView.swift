@@ -249,7 +249,7 @@ struct DiagnosticsSettingsView: View {
     }
     private func save() async {
         guard let client = app.core else { return }
-        let panel = NSSavePanel(); panel.title = "保存诊断信息"; panel.nameFieldStringValue = "jpop-corpus-diagnostics.txt"; panel.allowedContentTypes = [.plainText]
+        let panel = NSSavePanel(); panel.title = L10n.t("保存诊断信息"); panel.nameFieldStringValue = "jpop-corpus-diagnostics.txt"; panel.allowedContentTypes = [.plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         busy = true; defer { busy = false }
         do { note = "存好了：" + (try await client.diagnosticsSave(path: url.path, audioAvailable: app.player.audioAvailable)) }

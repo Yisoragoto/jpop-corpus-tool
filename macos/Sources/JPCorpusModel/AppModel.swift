@@ -94,6 +94,8 @@ public final class AppModel {
     public var libraryMode: LibraryMode = .songs { didSet { defaults.set(libraryMode.rawValue,forKey: "libraryMode") } }
     /// 全屏歌词
     public var showStage = false
+    /// 换界面语言时加一：根视图按它重建，所有文字重新过一遍 L10n
+    public var languageRevision = 0
     public var stageKaraoke = false
     public var lyricsDisplay = LyricsDisplay() {
         didSet { if let data = try? JSONEncoder().encode(lyricsDisplay) { defaults.set(data, forKey: "lyrics-display") } }

@@ -10,7 +10,18 @@ struct JPCorpusApp: App {
     @State private var app = AppModel(defaults:
         SmokeRun.isEnabled ? UserDefaults(suiteName: "JPCorpusSmoke-\(UUID().uuidString)")! : .standard)
 
+    /// 新装第一次启动：先选界面语言（和 Windows 一样）
+    @State private var askLanguage = false
+
     init() {
+        // 老用户（打开过库）默认中文，不问；新装的跟随系统，首次启动再问一次
+        if !SmokeRun.isEnabled, UserDefaults.standard.string(forKey: L10n.languageKey) == nil {
+            if UserDefaults.standard.string(forKey: "libraryFolder") != nil {
+                L10n.choose("zh")
+            } else {
+                _askLanguage = State(initialValue: true)
+            }
+        }
         // `swift run` 起来的是裸可执行文件，不是 .app：不设这一句窗口不会到前台、菜单栏也不出来
         NSApplication.shared.setActivationPolicy(.regular)
         PlaybackInputProtection.install()
@@ -22,8 +33,16 @@ struct JPCorpusApp: App {
         // 不会开出第二个窗口；播放、库都在 AppModel 里，窗口关了也不停
         Window("JPOP Corpus", id: MainWindow.id) {
             ContentView()
+                .id(app.languageRevision)
                 .environment(app)
                 .frame(minWidth: 960, minHeight: 600)
+                .sheet(isPresented: $askLanguage) {
+                    LanguageChoiceView { language in
+                        L10n.choose(language)
+                        app.languageRevision += 1
+                        askLanguage = false
+                    }
+                }
                 .task {
                     // 窗口关了再开会再走一遍：库已经开着就不再开一次（否则会换掉正在用的连接）
                     guard !MainWindow.started else { return }

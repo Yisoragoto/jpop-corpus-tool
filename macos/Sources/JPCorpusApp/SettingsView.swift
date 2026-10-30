@@ -182,6 +182,32 @@ struct SettingsView: View {
     }
 
     private var appearanceSettings: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            languageSettings
+            stageSettings
+        }
+    }
+
+    /// 界面语言。当场换：根视图重建，文字重新翻一遍；菜单栏和系统提示框重启后跟着换
+    private var languageSettings: some View {
+        SettingGroup("语言") {
+            SettingRow(icon: "globe", title: "界面语言", description: "菜单栏和系统对话框在重新启动后切换") {
+                Picker("界面语言", selection: Binding(
+                    get: { UserDefaults.standard.string(forKey: L10n.languageKey) ?? "" },
+                    set: { value in
+                        L10n.choose(value.isEmpty ? nil : value)
+                        app.languageRevision += 1
+                    }
+                )) {
+                    Text("跟随系统").tag("")
+                    Text(verbatim: "中文").tag("zh")
+                    Text(verbatim: "English").tag("en")
+                }.frame(width: 160)
+            }
+        }
+    }
+
+    private var stageSettings: some View {
         @Bindable var app = app
         @Bindable var player = app.player
         return SettingGroup("全屏与播放") {

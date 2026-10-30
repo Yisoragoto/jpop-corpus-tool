@@ -26,11 +26,15 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+  <key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string></array>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.education</string>
 </dict>
 </plist>
 PLIST
+# 英文界面：翻译表（L10n 运行时用）和 Localizable.strings（提示框标题、菜单名这类系统接口用）
+python3 "$here/scripts/gen-l10n.py" --out "$app/Contents/Resources"
 codesign --force --sign - "$app" >/dev/null 2>&1 || true
 echo "已生成：$app"

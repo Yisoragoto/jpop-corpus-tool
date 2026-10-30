@@ -123,7 +123,7 @@ struct KwicBreakdownView: View {
     private func breakdownRows(_ result: BreakdownResult) -> some View {
         let maximum = max(0.0001, max(result.per10k, result.rows.map(\.per10k).max() ?? 0))
         return VStack(alignment: .leading, spacing: 10) {
-            Text("\(result.hits) 次 · 整体每万词 \(result.per10k, specifier: "%.2f")（不去重，分母不含标点）")
+            Text("\(result.hits) 次 · 整体每万词 \(String(format: "%.2f", result.per10k))（不去重，分母不含标点）")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Text(by == .year ? "年份" : "演唱者").frame(width: 110, alignment: .leading)

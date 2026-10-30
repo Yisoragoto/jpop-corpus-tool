@@ -223,7 +223,7 @@ struct CloudView: View {
     }
     private func export() {
         guard let client = app.core, canvasSize.width > 0, canvasSize.height > 0, !model.cloudBusy else { return }
-        let panel = NSSavePanel(); panel.title = "保存词云"; panel.allowedContentTypes = [.png]; panel.nameFieldStringValue = "wordcloud.png"
+        let panel = NSSavePanel(); panel.title = L10n.t("保存词云"); panel.allowedContentTypes = [.png]; panel.nameFieldStringValue = "wordcloud.png"
         guard panel.runModal() == .OK,let url = panel.url else { return }
         let who = chosen.isEmpty ? "全部歌手" : chosen.prefix(3).map(\.name).joined(separator: "、") + (chosen.count > 3 ? " 等 \(chosen.count) 位" : "")
         let content = VStack(alignment: .leading, spacing: 0) {

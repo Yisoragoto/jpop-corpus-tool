@@ -92,6 +92,11 @@ jobs:
         working-directory: macos
         run: python3 scripts/check-regressions.py --output "$RUNNER_TEMP/macos-regression-probes"
 
+      # 界面里的中文都要有英文（和 Windows 的 rustMessages / i18n 测试一个用意）：漏了就在这里失败
+      - name: English UI strings are complete
+        working-directory: macos
+        run: python3 scripts/gen-l10n.py --check
+
       - name: App bundle
         working-directory: macos
         run: ./scripts/bundle.sh
@@ -180,6 +185,20 @@ jobs:
           grep -q '^\[step\] library-edit readback=true status=pass$' "$out/smoke.txt"
           grep -q '^\[step\] complete status=pass$' "$out/smoke.txt"
 
+      # 英文界面再跑一遍冒烟，只为截图核对（不重复卡中文那一遍的断言，走完就行）
+      - name: Smoke run in English (screenshots)
+        working-directory: macos
+        run: |
+          audio="$RUNNER_TEMP/smoke-audio"; out="$RUNNER_TEMP/smoke-en"
+          mkdir -p "$out"
+          app="$PWD/build/JPOP Corpus.app"
+          set +e
+          JPCORPUS_SMOKE="$out" JPCORPUS_SMOKE_AUDIO="$audio" JPCORPUS_SMOKE_SUDACHI="$JP_SUDACHI_SOURCE" perl -e 'alarm shift; exec @ARGV' 180             "$app/Contents/MacOS/JPCorpus" -ui.language en -AppleLanguages '(en)'
+          echo "exit=$?"
+          set -e
+          tail -5 "$out/smoke.txt" 2>/dev/null || true
+          test -f "$out/01-start.png"
+
       - name: Print smoke diagnostics (including failures)
         if: always()
         run: |
@@ -200,7 +219,9 @@ jobs:
         if: always()
         with:
           name: macOS-smoke-screenshots
-          path: ${{ runner.temp }}/smoke
+          path: |
+            ${{ runner.temp }}/smoke
+            ${{ runner.temp }}/smoke-en
           retention-days: 14
 
       - uses: actions/upload-artifact@v4
