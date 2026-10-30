@@ -1925,6 +1925,17 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
   animation: wc-panel-in .5s var(--wc-spring) backwards;
 }
 @keyframes wc-panel-in { from { opacity: 0; transform: translateX(40px); filter: blur(8px); } }
+/* 「词的去处」停靠在普通页面右栏：实色卡片，跟着主题走（分析、词典、检索都用这一份） */
+.with-word-panel { display: flex; min-height: 0; min-width: 0; }
+.with-word-panel > :first-child { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.wc-panel.docked {
+  --wc-spring: cubic-bezier(.2, .9, .25, 1.15);
+  position: relative; top: auto; right: auto; bottom: auto; flex: 0 0 min(360px, 34%); width: auto; margin: 12px 16px 12px 0;
+  background: var(--surface-pop); border: 1px solid var(--line-strong); border-radius: 10px;
+  box-shadow: var(--shadow); backdrop-filter: none;
+}
+.wc-panel.docked .wc-song-meta em { color: var(--fg); opacity: .82; }
+.wc-panel.docked .wc-pop-ghost { opacity: .05; }
 .wc-pop-head { position: relative; padding: 16px 18px 10px; display: grid; gap: 2px; overflow: hidden; }
 .wc-pop-head b { font-size: 40px; line-height: 1.15; font-weight: 400; color: var(--hl); animation: wc-pop .6s var(--wc-spring) backwards; }
 .wc-pop-head > span:not(.wc-pop-ghost) { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -3475,3 +3486,18 @@ table.data th.sortable:hover { color: var(--fg); }
 .te-edge-input { width: 92px; text-align: center; font-variant-numeric: tabular-nums; }
 .te-keys { margin: 0; font-size: 11px; color: var(--muted); }
 
+/* ── 「正在唱」：每个页面底部一行字幕（资料库除外，那里有歌词栏）── */
+.now-caption {
+  display: flex; align-items: center; gap: 18px; padding: 10px 24px; min-height: 56px;
+  border-top: 1px solid var(--line); background: var(--shell);
+}
+.now-caption-meta { display: grid; min-width: 0; flex: 0 1 180px; }
+.now-caption-meta strong { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.now-caption-meta small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.now-caption-line {
+  flex: 1 1 auto; min-width: 0; margin: 0; font-size: 19px; letter-spacing: .02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: wc-line-in .35s var(--ease-out) backwards;
+}
+.now-caption-line mark { background: none; color: var(--accent-text); font-weight: 600; }
+.now-caption-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+@media (prefers-reduced-motion: reduce) { .now-caption-line { animation: none; } }

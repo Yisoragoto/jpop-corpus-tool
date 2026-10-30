@@ -13,7 +13,7 @@
  * 数字的写法照 Python（千分位、正好一半取偶），和导出的 TXT 一致。
  */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import {
@@ -43,6 +43,8 @@ import { Stat } from "../components/Stat";
 import { describeFilter, toSubcorpus } from "../corpusQuality";
 import { pyFixed, pyGrouped, tableCsv } from "../pyFormat";
 import type { LibraryActions } from "../useLibrary";
+import { WithWordPanel, wordOf, type WordPanelLinks } from "../components/WordWhere";
+import type { CloudWord } from "../wordCloud";
 import { tr } from "../i18n";
 
 /** Python `pos_options`：统计页可选的词性 */
@@ -106,8 +108,8 @@ interface Props {
   onOverviewChanged: () => void;
   actions: LibraryActions;
   onNavigate: () => void;
-  /** 跳到检索页，按词元查这个词 */
-  onSearchWord: (lemma: string) => void;
+  /** 右边「词的去处」要接的线（App 给） */
+  wordLinks: WordPanelLinks;
   /** 跳到检索页查一个多词表达（`A+B+C`），按 field 匹配 */
   onSearchPhrase: (phrase: string, field: MatchField) => void;
   /** 跳到检索页，按词元查一个词的某种活用形 */
@@ -124,13 +126,17 @@ export function AnalyticsPage({
   onOverviewChanged,
   actions,
   onNavigate,
-  onSearchWord,
+  wordLinks,
   onSearchPhrase,
   onSearchInflected,
   onOpenCloud,
   onError,
 }: Props) {
   const [tab, setTabState] = useState<Tab>(loadTab);
+  // 点表里、概览里的任何一个词：右边打开「词的去处」（出现在哪些歌、点一首就从这个词放），
+  // 人留在分析页。要看 KWIC 再从面板里点。原来是直接跳去检索页。
+  const [picked, setPicked] = useState<CloudWord | null>(null);
+  const onSearchWord = useCallback((lemma: string) => setPicked(wordOf(lemma)), []);
   /** 打开过的页：第一次打开才挂载，之后切走也保留状态 */
   const [visited, setVisited] = useState<Set<Tab>>(() => new Set([loadTab()]));
   const setTab = (next: Tab) => {
@@ -267,6 +273,7 @@ export function AnalyticsPage({
   const show = (t: Tab) => (tab === t ? undefined : true);
 
   return (
+    <WithWordPanel word={picked} onClose={() => setPicked(null)} links={wordLinks}>
     <div className="page analytics">
       <ScopeBar filter={filter} onChange={setFilter} onError={onError} />
 
@@ -371,7 +378,7 @@ export function AnalyticsPage({
                             <span className="surfaces">{w.surfaces.slice(0, 5).join("、")}</span>
                           </td>
                           <td className="row-actions">
-                            <button className="link-btn" onClick={() => onSearchWord(w.lemma)}>{tr("检索")}</button>
+                            <button className="link-btn" onClick={() => onSearchWord(w.lemma)} title={tr("出现在哪些歌里，点一首就从这个词开始放")}>{tr("出处")}</button>
                           </td>
                         </tr>
                       );
@@ -440,6 +447,7 @@ export function AnalyticsPage({
         </div>
       )}
     </div>
+    </WithWordPanel>
   );
 }
 
@@ -559,7 +567,7 @@ function OverviewTab({
           <ol className="ov-list">
             {topContent.map((w) => (
               <li key={`${w.pos}:${w.lemma}`}>
-                <button className="ov-word" onClick={() => onSearchWord(w.lemma)} title={tr("检索「{lemma}」", { lemma: w.lemma })}>
+                <button className="ov-word" onClick={() => onSearchWord(w.lemma)} title={tr("「{lemma}」出现在哪些歌里", { lemma: w.lemma })}>
                   {w.lemma}
                 </button>
                 <span className="muted small">{POS_LABELS[w.pos] ?? w.pos}</span>
@@ -577,7 +585,7 @@ function OverviewTab({
           <ol className="ov-list">
             {inflated.map((w) => (
               <li key={`${w.pos}:${w.lemma}`}>
-                <button className="ov-word" onClick={() => onSearchWord(w.lemma)} title={tr("检索「{lemma}」", { lemma: w.lemma })}>
+                <button className="ov-word" onClick={() => onSearchWord(w.lemma)} title={tr("「{lemma}」出现在哪些歌里", { lemma: w.lemma })}>
                   {w.lemma}
                 </button>
                 <span className="muted small">{POS_LABELS[w.pos] ?? w.pos}</span>

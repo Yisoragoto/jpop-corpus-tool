@@ -52,6 +52,7 @@ import type { WordJump } from "../wordCloud";
 import { VirtualList } from "../components/VirtualList";
 import { TokenCorrectionDialog } from "../components/TokenCorrectionDialog";
 import { audition, isPlayingSpan, playFrom } from "../listen";
+import { wordStart } from "../wordTiming";
 import { kwicCsv } from "../pyFormat";
 import { KWIC_SORTS, sortKwic, type KwicSort } from "../kwicSort";
 import { KwicPlot } from "../components/KwicPlot";
@@ -382,6 +383,23 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
     [actions, onNavigate],
   );
 
+  /**
+   * 单击一条：从命中的那个词开始放（有逐字时间就从词起，没有就从行首），人留在检索页，
+   * 底部「正在唱」字幕跟着走。要看整首再双击，或点字幕上的「回到这一行」。和词云同一套规矩。
+   */
+  const playHit = useCallback(
+    async (hit: KwicHit) => {
+      try {
+        const timings = await api.wordTimings([hit.utteranceId]).catch(() => []);
+        const at = wordStart(hit, timings);
+        await playFrom(actions, hit.songId, hit.utteranceId, at?.sec ?? hit.timeSec);
+      } catch (err) {
+        onError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [actions, onError],
+  );
+
   const listen = useCallback(
     async (utteranceId: number, context: boolean) => {
       try {
@@ -685,7 +703,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                 ? api.cqlSearch({ ...lastSearch.query, dedup: false })
                 : api.kwic({ ...lastSearch.query, dedup: false })
             }
-            onOpen={(h) => void open(h.songId, h.utteranceId, h.timeSec)}
+            onOpen={(h) => void playHit(h)}
             onError={onError}
           />
         )}
@@ -722,9 +740,10 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                   className={`kwic-row with-actions ${playing ? "playing" : ""}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => void open(hit.songId, hit.utteranceId, hit.timeSec)}
+                  onClick={() => void playHit(hit)}
+                  onDoubleClick={() => void open(hit.songId, hit.utteranceId, hit.timeSec)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") void open(hit.songId, hit.utteranceId, hit.timeSec);
+                    if (e.key === "Enter") void playHit(hit);
                     if (e.key === " ") {
                       e.preventDefault();
                       void listen(hit.utteranceId, false);
@@ -734,7 +753,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                     e.preventDefault();
                     setEditing(hit.utteranceId);
                   }}
-                  title={tr("单击：跳到这首歌从这一句放 · 空格：试听这一句 · 右键：校正分词")}
+                  title={tr("单击：从这个词开始放，留在检索页 · 双击：去资料库看整首 · 空格：试听这一句 · 右键：校正分词")}
                 >
                   <span className="kwic-actions">
                     <button
