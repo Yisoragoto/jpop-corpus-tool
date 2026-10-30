@@ -520,10 +520,10 @@ pub const MAC_INSTALL_SCRIPT: &str = r#"set -u
 pid="$1"; dmg="$2"; app="$3"
 log_dir="$HOME/Library/Logs/JPOP Corpus"; mkdir -p "$log_dir"
 exec >>"$log_dir/update.log" 2>&1
-echo "== $(date) 更新 $app <- $dmg"
-i=0; while kill -0 "$pid" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 600 ] && { echo "应用 2 分钟内没有退出，放弃"; exit 1; }; sleep 0.2; done
+echo "== $(date) update $app <- $dmg"
+i=0; while kill -0 "$pid" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 600 ] && { echo "app did not quit within 2 minutes, giving up"; exit 1; }; sleep 0.2; done
 mnt=$(mktemp -d "${TMPDIR:-/tmp}/jpop-update.XXXXXX") || exit 1
-if ! hdiutil attach -nobrowse -noautoopen -readonly -mountpoint "$mnt" "$dmg"; then echo "挂载失败"; open "$app"; exit 1; fi
+if ! hdiutil attach -nobrowse -noautoopen -readonly -mountpoint "$mnt" "$dmg"; then echo "mount failed"; open "$app"; exit 1; fi
 src=""; for candidate in "$mnt"/*.app; do [ -d "$candidate" ] && { src="$candidate"; break; }; done
 staged="$app.updating"; old="$app.old"
 ok=0
@@ -536,7 +536,7 @@ fi
 hdiutil detach -quiet "$mnt" || hdiutil detach -force -quiet "$mnt"
 rmdir "$mnt" 2>/dev/null
 rm -rf "$staged"
-if [ "$ok" = 1 ]; then xattr -dr com.apple.quarantine "$app" 2>/dev/null; echo "已替换"; else echo "替换失败，保留旧版"; fi
+if [ "$ok" = 1 ]; then xattr -dr com.apple.quarantine "$app" 2>/dev/null; echo "replaced"; else echo "replace failed, kept the old app"; fi
 open "$app"
 "#;
 

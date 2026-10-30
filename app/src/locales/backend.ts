@@ -700,4 +700,10 @@ export const backendEn: Record<string, string> = {
   "CQL 查询是空的": "The CQL query is empty",
   "这个查询能匹配空串：至少要有一个必须出现的词": "This query can match an empty sequence: at least one word must be required",
   "没有给检索条件": "No search condition was given",
+  "只有 macOS 客户端能这样安装": "Only the macOS client can install this way",
+  "当前程序不是一个 .app，不能自动替换：{0}": "The running program is not a .app and cannot be replaced automatically: {0}",
+  "程序是直接从下载位置或安装盘里运行的，换不了。请先把「JPOP Corpus」拖进「应用程序」文件夹，从那里打开后再更新": "The app is running from its download location or the disk image and cannot be replaced. Drag \"JPOP Corpus\" into Applications, open it from there, then update",
+  "程序路径没有上级目录": "The program path has no parent folder",
+  "{0} 写不进去，没法替换程序；请确认当前用户有权限修改这个文件夹，或到发布页手动下载": "{0} is not writable, so the app cannot be replaced. Make sure this user can modify that folder, or download it manually from the releases page",
+  "启动替换脚本失败": "Failed to start the update script",
 };
