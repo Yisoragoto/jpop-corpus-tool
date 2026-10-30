@@ -74,24 +74,16 @@ struct SongDetailView: View {
     }
 
     private func header(_ t: Track) -> some View {
-        HStack(alignment: .bottom, spacing: 20) {
-            CoverImage(path: t.coverPath, size: 180, cornerRadius: 12)
-                .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("歌曲").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(t.title).font(.largeTitle.weight(.bold)).lineLimit(2).textSelection(.enabled)
-                Text([t.artist, t.album, t.year, t.genre].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .foregroundStyle(.secondary)
+        LibraryHero(title: t.title, kind: "歌曲",
+                    subtitle: [t.artist, t.album, String(t.year.prefix(4)), t.genre].filter { !$0.isEmpty }.joined(separator: " · "),
+                    imagePath: t.coverPath) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text([t.durationSec.map(formatTime), t.lineCount > 0 ? "\(t.lineCount) 行歌词" : "没有歌词"].compactMap { $0 }.joined(separator: " · "))
                     .font(.callout)
                     .foregroundStyle(.tertiary)
-                HStack {
-                    Button {
-                        Task { await app.play(songId: t.id) }
-                    } label: {
-                        Label("播放", systemImage: "play.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
+                ScrollView(.horizontal) {
+                  HStack(spacing: 10) {
+                    LibraryPlayButton { Task { await app.play(songId: t.id) } }
                     SongAdminButton(track: t, onChanged: { Task { await load() } })
                     LyricsToolsButton(songId: t.id, onDismiss: { Task { await load() } })
                     Button {
@@ -124,10 +116,11 @@ struct SongDetailView: View {
                             }
                         }
                     }
-                }
-                .padding(.top, 6)
+                  }
+                }.frame(height: 40).scrollIndicators(.never)
             }
         }
+        .padding(.horizontal, -24).padding(.top, -24)
     }
 
     // MARK: - 制作人员
