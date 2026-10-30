@@ -41,7 +41,7 @@ struct AnalyticsOverview: View {
             VStack(alignment: .leading, spacing: 28) {
                 kpis
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 380), spacing: 36, alignment: .top)], alignment: .leading, spacing: 30) {
-                    OverviewBlock(title: "文字构成", hint: "整个范围里各类文字占的字数") { ScriptBlock(whole: whole) }
+                    OverviewBlock(title: "文字构成", hint: "整个范围里各类文字占的字数", link: "按演唱者看 →", onLink: { go(9) }) { ScriptBlock(whole: whole) }
                     OverviewBlock(title: "曲库按年份", hint: "整个曲库，不受范围影响") { YearBars(years: years) }
                     OverviewBlock(title: "高频实词", link: "完整词表 →", onLink: { go(0) }) {
                         WordBars(items: topContent, value: { Double($0.freq) }, label: { grouped($0.freq) },
