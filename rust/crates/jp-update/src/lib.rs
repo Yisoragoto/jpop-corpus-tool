@@ -21,8 +21,8 @@
 //!
 //! 没用 `tauri-plugin-updater`：那套要自己签名、再维护一份 `latest.json`，
 //! 而这个项目的发布流程就是 `gh release create` 挂两个安装包。用现成的 Releases API
-//! 少一套要维护的东西，代价是自动更新只在 Windows 的 NSIS 安装包上成立——
-//! 现在也只发这一个平台。
+//! 少一套要维护的东西。Windows 拉起 NSIS 安装包；macOS 下好 .dmg 之后，等应用退出，
+//! 挂载、把新的 .app 换进原来的位置、再打开（[`launch_mac_installer`]）。
 
 use std::path::{Path, PathBuf};
 
@@ -120,15 +120,30 @@ pub fn is_newer(current: &str, candidate: &str) -> bool {
     }
 }
 
-/// 挑能装的那个资产：Windows 上是 NSIS 的 `-setup.exe`。
+/// 挑能装的那个资产：Windows 上是 NSIS 的 `-setup.exe`，macOS 上是 `_macOS_arm64.dmg`。
 ///
 /// 不挑 msi：msi 升级要求 UpgradeCode 一致，而且静默升级的行为和 NSIS 不一样；
 /// 发布说明里也一直把 setup.exe 写成推荐。
 pub fn pick_installer(assets: &[AssetView]) -> Option<AssetView> {
+    pick_installer_for(assets, Platform::CURRENT)
+}
+
+/// 同 [`pick_installer`]，平台显式给出
+pub fn pick_installer_for(assets: &[AssetView], platform: Platform) -> Option<AssetView> {
     assets
         .iter()
-        .find(|a| a.name.to_ascii_lowercase().ends_with("-setup.exe"))
+        .find(|a| match platform {
+            Platform::Windows => a.name.to_ascii_lowercase().ends_with("-setup.exe"),
+            Platform::MacOS => stable_mac_asset_version(&a.name).is_some(),
+        })
         .cloned()
+}
+
+/// 正式版 macOS 安装包 `JPOP.Corpus.Tool_<版本>_macOS_arm64.dmg` 里的版本号
+fn stable_mac_asset_version(name: &str) -> Option<&str> {
+    let version = name.strip_prefix("JPOP.Corpus.Tool_")?.strip_suffix("_macOS_arm64.dmg")?;
+    semver::Version::parse(version).ok()?;
+    Some(version)
 }
 
 /// 这个地址是不是自己仓库的发布下载。
@@ -142,7 +157,7 @@ pub fn is_official_download_url(url: &str) -> bool {
 /// 安装包的文件名能不能用。
 ///
 /// 它会拼进缓存目录（`dir.join(name)`），所以带路径分隔符、`..`、盘符的一律不要——
-/// 否则能写到缓存目录外面去。debug 是改名后的同一份 NSIS，额外只认固定产品名和合法版本。
+/// 否则能写到缓存目录外面去。debug 和 macOS 的包额外只认固定产品名和合法版本。
 pub fn check_asset_name(name: &str) -> Result<()> {
     let allowed = name
         .chars()
@@ -150,7 +165,10 @@ pub fn check_asset_name(name: &str) -> Result<()> {
     let stem_ok = name
         .to_ascii_lowercase()
         .strip_suffix("-setup.exe")
-        .is_some_and(|stem| !stem.is_empty()) || debug_asset_version(name).is_some();
+        .is_some_and(|stem| !stem.is_empty())
+        || debug_asset_version(name).is_some()
+        || channels::debug_asset_version_for(name, Platform::MacOS).is_some()
+        || stable_mac_asset_version(name).is_some();
     if !allowed || !stem_ok || name.contains("..") {
         bail!("安装包文件名不合规，已拒绝：{name:?}（只允许字母数字和 . _ -，仅接受正式或 debug 安装包）");
     }
@@ -291,7 +309,8 @@ fn debug_asset_version(name: &str) -> Option<&str> {
 }
 
 fn check_download_size(path: &Path, asset: &AssetView) -> Result<()> {
-    if debug_asset_version(&asset.name).is_some() && std::fs::metadata(path)?.len() != asset.size {
+    let debug = debug_asset_version(&asset.name).is_some() || channels::debug_asset_version_for(&asset.name, Platform::MacOS).is_some();
+    if debug && std::fs::metadata(path)?.len() != asset.size {
         let _ = std::fs::remove_file(path);
         bail!("debug 安装包大小与 latest.json 不一致，已丢弃，请重新检查更新");
     }
@@ -490,10 +509,114 @@ pub fn launch_installer(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// macOS：等应用（`pid`）退出，挂载 dmg，把里面的 .app 换到 `$3` 原来的位置，再打开。
+///
+/// * 先完整拷到旁边的 `.updating`，再两次 `mv` 换位：拷到一半失败时旧版原封不动；
+///   第二次 `mv` 失败就把旧版挪回来。
+/// * 下载是程序自己用 HTTPS 拿的，没有隔离属性；仍然顺手清一遍，免得旧的属性跟着被拷进来。
+/// * 路径都走位置参数（`$1` `$2` `$3`），不拼进脚本文本：路径里有空格、引号也不会被当成命令。
+/// * 过程写到 `~/Library/Logs/JPOP Corpus/update.log`，装失败时能看出卡在哪一步。
+pub const MAC_INSTALL_SCRIPT: &str = r#"set -u
+pid="$1"; dmg="$2"; app="$3"
+log_dir="$HOME/Library/Logs/JPOP Corpus"; mkdir -p "$log_dir"
+exec >>"$log_dir/update.log" 2>&1
+echo "== $(date) 更新 $app <- $dmg"
+i=0; while kill -0 "$pid" 2>/dev/null; do i=$((i+1)); [ "$i" -gt 600 ] && { echo "应用 2 分钟内没有退出，放弃"; exit 1; }; sleep 0.2; done
+mnt=$(mktemp -d "${TMPDIR:-/tmp}/jpop-update.XXXXXX") || exit 1
+if ! hdiutil attach -nobrowse -noautoopen -readonly -mountpoint "$mnt" "$dmg"; then echo "挂载失败"; open "$app"; exit 1; fi
+src=""; for candidate in "$mnt"/*.app; do [ -d "$candidate" ] && { src="$candidate"; break; }; done
+staged="$app.updating"; old="$app.old"
+ok=0
+if [ -n "$src" ] && rm -rf "$staged" && ditto "$src" "$staged"; then
+  rm -rf "$old"
+  if mv "$app" "$old"; then
+    if mv "$staged" "$app"; then ok=1; rm -rf "$old"; else mv "$old" "$app"; fi
+  fi
+fi
+hdiutil detach -quiet "$mnt" || hdiutil detach -force -quiet "$mnt"
+rmdir "$mnt" 2>/dev/null
+rm -rf "$staged"
+if [ "$ok" = 1 ]; then xattr -dr com.apple.quarantine "$app" 2>/dev/null; echo "已替换"; else echo "替换失败，保留旧版"; fi
+open "$app"
+"#;
+
+/// 拉起 macOS 的替换脚本（见 [`MAC_INSTALL_SCRIPT`]）。调用方随后退出应用。
+///
+/// 退出之前先确认 .app 所在的目录写得进去：不然应用退了、脚本才发现换不了，
+/// 用户只会看到程序「自己关掉又打开」。从 dmg 里直接运行、被系统随机挪到只读位置
+/// （App Translocation）的都在这里拦住。
+pub fn launch_mac_installer(dmg: &Path, app: &Path, pid: u32) -> Result<()> {
+    anyhow::ensure!(cfg!(target_os = "macos"), "只有 macOS 客户端能这样安装");
+    anyhow::ensure!(dmg.is_file(), "找不到安装包：{}", dmg.display());
+    anyhow::ensure!(
+        app.extension().is_some_and(|e| e == "app") && app.is_dir(),
+        "当前程序不是一个 .app，不能自动替换：{}",
+        app.display()
+    );
+    let app_text = app.to_string_lossy();
+    anyhow::ensure!(
+        !app_text.contains("/AppTranslocation/") && !app_text.starts_with("/Volumes/"),
+        "程序是直接从下载位置或安装盘里运行的，换不了。请先把「JPOP Corpus」拖进「应用程序」文件夹，从那里打开后再更新"
+    );
+    let parent = app.parent().context("程序路径没有上级目录")?;
+    let probe = parent.join(format!(".jpop-update-probe-{pid}"));
+    std::fs::write(&probe, b"").with_context(|| {
+        format!("{} 写不进去，没法替换程序；请确认当前用户有权限修改这个文件夹，或到发布页手动下载", parent.display())
+    })?;
+    let _ = std::fs::remove_file(&probe);
+    if INSTALL_LAUNCHED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Ok(());
+    }
+    let spawned = std::process::Command::new("/bin/sh")
+        .args(["-c", MAC_INSTALL_SCRIPT, "jpop-update"])
+        .arg(pid.to_string())
+        .arg(dmg)
+        .arg(app)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    if let Err(err) = spawned {
+        INSTALL_LAUNCHED.store(false, std::sync::atomic::Ordering::SeqCst);
+        return Err(err).context("启动替换脚本失败");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+
+    #[test]
+    fn the_mac_dmg_is_picked_and_its_name_is_accepted() {
+        let asset = |name: &str| AssetView { name: name.into(), size: 1, url: format!("{DOWNLOAD_PREFIX}v0.3.4/{name}"), sha256: None };
+        let exe = asset("JPOP.Corpus.Tool_0.3.4_x64-setup.exe");
+        let dmg = asset("JPOP.Corpus.Tool_0.3.4_macOS_arm64.dmg");
+        let both = [exe.clone(), dmg.clone()];
+        assert_eq!(pick_installer_for(&both, Platform::Windows), Some(exe));
+        assert_eq!(pick_installer_for(&both, Platform::MacOS), Some(dmg));
+        assert_eq!(pick_installer_for(&[asset("JPOP.Corpus.Tool_x_macOS_arm64.dmg")], Platform::MacOS), None);
+        check_asset_name("JPOP.Corpus.Tool_0.3.4_macOS_arm64.dmg").unwrap();
+        check_asset_name("JPOP.Corpus.Tool_0.3.4-debug_macOS_arm64.dmg").unwrap();
+        assert!(check_asset_name("other.dmg").is_err());
+        assert!(check_asset_name("../JPOP.Corpus.Tool_0.3.4_macOS_arm64.dmg").is_err());
+    }
+
+    /// 脚本只靠位置参数拿路径，文本里不该出现任何具体路径；替换失败要把旧版挪回来
+    #[test]
+    fn the_mac_script_takes_paths_as_arguments_and_restores_on_failure() {
+        assert!(MAC_INSTALL_SCRIPT.contains(r#"pid="$1"; dmg="$2"; app="$3""#));
+        assert!(MAC_INSTALL_SCRIPT.contains(r#"mv "$old" "$app""#));
+        assert!(MAC_INSTALL_SCRIPT.contains("ditto"));
+        assert!(!MAC_INSTALL_SCRIPT.contains("/Applications"));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_mac_installer_refuses_to_run_elsewhere() {
+        assert!(launch_mac_installer(Path::new("x.dmg"), Path::new("x.app"), 1).is_err());
+    }
 
     fn fixture() -> Vec<u8> {
         std::fs::read(
@@ -538,9 +661,10 @@ mod tests {
             url: format!("{DOWNLOAD_PREFIX}v0.2.2/x.exe"),
             sha256: None,
         };
-        assert_eq!(pick_installer(&[msi.clone(), exe.clone()]), Some(exe));
-        assert_eq!(pick_installer(&[msi]), None);
-        assert_eq!(pick_installer(&[]), None);
+        let windows = |assets: &[AssetView]| pick_installer_for(assets, Platform::Windows);
+        assert_eq!(windows(&[msi.clone(), exe.clone()]), Some(exe));
+        assert_eq!(windows(&[msi]), None);
+        assert_eq!(windows(&[]), None);
     }
 
     /// 要跑的是一个 exe，地址只认自己仓库那一个前缀。
@@ -566,6 +690,11 @@ mod tests {
         assert!(releases[0].published_at.starts_with("2026-"));
         assert!(!releases[0].prerelease);
 
+        // 这份记录里只有 Windows 安装包：macOS 上编译时没有能装的
+        if Platform::CURRENT == Platform::MacOS {
+            assert!(releases[0].installer.is_none());
+            return;
+        }
         let installer = releases[0].installer.as_ref().expect("该有 setup.exe");
         assert!(installer.name.ends_with("-setup.exe"));
         assert!(installer.size > 1_000_000);

@@ -39,6 +39,34 @@ final class AppModelTests: XCTestCase {
     }
 
     @MainActor
+    func testPickingCorpusDbOpensItsFolder() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("model-pick-db-\(UUID())")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let db = folder.appendingPathComponent("corpus.db")
+        try Data().write(to: db)
+        XCTAssertEqual(try AppModel.libraryFolder(forPicked: db).standardizedFileURL, folder.standardizedFileURL)
+        XCTAssertEqual(try AppModel.libraryFolder(forPicked: folder), folder)
+        let other = folder.appendingPathComponent("backup.db")
+        try Data().write(to: other)
+        XCTAssertThrowsError(try AppModel.libraryFolder(forPicked: other))
+
+        let suite = "AppModelTests-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let recorder = OpenRecorder()
+        let model = AppModel(defaults: defaults, openClient: { await recorder.open($0) })
+        await model.selectLibrary(picked: other)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNil(model.client)
+        await model.selectLibrary(picked: db)
+        XCTAssertNil(model.pendingCreationURL)
+        XCTAssertNotNil(model.client)
+        let opened = await recorder.urls
+        XCTAssertEqual(opened.map(\.lastPathComponent), ["corpus.db"])
+    }
+
+    @MainActor
     func testExistingDatabaseOpensWithoutCreationPromptAndKeepsAudioRootsKey() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("model-existing-\(UUID())")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

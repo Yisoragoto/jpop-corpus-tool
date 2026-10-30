@@ -491,6 +491,11 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
 /// 它们不拿语料库的锁，所以导入跑着（或者 207MB 的词典正在复制）的时候，界面照样能问进度、能检索。
 /// 不是这一组的方法返回 `Ok(None)`，交给 [`dispatch`] 里拿着锁的那一组。
 fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Option<Value>> {
+    // 语法检查不碰库，导入占用连接时也能即时提示。
+    if method == "cqlCheck" {
+        jp_corpus::cql::check(&arg::<String>(args, "query")?)?;
+        return Ok(Some(Value::Null));
+    }
     if let Some(value) = system::dispatch(session, method, args)? { return Ok(Some(value)); }
     if let Some(value) = anki::dispatch(session, method, args)? {
         return Ok(Some(value));
@@ -600,12 +605,13 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
             json!(total)
         }
         "scrapeArtistsStart" => {
+            let dir = session.artists_dir();
             let names = {
                 let corpus = session.corpus.lock().map_err(|_| anyhow!("语料库连接已损坏"))?;
-                jp_scrape::library_artists(corpus.connection(), arg_or(args, "onlyMissing", true)?)?
+                jp_scrape::library_artists_with_files(corpus.connection(), arg_or(args, "onlyMissing", true)?, Some(&dir))?
             };
             let total = names.len();
-            let (db, dir) = (session.db_path.clone(), session.artists_dir());
+            let db = session.db_path.clone();
             start_scrape(session, move |cancelled, progress| {
                 jp_scrape::run_artist_batch(&db, &dir, &names, cancelled, progress)
             })?;
@@ -1019,6 +1025,35 @@ pub unsafe extern "C" fn jp_write_fixture(dir: *const c_char) -> *mut c_char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cql_check_uses_shared_parser_without_locking_corpus() {
+        let (s, dir) = session();
+        let valid = [
+            r#"[lemma="君"] [pos="ADP"]"#,
+            r#"[pos="VERB" & cform="命令形.*"]"#,
+            r#"[lemma="て"] []{0,2} [lemma="しまう"]"#,
+            r#"[reading="きみ"]"#,
+            r#"[norm="会う"] [lemma="たい"]"#,
+            r#"[pos="ADJ"] [pos="NOUN"]"#,
+            r#""夢" []? [pos="NOUN"]"#,
+        ];
+        {
+            let _held = s.corpus.lock().unwrap();
+            for query in valid {
+                assert_eq!(s.call("cqlCheck", json!({"query": query})).unwrap(), Value::Null);
+            }
+            for query in [r#"[lemma="君""#, r#"[unknown="君"]"#, r#"[lemma="("]"#] {
+                let expected = jp_corpus::cql::check(query).unwrap_err().to_string();
+                let error = s.call("cqlCheck", json!({"query": query})).unwrap_err();
+                assert_eq!(error.to_string(), expected);
+            }
+            assert!(s.call("cqlCheck", json!({})).is_err());
+            assert!(s.call("cqlCheck", json!({"query": 42})).is_err());
+        }
+        drop(s);
+        std::fs::remove_dir_all(dir).ok();
+    }
 
     #[test]
     fn visualization_methods_match_shared_queries() {

@@ -9,6 +9,10 @@ struct LookupRequest: Equatable {
     var utteranceId: Int64?
     var tokenIndex: Int?
     var scope: Subcorpus? = nil
+    /// 点的那个词的原形。`text` 是从这个词往后的一串（词典要按最长匹配查），
+    /// 语料统计和例句要按原形查，不然拿一整串去查什么都找不到
+    var lemma: String? = nil
+    var corpusLemma: String { lemma ?? text }
 }
 
 /// 制卡设置。存在这台机器的偏好里（和 Windows 版一样是每台机器各自的），默认值也和 Windows 版一致：
@@ -38,6 +42,9 @@ struct LookupPane: View {
     @State private var existing: [String: [Int64]] = [:]
     @State private var mining: String?
     @State private var outcome: [String: String] = [:]
+    /// 这个词在语料里的概况（出现几次、几首、几位歌手、词性）
+    @State private var word: WordInCorpus?
+    @AppStorage("lookup.tab") private var tab = "dict"
 
     @AppStorage(MineDefaults.deck) private var deck = "JPOP"
     @AppStorage(MineDefaults.model) private var model = lyricsNoteType
@@ -46,19 +53,75 @@ struct LookupPane: View {
     @AppStorage(MineDefaults.mainDictionary) private var mainDictionary = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("查词").font(.headline)
-                if let result, result.originalTextLength > 0 {
-                    Text(String(request.text.prefix(result.originalTextLength))).foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(word?.lemma ?? request.corpusLemma).font(.system(size: 26, weight: .bold)).lineLimit(1)
                 Spacer()
-                Button(action: close) { Image(systemName: "xmark.circle.fill") }
+                Button(action: close) { Image(systemName: "xmark.circle.fill").font(.title3) }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
+                    .help("收起查词")
             }
+            corpusSummary
+            Picker("", selection: $tab) {
+                Text("词典").tag("dict")
+                Text("例句").tag("examples")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
             ScrollView {
+                if tab == "examples" {
+                    WordExamplesView(lemma: request.corpusLemma, localScope: request.scope)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    dictionary
+                }
+            }
+        }
+        .padding(14)
+        .task(id: request) { await load() }
+        .task(id: "\(request.corpusLemma)|\(String(describing: request.scope))|\(String(describing: app.scopes.active))|\(app.library.version)") { await loadWord() }
+    }
+
+    /// 和 Windows 的查词栏一样：词的原形下面先给出现次数、歌曲、歌手，年份和主要词性
+    @ViewBuilder private var corpusSummary: some View {
+        if let word {
+            HStack(spacing: 22) {
+                summaryNumber(word.occurrences, "出现")
+                summaryNumber(word.songCount, "歌曲")
+                summaryNumber(word.artistCount, "歌手")
+                Spacer(minLength: 0)
+            }
+            let years = [word.firstYear, word.lastYear].compactMap { $0 }.filter { !$0.isEmpty }
+            if !years.isEmpty || !word.posDistribution.isEmpty {
+                HStack(spacing: 6) {
+                    if !years.isEmpty {
+                        Text(years.count == 2 && years[0] != years[1] ? "\(years[0]) — \(years[1])" : years[0])
+                            .font(.caption).foregroundStyle(.secondary).padding(.trailing, 4)
+                    }
+                    ForEach(Array(word.posDistribution.prefix(4).enumerated()), id: \.offset) { _, p in
+                        Text("\(posLabels[p.pos] ?? p.pos) \(p.count)")
+                            .font(.caption)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Capsule().fill(.quaternary))
+                    }
+                }
+            }
+        }
+    }
+
+    private func summaryNumber(_ value: Int64, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(grouped(value)).font(.title3.weight(.semibold)).monospacedDigit()
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var dictionary: some View {
                 VStack(alignment: .leading, spacing: 10) {
+                    if let result, result.originalTextLength > 0, String(request.text.prefix(result.originalTextLength)) != request.corpusLemma {
+                        Text("按「\(String(request.text.prefix(result.originalTextLength)))」查到").font(.caption).foregroundStyle(.secondary)
+                    }
                     if noDictionaries {
                         Text("这个语料库还没有词典。到「词典」页导入 Yomitan 格式的词典包（zip），或者把 Windows 版的 dictionaries.db 拷过来。")
                             .font(.callout)
@@ -76,13 +139,19 @@ struct LookupPane: View {
                     } else {
                         ProgressView().controlSize(.small)
                     }
-                    WordExamplesView(lemma: request.text,localScope: request.scope)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }
+    }
+
+    private func loadWord() async {
+        guard let client = app.core else { return }
+        let scope = SubcorpusScope.mergeSubcorpus(request.scope ?? Subcorpus(), app.scopes.active)
+        do {
+            let fresh = try await client.wordInCorpus(request.corpusLemma, currentSongId: request.songId, scope: scope, limit: 1)
+            if !Task.isCancelled { word = fresh.occurrences > 0 ? fresh : nil }
+        } catch {
+            if !Task.isCancelled { word = nil }
         }
-        .padding(12)
-        .task(id: request) { await load() }
     }
 
     private func entryView(_ entry: LookupEntry) -> some View {

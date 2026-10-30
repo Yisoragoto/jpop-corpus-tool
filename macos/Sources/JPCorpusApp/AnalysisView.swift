@@ -11,12 +11,16 @@ struct AnalysisView: View {
     @State private var filter = StatsFilter()
     private var scope: Subcorpus { SubcorpusScope.subcorpus(filter) }
     private var scopeName: String { SubcorpusScope.describeFilter(filter) }
-    /// 分页（tag 沿用以前存下的值）。顺序和 Windows 版一样：概览在最前，存档在最后
+    /// 主分页跟 Windows 同序；旧 tag 保留，避免改掉已存的选择。
     private static let tabs: [(tag: Int, title: String)] = [
-        (5, "概览"), (0, "词表"), (1, "对比"), (4, "副歌效应"), (6, "报告"), (3, "质量"), (2, "存档"),
+        (5, "概览"), (0, "词表"), (7, "词簇"), (8, "活用·写法"), (9, "丰富度"),
+        (1, "对比"), (6, "报告"), (2, "记录"), (4, "副歌效应"), (3, "质量"),
     ]
     /// 跟着上面范围走的分页
-    private var scoped: Bool { [5, 0, 1, 4, 6].contains(tab) }
+    private var scoped: Bool { [5, 0, 7, 8, 9, 1, 4, 6].contains(tab) }
+    private var analysisScope: AnalysisScope {
+        AnalysisScope(subcorpus: scope, unit: filter.distinctLines ? .distinctLines : .tokens, jpOnly: filter.jpOnly)
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
@@ -38,6 +42,9 @@ struct AnalysisView: View {
                 case 4: RepeatEffectPane(scope: scope,jpOnly: filter.jpOnly)
                 case 5: AnalyticsOverview(filter: filter) { tab = $0 }
                 case 6: StatsReportPane(filter: filter)
+                case 7: NgramPane(scope: analysisScope)
+                case 8: MorphologyPane(scope: analysisScope)
+                case 9: RichnessPane(scope: analysisScope)
                 default: QualityPane()
                 }
             }
@@ -59,27 +66,30 @@ private struct AnalysisTabBar: View {
     @Binding var selection: Int
     @Namespace private var underline
     var body: some View {
-        HStack(spacing: 22) {
-            ForEach(tabs.indices, id: \.self) { index in
-                let item = tabs[index]
-                let on = item.tag == selection
-                Button { withAnimation(.snappy(duration: 0.22)) { selection = item.tag } } label: {
-                    VStack(spacing: 6) {
-                        Text(item.title)
-                            .font(.system(size: 13, weight: on ? .semibold : .regular))
-                            .foregroundStyle(on ? .primary : .secondary)
-                        ZStack {
-                            Capsule().fill(.clear).frame(height: 3)
-                            if on { Capsule().fill(Color.accentColor).frame(width: 18, height: 3).matchedGeometryEffect(id: "tab", in: underline) }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 22) {
+                ForEach(tabs.indices, id: \.self) { index in
+                    let item = tabs[index]
+                    let on = item.tag == selection
+                    Button { withAnimation(.snappy(duration: 0.22)) { selection = item.tag } } label: {
+                        VStack(spacing: 6) {
+                            Text(item.title).fixedSize()
+                                .font(.system(size: 13, weight: on ? .semibold : .regular))
+                                .foregroundStyle(on ? .primary : .secondary)
+                            ZStack {
+                                Capsule().fill(.clear).frame(height: 3)
+                                if on { Capsule().fill(Color.accentColor).frame(width: 18, height: 3).matchedGeometryEffect(id: "tab", in: underline) }
+                            }
                         }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(on ? .isSelected : [])
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
+        .frame(height: 30)
     }
 }
 
@@ -143,6 +153,14 @@ private struct FrequencyPane: View {
                 }
                 .width(80)
                 TableColumn("曲数") { Text("\($0.songs)").monospacedDigit() }.width(48)
+                TableColumn("DP") { item in
+                    Text(item.dispersion.map { String(format: "%.2f", $0.dp) } ?? "—")
+                        .monospacedDigit().help("Gries 的 DP：0 = 按歌的大小均匀分布，1 = 全集中在一首里")
+                }.width(50)
+                TableColumn("ARF") { item in
+                    Text(item.dispersion.map { String(format: "%.1f", $0.arf) } ?? "—")
+                        .monospacedDigit().help("平均缩减频次：扎堆出现的次数折算掉之后相当于均匀出现几次")
+                }.width(60)
                 TableColumn("写法") { Text($0.surfaces.joined(separator: "、")).foregroundStyle(.secondary).lineLimit(1) }
             }
             .clearScrollBackground()

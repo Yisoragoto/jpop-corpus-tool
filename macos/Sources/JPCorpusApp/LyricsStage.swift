@@ -42,6 +42,17 @@ struct LyricsStage: View {
             let hasBar = !wide || lookup != nil
             let middle = max(geo.size.height - Self.topHeight - (hasBar ? Self.barHeight : 0), 160)
             let lookupWidth = min(max(260, sideWidth), max(260, min(720, Double(geo.size.width) - (wide ? 128 : 56) - 420 - (wide ? 104 : 48))))
+            if karaoke {
+                // 卡拉 OK 和 Windows 一样是另一种版面：封面铺底、两行大字压在底部，左上角是歌名
+                VStack(spacing: 0) {
+                    topBar(narrow: false)
+                        .frame(height: Self.topHeight)
+                    karaokeLyrics(width: geo.size.width)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    PlayerBar().padding(.horizontal, 24).frame(height: Self.barHeight)
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+            } else {
             VStack(spacing: 0) {
                 topBar(narrow: !wide)
                     .frame(height: Self.topHeight)
@@ -52,7 +63,7 @@ struct LyricsStage: View {
                                 .padding(.vertical, 24)
                         }.scrollIndicators(.never).frame(width: min(geo.size.width * 0.28, middle * 0.48, 380))
                     }
-                    if karaoke { karaokeLyrics } else { lyrics }
+                    lyrics
                     if let lookup {
                         lookupDivider(width: lookupWidth, height: middle)
                         LookupPane(request: lookup) { self.lookup = nil }
@@ -70,8 +81,11 @@ struct LyricsStage: View {
             .onAppear {
                 if SmokeRun.isEnabled { SmokeRun.trace("全屏歌词 \(Int(geo.size.width))×\(Int(geo.size.height))") }
             }
+            }
         }
-        .background { backdrop.ignoresSafeArea() }
+        .background {
+            if karaoke { karaokeBackdrop.ignoresSafeArea() } else { backdrop.ignoresSafeArea() }
+        }
         .environment(\.colorScheme, .dark)
         .onAppear { karaoke = app.stageKaraoke }
         .onChange(of: karaoke) { _, value in app.stageKaraoke = value; lookup = nil }
@@ -136,6 +150,14 @@ struct LyricsStage: View {
 
     private func topBar(narrow: Bool) -> some View {
         HStack(spacing: 14) {
+            if karaoke, let track = app.player.track {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                    Text(track.artist).font(.caption).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                }
+                .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
+            }
             Spacer()
             if let track = app.player.track, narrow {
                 Text(track.title).font(.headline).lineLimit(1)
@@ -283,8 +305,10 @@ struct LyricsStage: View {
     }
 
     private func lookUp(_ line: LyricLine, token index: Int) {
+        let token = line.tokens[index]
         lookup = LookupRequest(text: LyricSegments.lookupText(line.tokens, from: index), songId: app.player.track?.id,
-                               utteranceId: line.utteranceId, tokenIndex: index)
+                               utteranceId: line.utteranceId, tokenIndex: index,
+                               lemma: token.lemma.isEmpty ? token.surface : token.lemma)
     }
 
     private func stageLine(_ line: LyricLine, index: Int, active: Int?) -> some View {
@@ -341,48 +365,108 @@ struct LyricsStage: View {
             }
     }
 
-    private var karaokeLyrics: some View {
-        // 30 帧足够让扫亮看着连贯；每行的起止是换歌词时算好的（player.ktvLines），每帧只做一次查找
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !app.player.isPlaying)) { _ in
+    /// 卡拉 OK 的底（Windows 的 .ktv-bg）：封面放大虚化、压暗铺满，下半截再渐暗一层；清楚的封面在 karaokeLyrics 里
+    private var karaokeBackdrop: some View {
+        ZStack {
+            Color(red: 8 / 255, green: 8 / 255, blue: 11 / 255)
+            if let blurredCover {
+                Image(nsImage: blurredCover).resizable().scaledToFill()
+                    .overlay(Color.black.opacity(0.45))
+            } else {
+                colors.backdrop.opacity(0.7)
+            }
+            LinearGradient(stops: [
+                .init(color: .clear, location: 0.45),
+                .init(color: Color(red: 8 / 255, green: 8 / 255, blue: 11 / 255).opacity(0.55), location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+        }
+        .clipped()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// 两行 KTV（上行靠左、下行靠右，唱完一行换下下行），入句前倒数，前奏显示歌名和词曲。
+    /// 30 帧足够让扫亮看着连贯；每行的起止是换歌词时算好的（player.ktvLines），每帧只做一次查找
+    private func karaokeLyrics(width: CGFloat) -> some View {
+        let size = min(60, max(28, width * 0.042))
+        return TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !app.player.isPlaying)) { _ in
             let player = app.player
             let sec = player.timingPosition
             let times = player.ktvLines
             let layout = Karaoke.ktvLayout(times, sec)
-            VStack(spacing: 28) {
-                Spacer()
-                if layout.intro, let track = player.track {
-                    Text(track.title).font(.system(size: 44, weight: .bold))
-                    Text(track.artist).font(.title2)
-                    ForEach(["lyricist", "composer", "arranger"], id: \.self) { role in
-                        let names = credits.filter { $0.role == role }.map(\.name)
-                        if !names.isEmpty { Text("\(roleLabels[role] ?? role)：\(names.joined(separator: " / "))").font(.callout) }
+            GeometryReader { geo in
+                ZStack {
+                    if let cover {
+                        // 清楚的封面摆在中间偏上；前奏时退到后面，歌名才读得清
+                        Image(nsImage: cover).resizable().aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: geo.size.width * 0.62, maxHeight: geo.size.height * 0.5)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .shadow(color: .black.opacity(0.85), radius: 40, y: 24)
+                            .opacity(layout.intro ? 0.18 : 1)
+                            .animation(.easeInOut(duration: 0.3), value: layout.intro)
+                            .position(x: geo.size.width / 2, y: geo.size.height * 0.36)
                     }
-                } else {
-                    ForEach(0..<2, id: \.self) { slot in
-                        HStack {
-                            if slot == 1 { Spacer(minLength: 0) }
-                            if let index = layout.slots[slot] {
-                                if layout.active == index && layout.countdown > 0 {
-                                    Text(String(repeating: "●", count: layout.countdown)).font(.title2)
-                                        .accessibilityLabel("倒数 \(layout.countdown)")
-                                }
-                                ktvLine(player.lines[index], sec: sec)
-                            }
-                            if slot == 0 { Spacer(minLength: 0) }
-                        }.frame(minHeight: 90)
+                    if layout.intro, let track = player.track {
+                        karaokeIntro(track)
                     }
+                    if times.allSatisfy({ $0.start == nil }) {
+                        VStack(spacing: 12) {
+                            Text(player.lines.isEmpty ? "这首歌还没有歌词" : "这首歌的歌词没有时间轴，卡拉 OK 跟不上")
+                            if let track = player.track, !player.lines.isEmpty { LyricsToolsButton(songId: track.id, timing: true) }
+                        }
+                        .font(.title3).foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Spacer(minLength: 0)
+                        ForEach(0..<2, id: \.self) { slot in
+                            karaokeRow(slot: slot, layout: layout, sec: sec, size: size)
+                        }
+                    }
+                    .padding(.horizontal, geo.size.width * 0.06)
+                    .padding(.bottom, 20)
                 }
-                if times.allSatisfy({ $0.start == nil }) {
-                    Text(player.lines.isEmpty ? "这首歌还没有歌词" : "这首歌的歌词没有时间轴，卡拉 OK 跟不上")
-                    if let track = player.track { LyricsToolsButton(songId: track.id, timing: true) }
-                }
-                Spacer()
+                .frame(width: geo.size.width, height: geo.size.height)
             }
-        }.frame(maxWidth: .infinity)
+        }
     }
 
-    private func ktvLine(_ line: LyricLine, sec: Double) -> some View {
-        KaraokeLyricText(line: line, units: app.player.timingUnits(for: line), sec: sec)
+    private func karaokeRow(slot: Int, layout: KtvLayout, sec: Double, size: CGFloat) -> some View {
+        HStack(alignment: .lastTextBaseline, spacing: size * 0.3) {
+            if slot == 1 { Spacer(minLength: 0) }
+            if let index = layout.slots[slot], app.player.lines.indices.contains(index) {
+                if layout.active == index && layout.countdown > 0 {
+                    Text(String(repeating: "●", count: layout.countdown))
+                        .font(.system(size: size * 0.5))
+                        .foregroundStyle(KaraokeLyricText.sung)
+                        .accessibilityLabel("倒数 \(layout.countdown)")
+                }
+                let line = app.player.lines[index]
+                KaraokeLyricText(line: line, units: app.player.timingUnits(for: line), sec: sec, size: size)
+                    .opacity(index == layout.active ? 1 : 0.82)
+                    .id(line.utteranceId)
+            }
+            if slot == 0 { Spacer(minLength: 0) }
+        }
+        .frame(minHeight: size * 1.5 * (app.showFurigana ? 1.4 : 1), alignment: .bottom)
+        .clipped()
+    }
+
+    private func karaokeIntro(_ track: Track) -> some View {
+        VStack(spacing: 8) {
+            Text(track.title).font(.system(size: 52, weight: .bold)).multilineTextAlignment(.center)
+            Text(track.artist).font(.system(size: 22)).padding(.bottom, 10)
+            ForEach(["lyricist", "composer", "arranger"], id: \.self) { role in
+                let names = credits.filter { $0.role == role }.map(\.name)
+                if !names.isEmpty {
+                    (Text(roleLabels[role] ?? role).foregroundColor(.white.opacity(0.7)) + Text("  " + names.joined(separator: " / ")))
+                        .font(.system(size: 15))
+                }
+            }
+        }
+        .foregroundStyle(.white)
+        .shadow(color: .black.opacity(0.85), radius: 6, y: 2)
+        .transition(.opacity)
     }
 
     private func close() { app.showStage = false }

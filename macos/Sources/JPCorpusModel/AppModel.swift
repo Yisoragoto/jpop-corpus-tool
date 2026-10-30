@@ -222,6 +222,26 @@ public final class AppModel {
     }
 
     /// Selecting a non-library folder requests confirmation; only the explicit create action creates it.
+    /// 选库时可以选文件夹，也可以直接选里面的 `corpus.db`（打开的仍是它所在的整个文件夹：
+    /// 音频、raw/、词典都按这个目录找）
+    public func selectLibrary(picked url: URL) async {
+        do { await selectLibrary(folder: try Self.libraryFolder(forPicked: url)) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    public struct LibraryPickError: LocalizedError, Equatable {
+        public let errorDescription: String?
+    }
+
+    /// 选中的东西对应哪个库文件夹。别的名字的 .db 不认：库是整个文件夹（corpus.db + raw/ + 词典），
+    /// 单独一个改了名的数据库打开后找不到这些
+    public static func libraryFolder(forPicked url: URL) throws -> URL {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue { return url }
+        if url.lastPathComponent.lowercased() == "corpus.db" { return url.deletingLastPathComponent() }
+        throw LibraryPickError(errorDescription: "「\(url.lastPathComponent)」不是语料库：请选语料库文件夹，或文件夹里名为 corpus.db 的文件")
+    }
+
     public func selectLibrary(folder: URL) async {
         errorMessage = nil
         if Self.hasDatabase(in: folder) {

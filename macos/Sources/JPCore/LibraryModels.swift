@@ -79,6 +79,8 @@ public struct Album: Codable, Hashable, Identifiable, Sendable {
     public var artworkPath: String
     public var trackCount: Int64
     public var totalDurationSec: Double
+    /// Rust 已返回发行类型；旧快照缺这个字段时仍可解码。
+    public var releaseType: String?
 }
 
 /// 人名录的一行：一个人在各个角色上各有几首

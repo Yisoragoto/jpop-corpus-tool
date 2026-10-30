@@ -20,21 +20,7 @@ struct TimedLyricText: View {
             ForEach(units) { unit in
                 let label = unit.text(in: text) ?? ""
                 Button { seek(unit) } label: {
-                    Text(label)
-                        .foregroundStyle(.secondary)
-                        .overlay(alignment: .leading) {
-                            Text(label)
-                                .foregroundStyle(highlight)
-                                .mask {
-                                    GeometryReader { geometry in
-                                        Rectangle()
-                                            .frame(width: geometry.size.width * CGFloat(unit.progress(at: position)))
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                }
-                                .allowsHitTesting(false)
-                                .accessibilityHidden(true)
-                        }
+                    unitLabel(label, progress: unit.progress(at: position))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .buttonStyle(.plain)
@@ -45,6 +31,26 @@ struct TimedLyricText: View {
         .font(lyricFont(app.lyricsDisplay, size: Double(size) * app.lyricsDisplay.fontSize / 15))
         .kerning(app.lyricsDisplay.letterSpacing)
         .animation(nil, value: position)
+    }
+
+    /// 没唱、唱完的单位只换颜色；正在唱的那一个才叠一层缩放矩形当遮罩。
+    /// 以前每个单位都挂 GeometryReader 遮罩，播放时每个时钟周期整行重新量一遍
+    @ViewBuilder private func unitLabel(_ label: String, progress: Double) -> some View {
+        if progress <= 0 {
+            Text(label).foregroundStyle(.secondary)
+        } else if progress >= 1 {
+            Text(label).foregroundStyle(highlight)
+        } else {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .overlay(alignment: .leading) {
+                    Text(label)
+                        .foregroundStyle(highlight)
+                        .mask(alignment: .leading) { Rectangle().scaleEffect(x: progress, anchor: .leading) }
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+        }
     }
 }
 

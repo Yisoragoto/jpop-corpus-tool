@@ -40,6 +40,53 @@ enum Artwork {
     }
 }
 
+extension Artwork {
+    /// 词云的底：几张歌手照片按 CloudBackdrop 的位置拼好，再整体虚化、提饱和，只算一次。
+    /// 以前是把拼图挂上 `.blur(radius: 48)` 现算，词云一动（悬停、换词）整屏就要重新模糊
+    static func blurredCollage(_ images: [NSImage], radius: Double, saturation: Double, displayWidth: Double) async -> NSImage? {
+        let sources = images.prefix(5).compactMap { $0.cgImage(forProposedRect: nil, context: nil, hints: nil) }
+        guard !sources.isEmpty else { return nil }
+        let made = await Task.detached(priority: .utility) {
+            collage(sources, radius: radius, saturation: saturation, displayWidth: displayWidth)
+        }.value
+        return made.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
+    }
+}
+
+/// 拼图的格子（左上角和宽高都按整块的比例），和 CloudBackdrop 原来的摆法一样
+func collageSpots(_ count: Int) -> [(x: Double, y: Double, size: Double)] {
+    if count <= 1 { return [(0, 0, 1)] }
+    let spots = count == 2 ? [(0.0, 0.0), (0.45, 0.2)] : [(0.0, 0.0), (0.45, 0.0), (0.0, 0.45), (0.45, 0.45), (0.22, 0.22)]
+    return spots.prefix(count).map { (x: $0.0, y: $0.1, size: 0.55) }
+}
+
+private func collage(_ images: [CGImage], radius: Double, saturation: Double, displayWidth: Double) -> CGImage? {
+    let width = 480, height = 300
+    guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    context.interpolationQuality = .medium
+    let W = Double(width), H = Double(height)
+    for (image, spot) in zip(images, collageSpots(images.count)) {
+        let tile = CGRect(x: spot.x * W, y: H - spot.y * H - spot.size * H, width: spot.size * W, height: spot.size * H)
+        // 填满格子、多的裁掉（scaledToFill + clipped）
+        let fill = max(tile.width / Double(image.width), tile.height / Double(image.height))
+        let drawn = CGSize(width: Double(image.width) * fill, height: Double(image.height) * fill)
+        context.saveGState()
+        context.clip(to: tile)
+        context.draw(image, in: CGRect(x: tile.midX - drawn.width / 2, y: tile.midY - drawn.height / 2, width: drawn.width, height: drawn.height))
+        context.restoreGState()
+    }
+    guard let flat = context.makeImage() else { return nil }
+    let input = CIImage(cgImage: flat)
+    let sourceRadius = max(1, radius * W / max(1, displayWidth))
+    let output = input.clampedToExtent()
+        .applyingGaussianBlur(sigma: sourceRadius / 2)
+        .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: saturation])
+        .cropped(to: input.extent)
+    return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: input.extent)
+}
+
 /// 缓存键带上文件的修改时间和大小：刮削换了封面（路径不变）也会重读
 @MainActor private func stamp(_ path: String) -> String {
     let attributes = try? FileManager.default.attributesOfItem(atPath: path)

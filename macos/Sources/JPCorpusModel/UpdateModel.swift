@@ -24,6 +24,14 @@ public final class UpdateModel {
     public private(set) var statusCheckedAt: Date?
     /// 最近一次检查失败了，手上的 `status` 是更早那次成功检查留下的
     public var statusIsStale: Bool { status != nil && lastCheckError != nil }
+    /// 正在下载（0~1；总大小未知时是 nil 但 `downloading` 为真）
+    public private(set) var downloading = false
+    public private(set) var downloadFraction: Double?
+    /// 替换脚本已经拉起，马上退出
+    public private(set) var installing = false
+    /// 这一版能不能在程序里直接装
+    public var canInstallInApp: Bool { status?.updateAvailable == true && status?.latest?.installer != nil }
+    @ObservationIgnored public var pollInterval: Duration = .milliseconds(300)
     @ObservationIgnored private let defaults: UserDefaults
     private var started = false
     public init(defaults: UserDefaults = .standard, client: (any UpdateCalling)? = nil) {
@@ -70,6 +78,29 @@ public final class UpdateModel {
         defer { busy = false }
         do { self.preferences = try await client.updateSkip(preferences.channel, id: "") }
         catch { errorMessage = error.localizedDescription }
+    }
+    /// 下载刚才检查到的那一版、校验，然后拉起替换脚本并调用 `quit` 退出。
+    /// 失败停在原地，把原因放进 `errorMessage`，旧版不受影响
+    public func downloadAndInstall(appPath: String, quit: @MainActor () -> Void) async {
+        guard !busy, !downloading, let client, let release = status?.latest, canInstallInApp else { return }
+        downloading = true; downloadFraction = nil; errorMessage = nil
+        defer { downloading = false }
+        do {
+            try await client.updateDownloadStart(id: release.identity)
+            while true {
+                let progress = try await client.updateDownloadProgress()
+                downloadFraction = progress.fraction
+                if progress.finished {
+                    if let error = progress.error { throw CoreError.call(method: "updateDownloadProgress", message: error) }
+                    break
+                }
+                try await Task.sleep(for: pollInterval)
+            }
+            try await client.updateInstall(appPath: appPath)
+            installing = true
+            quit()
+        } catch is CancellationError {
+        } catch { errorMessage = error.localizedDescription }
     }
     public func changelog() async {
         guard !busy, let client else { return }; busy = true
