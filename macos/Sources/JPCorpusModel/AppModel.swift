@@ -117,6 +117,16 @@ public final class AppModel {
     public private(set) var furigana: [Int64: [Ruby]] = [:]
     /// 振假名取不到的原因（多半是没有分词词典）
     public private(set) var furiganaError: String?
+    /// 振假名取不到是因为这台电脑上没有分词词典。从别的电脑只拷了 corpus.db 时就是这样：
+    /// 词典在语料库目录的 sudachi/ 里，没跟着过来。这半句话和 Rust 的 `NO_DICTIONARY` 是同一句
+    public var furiganaNeedsDictionary: Bool { furiganaError?.contains("找不到 Sudachi 词典") == true }
+    /// 正在从歌词页下载分词词典
+    public private(set) var furiganaDictionaryDownloading = false
+    /// 下载进度（0…1，不知道总量时为 nil）和阶段（downloading / extracting / tokenizing）
+    public private(set) var furiganaDictionaryProgress: Double?
+    public private(set) var furiganaDictionaryStage = ""
+    /// 下载词典失败的原因
+    public private(set) var furiganaDictionaryError: String?
 
     /// 词典页的「试查」预先填进去的字（冒烟截图用）
     public var lookupSeed = ""
@@ -421,6 +431,39 @@ public final class AppModel {
         } catch {
             guard player.track?.id == songId, self.core === core else { return }
             furiganaError = error.localizedDescription
+        }
+    }
+
+    /// 在歌词页直接下载分词词典（43MB，解开 207MB），装好后重新取这首的注音。
+    /// 以前只有导入页能下，开着振假名却看不到注音时，用户找不到原因也找不到入口
+    public func downloadFuriganaDictionary() async {
+        guard !furiganaDictionaryDownloading, let client else { return }
+        furiganaDictionaryDownloading = true
+        furiganaDictionaryError = nil
+        furiganaDictionaryProgress = nil
+        furiganaDictionaryStage = "downloading"
+        defer {
+            furiganaDictionaryDownloading = false
+            furiganaDictionaryProgress = nil
+        }
+        do {
+            try await client.tokenizerDownload()
+            while true {
+                let progress = try await client.tokenizerProgress()
+                furiganaDictionaryProgress = progress.fraction
+                if !progress.stage.isEmpty { furiganaDictionaryStage = progress.stage }
+                if progress.finished {
+                    if let error = progress.error {
+                        furiganaDictionaryError = error
+                        return
+                    }
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(300))
+            }
+            await loadFurigana()
+        } catch {
+            furiganaDictionaryError = error.localizedDescription
         }
     }
 

@@ -88,7 +88,11 @@ struct LyricsPanel: View {
                     .glassCard(cornerRadius: 12)
                     .padding(10)
             }
-            if app.showFurigana, let error = app.furiganaError {
+            if app.showFurigana, app.furiganaNeedsDictionary || app.furiganaDictionaryDownloading {
+                FuriganaDictionaryNotice(style: .card)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+            } else if app.showFurigana, let error = app.furiganaError {
                 Text("振假名：\(error)")
                     .font(.caption)
                     .foregroundStyle(.secondary)

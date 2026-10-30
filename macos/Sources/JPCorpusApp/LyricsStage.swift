@@ -80,6 +80,10 @@ struct LyricsStage: View {
             }
             }
         }
+        // 开着振假名却没有词典：在全屏歌词里也说清楚，并且能直接下载（以前这里什么都不提示）
+        .overlay(alignment: .top) {
+            FuriganaDictionaryNotice(style: .card).padding(.top, Self.topHeight + 8).padding(.horizontal, 28)
+        }
         .background {
             if karaoke { karaokeBackdrop.ignoresSafeArea() } else { backdrop.ignoresSafeArea() }
         }

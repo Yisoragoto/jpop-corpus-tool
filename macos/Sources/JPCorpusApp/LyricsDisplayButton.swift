@@ -55,6 +55,7 @@ struct LyricsDisplayButton: View {
             Picker("注音方式", selection: Binding(get: { app.furiganaMode }, set: { app.furiganaMode = $0; app.showFurigana = true })) {
                 Text("只注汉字").tag(FuriganaMode.kanji); Text("整词注音").tag(FuriganaMode.word)
             }
+            FuriganaDictionaryNotice(compact: true)
             Button("恢复默认") { app.lyricsDisplay = LyricsDisplay(); app.furiganaMode = .kanji }
             ForEach(problems, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
             if let error { Text(error).font(.caption).foregroundStyle(.orange) }
