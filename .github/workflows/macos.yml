@@ -99,7 +99,11 @@ jobs:
 
       - name: App bundle
         working-directory: macos
-        run: ./scripts/bundle.sh
+        run: |
+          ./scripts/bundle.sh
+          # 图标真的打进去了，Info.plist 也指向它（以前没有，Finder 里是空白图标）
+          test -s "build/JPOP Corpus.app/Contents/Resources/AppIcon.icns"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "build/JPOP Corpus.app/Contents/Info.plist")" = AppIcon
 
       # 冒烟：真的把 .app 跑起来走一遍「检索 → KWIC → 试听 → 振假名 → 全屏歌词 → 首页 → 曲库 → 分析 → 词典 → 刮削 → 导入」，
       # 窗口自己截图（不需要录屏权限）。振假名用上面缓存的那份 Sudachi 词典（JPCORPUS_SMOKE_SUDACHI）。
