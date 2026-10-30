@@ -13,24 +13,64 @@ struct TimedLyricText: View {
     let position: Double
     var size: CGFloat = 15
     var highlight: Color = .accentColor
+    /// 这一行的振假名（开关关着时是空的）。有就把读音压在对应的字上，单位照样各自能点
+    var rubies: [Ruby] = []
     let seek: (LyricTimingUnit) -> Void
 
     var body: some View {
-        LyricUnitLayout {
-            ForEach(units) { unit in
-                let label = unit.text(in: text) ?? ""
-                Button { seek(unit) } label: {
-                    unitLabel(label, progress: unit.progress(at: position))
-                        .fixedSize(horizontal: false, vertical: true)
+        Group {
+            if let clusters = TimedRuby.clusters(text: text, units: units, rubies: rubies) {
+                LyricUnitLayout {
+                    ForEach(clusters) { cluster in
+                        HStack(alignment: .bottom, spacing: 0) {
+                            ForEach(Array(cluster.pieces.enumerated()), id: \.offset) { _, piece in
+                                rubyPiece(piece)
+                            }
+                        }
+                        .fixedSize()
+                    }
                 }
-                .buttonStyle(.plain)
-                .help("从「\(label)」的真实起点播放")
-                .accessibilityLabel("从「\(label)」开始播放")
+            } else {
+                LyricUnitLayout {
+                    ForEach(units) { unit in
+                        unitButton(unit, label: unit.text(in: text) ?? "", progress: unit.progress(at: position))
+                    }
+                }
             }
         }
         .font(lyricFont(app.lyricsDisplay, size: Double(size) * app.lyricsDisplay.fontSize / 15))
         .kerning(app.lyricsDisplay.letterSpacing)
         .animation(nil, value: position)
+    }
+
+    /// 上面读音（没有就留同样高的空，整行的字才对齐），下面是切到各单位的几段原文
+    private func rubyPiece(_ piece: TimedRuby.Piece) -> some View {
+        VStack(spacing: 0) {
+            Text(piece.reading ?? " ")
+                .font(lyricFont(app.lyricsDisplay, size: app.lyricsDisplay.rubySize * Double(size) / 15, weight: .medium))
+                .foregroundStyle(.secondary)
+                .opacity(piece.reading == nil ? 0 : 1)
+                .lineLimit(1)
+                .fixedSize()
+                .accessibilityHidden(piece.reading == nil)
+            HStack(spacing: 0) {
+                ForEach(Array(piece.segments.enumerated()), id: \.offset) { _, segment in
+                    let unit = units[segment.unit]
+                    unitButton(unit, label: segment.text,
+                               progress: segment.progress(unitProgress: unit.progress(at: position)))
+                }
+            }
+        }
+    }
+
+    private func unitButton(_ unit: LyricTimingUnit, label: String, progress: Double) -> some View {
+        Button { seek(unit) } label: {
+            unitLabel(label, progress: progress)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .buttonStyle(.plain)
+        .help("从「\(label)」的真实起点播放")
+        .accessibilityLabel("从「\(label)」开始播放")
     }
 
     /// 没唱、唱完的单位只换颜色；正在唱的那一个才叠一层缩放矩形当遮罩。
@@ -65,11 +105,12 @@ struct TimedLyricLine: View {
     let frozen: Double
     var size: CGFloat = 15
     var highlight: Color = .accentColor
+    var rubies: [Ruby] = []
     let seek: (LyricTimingUnit) -> Void
 
     var body: some View {
         TimedLyricText(text: text, units: units, position: live ? app.player.position : frozen,
-                       size: size, highlight: highlight, seek: seek)
+                       size: size, highlight: highlight, rubies: rubies, seek: seek)
     }
 }
 

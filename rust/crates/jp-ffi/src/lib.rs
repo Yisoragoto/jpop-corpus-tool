@@ -84,33 +84,55 @@ pub struct Session {
     translator: jp_dict::translator::Translator,
 }
 
-/// 分词器的三种状态：还没找过（外层 None）、找过但没有、有。
+/// 分词器：还没找过（None）、找过（`Loaded`，可能没找到）。
 #[derive(Default)]
-struct AnalyzerSlot(Mutex<Option<Option<Arc<Analyzer>>>>);
+struct AnalyzerSlot(Mutex<Option<Loaded>>);
+
+struct Loaded {
+    analyzer: Option<Arc<Analyzer>>,
+    /// 上次找到（并试着加载）的是哪一份 system.dic；没找到时为 None
+    dict: Option<PathBuf>,
+}
 
 impl AnalyzerSlot {
+    /// 上次没有分词器时，每次都再看一眼磁盘：词典文件出现了（或换了一份）就重新加载。
+    ///
+    /// 以前「没有」一记下就到关库为止：先打开库、后把 sudachi/ 拷进库目录（从 Windows 拷库时
+    /// 很常见），设置里显示「分词词典已就绪」（那边每次都看磁盘），振假名却一直说找不到词典，
+    /// 重开程序才好。看一眼只是几次 stat，不加载 207MB 的词典
     fn get(&self, root: &Path) -> Option<Arc<Analyzer>> {
         let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if slot.is_none() {
+        let stale = match slot.as_ref() {
+            None => true,
+            Some(loaded) if loaded.analyzer.is_none() => {
+                jp_tokenizer::locate_sudachipy(root).map(|(_, dict)| dict) != loaded.dict
+            }
+            Some(_) => false,
+        };
+        if stale {
             *slot = Some(load_analyzer(root));
         }
-        slot.clone().flatten()
+        slot.as_ref().and_then(|loaded| loaded.analyzer.clone())
     }
 
     /// 重新找一次（装好词典之后）。返回现在有没有
     fn reload(&self, root: &Path) -> bool {
         let loaded = load_analyzer(root);
-        let ready = loaded.is_some();
+        let ready = loaded.analyzer.is_some();
         *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(loaded);
         ready
     }
 }
 
 /// 和 Tauri 客户端同一个找法：语料库目录里的 `sudachi/`（或 0.1.x 的 venv），再是随程序带的
-fn load_analyzer(root: &Path) -> Option<Arc<Analyzer>> {
-    jp_tokenizer::locate_sudachipy(root)
-        .and_then(|(res, dict)| Analyzer::from_sudachipy(&res, &dict).ok())
-        .map(Arc::new)
+fn load_analyzer(root: &Path) -> Loaded {
+    match jp_tokenizer::locate_sudachipy(root) {
+        Some((res, dict)) => Loaded {
+            analyzer: Analyzer::from_sudachipy(&res, &dict).ok().map(Arc::new),
+            dict: Some(dict),
+        },
+        None => Loaded { analyzer: None, dict: None },
+    }
 }
 
 /// 后台作业自己的连接。结构已经由会话打开时迁移好了，这里只开、只设等待
