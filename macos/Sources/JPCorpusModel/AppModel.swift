@@ -74,6 +74,9 @@ public struct SearchRequest: Equatable {
 public final class AppModel {
     public private(set) var client: (any CorpusCalling)?
     public private(set) var libraryURL: URL?
+    /// 库文件夹里的数据库文件名。一般是 corpus.db；直接选了别的名字的 .db（比如拷过来时改了名）就用那个
+    public private(set) var databaseName = AppModel.defaultDatabaseName
+    nonisolated public static let defaultDatabaseName = "corpus.db"
     public private(set) var tracks: [Track] = []
     private var tracksById: [String: Track] = [:]
     public var section: SidebarItem = .home
@@ -91,6 +94,8 @@ public final class AppModel {
     public var libraryMode: LibraryMode = .songs { didSet { defaults.set(libraryMode.rawValue,forKey: "libraryMode") } }
     /// 全屏歌词
     public var showStage = false
+    /// 换界面语言时加一：根视图按它重建，所有文字重新过一遍 L10n
+    public var languageRevision = 0
     public var stageKaraoke = false
     public var lyricsDisplay = LyricsDisplay() {
         didSet { if let data = try? JSONEncoder().encode(lyricsDisplay) { defaults.set(data, forKey: "lyrics-display") } }
@@ -158,6 +163,7 @@ public final class AppModel {
 
     private enum Keys {
         static let library = "libraryFolder"
+        static let database = "libraryDatabase"
         static let audioRoots = "audioRoots"
         static let furigana = "furigana"
         static let furiganaMode = "furiganaMode"
@@ -208,16 +214,17 @@ public final class AppModel {
     }
 
     public func restore() async {
-        if let saved = defaults.string(forKey: Keys.library), Self.hasDatabase(in: URL(fileURLWithPath: saved)) {
-            await openExisting(folder: URL(fileURLWithPath: saved, isDirectory: true))
+        let savedName = defaults.string(forKey: Keys.database) ?? Self.defaultDatabaseName
+        if let saved = defaults.string(forKey: Keys.library), Self.hasDatabase(in: URL(fileURLWithPath: saved), named: savedName) {
+            await openExisting(folder: URL(fileURLWithPath: saved, isDirectory: true), database: savedName)
         } else if Self.hasDatabase(in: Self.defaultLibraryFolder) {
             await openExisting(folder: Self.defaultLibraryFolder)
         }
     }
 
-    private static func hasDatabase(in folder: URL) -> Bool {
+    private static func hasDatabase(in folder: URL, named name: String = "corpus.db") -> Bool {
         var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: folder.appendingPathComponent("corpus.db").path, isDirectory: &isDirectory)
+        return FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path, isDirectory: &isDirectory)
             && !isDirectory.boolValue
     }
 
@@ -225,21 +232,40 @@ public final class AppModel {
     /// 选库时可以选文件夹，也可以直接选里面的 `corpus.db`（打开的仍是它所在的整个文件夹：
     /// 音频、raw/、词典都按这个目录找）
     public func selectLibrary(picked url: URL) async {
-        do { await selectLibrary(folder: try Self.libraryFolder(forPicked: url)) }
-        catch { errorMessage = error.localizedDescription }
+        do {
+            let location = try Self.libraryLocation(forPicked: url)
+            if location.database == Self.defaultDatabaseName {
+                await selectLibrary(folder: location.folder)
+            } else {
+                // 直接选的数据库文件：它就在那儿，不用问要不要新建
+                errorMessage = nil
+                pendingCreationURL = nil
+                await openExisting(folder: location.folder, database: location.database)
+            }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     public struct LibraryPickError: LocalizedError, Equatable {
         public let errorDescription: String?
     }
 
-    /// 选中的东西对应哪个库文件夹。别的名字的 .db 不认：库是整个文件夹（corpus.db + raw/ + 词典），
-    /// 单独一个改了名的数据库打开后找不到这些
-    public static func libraryFolder(forPicked url: URL) throws -> URL {
+    /// 选中的东西对应哪个库：选文件夹就是里面的 corpus.db；选数据库文件就用它，不管叫什么名字。
+    /// 音频、raw/、词典都按数据库所在的文件夹找
+    public static func libraryLocation(forPicked url: URL) throws -> (folder: URL, database: String) {
         var isDirectory: ObjCBool = false
-        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue { return url }
-        if url.lastPathComponent.lowercased() == "corpus.db" { return url.deletingLastPathComponent() }
-        throw LibraryPickError(errorDescription: "「\(url.lastPathComponent)」不是语料库：请选语料库文件夹，或文件夹里名为 corpus.db 的文件")
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return (url, defaultDatabaseName)
+        }
+        let ext = url.pathExtension.lowercased()
+        if ["db", "sqlite", "sqlite3", "db3"].contains(ext) {
+            // corpus.db-wal / -shm 这类附属文件不是库本身
+            return (url.deletingLastPathComponent(), url.lastPathComponent)
+        }
+        throw LibraryPickError(errorDescription: "「\(url.lastPathComponent)」不是语料库：请选语料库文件夹，或其中的数据库文件（.db）")
+    }
+
+    public static func libraryFolder(forPicked url: URL) throws -> URL {
+        try libraryLocation(forPicked: url).folder
     }
 
     public func selectLibrary(folder: URL) async {
@@ -261,12 +287,12 @@ public final class AppModel {
 
     public func cancelCreation() { pendingCreationURL = nil }
 
-    public func openExisting(folder: URL) async {
-        guard Self.hasDatabase(in: folder) else {
-            errorMessage = "这个文件夹没有 corpus.db：请选择已有的语料库，或确认新建一个库。"
+    public func openExisting(folder: URL, database: String = "corpus.db") async {
+        guard Self.hasDatabase(in: folder, named: database) else {
+            errorMessage = "这个文件夹没有 \(database)：请选择已有的语料库，或确认新建一个库。"
             return
         }
-        await createOrOpen(folder: folder)
+        await createOrOpen(folder: folder, database: database)
     }
 
     /// 当前库里还在跑的长任务（导入、下载分词词典、导入词典、刮削、补歌词、曲库维护、Anki 制卡）。
@@ -292,7 +318,7 @@ public final class AppModel {
     }
 
     /// Explicit create-or-open semantics, used for the default folder and confirmed custom folders.
-    public func createOrOpen(folder: URL) async {
+    public func createOrOpen(folder: URL, database: String = "corpus.db") async {
         errorMessage = nil
         if let blocked = await switchBlocked() {
             errorMessage = blocked
@@ -301,7 +327,7 @@ public final class AppModel {
         let access = folder.startAccessingSecurityScopedResource()
         defer { if access { folder.stopAccessingSecurityScopedResource() } }
         do {
-            let next = try await openClient(folder.appendingPathComponent("corpus.db"))
+            let next = try await openClient(folder.appendingPathComponent(database))
             try await next.setAudioRoots(audioRoots)
             let fetched = try await next.tracks()
             // 打开新库要几秒：这期间开始的任务也要拦
@@ -314,10 +340,12 @@ public final class AppModel {
             updates.client = next as? any UpdateCalling
             library = LibraryModel(client: next as? any LibraryCalling, defaults: defaults)
             libraryURL = folder
+            databaseName = database
             importer = ImportModel()
             updateTracks(fetched)
             isDemo = false
             defaults.set(folder.path, forKey: Keys.library)
+            defaults.set(database, forKey: Keys.database)
             if autoCheckNewSongs && library.client != nil { Task { await library.checkNewAudio() } }
         } catch {
             errorMessage = error.localizedDescription

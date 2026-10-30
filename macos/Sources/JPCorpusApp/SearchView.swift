@@ -13,7 +13,8 @@ struct SearchView: View {
     @Environment(AppModel.self) private var app
 
     private enum Mode: String { case kwic, cql, fulltext }
-    @State private var mode: Mode = .kwic
+    /// 记住上次用的检索方式（冒烟测试也靠它切到 CQL）
+    @AppStorage("search.mode") private var mode: Mode = .kwic
     @State private var cqlError = ""
     @State private var lastSearch: KwicSearchSpec?
     @State private var searchRevision = UUID()
@@ -150,7 +151,7 @@ struct SearchView: View {
             }
             if mode == .cql {
                 if !cqlError.isEmpty {
-                    Text(cqlError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    Text(cqlError).font(.caption).foregroundStyle(.red).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 }
                 CqlExamplesView { text = $0 }
             }

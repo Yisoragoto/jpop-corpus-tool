@@ -39,9 +39,12 @@ struct LyricsStage: View {
         let player = app.player
         GeometryReader { geo in
             let wide = geo.size.width > 900
-            let hasBar = !wide || lookup != nil
-            let middle = max(geo.size.height - Self.topHeight - (hasBar ? Self.barHeight : 0), 160)
-            let lookupWidth = min(max(260, sideWidth), max(260, min(720, Double(geo.size.width) - (wide ? 128 : 56) - 420 - (wide ? 104 : 48))))
+            // 和 Windows 一样：播放条一直在底下，右栏一直在（窄窗口只在查词时出来）。
+            // 点词只换右栏里的内容，歌词和播放条的位置都不动
+            let middle = max(geo.size.height - Self.topHeight - Self.barHeight, 160)
+            let sideLimit = max(260, min(720, Double(geo.size.width) - 56 - 420))
+            let lookupWidth = min(max(260, sideWidth), sideLimit)
+            let showSide = wide || lookup != nil
             if karaoke {
                 // 卡拉 OK 和 Windows 一样是另一种版面：封面铺底、两行大字压在底部，左上角是歌名
                 VStack(spacing: 0) {
@@ -56,26 +59,20 @@ struct LyricsStage: View {
             VStack(spacing: 0) {
                 topBar(narrow: !wide)
                     .frame(height: Self.topHeight)
-                HStack(alignment: .center, spacing: wide ? 48 : 20) {
-                    if wide, lookup == nil, let track = player.track {
-                        ScrollView {
-                            nowPlaying(track, width: min(geo.size.width * 0.28, middle * 0.48, 380))
-                                .padding(.vertical, 24)
-                        }.scrollIndicators(.never).frame(width: min(geo.size.width * 0.28, middle * 0.48, 380))
-                    }
+                HStack(alignment: .top, spacing: 16) {
                     lyrics
-                    if let lookup {
-                        lookupDivider(width: lookupWidth, height: middle)
-                        LookupPane(request: lookup) { self.lookup = nil }
-                            .frame(width: CGFloat(lookupWidth))
-                            .glassCard().padding(.vertical, 20)
+                    if showSide {
+                        lookupDivider(width: lookupWidth, height: middle - 8)
+                        sideColumn(width: CGFloat(lookupWidth))
+                            .frame(width: CGFloat(lookupWidth), height: max(120, middle - 8))
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.black.opacity(0.34)))
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                 }
-                .padding(.horizontal, geo.size.width > 900 ? 64 : 28)
+                .padding(.horizontal, 28)
+                .padding(.bottom, 8)
                 .frame(height: middle)
-                if hasBar {
-                    PlayerBar().padding(.horizontal, 24).frame(height: Self.barHeight)
-                }
+                PlayerBar().padding(.horizontal, 24).frame(height: Self.barHeight)
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .onAppear {
@@ -150,7 +147,7 @@ struct LyricsStage: View {
 
     private func topBar(narrow: Bool) -> some View {
         HStack(spacing: 14) {
-            if karaoke, let track = app.player.track {
+            if let track = app.player.track {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
                     Text(track.artist).font(.caption).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
@@ -159,9 +156,6 @@ struct LyricsStage: View {
                 .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
             }
             Spacer()
-            if let track = app.player.track, narrow {
-                Text(track.title).font(.headline).lineLimit(1)
-            }
             if let track = app.player.track {
                 Button { karaoke.toggle() } label: { Image(systemName: karaoke ? "quote.bubble" : "music.mic") }
                     .help(karaoke ? "切换为滚动歌词" : "切换为卡拉 OK")
@@ -188,8 +182,22 @@ struct LyricsStage: View {
         .frame(height: 56)
     }
 
-    private func nowPlaying(_ track: Track, width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+    /// 右栏：平时是这首歌（Windows 的 SongCard），查词时换成查词内容。宽度、位置都不变
+    @ViewBuilder private func sideColumn(width: CGFloat) -> some View {
+        if let lookup {
+            LookupPane(request: lookup) { self.lookup = nil }
+        } else if let track = app.player.track {
+            ScrollView {
+                songCard(track, width: width - 32).padding(16)
+            }
+            .scrollIndicators(.never)
+        } else {
+            Color.clear
+        }
+    }
+
+    private func songCard(_ track: Track, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             Group {
                 if let cover {
                     Image(nsImage: cover).resizable().aspectRatio(contentMode: .fill)
@@ -201,33 +209,18 @@ struct LyricsStage: View {
                 }
             }
             .frame(width: width, height: width)
-            .layoutPriority(1)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            // Flatten the clipped artwork before shadowing; never shadow the column's rectangular backing.
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .compositingGroup()
-            .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+            .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
             .padding(.bottom, 4)
             Text(track.title)
-                .font(.system(size: 26, weight: .bold))
+                .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(.white)
                 .lineLimit(2)
             Text([track.artist, track.album, track.year].filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.title3)
+                .font(.callout)
                 .foregroundStyle(.white.opacity(0.65))
                 .lineLimit(2)
-            if app.player.spectrumEnabled { PlayerSpectrum().frame(height: 18) }
-            PlayerProgress(alwaysShowTime: true)
-            PlayerTransport(tint: colors.highlight, large: true).frame(maxWidth: .infinity)
-            if width >= 270 {
-                HStack {
-                    PlayerTools()
-                    Spacer(minLength: 8)
-                    PlayerVolume().frame(width: 110)
-                }
-            } else {
-                PlayerTools()
-                PlayerVolume().frame(width: width)
-            }
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(["performer", "lyricist", "composer", "arranger"], id: \.self) { role in
                     let names = credits.filter { $0.role == role }.map(\.name)
@@ -237,9 +230,9 @@ struct LyricsStage: View {
                 }
                 if !track.genre.isEmpty { Text("流派：\(track.genre)").font(.caption) }
                 Text("\(app.player.lines.count) 行歌词 · \(formatTime(app.player.duration))").font(.caption)
-            }.foregroundStyle(.white.opacity(0.55)).padding(.top, 8)
+            }.foregroundStyle(.white.opacity(0.55)).padding(.top, 6)
         }
-        .frame(width: width)
+        .frame(width: width, alignment: .leading)
     }
 
     private var lyrics: some View {

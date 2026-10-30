@@ -49,21 +49,29 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(try AppModel.libraryFolder(forPicked: folder), folder)
         let other = folder.appendingPathComponent("backup.db")
         try Data().write(to: other)
-        XCTAssertThrowsError(try AppModel.libraryFolder(forPicked: other))
+        XCTAssertEqual(try AppModel.libraryLocation(forPicked: other).database, "backup.db")
+        let text = folder.appendingPathComponent("notes.txt")
+        try Data().write(to: text)
+        XCTAssertThrowsError(try AppModel.libraryFolder(forPicked: text))
 
         let suite = "AppModelTests-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let recorder = OpenRecorder()
         let model = AppModel(defaults: defaults, openClient: { await recorder.open($0) })
-        await model.selectLibrary(picked: other)
+        await model.selectLibrary(picked: text)
         XCTAssertNotNil(model.errorMessage)
         XCTAssertNil(model.client)
         await model.selectLibrary(picked: db)
         XCTAssertNil(model.pendingCreationURL)
         XCTAssertNotNil(model.client)
+        // 改了名的库也能直接打开，而且下次启动还开它
+        await model.selectLibrary(picked: other)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.databaseName, "backup.db")
+        XCTAssertEqual(defaults.string(forKey: "libraryDatabase"), "backup.db")
         let opened = await recorder.urls
-        XCTAssertEqual(opened.map(\.lastPathComponent), ["corpus.db"])
+        XCTAssertEqual(opened.map(\.lastPathComponent), ["corpus.db", "backup.db"])
     }
 
     @MainActor

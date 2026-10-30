@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Windows 应用图标，小尺寸（16/24/32/48px：任务栏、资源管理器、标题栏）。
+       大图的玻璃细节在这里只会糊成一团，所以只留底色渐变和一个粗一点的白色音符。改完运行 python icons/render.py -->
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#9cc0ff"/>
+      <stop offset="0.5" stop-color="#7393f5"/>
+      <stop offset="1" stop-color="#6a4ff0"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.7"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="200" fill="url(#base)"/>
+  <rect x="44" y="44" width="936" height="936" rx="188" fill="none" stroke="url(#rim)" stroke-width="24"/>
+  <path fill="#fff" d="
+      M 470 200 H 760 A 40 40 0 0 1 800 240 V 280 A 40 40 0 0 1 760 320 H 550 V 700
+      A 140 140 0 1 1 470 573 Z"/>
+</svg>

@@ -37,8 +37,8 @@ def main():
          "case .failure:\n                break",
          "SourceGuardTests.testFileImportersHandleFailure", True),
         ("implicit-library-creation", app,
-         '''        guard Self.hasDatabase(in: folder) else {
-            errorMessage = "这个文件夹没有 corpus.db：请选择已有的语料库，或确认新建一个库。"
+         '''        guard Self.hasDatabase(in: folder, named: database) else {
+            errorMessage = "这个文件夹没有 \\(database)：请选择已有的语料库，或确认新建一个库。"
             return
         }
 ''', "", "AppModelTests.testExistingLibraryDoesNotCreateADatabaseAndSelectionRequiresConfirmation", False),

@@ -10,46 +10,13 @@ struct UpdateSettingsView: View {
     @Environment(AppModel.self) private var app
     var body: some View {
         @Bindable var updates = app.updates
-        Section("更新") {
-            if let prefs = updates.preferences {
-                LabeledContent("当前版本", value: "\(prefs.current) · \(prefs.buildId)")
-                Picker("更新轨道", selection: Binding(get: { prefs.channel }, set: { channel in
-                    if channel == .debug { updates.confirmDebug = true }
-                    else { Task { await updates.setChannel(channel) } }
-                })) { Text("正式版（stable）").tag(UpdateChannel.stable); Text("调试版（debug）").tag(UpdateChannel.debug) }
-                let skipped = prefs.channel == .debug ? prefs.skippedDebug : prefs.skippedStable
-                if !skipped.isEmpty { HStack { Text("已跳过 \(skipped)"); Button("恢复提醒") { Task { await updates.clearSkipped() } } } }
+        VStack(alignment: .leading, spacing: 8) {
+            SettingGroup("更新") {
+                preferenceRows
+                automaticUpdateRow
+                updateActions
             }
-            Toggle("启动时检查更新", isOn: $updates.autoCheck)
-            HStack {
-                Button(updates.busy ? "检查中…" : "检查更新") { Task { await updates.check() } }
-                Button("查看更新日志") { Task { await updates.changelog() } }
-                if updates.status?.updateAvailable == true {
-                    Button("查看新版本…") { updates.offerSkip = false; updates.showDialog = true }
-                }
-                if updates.canInstallInApp {
-                    Button(installLabel(updates.status?.latest)) { Task { await installUpdate(app: app) } }
-                }
-            }.disabled(updates.busy || updates.downloading || updates.installing || app.core == nil)
-            if updates.downloading { UpdateDownloadProgress(fraction: updates.downloadFraction) }
-            if let at = updates.lastCheckedAt {
-                let when = at.formatted(date: .abbreviated, time: .shortened)
-                Text(updates.lastCheckError.map { "上次检查 \(when) 失败：\($0)" } ?? "上次检查 \(when)")
-                    .font(.caption)
-                    .foregroundStyle(updates.lastCheckError == nil ? Color.secondary : Color.orange)
-                    .textSelection(.enabled)
-            }
-            if let status = updates.status {
-                let text = status.message.isEmpty ? (status.updateAvailable ? "有新版本 \(status.latest?.identity ?? "")" : "已经是最新版（\(status.current)）") : status.message
-                // 这次检查失败了：下面是更早那次成功检查的结果，标出来，别和这次的失败混在一起
-                let prefix = updates.statusIsStale
-                    ? "上次成功检查（\(updates.statusCheckedAt?.formatted(date: .abbreviated, time: .shortened) ?? "更早")）的结果："
-                    : ""
-                Text(prefix + text).font(.caption).foregroundStyle(updates.statusIsStale ? Color.secondary : Color.primary)
-            }
-            Text("有新版会先显示说明，由你决定装不装。「下载并安装」从本项目的 GitHub 发布下载 .dmg、校验 SHA-256，程序退出后替换「应用程序」里的旧版并重新打开；也可以前往发布页手动下载。")
-                .font(.caption).foregroundStyle(.secondary)
-            if let error = updates.errorMessage { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+            updateFeedback
         }
         .task(id: app.libraryURL) { await updates.load() }
         .alert("切换到 debug？", isPresented: $updates.confirmDebug) {
@@ -57,6 +24,94 @@ struct UpdateSettingsView: View {
             Button("取消", role: .cancel) {}
         } message: { Text("会跟随每次提交更新，可能不稳定；不会自动回到正式版。") }
         .sheet(isPresented: $updates.showChangelog) { UpdateChangelogView() }
+    }
+
+    @ViewBuilder private var preferenceRows: some View {
+        let updates = app.updates
+        if let prefs = updates.preferences {
+            SettingRow(icon: "app.badge", title: "当前版本", description: "\(prefs.current) · \(prefs.buildId)", selectableDescription: true) {
+                EmptyView()
+            }
+            SettingDivider()
+            SettingRow(icon: "arrow.triangle.branch", title: "更新轨道", description: "正式版或跟随每次提交的调试版") {
+                Picker("更新轨道", selection: Binding(get: { prefs.channel }, set: { channel in
+                    if channel == .debug { updates.confirmDebug = true }
+                    else { Task { await updates.setChannel(channel) } }
+                })) {
+                    Text("正式版（stable）").tag(UpdateChannel.stable)
+                    Text("调试版（debug）").tag(UpdateChannel.debug)
+                }.frame(width: 180)
+            }
+            let skipped = prefs.channel == .debug ? prefs.skippedDebug : prefs.skippedStable
+            if !skipped.isEmpty {
+                SettingDivider()
+                SettingRow(icon: "bell.slash", title: "已跳过 \(skipped)", description: "恢复这个版本的更新提醒") {
+                    Button("恢复提醒") { Task { await updates.clearSkipped() } }
+                }
+            }
+            SettingDivider()
+        }
+    }
+
+    @ViewBuilder private var automaticUpdateRow: some View {
+        @Bindable var updates = app.updates
+        SettingRow(icon: "clock.arrow.circlepath", title: "启动时检查更新", description: "有新版会先显示说明，由你决定装不装") {
+            Toggle("启动时检查更新", isOn: $updates.autoCheck).toggleStyle(.switch)
+        }
+        SettingDivider()
+    }
+
+    @ViewBuilder private var updateActions: some View {
+        let updates = app.updates
+        SettingRow(icon: "arrow.triangle.2.circlepath", title: "检查更新", description: "检查当前轨道有没有新版本") {
+            Button(updates.busy ? "检查中…" : "检查更新") { Task { await updates.check() } }
+        }.disabled(controlsDisabled)
+        SettingDivider()
+        SettingRow(icon: "list.bullet.rectangle", title: "更新日志", description: "查看每个版本的更新说明") {
+            Button("查看更新日志") { Task { await updates.changelog() } }
+        }.disabled(controlsDisabled)
+        if updates.status?.updateAvailable == true {
+            SettingDivider()
+            SettingRow(icon: "sparkles", title: "新版本", description: updates.status?.latest?.identity ?? "") {
+                Button("查看新版本…") { updates.offerSkip = false; updates.showDialog = true }
+            }.disabled(controlsDisabled)
+        }
+        if updates.canInstallInApp {
+            SettingDivider()
+            SettingRow(icon: "arrow.down.circle", title: "安装更新", description: "下载并校验后替换应用，完成后重新打开") {
+                Button(installLabel(updates.status?.latest)) { Task { await installUpdate(app: app) } }
+                    .buttonStyle(.borderedProminent)
+            }.disabled(controlsDisabled)
+        }
+    }
+
+    @ViewBuilder private var updateFeedback: some View {
+        let updates = app.updates
+        if updates.downloading || updates.installing {
+            UpdateDownloadProgress(fraction: updates.downloadFraction, installing: updates.installing)
+                .padding(.horizontal, 16)
+        }
+        if let at = updates.lastCheckedAt {
+            let when = at.formatted(date: .abbreviated, time: .shortened)
+            Text(updates.lastCheckError.map { "上次检查 \(when) 失败：\($0)" } ?? "上次检查 \(when)")
+                .font(.caption)
+                .foregroundStyle(updates.lastCheckError == nil ? Color.secondary : Color.orange)
+                .textSelection(.enabled)
+        }
+        if let status = updates.status {
+            let text = status.message.isEmpty ? (status.updateAvailable ? "有新版本 \(status.latest?.identity ?? "")" : "已经是最新版（\(status.current)）") : status.message
+            // 这次检查失败了：下面是更早那次成功检查的结果，标出来，别和这次的失败混在一起
+            let prefix = updates.statusIsStale
+                ? "上次成功检查（\(updates.statusCheckedAt?.formatted(date: .abbreviated, time: .shortened) ?? "更早")）的结果："
+                : ""
+            Text(prefix + text).font(.caption).foregroundStyle(updates.statusIsStale ? Color.secondary : Color.primary)
+        }
+        SettingNote("从本项目的 GitHub 发布下载并校验 SHA-256；安装时会退出应用。也可前往发布页手动下载。")
+        if let error = updates.errorMessage { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+    }
+
+    private var controlsDisabled: Bool {
+        app.updates.busy || app.updates.downloading || app.updates.installing || app.core == nil
     }
 }
 
@@ -173,14 +228,15 @@ struct DiagnosticsSettingsView: View {
     @State private var busy = false
     @State private var note = ""
     var body: some View {
-        Section("诊断") {
-            Text("版本、语料库目录、曲目数、分词词典和音频状态、最近 200 行日志。不联网、不自动上报；不含歌名和歌词，但路径里有你的用户名。")
-                .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button("复制") { Task { await copy() } }
-                Button("存成文件…") { Task { await save() } }
-            }.disabled(busy || app.core == nil)
-            if !note.isEmpty { Text(note).font(.caption).textSelection(.enabled) }
+        VStack(alignment: .leading, spacing: 8) {
+            SettingGroup("诊断") {
+                SettingRow(icon: "doc.text.magnifyingglass", title: "诊断报告", description: "版本、目录、运行状态与最近 200 行日志") {
+                    Button("复制") { Task { await copy() } }
+                    Button("存成文件…") { Task { await save() } }
+                }.disabled(busy || app.core == nil)
+            }
+            SettingNote("不联网、不自动上报；不含歌名和歌词，但路径里有你的用户名。")
+            if !note.isEmpty { SettingNote(note) }
         }
     }
     private func copy() async {
@@ -193,7 +249,7 @@ struct DiagnosticsSettingsView: View {
     }
     private func save() async {
         guard let client = app.core else { return }
-        let panel = NSSavePanel(); panel.title = "保存诊断信息"; panel.nameFieldStringValue = "jpop-corpus-diagnostics.txt"; panel.allowedContentTypes = [.plainText]
+        let panel = NSSavePanel(); panel.title = L10n.t("保存诊断信息"); panel.nameFieldStringValue = "jpop-corpus-diagnostics.txt"; panel.allowedContentTypes = [.plainText]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         busy = true; defer { busy = false }
         do { note = "存好了：" + (try await client.diagnosticsSave(path: url.path, audioAvailable: app.player.audioAvailable)) }
@@ -203,25 +259,41 @@ struct DiagnosticsSettingsView: View {
 
 @MainActor
 struct CloudPreferencesView: View {
-    @Environment(AppModel.self) private var app
     @AppStorage("cloud.count") private var count = 120
     @AppStorage("cloud.hideFunction") private var hideFunction = true
     @AppStorage("cloud.colorByPos") private var colorByPos = false
     @AppStorage("cloud.font") private var family = "Klee One"
     @AppStorage("cloud.hidden") private var hiddenJSON = "[]"
-    @AppStorage("dict.collapsed") private var collapsedJSON = "[]"
     var body: some View {
-        Section("词云") {
-            HStack { Text("字体、词数、词性颜色与虚词过滤"); Spacer(); CloudSettings(count: $count, hideFunction: $hideFunction, colorByPos: $colorByPos, family: $family) }
+        VStack(alignment: .leading, spacing: 24) {
+            CloudSettings(count: $count, hideFunction: $hideFunction, colorByPos: $colorByPos, family: $family, inline: true)
             let hidden = (try? JSONDecoder().decode([String].self, from: Data(hiddenJSON.utf8))) ?? []
-            if !hidden.isEmpty {
-                Text("已隐藏：" + hidden.joined(separator: "、")).font(.caption)
-                Button("恢复全部隐藏词") { hiddenJSON = "[]" }
+            VStack(alignment: .leading, spacing: 8) {
+                SettingGroup("自己隐藏的词") {
+                    SettingRow(icon: "eye.slash", title: "自己隐藏的词", description: hidden.isEmpty ? "没有隐藏的词" : "已隐藏 \(hidden.count) 个词") {
+                        Button("全部恢复") { hiddenJSON = "[]" }.disabled(hidden.isEmpty)
+                    }
+                }
+                if !hidden.isEmpty { SettingNote(hidden.joined(separator: "、")) }
             }
         }
-        Section("词典") {
-            Button("管理词典") { app.section = .dictionaries }
-            Button("清除词典折叠记忆") { collapsedJSON = "[]" }.disabled(collapsedJSON == "[]")
+    }
+}
+
+@MainActor
+struct DictionaryPreferencesView: View {
+    var onManage: () -> Void
+    @AppStorage("dict.collapsed") private var collapsedJSON = "[]"
+
+    var body: some View {
+        SettingGroup("查词结果") {
+            SettingRow(icon: "character.book.closed", title: "管理词典", description: "导入、启用、排序 Yomitan 词典") {
+                Button("管理词典", action: onManage)
+            }
+            SettingDivider()
+            SettingRow(icon: "rectangle.compress.vertical", title: "折叠记忆", description: "查词结果里折叠的词典，下次查词时保持折叠") {
+                Button("清除词典折叠记忆") { collapsedJSON = "[]" }.disabled(collapsedJSON == "[]")
+            }
         }
     }
 }
@@ -231,14 +303,26 @@ struct HealthSettingsView: View {
     @Environment(AppModel.self) private var app
     @State private var health: HealthReport?
     var body: some View {
-        Section("运行状态") {
+        SettingGroup("运行状态") {
             if let health {
-                LabeledContent("数据库", value: health.dbPath)
-                LabeledContent("曲目 / 歌词行", value: "\(health.tracks) / \(health.lyricLines)")
-                LabeledContent("分词器", value: health.tokenizerReady ? "可用" : "没有分词词典")
-                LabeledContent("音频输出", value: health.audioReady ? "可用" : "没有输出设备")
+                SettingRow(icon: "externaldrive", title: "数据库", description: health.dbPath, selectableDescription: true) { EmptyView() }
+                SettingDivider()
+                SettingRow(icon: "music.note.list", title: "曲目 / 歌词行", description: "语料库中的歌曲与歌词行数") {
+                    Text("\(health.tracks) 首 · \(health.lyricLines) 行").foregroundStyle(.secondary).monospacedDigit()
+                }
+                SettingDivider()
+                SettingRow(icon: "character.cursor.ibeam", title: "分词器", description: "振假名与歌词分词") {
+                    Text(health.tokenizerReady ? "可用" : "没有分词词典").foregroundStyle(.secondary)
+                }
+                SettingDivider()
+                SettingRow(icon: "speaker.wave.2", title: "音频输出", description: "播放与变调使用的输出设备") {
+                    Text(health.audioReady ? "可用" : "没有输出设备").foregroundStyle(.secondary)
+                }
+            } else {
+                SettingRow(icon: "info.circle", title: "运行状态", description: app.core == nil ? "打开语料库后查看运行状态" : "正在读取…") { EmptyView() }
             }
         }.task(id: app.libraryURL) {
+            health = nil
             do { health = try await app.core?.health(audioAvailable: app.player.audioAvailable) }
             catch { app.errorMessage = error.localizedDescription }
         }

@@ -14,13 +14,7 @@ struct ContentView: View {
             if app.client == nil {
                 WelcomeView()
             } else {
-                NavigationSplitView {
-                    List(SidebarItem.allCases, selection: Binding<SidebarItem?>(get: { app.section }, set: { if let v = $0 { app.section = v } })) { item in
-                        Label(item.title, systemImage: item.symbol).tag(item)
-                    }
-                    .navigationSplitViewColumnWidth(min: 150, ideal: 170)
-                    .safeAreaInset(edge: .bottom) { LibraryBadge() }
-                } detail: {
+                AppShell {
                     Group {
                         switch app.section {
                         case .home: HomeView()
@@ -101,24 +95,6 @@ struct ContentView: View {
     }
 }
 
-/// 侧栏底部：当前打开的是哪个库
-@MainActor
-private struct LibraryBadge: View {
-    @Environment(AppModel.self) private var app
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(app.isDemo ? "示例语料库" : (app.libraryURL?.lastPathComponent ?? ""))
-                .font(.caption.weight(.medium))
-            Text("\(app.tracks.count) 首")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-    }
-}
-
 /// 还没有库的时候
 @MainActor
 struct WelcomeView: View {
@@ -154,7 +130,7 @@ struct WelcomeView: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .glass(.sidebar)
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder, UTType(filenameExtension: "db") ?? .data]) { result in
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder, UTType(filenameExtension: "db") ?? .data, UTType(filenameExtension: "sqlite") ?? .data]) { result in
             switch result {
             case .failure(let error):
                 app.errorMessage = error.localizedDescription
