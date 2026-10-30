@@ -120,6 +120,31 @@ fn open_worker(db_path: &Path) -> Result<Corpus> {
     Ok(corpus)
 }
 
+/// SQLite 说库坏了（「database disk image is malformed」/「file is not a database」）时，换成用户看得懂、知道怎么办的话。
+///
+/// 从 Windows 拷库到 Mac 时最常见：Windows 版开着时最近的改动还在 `corpus.db-wal` 里，只拷 corpus.db 就缺一块；
+/// 远程/网盘传输没传完也一样。原库通常是好的，重新完整拷一次就行
+fn explain_damaged(path: &Path, error: anyhow::Error) -> anyhow::Error {
+    let damaged = error.chain().any(|cause| {
+        matches!(
+            cause.downcast_ref::<rusqlite::Error>(),
+            Some(rusqlite::Error::SqliteFailure(e, _))
+                if matches!(e.code, rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase)
+        )
+    });
+    if !damaged {
+        return error;
+    }
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    anyhow!(
+        "{name} 不完整或已损坏，读不出来（这台电脑上的文件大小 {size} 字节）。\n\
+         多半是拷贝时出了问题：Windows 版开着时，最近的改动还在旁边的 {name}-wal 里，只拷 {name} 会缺一块；传输没传完也会这样。\n\
+         请在 Windows 上先退出 JPOP Corpus Tool（退出后 -wal 会并回主文件），再把整个文件拷过来，并核对两边文件大小一致。\n\
+         （SQLite：{error:#}）"
+    )
+}
+
 impl Session {
     /// 打开（必要时迁移）一个语料库。和 Tauri 客户端启动时做的一样：
     /// 可写打开、补齐结构、检查结构；比本程序新的库直接拒绝（见 `jp_corpus::migrations`）。
@@ -128,9 +153,14 @@ impl Session {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        let mut corpus = Corpus::open_writable(&path).with_context(|| format!("打不开 {}", path.display()))?;
-        corpus.migrate().with_context(|| format!("{} 的结构升不上来", path.display()))?;
-        corpus.check_schema()?;
+        let mut corpus = Corpus::open_writable(&path)
+            .with_context(|| format!("打不开 {}", path.display()))
+            .map_err(|e| explain_damaged(&path, e))?;
+        corpus
+            .migrate()
+            .with_context(|| format!("{} 的结构升不上来", path.display()))
+            .map_err(|e| explain_damaged(&path, e))?;
+        corpus.check_schema().map_err(|e| explain_damaged(&path, e))?;
         corpus.connection().busy_timeout(BUSY_TIMEOUT)?;
         // 和 Tauri 客户端启动时一样：来源追踪之前导进来的歌补登记一版歌词（docs/provenance.md）。
         // 补不上不影响打开，质量清单里那些歌只是没有版本记录
@@ -1088,6 +1118,25 @@ mod tests {
         assert_eq!(s.call("subcorpusList", json!({})).unwrap().as_array().unwrap().len(), 1);
         assert_eq!(s.call("subcorpusDelete", json!({"id":saved["id"]})).unwrap(), true);
         assert!(s.call("subcorpusList", json!({})).unwrap().as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_damaged_or_half_copied_library_explains_what_to_do() {
+        let dir = std::env::temp_dir().join(format!("jp-ffi-bad-{}-{}", std::process::id(), rand_suffix()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 不是数据库
+        let junk = dir.join("junk.db");
+        std::fs::write(&junk, vec![0x5a_u8; 8192]).unwrap();
+        let message = Session::open(junk.to_str().unwrap()).err().expect("junk opened").to_string();
+        assert!(message.contains("不完整或已损坏") && message.contains("junk.db-wal"), "{message}");
+        // 只传了一半的真库
+        let db = jp_corpus::fixture::write_to(&dir).unwrap();
+        let bytes = std::fs::read(&db).unwrap();
+        let half = dir.join("half.db");
+        std::fs::write(&half, &bytes[..bytes.len() / 2]).unwrap();
+        let message = Session::open(half.to_str().unwrap()).err().expect("half opened").to_string();
+        assert!(message.contains("不完整或已损坏"), "{message}");
+        std::fs::remove_dir_all(dir).ok();
     }
 
     pub(super) fn session() -> (Session, PathBuf) {

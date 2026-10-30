@@ -14,6 +14,8 @@ crate-type = ["staticlib", "rlib"]
 jp-update = { path = "../jp-update" }
 jp-diagnostics = { path = "../jp-diagnostics" }
 anyhow.workspace = true
+# 只用来认出「库坏了」这类错误码，好换成看得懂的提示
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true
 jp-corpus = { path = "../jp-corpus" }

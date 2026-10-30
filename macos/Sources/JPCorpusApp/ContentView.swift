@@ -154,7 +154,7 @@ struct WelcomeView: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .glass(.sidebar)
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder, UTType(filenameExtension: "db") ?? .data]) { result in
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder, UTType(filenameExtension: "db") ?? .data, UTType(filenameExtension: "sqlite") ?? .data]) { result in
             switch result {
             case .failure(let error):
                 app.errorMessage = error.localizedDescription

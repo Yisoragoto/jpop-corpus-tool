@@ -2023,6 +2023,7 @@ dependencies = [
  "jp-setup",
  "jp-tokenizer",
  "jp-update",
+ "rusqlite",
  "serde",
  "serde_json",
 ]
