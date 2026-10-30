@@ -63,8 +63,8 @@ fn debug(transport: &impl Transport, platform: Platform) -> Result<Option<Releas
     ensure!(manifest.sha256.len() == 64 && manifest.sha256.bytes().all(|b| b.is_ascii_hexdigit()), "debug 缺少有效的 SHA-256，不能安装");
     ensure!(manifest.size > 0, "debug 清单里的安装包大小无效");
     ensure!(debug_asset_version_for(&manifest.file, platform) == Some(manifest.version.as_str()), "debug 清单版本与安装包文件名不一致");
-    // Windows 会把安装包下到缓存目录再拉起来，文件名要过那道检查；macOS 只打开发布页让人自己下
-    if platform == Platform::Windows { super::check_asset_name(&manifest.file)?; }
+    // 安装包会下到缓存目录，文件名要过那道检查
+    super::check_asset_name(&manifest.file)?;
     let files: Vec<_> = assets.iter().filter(|a| a["name"].as_str() == Some(&manifest.file)).collect();
     ensure!(files.len() == 1, "debug 发布缺少清单指定的唯一安装包");
     let url = files[0]["browser_download_url"].as_str().context("debug 安装包缺少下载地址")?;

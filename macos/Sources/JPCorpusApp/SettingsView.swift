@@ -92,7 +92,7 @@ struct SettingsView: View {
         .glass(.sidebar)
         .frame(width: embedded ? nil : 560, height: embedded ? nil : 460)
         .sheet(isPresented: $lyricsOpen) { LyricsLibraryView() }
-        .fileImporter(isPresented: $pick.isPresented, allowedContentTypes: [.folder]) { result in
+        .fileImporter(isPresented: $pick.isPresented, allowedContentTypes: pick.intent == .library ? [.folder, UTType(filenameExtension: "db") ?? .data] : [.folder]) { result in
             let kind = pick.finish()
             switch result {
             case .failure(let error):
@@ -100,7 +100,7 @@ struct SettingsView: View {
             case .success(let url):
                 switch kind {
                 case .library:
-                    Task { await app.selectLibrary(folder: url) }
+                    Task { await app.selectLibrary(picked: url) }
                 case .audio:
                     if !app.audioRoots.contains(url.path) { app.audioRoots.append(url.path) }
                 case nil:

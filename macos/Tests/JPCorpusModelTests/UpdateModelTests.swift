@@ -23,6 +23,19 @@ private actor FakeUpdates: UpdateCalling {
         if channel == .stable { prefs.skippedStable = id } else { prefs.skippedDebug = id }; return prefs
     }
     func updateChangelog() async throws -> [UpdateRelease] { if failed { throw CoreError.open("离线") }; return [result.latest!] }
+    var downloadPolls = 0
+    var installedAt: String?
+    var downloadError: String?
+    func updateDownloadStart(id: String) async throws { if id != result.latest?.identity { throw CoreError.open("版本不符") } }
+    func updateDownloadProgress() async throws -> JobProgress<String> {
+        downloadPolls += 1
+        let finished = downloadPolls >= 2
+        let error = downloadError.map { "\"\($0)\"" } ?? "null"
+        return try decodeUpdate(#"{"running":\#(!finished),"finished":\#(finished),"cancelled":false,"done":\#(downloadPolls),"total":2,"stage":"downloading","result":null,"error":\#(finished ? error : "null")}"#)
+    }
+    func updateInstall(appPath: String) async throws { installedAt = appPath }
+    func setDownloadError(_ text: String) { downloadError = text }
+    func installed() -> String? { installedAt }
     func checkCount() -> Int { checks }
     func setFailed(_ value: Bool) { failed = value }
 }
@@ -35,6 +48,29 @@ final class UpdateModelTests: XCTestCase {
         await model.startup(); await model.startup()
         let count = await client.checkCount()
         XCTAssertEqual(count, 1); XCTAssertTrue(model.showDialog); XCTAssertTrue(model.offerSkip); XCTAssertFalse(model.busy)
+    }
+    func testDownloadThenInstallThenQuit() async throws {
+        let client = try FakeUpdates(), model = UpdateModel(defaults: defaults(), client: client)
+        model.pollInterval = .milliseconds(1)
+        await model.check()
+        XCTAssertTrue(model.canInstallInApp)
+        var quit = false
+        await model.downloadAndInstall(appPath: "/Applications/JPOP Corpus.app") { quit = true }
+        let installed = await client.installed()
+        XCTAssertEqual(installed, "/Applications/JPOP Corpus.app")
+        XCTAssertTrue(quit); XCTAssertTrue(model.installing); XCTAssertFalse(model.downloading)
+        XCTAssertNil(model.errorMessage)
+    }
+    func testFailedDownloadDoesNotInstallOrQuit() async throws {
+        let client = try FakeUpdates(), model = UpdateModel(defaults: defaults(), client: client)
+        model.pollInterval = .milliseconds(1)
+        await model.check()
+        await client.setDownloadError("校验不过")
+        var quit = false
+        await model.downloadAndInstall(appPath: "/Applications/JPOP Corpus.app") { quit = true }
+        let installed = await client.installed()
+        XCTAssertNil(installed); XCTAssertFalse(quit); XCTAssertFalse(model.installing)
+        XCTAssertEqual(model.errorMessage?.contains("校验不过"), true)
     }
     func testFailedCheckKeepsEarlierResultButMarksItStale() async throws {
         let client = try FakeUpdates(), model = UpdateModel(defaults: defaults(), client: client)

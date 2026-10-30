@@ -27,7 +27,11 @@ struct UpdateSettingsView: View {
                 if updates.status?.updateAvailable == true {
                     Button("查看新版本…") { updates.offerSkip = false; updates.showDialog = true }
                 }
-            }.disabled(updates.busy || app.core == nil)
+                if updates.canInstallInApp {
+                    Button(installLabel(updates.status?.latest)) { Task { await installUpdate(app: app) } }
+                }
+            }.disabled(updates.busy || updates.downloading || updates.installing || app.core == nil)
+            if updates.downloading { UpdateDownloadProgress(fraction: updates.downloadFraction) }
             if let at = updates.lastCheckedAt {
                 let when = at.formatted(date: .abbreviated, time: .shortened)
                 Text(updates.lastCheckError.map { "上次检查 \(when) 失败：\($0)" } ?? "上次检查 \(when)")
@@ -43,7 +47,7 @@ struct UpdateSettingsView: View {
                     : ""
                 Text(prefix + text).font(.caption).foregroundStyle(updates.statusIsStale ? Color.secondary : Color.primary)
             }
-            Text("有新版会先显示说明，由你选择前往官方发布页、稍后或跳过；在发布页下载新的 .dmg 覆盖安装，程序不会自动下载或执行文件。")
+            Text("有新版会先显示说明，由你决定装不装。「下载并安装」从本项目的 GitHub 发布下载 .dmg、校验 SHA-256，程序退出后替换「应用程序」里的旧版并重新打开；也可以前往发布页手动下载。")
                 .font(.caption).foregroundStyle(.secondary)
             if let error = updates.errorMessage { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
         }
@@ -77,12 +81,20 @@ private struct UpdateDialogView: View {
                 Text("有新版本 \(release.identity)").font(.title2.bold())
                 Text("当前 \(app.updates.status?.current ?? "") · \(release.publishedAt)").foregroundStyle(.secondary)
                 ScrollView { Text(release.notes).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                if app.updates.downloading || app.updates.installing {
+                    UpdateDownloadProgress(fraction: app.updates.downloadFraction, installing: app.updates.installing)
+                }
                 HStack {
                     Button("前往发布页") { Task { await openRelease(release.url, app: app) } }
                     Spacer()
                     if app.updates.offerSkip { Button("跳过这个版本") { Task { await app.updates.skip() } } }
                     Button("稍后") { app.updates.showDialog = false }.keyboardShortcut(.cancelAction)
-                }.disabled(app.updates.busy)
+                    if app.updates.canInstallInApp {
+                        Button(installLabel(release)) { Task { await installUpdate(app: app) } }
+                            .keyboardShortcut(.defaultAction)
+                            .buttonStyle(.borderedProminent)
+                    }
+                }.disabled(app.updates.busy || app.updates.downloading || app.updates.installing)
             }
             if let error = app.updates.errorMessage { Text(error).foregroundStyle(.orange) }
         }.padding(24).frame(width: 580, height: 440)
@@ -110,6 +122,39 @@ private struct UpdateChangelogView: View {
             if let error = app.updates.errorMessage { Text(error).foregroundStyle(.orange) }
             Button("关闭") { dismiss() }.keyboardShortcut(.cancelAction)
         }.padding(24).frame(width: 620, height: 500)
+    }
+}
+
+/// 「下载并安装（34 MB）」
+private func installLabel(_ release: UpdateRelease?) -> String {
+    guard let size = release?.installer?.size, size > 0 else { return "下载并安装" }
+    return "下载并安装（\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))）"
+}
+
+/// 后台还有导入、刮削之类在跑就不装：替换前要退出程序，会把它们打断
+@MainActor
+private func installUpdate(app: AppModel) async {
+    let jobs = await app.runningJobs()
+    guard jobs.isEmpty else {
+        app.updates.errorMessage = "\(jobs.joined(separator: "、"))还在进行，等它结束再更新"
+        return
+    }
+    await app.updates.downloadAndInstall(appPath: Bundle.main.bundlePath) { NSApplication.shared.terminate(nil) }
+}
+
+private struct UpdateDownloadProgress: View {
+    let fraction: Double?
+    var installing = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if installing {
+                ProgressView().progressViewStyle(.linear)
+                Text("下载好了，正在退出并替换为新版…").font(.caption).foregroundStyle(.secondary)
+            } else {
+                if let fraction { ProgressView(value: fraction) } else { ProgressView().progressViewStyle(.linear) }
+                Text(fraction.map { "正在下载 \(Int($0 * 100))%" } ?? "正在下载…").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+        }
     }
 }
 

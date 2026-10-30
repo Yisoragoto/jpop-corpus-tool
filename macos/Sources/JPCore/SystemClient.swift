@@ -17,8 +17,14 @@ public struct UpdateRelease: Codable, Equatable, Identifiable, Sendable {
     public var publishedAt: String
     public var url: String
     public var prerelease: Bool
+    /// 能在程序里直接装的那个包（macOS 是 .dmg）。没有就只能去发布页
+    public var installer: UpdateAsset?
     public var id: String { tag }
     public var identity: String { buildId ?? version }
+}
+public struct UpdateAsset: Codable, Equatable, Sendable {
+    public var name: String
+    public var size: Int64?
 }
 public struct UpdateStatus: Codable, Equatable, Sendable {
     public var channel: UpdateChannel
@@ -35,6 +41,11 @@ public protocol UpdateCalling: Sendable {
     func updateSetChannel(_ channel: UpdateChannel) async throws -> UpdatePreferences
     func updateSkip(_ channel: UpdateChannel, id: String) async throws -> UpdatePreferences
     func updateChangelog() async throws -> [UpdateRelease]
+    /// 后台下载刚才检查到的那一版（`id` 是 `UpdateRelease.identity`，用来核对）
+    func updateDownloadStart(id: String) async throws
+    func updateDownloadProgress() async throws -> JobProgress<String>
+    /// 拉起替换脚本：等本进程退出后把 `appPath` 换成新版并重新打开。调用方随后退出
+    func updateInstall(appPath: String) async throws
 }
 extension CorpusClient: UpdateCalling {
     private var packageVersion: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
@@ -59,6 +70,16 @@ extension CorpusClient: UpdateCalling {
     }
     public func updateChangelog() async throws -> [UpdateRelease] {
         try await performDetached { try $0.call("updateChangelog", ["limit": AnyEncodable(10)]) }
+    }
+    public func updateDownloadStart(id: String) async throws {
+        let args = versionArgs.merging(["id": AnyEncodable(id)]) { $1 }
+        let _: LyricJSON = try await performDetached { try $0.call("updateDownloadStart", args) }
+    }
+    public func updateDownloadProgress() async throws -> JobProgress<String> {
+        try await performDetached { try $0.call("updateDownloadProgress") }
+    }
+    public func updateInstall(appPath: String) async throws {
+        let _: LyricJSON = try await performDetached { try $0.call("updateInstall", ["appPath": AnyEncodable(appPath)]) }
     }
     public func updateReleasePage(_ url: String) async throws -> String {
         try await performDetached { try $0.call("updateReleasePage", ["url": AnyEncodable(url)]) }

@@ -132,7 +132,7 @@ struct WelcomeView: View {
                 .foregroundStyle(.tint)
             Text("JPOP Corpus")
                 .font(.largeTitle.weight(.semibold))
-            Text("新建一个语料库，从音乐文件夹（音频 + 同名 .lrc）导入；\n或者选择已有的语料库文件夹（里面有 corpus.db），Windows 版的库目录整个拷过来就能用。")
+            Text("新建一个语料库，从音乐文件夹（音频 + 同名 .lrc）导入；\n或者打开已有的语料库（选文件夹或里面的 corpus.db），Windows 版的库目录整个拷过来就能用。")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             HStack(spacing: 12) {
@@ -140,7 +140,8 @@ struct WelcomeView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .help("在默认位置建库（已经有就打开它），然后去导入页")
-                Button("选择语料库文件夹…") { picking = true }
+                Button("打开已有语料库…") { picking = true }
+                    .help("选语料库文件夹，或直接选里面的 corpus.db")
                     .controlSize(.large)
                 Button("先看看示例") { Task { await app.openDemo() } }
                     .controlSize(.large)
@@ -153,12 +154,12 @@ struct WelcomeView: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .glass(.sidebar)
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder, UTType(filenameExtension: "db") ?? .data]) { result in
             switch result {
             case .failure(let error):
                 app.errorMessage = error.localizedDescription
             case .success(let url):
-                Task { await app.selectLibrary(folder: url) }
+                Task { await app.selectLibrary(picked: url) }
             }
         }
         .alert("新建语料库？", isPresented: Binding(

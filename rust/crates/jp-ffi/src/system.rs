@@ -1,5 +1,28 @@
-//! 更新与诊断的 JSON 适配，不提供安装器入口。
+//! 更新与诊断的 JSON 适配。
+//!
+//! 更新：`updateCheck` 记下这次查到的发布；`updateDownloadStart` 只下那一次检查里的安装包
+//! （前端只给要下哪一版，用来核对），后台下载、校验 SHA-256，界面轮询 `updateDownloadProgress`；
+//! `updateInstall` 只替换这个进程亲手下好、启动前再校验一遍的那个 dmg，拉起替换脚本后由 Swift 退出应用。
+//! 这些状态跟着进程走、不跟着库走：中途换库不影响已经下好的包。
 use super::*;
+use std::sync::{Arc, OnceLock};
+
+struct Updater {
+    memory: jp_update::UpdateMemory,
+    job: Arc<jobs::Job>,
+}
+
+fn updater() -> &'static Updater {
+    static UPDATER: OnceLock<Updater> = OnceLock::new();
+    UPDATER.get_or_init(|| Updater { memory: jp_update::UpdateMemory::default(), job: Arc::default() })
+}
+
+/// 安装包下到 `~/Library/Caches/JPOP Corpus/updates`
+fn download_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .map(|home| PathBuf::from(home).join("Library/Caches/JPOP Corpus/updates"))
+        .unwrap_or_else(|| std::env::temp_dir().join("jpop-corpus-updates"))
+}
 
 pub fn dispatch(session: &Session, method: &str, args: &Value) -> Result<Option<Value>> {
     let version = arg_or(args, "appVersion", jp_update::CURRENT_VERSION.to_owned())?;
@@ -40,7 +63,30 @@ pub fn dispatch(session: &Session, method: &str, args: &Value) -> Result<Option<
             jp_corpus::update_settings::skip(arg(args, "channel")?, &arg::<String>(args, "id")?)?;
             serde_json::to_value(jp_update::preferences(&version))?
         }
-        "updateCheck" => serde_json::to_value(jp_update::check(&version)?)?,
+        "updateCheck" => {
+            let status = jp_update::check(&version)?;
+            updater().memory.remember_check(&status);
+            serde_json::to_value(status)?
+        }
+        "updateDownloadStart" => {
+            let id: String = arg(args, "id")?;
+            let asset = updater().memory.installer_for(&version, &id)?;
+            let dir = download_dir();
+            updater().job.spawn("更新下载", move |job| {
+                let path = jp_update::download_installer(&asset, &dir, |done, total| job.report(done, total, "downloading"))?;
+                let sha256 = asset.sha256.clone().context("安装包没有校验值")?;
+                updater().memory.remember_download(path.clone(), sha256);
+                Ok((json!(path), false))
+            })?;
+            Value::Null
+        }
+        "updateDownloadProgress" => serde_json::to_value(updater().job.view())?,
+        "updateInstall" => {
+            let app: String = arg(args, "appPath")?;
+            let dmg = updater().memory.installer_to_launch()?;
+            jp_update::launch_mac_installer(&dmg, Path::new(&app), std::process::id())?;
+            Value::Null
+        }
         "updateChangelog" => serde_json::to_value(jp_update::changelog(arg_or(args, "limit", 10)?)?)?,
         "updateReleasePage" => {
             let url: String = arg(args, "url")?;
@@ -83,8 +129,10 @@ mod tests {
         assert!(std::fs::read_to_string(path).unwrap().contains("corpus.db"));
         assert!(s.call("updateReleasePage", json!({"url":"https://evil.test/releases"})).is_err());
         assert!(s.call("updateReleasePage", json!({"url":"https://github.com/Yisoragoto/jpop-corpus-tool/releases/tag/v0.3.3"})).is_ok());
-        assert!(s.call("updateDownload", json!({})).is_err());
-        assert!(s.call("updateInstall", json!({})).is_err());
+        // 没检查过、没下载过：什么都不下、不装
+        assert!(s.call("updateDownloadStart", json!({"id": "9.9.9"})).is_err());
+        assert!(s.call("updateInstall", json!({"appPath": "/Applications/JPOP Corpus.app"})).is_err());
+        assert_eq!(s.call("updateDownloadProgress", json!({})).unwrap()["running"], false);
         drop(s); let _ = std::fs::remove_dir_all(dir);
     }
 }
