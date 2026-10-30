@@ -15,7 +15,7 @@ struct LyricsDisplayButton: View {
     @State private var error: String?
     private var families: [String] {
         var names = files.map(\.family)
-        let installed = NSFontManager.shared.availableFontFamilies.sorted()
+        let installed = InstalledFonts.families
         let preferred = ["Klee One", "LXGW WenKai", "Meiryo", "Noto Sans CJK SC", "Noto Sans CJK JP", "Source Han Sans SC", "Source Han Sans JP", "BIZ UDPGothic"]
         names += preferred.filter { installed.contains($0) }; names += installed
         var seen = Set<String>()
@@ -127,4 +127,11 @@ private func makeLyricFont(_ display: LyricsDisplay, size: Double, weight: NSFon
     guard let fallback = chosen(display.fallbackFamily) else { return Font(base) }
     let descriptor = base.fontDescriptor.addingAttributes([.cascadeList: [fallback.fontDescriptor]])
     return Font(NSFont(descriptor: descriptor, size: size) ?? base)
+}
+
+/// 本机装的字体家族，排好序。系统里有几百个，每次重画都去问 NSFontManager 再排序，设置页会明显卡；
+/// 一次运行只问一次（导入的字体不在这里，各处另外并进去）
+@MainActor
+enum InstalledFonts {
+    static let families: [String] = NSFontManager.shared.availableFontFamilies.sorted()
 }

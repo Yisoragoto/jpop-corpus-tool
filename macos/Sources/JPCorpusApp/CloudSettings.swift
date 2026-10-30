@@ -75,7 +75,7 @@ struct CloudSettings: View {
     }
 
     private var families: [String] {
-        Array(Set(files.map(\.family) + NSFontManager.shared.availableFontFamilies + [family]))
+        Array(Set(files.map(\.family) + InstalledFonts.families + [family]))
             .filter { !$0.isEmpty }.sorted()
     }
     private func refresh() async {

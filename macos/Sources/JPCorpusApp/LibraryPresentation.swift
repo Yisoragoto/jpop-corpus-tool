@@ -92,8 +92,10 @@ struct LibraryHero<Actions: View>: View {
     }
 
     private var artwork: some View {
+        // 分类页（歌曲 / 专辑 / 音乐人）借第一项的图当封面；图找不到时显示图标，
+        // 不用名字首字做头像——那是给人用的，「音乐人」会变成一个写着「音乐」的大圆
         CoverImage(path: imagePath, size: 104, cornerRadius: 10, circle: circle,
-                   placeholder: placeholder, identity: title)
+                   placeholder: placeholder, identity: "")
             .shadow(color: .black.opacity(0.24), radius: 16, y: 6)
     }
 
