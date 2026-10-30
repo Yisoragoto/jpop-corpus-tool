@@ -164,6 +164,7 @@ jobs:
           ls -la "$out"
           test -f "$out/02-kwic.png"
           test -f "$out/02b-cql.png"
+          test -f "$out/02c-topnav.png"
           grep -Eq '^\[step\] cql-page responsive=true status=pass$' "$out/smoke.txt"
           test -f "$out/07-single-file-plan.png"
           test -f "$out/09-imported-library.png"

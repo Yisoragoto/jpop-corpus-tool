@@ -92,6 +92,12 @@ enum SmokeRun {
             try require(true, "cql-page", "responsive=true")
             UserDefaults.standard.set("kwic", forKey: "search.mode")
             await settle(1)
+            // 导航换成顶部胶囊栏，再换回来：两种都截一张
+            UserDefaults.standard.set("top", forKey: "nav.style")
+            await settle(2)
+            shot("02c-topnav", into: out, note: note)
+            UserDefaults.standard.set("sidebar", forKey: "nav.style")
+            await settle(1)
             guard let client = app.client else { throw SmokeFailure.step("missing-client") }
             let hits = try await client.kwic(KwicQuery(keywords: ["夜"], field: .lemma))
             try require(!hits.isEmpty, "kwic", "hits=\(hits.count)")

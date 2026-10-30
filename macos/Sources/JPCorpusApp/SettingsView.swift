@@ -52,6 +52,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     var embedded = false
+    @AppStorage(NavStyle.key) private var navStyle: NavStyle = .sidebar
     @AppStorage("settings.category") private var selectedCategory = SettingsCategory.appearance.rawValue
     private enum PickKind { case library, audio }
     @State private var pick = FilePickState<PickKind>()
@@ -190,7 +191,7 @@ struct SettingsView: View {
 
     /// 界面语言。当场换：根视图重建，文字重新翻一遍；菜单栏和系统提示框重启后跟着换
     private var languageSettings: some View {
-        SettingGroup("语言") {
+        SettingGroup("语言与导航") {
             SettingRow(icon: "globe", title: "界面语言", description: "菜单栏和系统对话框在重新启动后切换") {
                 Picker("界面语言", selection: Binding(
                     get: { UserDefaults.standard.string(forKey: L10n.languageKey) ?? "" },
@@ -203,6 +204,15 @@ struct SettingsView: View {
                     Text(verbatim: "中文").tag("zh")
                     Text(verbatim: "English").tag("en")
                 }.frame(width: 160)
+            }
+            SettingDivider()
+            SettingRow(icon: "sidebar.left", title: "导航栏位置", description: "工具栏左上角的按钮也能切换") {
+                Picker("导航栏位置", selection: $navStyle) {
+                    Text("侧边栏").tag(NavStyle.sidebar)
+                    Text("顶部栏").tag(NavStyle.top)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 180)
             }
         }
     }
