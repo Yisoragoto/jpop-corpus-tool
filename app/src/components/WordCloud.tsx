@@ -815,6 +815,11 @@ function SongPanel({
         onError(tr("现在放的不是这首，先点「校准」从这一行放起来"));
         return;
       }
+      // 暂停时的进度不是「听到这个词」的那一刻
+      if (state.playState !== "playing") {
+        onError(tr("先从这一行放起来，听到这个词时再点"));
+        return;
+      }
       const span = keywordSpan(s.first);
       const at = Math.max(0, state.positionSec - REACTION_SEC);
       await api.wordTimeSet(s.first.utteranceId, span.start, span.end, at);

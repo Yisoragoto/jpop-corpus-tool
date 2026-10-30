@@ -107,6 +107,8 @@ public final class ImportModel {
             lastResult = importJob?.result
             if let problem = LibraryAdmin.csvProblem(lastResult?.csv) { errorMessage = problem }
             plan = nil
+            // 换库会被拦下（见 AppModel.runningJobs）；万一还是换了，别把旧库的结果刷到新库上
+            guard app.client === client else { return }
             await app.reloadTracks()
             app.library.version += 1
             app.homeVersion += 1

@@ -111,7 +111,14 @@ struct LyricsTimingEditor: View {
         NSApp.keyWindow?.makeFirstResponder(nil)
         model.select(line: line, unit: unit)
     }
-    private func replay(_ index: Int) { Task { await app.player.seek(to: model.replayStart(index)); app.player.play() } }
+    /// 播放器里放的可能已经不是这首（从别处换了歌）：那就先把这首加载到重放点，不在别的歌上跳
+    private func replay(_ index: Int) {
+        let start = model.replayStart(index)
+        Task {
+            if ready { await app.player.seek(to: start); app.player.play() }
+            else { await app.play(songId: model.songId, at: start) }
+        }
+    }
     private func save() { Task { if let client = app.core { await model.saveTiming(client) } } }
     private func key(_ event: NSEvent) -> Bool {
         guard !model.busy else { return false }

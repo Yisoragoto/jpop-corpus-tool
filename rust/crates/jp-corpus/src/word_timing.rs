@@ -86,11 +86,19 @@ pub fn for_song(conn: &Connection, song_id: &str) -> Result<Vec<WordTiming>> {
 pub fn set_manual(conn: &Connection, utterance_id: i64, char_start: i64, char_end: i64, start_sec: f64) -> Result<()> {
     anyhow::ensure!(start_sec.is_finite() && start_sec >= 0.0, "时间不对：{start_sec}");
     anyhow::ensure!(char_start >= 0 && char_end > char_start, "位置不对：{char_start}..{char_end}");
-    let text: Option<String> = conn
-        .query_row("SELECT text FROM utterances WHERE id = ?1", params![utterance_id], |r| r.get(0))
+    let row: Option<(String, String)> = conn
+        .query_row("SELECT text, song_id FROM utterances WHERE id = ?1", params![utterance_id], |r| Ok((r.get(0)?, r.get(1)?)))
         .ok();
-    let Some(text) = text else { anyhow::bail!("找不到这一行歌词（{utterance_id}），可能歌词刚换过") };
+    let Some((text, song_id)) = row else { anyhow::bail!("找不到这一行歌词（{utterance_id}），可能歌词刚换过") };
     anyhow::ensure!(char_end as usize <= text.chars().count(), "位置超出这一行：{char_end} > {}", text.chars().count());
+    // 时间要落在这一行里：早于行首、晚于可信的行尾（下一行开始、曲目结束）的校准，
+    // 读的时候会被当成无效丢掉，存进去只会让人以为校准过了。按字数估的行尾不算数
+    if let Some(span) = crate::segments::line_spans(conn, &song_id)?.into_iter().find(|s| s.utterance_id == utterance_id) {
+        anyhow::ensure!(start_sec >= span.start_sec, "校准时间 {start_sec:.2} 秒早于这一行的开始（{:.2} 秒）", span.start_sec);
+        if span.end_kind != crate::segments::SpanEnd::Estimated {
+            anyhow::ensure!(start_sec < span.end_sec, "校准时间 {start_sec:.2} 秒已经过了这一行（{:.2} 秒结束）", span.end_sec);
+        }
+    }
     conn.execute(
         "INSERT OR REPLACE INTO word_timings (utterance_id, char_start, char_end, start_sec, end_sec, source) \
          VALUES (?1, ?2, ?3, ?4, NULL, ?5)",
@@ -238,6 +246,21 @@ mod tests {
         assert!(set_manual(&conn, 1, 3, 3, 11.0).is_err(), "空区间");
         assert!(set_manual(&conn, 99, 0, 1, 1.0).is_err(), "没有这一行");
         assert!(set_manual(&conn, 2, 0, 2, f64::NAN).is_err());
+    }
+
+    #[test]
+    fn calibration_outside_the_line_is_refused() {
+        let conn = db();
+        // 第 1 行 10.0 开始，下一行 14.0 开始（在估计时长之内，可信）
+        assert!(set_manual(&conn, 1, 0, 1, 9.9).is_err(), "早于行首");
+        assert!(set_manual(&conn, 1, 0, 1, 14.0).is_err(), "已经到下一行");
+        set_manual(&conn, 1, 0, 1, 10.0).unwrap();
+        set_manual(&conn, 1, 0, 1, 13.99).unwrap();
+        // 最后一行只有估计的结尾：不拿它卡人
+        set_manual(&conn, 2, 0, 1, 40.0).unwrap();
+        // 曲目时长是可信的结尾
+        conn.execute("UPDATE songs SET duration_sec = 16 WHERE id = '001'", []).unwrap();
+        assert!(set_manual(&conn, 2, 0, 1, 16.5).is_err(), "超过曲目时长");
     }
 
     #[test]

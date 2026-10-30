@@ -76,10 +76,15 @@ fn save_lines_read_back_and_restore_an_old_version() {
 #[test]
 fn manual_word_start_is_set_read_and_cleared() {
     let (s, dir) = fixture();
-    let row = s.call("lyrics", json!({"songId":"001"})).unwrap()[0]["utteranceId"].clone();
-    s.call("wordTimeSet", json!({"utteranceId":row,"charStart":0,"charEnd":1,"startSec":1.125})).unwrap();
+    let first = s.call("lyrics", json!({"songId":"001"})).unwrap()[0].clone();
+    let row = first["utteranceId"].clone();
+    // 校准时间要落在这一行里：取行首后 0.125 秒
+    let at = first["timeSec"].as_f64().unwrap() + 0.125;
+    s.call("wordTimeSet", json!({"utteranceId":row,"charStart":0,"charEnd":1,"startSec":at})).unwrap();
     let marks = s.call("wordTimings", json!({"utteranceIds":[row]})).unwrap();
-    assert!(marks.as_array().unwrap().iter().any(|m| m["source"] == "manual" && m["startSec"] == 1.125));
+    assert!(marks.as_array().unwrap().iter().any(|m| m["source"] == "manual" && m["startSec"] == at));
+    let early = s.call("wordTimeSet", json!({"utteranceId":row,"charStart":0,"charEnd":1,"startSec":at - 1.0}));
+    assert!(early.is_err(), "早于行首的校准要拒绝");
     s.call("wordTimeClear", json!({"utteranceId":row,"charStart":0})).unwrap();
     let marks = s.call("wordTimings", json!({"utteranceIds":[row]})).unwrap();
     assert!(marks.as_array().unwrap().iter().all(|m| m["source"] != "manual"));

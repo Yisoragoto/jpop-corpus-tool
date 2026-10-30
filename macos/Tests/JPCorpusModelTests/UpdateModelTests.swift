@@ -24,6 +24,7 @@ private actor FakeUpdates: UpdateCalling {
     }
     func updateChangelog() async throws -> [UpdateRelease] { if failed { throw CoreError.open("离线") }; return [result.latest!] }
     func checkCount() -> Int { checks }
+    func setFailed(_ value: Bool) { failed = value }
 }
 
 @MainActor
@@ -34,6 +35,18 @@ final class UpdateModelTests: XCTestCase {
         await model.startup(); await model.startup()
         let count = await client.checkCount()
         XCTAssertEqual(count, 1); XCTAssertTrue(model.showDialog); XCTAssertTrue(model.offerSkip); XCTAssertFalse(model.busy)
+    }
+    func testFailedCheckKeepsEarlierResultButMarksItStale() async throws {
+        let client = try FakeUpdates(), model = UpdateModel(defaults: defaults(), client: client)
+        await model.check()
+        XCTAssertFalse(model.statusIsStale)
+        let first = try XCTUnwrap(model.statusCheckedAt)
+        await client.setFailed(true); await model.check()
+        XCTAssertTrue(model.statusIsStale, "这次失败了，手上的结果是上一次的")
+        XCTAssertEqual(model.statusCheckedAt, first)
+        XCTAssertNotNil(model.lastCheckError)
+        await client.setFailed(false); await model.check()
+        XCTAssertFalse(model.statusIsStale)
     }
     func testSkippedVersionDoesNotPromptButManualCheckStillShowsIt() async throws {
         let model = UpdateModel(defaults: defaults(), client: try FakeUpdates(skipped: true))

@@ -33,6 +33,23 @@ actor FakeCorpus: CorpusCalling {
     }
     func failScanning() { failScan = true }
 
+    /// 让某个调用（「方法名:参数」）卡住，直到 `release`：用来控制两个并发请求谁先完成
+    private var held: Set<String> = []
+    private var parked: [String: [CheckedContinuation<Void, Never>]] = [:]
+    func hold(_ key: String) { held.insert(key) }
+    func release(_ key: String) {
+        held.remove(key)
+        for waiter in parked.removeValue(forKey: key) ?? [] { waiter.resume() }
+    }
+    func isParked(_ key: String) -> Bool { !(parked[key]?.isEmpty ?? true) }
+    private func gate(_ key: String) async {
+        guard held.contains(key) else { return }
+        await withCheckedContinuation { parked[key, default: []].append($0) }
+    }
+    /// 假装有一次导入正在跑
+    private var importRunning = false
+    func setImportRunning(_ running: Bool) { importRunning = running }
+
     func scanFiles(_ paths: [String]) async throws -> ScanResult {
         calls.append(Call(name: "scanFiles", arguments: paths))
         if failScan { throw FakeError.injected }
@@ -51,7 +68,10 @@ actor FakeCorpus: CorpusCalling {
     }
     func untokenizedCount() async throws -> Int { 0 }
     func runImport(tokenize: Bool) async throws -> ImportStarted { throw FakeError.unexpected("runImport") }
-    func importProgress() async throws -> JobProgress<ImportResult> { throw FakeError.unexpected("importProgress") }
+    func importProgress() async throws -> JobProgress<ImportResult> {
+        guard importRunning else { throw FakeError.unexpected("importProgress") }
+        return try decoded(JobProgress<ImportResult>.self, #"{"running":true,"finished":false,"cancelled":false,"done":1,"total":3,"stage":"x","result":null,"error":null}"#)
+    }
     func cancelImport() async throws { throw FakeError.unexpected("cancelImport") }
     func tokenizerDownload() async throws { throw FakeError.unexpected("tokenizerDownload") }
     func tokenizerProgress() async throws -> JobProgress<DictionaryReady> { throw FakeError.unexpected("tokenizerProgress") }
@@ -68,9 +88,13 @@ actor FakeCorpus: CorpusCalling {
     }
     func lineSpans(_ songId: String) async throws -> [LineSpan] { try lyricValue("lineSpans", arguments: [songId]) }
     func listenWindow(_ utteranceId: Int64, before: Int, after: Int) async throws -> ListenWindow? {
-        try lyricValue("listenWindow", arguments: [String(utteranceId), String(before), String(after)])
+        await gate("listenWindow:\(utteranceId),\(before),\(after)")
+        return try lyricValue("listenWindow", arguments: [String(utteranceId), String(before), String(after)])
     }
-    func resolveMedia(_ stored: String) async throws -> String? { try lyricValue("resolveMedia", arguments: [stored]) }
+    func resolveMedia(_ stored: String) async throws -> String? {
+        await gate("resolveMedia:\(stored)")
+        return try lyricValue("resolveMedia", arguments: [stored])
+    }
     private(set) var recordedPlays: [PlayEvent] = []
     private var recordPlayFails = false
     func failRecordPlay(_ fail: Bool) { recordPlayFails = fail }
