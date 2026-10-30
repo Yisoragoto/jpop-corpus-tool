@@ -670,7 +670,16 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         }
         "scrapeBackfillCovers" => {
             let conn = session.network_connection()?;
-            serde_json::to_value(jp_scrape::backfill_and_fill_albums(conn.connection(), &session.covers_dir())?)?
+            // 库可能是从别的电脑拷来的：封面路径不空但这台电脑上没有那个文件，也算缺
+            let roots = session.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
+            let root = session.root.clone();
+            let resolve = |stored: &str| jp_corpus::media::resolve(stored, root.as_deref(), &roots);
+            serde_json::to_value(jp_scrape::backfill_and_fill_albums_with(conn.connection(), &session.covers_dir(), &resolve)?)?
+        }
+        "mediaStatus" => {
+            let conn = session.network_connection()?;
+            let roots = session.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
+            serde_json::to_value(media_status(conn.connection(), session.root.as_deref(), &roots)?)?
         }
 
         // ── 词典管理（同 Tauri 的 dict_import_* / dict_set_* / dict_delete）──
@@ -736,6 +745,57 @@ fn mine(
         jp_corpus::media::resolve(stored, session.root.as_deref(), &audio_roots).map(|p| p.display().to_string())
     });
     jp_anki::lyric_mine::send(anki, &store, &prepared, request)
+}
+
+/// 库里的音频、封面、歌手照片在这台电脑上找不找得到（按播放、显示用的同一套规则找）。
+/// 只数「记了路径却找不到」的：本来就没有封面、没有音频的不算
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaStatus {
+    songs: usize,
+    audio_missing: usize,
+    covers_missing: usize,
+    albums_missing: usize,
+    artists_missing: usize,
+    /// 找不到的音频原来在哪些文件夹（库里记的路径去掉文件名），按歌数从多到少，最多 6 个
+    missing_audio_folders: Vec<MissingFolder>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MissingFolder {
+    folder: String,
+    songs: usize,
+}
+
+fn media_status(conn: &rusqlite::Connection, root: Option<&Path>, roots: &[PathBuf]) -> Result<MediaStatus> {
+    let found = |stored: &str| stored.trim().is_empty() || jp_corpus::media::resolve(stored, root, roots).is_some();
+    let column = |sql: &str| -> Result<Vec<String>> {
+        Ok(conn.prepare(sql)?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+    };
+    let audio = column("SELECT COALESCE(audio_path,'') FROM songs")?;
+    let mut folders: Vec<MissingFolder> = Vec::new();
+    let mut audio_missing = 0;
+    for stored in audio.iter().filter(|s| !found(s)) {
+        audio_missing += 1;
+        let name = jp_corpus::media::file_name_of(stored);
+        let folder = stored[..stored.len() - name.len()].trim_end_matches(['\\', '/']).to_string();
+        match folders.iter_mut().find(|f| f.folder == folder) {
+            Some(f) => f.songs += 1,
+            None => folders.push(MissingFolder { folder, songs: 1 }),
+        }
+    }
+    folders.sort_by(|a, b| b.songs.cmp(&a.songs).then_with(|| a.folder.cmp(&b.folder)));
+    folders.truncate(6);
+    let missing = |sql: &str| -> Result<usize> { Ok(column(sql)?.iter().filter(|s| !found(s)).count()) };
+    Ok(MediaStatus {
+        songs: audio.len(),
+        audio_missing,
+        covers_missing: missing("SELECT COALESCE(cover_path,'') FROM songs")?,
+        albums_missing: missing("SELECT COALESCE(artwork_path,'') FROM albums")?,
+        artists_missing: missing("SELECT COALESCE(image_path,'') FROM artists")?,
+        missing_audio_folders: folders,
+    })
 }
 
 /// 批量刮削的外壳：进度存进作业状态等界面来问。`stage` 是刚刮完的那首（或那位歌手），
@@ -1136,6 +1196,30 @@ mod tests {
         std::fs::write(&half, &bytes[..bytes.len() / 2]).unwrap();
         let message = Session::open(half.to_str().unwrap()).err().expect("half opened").to_string();
         assert!(message.contains("不完整或已损坏"), "{message}");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn media_status_counts_files_this_computer_cannot_find() {
+        let (s, dir) = session();
+        // 示例库记的都是另一台电脑的路径（E:/music/…）
+        let status = s.call("mediaStatus", json!({})).unwrap();
+        assert_eq!(status["songs"], 4);
+        assert_eq!(status["audioMissing"], 4);
+        assert_eq!(status["coversMissing"], 1);
+        assert_eq!(status["albumsMissing"], 0, "空的专辑图不算缺");
+        assert_eq!(status["artistsMissing"], 1);
+        assert_eq!(status["missingAudioFolders"], json!([{"folder": "E:/music", "songs": 4}]));
+        // 音乐拷到这台电脑、加成音频目录；封面拷到库目录下：按路径末尾找得到
+        let copied = dir.join("copied");
+        std::fs::create_dir_all(copied.join("music")).unwrap();
+        std::fs::write(copied.join("music/001.flac"), b"x").unwrap();
+        std::fs::create_dir_all(dir.join("covers")).unwrap();
+        std::fs::write(dir.join("covers/004.jpg"), b"x").unwrap();
+        s.call("setAudioRoots", json!({"roots": [copied.display().to_string()]})).unwrap();
+        let status = s.call("mediaStatus", json!({})).unwrap();
+        assert_eq!(status["audioMissing"], 3);
+        assert_eq!(status["coversMissing"], 0);
         std::fs::remove_dir_all(dir).ok();
     }
 

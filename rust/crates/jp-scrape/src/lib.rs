@@ -1059,24 +1059,41 @@ pub fn backfill_covers(
     covers_dir: &std::path::Path,
     dry_run: bool,
 ) -> Result<CoverBackfill> {
+    // 库里记的路径原样当真：有路径就算有封面（Windows 版一直是这样）
+    backfill_covers_with(conn, covers_dir, dry_run, &|stored| Some(std::path::PathBuf::from(stored)))
+}
+
+/// 同 [`backfill_covers`]，但「有没有封面」按 `resolve` 找不找得到文件来算，音频也先经它找到本机的文件。
+///
+/// 给从别的电脑拷来的库用（macOS 打开 Windows 的库）：库里记的是那台电脑上的路径，
+/// 只看路径是不是空的话，一张都不会补
+pub fn backfill_covers_with(
+    conn: &rusqlite::Connection,
+    covers_dir: &std::path::Path,
+    dry_run: bool,
+    resolve: &dyn Fn(&str) -> Option<std::path::PathBuf>,
+) -> Result<CoverBackfill> {
     let mut out = CoverBackfill::default();
     let mut stmt = conn.prepare(
         "SELECT s.id, s.artist, COALESCE(st.provider_id,''), COALESCE(st.candidates_json,''),
-                COALESCE(s.audio_path,'')
+                COALESCE(s.audio_path,''), COALESCE(s.cover_path,'')
          FROM songs s LEFT JOIN scrape_state st ON st.song_id = s.id
-         WHERE COALESCE(s.cover_path,'') = '' ORDER BY s.id",
+         ORDER BY s.id",
     )?;
-    let rows: Vec<(String, String, String, String, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+    let rows: Vec<(String, String, String, String, String, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    for (song_id, artist, provider_id, candidates_json, audio_path) in rows {
+    for (song_id, artist, provider_id, candidates_json, audio_path, cover_path) in rows {
+        if !cover_path.trim().is_empty() && resolve(&cover_path).is_some() {
+            continue;
+        }
         out.checked += 1;
         // 文件里自带封面的先用它：不用联网，也不会配错图。
         // 当初导入时还不认内嵌封面的那些歌，靠这一步补上。
-        if !audio_path.is_empty()
-            && let Some(path) =
-                save_embedded_cover(covers_dir, &song_id, &artist, std::path::Path::new(&audio_path))
+        let audio = if audio_path.is_empty() { None } else { resolve(&audio_path) };
+        if let Some(audio) = audio
+            && let Some(path) = save_embedded_cover(covers_dir, &song_id, &artist, &audio)
         {
             out.filled += 1;
             if !dry_run {
@@ -1456,6 +1473,47 @@ pub fn backfill_and_fill_albums(conn: &rusqlite::Connection, covers_dir: &std::p
     Ok(report)
 }
 
+/// 同 [`backfill_and_fill_albums`]，按 `resolve` 判断文件在不在（见 [`backfill_covers_with`]）
+pub fn backfill_and_fill_albums_with(
+    conn: &rusqlite::Connection,
+    covers_dir: &std::path::Path,
+    resolve: &dyn Fn(&str) -> Option<std::path::PathBuf>,
+) -> Result<CoverBackfill> {
+    let report = backfill_covers_with(conn, covers_dir, false, resolve)?;
+    fill_album_artwork_with(conn, resolve)?;
+    Ok(report)
+}
+
+/// 同 [`fill_album_artwork`]，但专辑图找不到文件也算缺，换成同专辑里第一首找得到的歌曲封面
+pub fn fill_album_artwork_with(
+    conn: &rusqlite::Connection,
+    resolve: &dyn Fn(&str) -> Option<std::path::PathBuf>,
+) -> Result<usize> {
+    let albums: Vec<(i64, String)> = conn
+        .prepare("SELECT id, COALESCE(artwork_path,'') FROM albums ORDER BY id")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut covers = conn.prepare(
+        "SELECT cover_path FROM songs WHERE album_id = ?1 AND COALESCE(cover_path,'') <> '' ORDER BY id",
+    )?;
+    let mut changed = 0;
+    for (id, artwork) in albums {
+        if !artwork.trim().is_empty() && resolve(&artwork).is_some() {
+            continue;
+        }
+        let candidates: Vec<String> = covers
+            .query_map([id], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        if let Some(cover) = candidates.into_iter().find(|c| resolve(c).is_some())
+            && cover != artwork
+        {
+            conn.execute("UPDATE albums SET artwork_path = ?1 WHERE id = ?2", rusqlite::params![cover, id])?;
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
 /// 导入后从音频保存封面；单首失败不打断导入。
 pub fn save_imported_covers(conn: &rusqlite::Connection, covers_dir: &std::path::Path, report: &jp_import::ImportReport) -> usize {
     let mut saved = 0;
@@ -1483,6 +1541,29 @@ pub fn save_imported_covers(conn: &rusqlite::Connection, covers_dir: &std::path:
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn covers_on_another_computer_count_as_missing() {
+        let dir = std::env::temp_dir().join(format!("jp-scrape-moved-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = jp_corpus::fixture::write_to(&dir).unwrap();
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let covers = dir.join("covers");
+        // 原样当真（Windows 版）：004 有封面路径，只查另外 3 首
+        let kept = backfill_covers(&conn, &covers, true).unwrap();
+        assert_eq!(kept.checked, 3);
+        // 这台电脑上一个文件都找不到：004 那张也要补
+        let nothing = |_: &str| None;
+        let moved = backfill_covers_with(&conn, &covers, true, &nothing).unwrap();
+        assert_eq!(moved.checked, 4);
+        // 专辑图：找得到的歌曲封面才拿来用
+        let only_004 = |p: &str| (p == "E:/music/covers/004.jpg").then(|| std::path::PathBuf::from(p));
+        assert_eq!(fill_album_artwork_with(&conn, &nothing).unwrap(), 0);
+        assert_eq!(fill_album_artwork_with(&conn, &only_004).unwrap(), 1);
+        assert_eq!(fill_album_artwork_with(&conn, &only_004).unwrap(), 0, "再跑一次不重复改");
+        drop(conn);
+        std::fs::remove_dir_all(dir).ok();
+    }
     /// 手动换的照片刮削不覆盖；恢复后用回刮削下的那张，刮削又能更新它
     #[test]
     fn a_hand_picked_artist_photo_survives_scraping_until_reset() {
