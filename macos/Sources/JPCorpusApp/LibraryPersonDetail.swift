@@ -64,22 +64,17 @@ struct PersonDetailView: View {
         .task(id: "\(personId)-\(app.library.version)") { await load() }
     }
 
+    /// 页内切换用系统的分段控件（macOS 原生的样子），不用 Windows 那种下划线标签栏
     private var tabs: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 28) {
-                ForEach(LibraryPersonTab.allCases, id: \.self) { value in
-                    Button { tab = value } label: {
-                        Text(value.rawValue).font(.system(size: 14, weight: tab == value ? .semibold : .regular))
-                            .foregroundStyle(tab == value ? Color.primary : Color.secondary)
-                            .padding(.vertical, 13)
-                            .overlay(alignment: .bottom) {
-                                if tab == value { Capsule().fill(Color.accentColor).frame(height: 3) }
-                            }
-                    }
-                    .buttonStyle(.plain).accessibilityAddTraits(tab == value ? [.isSelected] : [])
-                }
-            }.padding(.horizontal, 28)
-        }.frame(height: 44).scrollIndicators(.never).overlay(alignment: .bottom) { Divider() }
+        Picker("", selection: $tab) {
+            ForEach(LibraryPersonTab.allCases, id: \.self) { value in
+                Text(value.rawValue).tag(value)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .padding(.horizontal, 32)
     }
 
     private func heroActions(queue: [Track]) -> some View {
@@ -98,32 +93,49 @@ struct PersonDetailView: View {
                     }
                 }.frame(height: 30).scrollIndicators(.never)
             }
-            ScrollView(.horizontal) {
-                HStack(spacing: 10) {
-                    LibraryPlayButton(disabled: queue.isEmpty) {
-                        if let first = queue.first(where: { $0.lineCount > 0 }) ?? queue.first {
-                            Task { await app.play(songId: first.id, queue: queue) }
-                        }
+            HStack(spacing: 12) {
+                // 圆形播放键（Apple Music 的样子）
+                Button {
+                    if let first = queue.first(where: { $0.lineCount > 0 }) ?? queue.first {
+                        Task { await app.play(songId: first.id, queue: queue) }
                     }
-                    Button("分析这个人的歌") {
-                        app.analysisScope = ScopeRequest(name: displayName, performerIds: [personId])
-                        app.section = .analysis
-                    }
-                    Menu("可视化") {
-                        Button("关系网") { app.visualizations.selected = personId; openVisualization(.graph) }
-                        Button("时间轴") {
-                            app.visualizations.treePerson = personId; app.visualizations.treeFocus = nil
-                            openVisualization(.timeline)
-                        }
-                        Button("词云") {
-                            if app.visualizations.cloudFilter.performerIds != [personId] {
-                                app.visualizations.cloudFilter.performerIds = [personId]; app.visualizations.picked = nil
-                            }
-                            openVisualization(.cloud)
-                        }
-                    }.menuStyle(.borderlessButton).fixedSize()
+                } label: {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 48, height: 48)
+                        .background(Circle().fill(Color.accentColor))
+                        .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
                 }
-            }.frame(height: 40).scrollIndicators(.never)
+                .buttonStyle(.plain)
+                .disabled(queue.isEmpty)
+                .help("播放")
+                Button("分析这个人的歌") {
+                    app.analysisScope = ScopeRequest(name: displayName, performerIds: [personId])
+                    app.section = .analysis
+                }
+                .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.large)
+                Menu {
+                    Button("关系网") { app.visualizations.selected = personId; openVisualization(.graph) }
+                    Button("时间轴") {
+                        app.visualizations.treePerson = personId; app.visualizations.treeFocus = nil
+                        openVisualization(.timeline)
+                    }
+                    Button("词云") {
+                        if app.visualizations.cloudFilter.performerIds != [personId] {
+                            app.visualizations.cloudFilter.performerIds = [personId]; app.visualizations.picked = nil
+                        }
+                        openVisualization(.cloud)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help("可视化：关系网、时间轴、词云")
+            }
         }
     }
 
@@ -319,94 +331,89 @@ private struct LibrarySongCoverTile: View {
     }
 }
 
-@MainActor
+/// 音乐人页的头图，照 Apple Music：照片铺满整个宽度，名字大字压在左下角，下面一行灰字概括，
+/// 再下面是圆形播放键和几个胶囊按钮。没有照片时用一块强调色渐变。
+/// 以前是 Windows 版的样子（照片挤在右边、彩色角色标签、大号数字统计块），在 Mac 上显得不原生
 private struct LibraryArtistHero<Actions: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
     let name: String
     let imagePath: String
     let person: DirectoryEntry?
     let isBand: Bool
     @ViewBuilder var actions: () -> Actions
 
+    private static var height: CGFloat { 380 }
+
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .bottomLeading) {
-                LibraryArtworkBackdrop(path: imagePath)
-                portrait(width: proxy.size.width, height: proxy.size.height)
-                LinearGradient(colors: [scrim.opacity(0.8), .clear], startPoint: .bottom, endPoint: .top)
-                LinearGradient(colors: [scrim.opacity(0.65), .clear], startPoint: .leading, endPoint: .trailing)
-                information(width: proxy.size.width)
-                    .padding(.horizontal, 28).padding(.bottom, 26).padding(.top, 24)
-            }.frame(width: proxy.size.width, height: proxy.size.height).background(Color.accentColor.opacity(0.04)).clipped()
-        }.frame(height: 340)
-    }
-
-    private func portrait(width: CGFloat, height: CGFloat) -> some View {
-        HStack {
-            Spacer(minLength: 0)
-            if imagePath.isEmpty {
-                CoverImage(path: "", size: 150, circle: true, placeholder: "person.fill", identity: name)
-                    .padding(.trailing, 56).opacity(0.65)
-            } else {
-                CoverImage(path: imagePath, size: height * 1.4, cornerRadius: 0)
-                    .frame(width: min(width * 0.7, height * 1.4), height: height).clipped()
-                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.45)],
-                                         startPoint: .leading, endPoint: .trailing))
-                    .opacity(width < 760 ? 0.4 : 0.85)
-            }
-        }.frame(height: height).allowsHitTesting(false).accessibilityHidden(true)
-    }
-
-    private var scrim: Color { colorScheme == .dark ? .black : .white }
-
-    private func information(width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            roleTags
-            Text(name.isEmpty ? "加载中…" : name)
-                .font(.system(size: titleSize(width: width), weight: .bold))
-                .lineLimit(2).minimumScaleFactor(0.7).textSelection(.enabled)
-            if let person {
-                HStack(spacing: 26) {
-                    if person.performer > 0 { StatBlock(value: "\(person.performer)", label: "演唱") }
-                    StatBlock(value: "\(person.songs)", label: "首作品")
-                    if !person.firstYear.isEmpty { StatBlock(value: String(person.firstYear.prefix(4)), label: "最早发行") }
-                }
-            }
-            actions()
-        }.frame(maxWidth: width < 760 ? .infinity : min(680, width * 0.72), alignment: .leading)
-    }
-
-    private var roleTags: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                if isBand { tag("乐队", color: .secondary) }
-                if let person {
-                    ForEach(LibraryIndex.rolesOf(person), id: \.self) { role in
-                        tag(roleLabels[role] ?? role, color: LibraryAppearance.roleColor(role))
+                backdrop(width: proxy.size.width)
+                // 下半截压暗，白字在任何照片上都看得清
+                LinearGradient(stops: [.init(color: .clear, location: 0.3),
+                                       .init(color: .black.opacity(0.78), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(name.isEmpty ? "加载中…" : name)
+                        .font(.system(size: titleSize(width: proxy.size.width), weight: .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(2).minimumScaleFactor(0.6)
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
+                        .textSelection(.enabled)
+                    if !summary.isEmpty {
+                        Text(verbatim: summary)
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.white.opacity(0.78))
                     }
-                    if !person.firstYear.isEmpty {
-                        Text(years(person)).font(.caption).foregroundStyle(.secondary)
-                    }
+                    actions().padding(.top, 12)
                 }
+                .padding(.horizontal, 32).padding(.bottom, 28)
             }
-        }.frame(height: 28).scrollIndicators(.never)
+            .frame(width: proxy.size.width, height: Self.height)
+            .clipped()
+            // 按钮、菜单都按深色背景画（压在照片上）
+            .environment(\.colorScheme, .dark)
+        }
+        .frame(height: Self.height)
     }
 
-    private func tag(_ title: String, color: Color) -> some View {
-        Text(title).font(.caption).padding(.horizontal, 10).padding(.vertical, 5)
-            .foregroundStyle(color).background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(color.opacity(0.4), lineWidth: 0.5) }
+    @ViewBuilder
+    private func backdrop(width: CGFloat) -> some View {
+        if imagePath.isEmpty {
+            LinearGradient(colors: [Color.accentColor.opacity(0.9), Color.indigo.opacity(0.75), Color.black.opacity(0.85)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .trailing) {
+                    Image(systemName: isBand ? "person.3.fill" : "person.fill")
+                        .font(.system(size: 160)).foregroundStyle(.white.opacity(0.12)).padding(.trailing, 60)
+                }
+        } else {
+            // 宽度那么大的正方形，靠上裁：人像照片脸一般在上半部分
+            CoverImage(path: imagePath, size: max(width, Self.height), cornerRadius: 0, placeholder: "person.fill")
+                .frame(width: width, height: Self.height, alignment: .top)
+                .clipped()
+        }
+    }
+
+    /// 「乐队 · 演唱、编曲 · 2018–2026 · 73 首」
+    private var summary: String {
+        var parts: [String] = []
+        if isBand { parts.append(L10n.t("乐队")) }
+        if let person {
+            let roles = LibraryIndex.rolesOf(person).map { L10n.t(roleLabels[$0] ?? $0) }
+            if !roles.isEmpty { parts.append(roles.joined(separator: L10n.isEnglish ? ", " : "、")) }
+            if !person.firstYear.isEmpty { parts.append(years(person)) }
+            parts.append(L10n.t("\(person.songs) 首"))
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func titleSize(width: CGFloat) -> CGFloat {
-        if name.count > 9 { return min(56, max(30, width * 0.046)) }
-        return min(72, max(34, width * 0.065))
+        if name.count > 9 { return min(52, max(30, width * 0.044)) }
+        return min(64, max(34, width * 0.06))
     }
 
     private func years(_ person: DirectoryEntry) -> String {
         let first = String(person.firstYear.prefix(4))
         let last = String((person.ended.isEmpty ? person.lastYear : person.ended).prefix(4))
         let span = first == last || last.isEmpty ? first : "\(first)–\(last)"
-        return person.ended.isEmpty ? span : "\(span) · 已结束活动"
+        return person.ended.isEmpty ? span : "\(span) · " + L10n.t("已结束活动")
     }
 }
