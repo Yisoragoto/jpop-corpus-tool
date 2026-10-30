@@ -600,12 +600,13 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
             json!(total)
         }
         "scrapeArtistsStart" => {
+            let dir = session.artists_dir();
             let names = {
                 let corpus = session.corpus.lock().map_err(|_| anyhow!("语料库连接已损坏"))?;
-                jp_scrape::library_artists(corpus.connection(), arg_or(args, "onlyMissing", true)?)?
+                jp_scrape::library_artists_with_files(corpus.connection(), arg_or(args, "onlyMissing", true)?, Some(&dir))?
             };
             let total = names.len();
-            let (db, dir) = (session.db_path.clone(), session.artists_dir());
+            let db = session.db_path.clone();
             start_scrape(session, move |cancelled, progress| {
                 jp_scrape::run_artist_batch(&db, &dir, &names, cancelled, progress)
             })?;

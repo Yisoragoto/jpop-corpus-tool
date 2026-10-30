@@ -896,6 +896,19 @@ pub fn reset_artist_image(conn: &rusqlite::Connection, artists_dir: &std::path::
 ///
 /// `only_missing` 为真时只返回**还没有照片、或者还没认出 MusicBrainz 条目**的——重跑幂等。
 pub fn library_artists(conn: &rusqlite::Connection, only_missing: bool) -> Result<Vec<String>> {
+    library_artists_with_files(conn, only_missing, None)
+}
+
+/// 同 [`library_artists`]，但给了 `artists_dir`（`raw/artists`）时，库里记着有照片、
+/// 这台机器上却找不到那张图的，也算缺。
+///
+/// 库从别的电脑拷来时常常只拷了 corpus.db，或者照片路径是那台机器的绝对路径：
+/// 只看数据库会把这些歌手当成「齐了」跳过，结果怎么刮都没有图
+pub fn library_artists_with_files(
+    conn: &rusqlite::Connection,
+    only_missing: bool,
+    artists_dir: Option<&std::path::Path>,
+) -> Result<Vec<String>> {
     let mut stmt =
         conn.prepare("SELECT DISTINCT artist FROM songs WHERE COALESCE(artist,'')<>''")?;
     let raw: Vec<String> = stmt
@@ -920,14 +933,26 @@ pub fn library_artists(conn: &rusqlite::Connection, only_missing: bool) -> Resul
     let mut have = std::collections::BTreeSet::new();
     // 「齐了」= 有照片、也认出了 MusicBrainz 条目。缺 MBID 的再查一次，成员关系是跟着 MBID 拿的
     let mut stmt = conn.prepare(
-        "SELECT name FROM artists WHERE COALESCE(image_path,'')<>'' AND COALESCE(mbid,'')<>''",
+        "SELECT name, image_path FROM artists WHERE COALESCE(image_path,'')<>'' AND COALESCE(mbid,'')<>''",
     )?;
-    for row in stmt.query_map([], |r| r.get::<_, String>(0))? {
-        have.insert(row?);
+    for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+        let (name, image) = row?;
+        if artists_dir.is_none_or(|dir| artist_image_on_disk(&image, dir)) {
+            have.insert(name);
+        }
     }
     names.retain(|n| !have.contains(n));
     names.sort();
     Ok(names)
+}
+
+/// 这张歌手照片在这台机器上找得到吗：原路径、或者 `raw/artists` 下同名的文件
+fn artist_image_on_disk(stored: &str, artists_dir: &std::path::Path) -> bool {
+    if std::path::Path::new(stored).is_file() {
+        return true;
+    }
+    let name = stored.rsplit(['/', '\\']).next().unwrap_or("");
+    !name.is_empty() && artists_dir.join(name).is_file()
 }
 
 /// 刮一批歌手（在调用方的线程上跑完才返回）。和 [`run_batch`] 一样的回调形状
@@ -1883,5 +1908,31 @@ mod tests {
         let members = jp_corpus::members::members_of(&conn, 1).unwrap();
         assert_eq!(members.len(), 1, "suis 被否掉了，不回来");
         assert_eq!(members[0].part, "作词作曲 · 吉他", "手动写的分工不被刮削改掉");
+    }
+}
+
+#[cfg(test)]
+mod artist_file_tests {
+    use super::*;
+
+    #[test]
+    fn an_artist_whose_photo_file_is_missing_is_scraped_again() {
+        let dir = std::env::temp_dir().join(format!("jp-scrape-artists-{}", std::process::id()));
+        let artists = dir.join("raw").join("artists");
+        std::fs::create_dir_all(&artists).unwrap();
+        std::fs::write(artists.join("here.jpg"), b"x").unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE songs (id TEXT, artist TEXT);
+             CREATE TABLE artists (name TEXT PRIMARY KEY, image_path TEXT, mbid TEXT);
+             INSERT INTO songs VALUES ('1','在る'),('2','無い'),('3','新人');
+             INSERT INTO artists VALUES ('在る', 'C:\\old\\raw\\artists\\here.jpg', 'm1'), ('無い', 'C:\\old\\raw\\artists\\gone.jpg', 'm2');",
+        )
+        .unwrap();
+        // 只看数据库：两个都算齐了
+        assert_eq!(library_artists(&conn, true).unwrap(), vec!["新人".to_string()]);
+        // 看文件：照片在别的电脑上的那位也要重刮
+        assert_eq!(library_artists_with_files(&conn, true, Some(&artists)).unwrap(), vec!["新人".to_string(), "無い".to_string()]);
+        std::fs::remove_dir_all(dir).ok();
     }
 }

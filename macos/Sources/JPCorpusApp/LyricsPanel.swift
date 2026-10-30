@@ -195,7 +195,8 @@ struct LyricsPanel: View {
             text: LyricSegments.lookupText(line.tokens, from: index),
             songId: app.player.track?.id,
             utteranceId: line.utteranceId,
-            tokenIndex: index
+            tokenIndex: index,
+            lemma: line.tokens[index].lemma.isEmpty ? line.tokens[index].surface : line.tokens[index].lemma
         )
     }
 

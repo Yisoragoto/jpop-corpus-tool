@@ -18,6 +18,8 @@ struct CloudView: View {
     @State private var canvasSize = CGSize.zero
     @State private var hovered: String?
     @State private var photos: [NSImage] = []
+    /// photos 拼好、虚化好的底图
+    @State private var blurredBackdrop: NSImage?
     /// 底图拼的是谁：选了歌手就是选中的人，没选就是曲数最多、有照片的几位（和 Windows 版一样）
     @State private var backdropPeople: [DirectoryEntry] = []
     @State private var colors = ArtworkColors()
@@ -47,7 +49,7 @@ struct CloudView: View {
         }
         .padding(18)
         .animation(.spring(duration: 0.35), value: model.picked?.lemma)
-        .background { CloudBackdrop(photos: photos).ignoresSafeArea() }
+        .background { CloudBackdrop(photos: photos, blurred: blurredBackdrop).ignoresSafeArea() }
         // 底是照片：不管系统深浅色，一律深底亮字（和 Windows 版一样）
         .environment(\.colorScheme, .dark)
         .foregroundStyle(.white)
@@ -61,7 +63,9 @@ struct CloudView: View {
             for p in people {
                 if let path = try? await client.resolveMedia(p.imagePath), let image = loadImage(atPath: path) { images.append(image) }
             }
-            if !Task.isCancelled { photos = images; backdropPeople = people; colors = ArtworkColors(image: images.first) }
+            // 拼图和整屏差不多宽（1.36 倍是 CloudBackdrop 往外多铺的那圈）
+            let blurred = await Artwork.blurredCollage(images, radius: 48, saturation: 1.5, displayWidth: 1400 * 1.36)
+            if !Task.isCancelled { photos = images; blurredBackdrop = blurred; backdropPeople = people; colors = ArtworkColors(image: images.first) }
         }
         .onAppear { model.cloudPresent = NSApplication.shared.keyWindow?.styleMask.contains(.fullScreen) ?? false }
         .onExitCommand { if !app.showStage { if model.picked != nil { model.picked = nil } else if model.cloudPresent { NSApplication.shared.keyWindow?.toggleFullScreen(nil); model.cloudPresent = false } } }
@@ -226,7 +230,7 @@ struct CloudView: View {
             HStack { Text(who).font(.system(size: 22, weight: .semibold)); Spacer(); Text("JPOP Corpus Tool").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6)) }.frame(height: 64, alignment: .top)
             WordCloudPainting(placed: model.placed,family: family,tint: tint,colorByPos: colorByPos,hovered: nil).frame(width: canvasSize.width,height: canvasSize.height)
                 .padding(10).background { CloudGlass(material: false) }
-        }.padding(28).foregroundStyle(.white).background { CloudBackdrop(photos: photos) }.environment(\.colorScheme, .dark)
+        }.padding(28).foregroundStyle(.white).background { CloudBackdrop(photos: photos, blurred: blurredBackdrop) }.environment(\.colorScheme, .dark)
         let renderer = ImageRenderer(content: content); renderer.scale = 2
         guard let image = renderer.cgImage,let png = NSBitmapImageRep(cgImage: image).representation(using: .png,properties: [:]) else { app.errorMessage = "生成图片失败"; return }
         Task { do { try await client.exportPng(path: url.path, bytes: Array(png)) } catch { app.errorMessage = error.localizedDescription } }
@@ -258,6 +262,7 @@ private struct CloudGlass: View {
 @MainActor
 private struct CloudBackdrop: View {
     let photos: [NSImage]
+    var blurred: NSImage? = nil
     private static let base = Color(red: 0x15 / 255, green: 0x15 / 255, blue: 0x1c / 255)
     private static let shade = Color(red: 10 / 255, green: 10 / 255, blue: 16 / 255)
     var body: some View {
@@ -270,7 +275,12 @@ private struct CloudBackdrop: View {
                                    center: UnitPoint(x: 0.3, y: 0.4), startRadius: 0, endRadius: reach * 0.45)
                     RadialGradient(colors: [Color(red: 160 / 255, green: 110 / 255, blue: 1).opacity(0.4), .clear],
                                    center: UnitPoint(x: 0.7, y: 0.6), startRadius: 0, endRadius: reach * 0.45)
+                } else if let blurred {
+                    Image(nsImage: blurred).resizable()
+                        .frame(width: width * 1.36, height: height * 1.36)
+                        .frame(width: width, height: height)
                 } else {
+                    // 虚化图还没算好时的样子（算好前只出现一瞬）
                     // 往外多铺 18%：重度模糊的边缘会发灰
                     let w = width * 1.36, h = height * 1.36
                     ZStack(alignment: .topLeading) {
