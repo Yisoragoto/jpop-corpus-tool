@@ -8,11 +8,12 @@ import WebKit
 struct DictionaryDefinitionView: View {
     let definition: LookupDefinition
     let client: CorpusClient
+    @Environment(\.colorScheme) private var colorScheme
     @State private var html: String?
     @State private var failure: String?
     var body: some View {
         Group {
-            if let html { DefinitionWebView(html: html, core: client.core).frame(minHeight: 120, idealHeight: 180, maxHeight: 260) }
+            if let html { DefinitionWebView(html: html, core: client.core, dark: colorScheme == .dark).frame(minHeight: 120, idealHeight: 180, maxHeight: 260) }
             else { ForEach(Array(definition.text.enumerated()), id: \.offset) { Text($0.element).textSelection(.enabled) } }
             if let failure { Text(failure).font(.caption).foregroundStyle(.orange) }
         }.task(id: definition) {
@@ -27,6 +28,8 @@ struct DictionaryDefinitionView: View {
 private struct DefinitionWebView: NSViewRepresentable {
     let html: String
     let core: CorpusCore
+    /// 跟着所在区域的深浅色走（全屏歌词里永远是深色），不跟系统
+    let dark: Bool
     /// 只允许加载自己的释义页；释义里的外链交给系统浏览器，不在面板里跳走。
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
@@ -44,9 +47,13 @@ private struct DefinitionWebView: NSViewRepresentable {
         config.setURLSchemeHandler(DictionaryMedia(core: core), forURLScheme: "jpdict")
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
+        // 透明底：释义铺在面板的玻璃上，不是一块白板
+        view.setValue(false, forKey: "drawsBackground")
         return view
     }
     func updateNSView(_ view: WKWebView, context: Context) {
+        let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        if view.appearance?.name != appearance?.name { view.appearance = appearance }
         if context.coordinator.loadedHTML != html {
             context.coordinator.loadedHTML = html
             view.loadHTMLString(html, baseURL: URL(string: "jpdict://definition"))

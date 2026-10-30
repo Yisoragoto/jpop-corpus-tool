@@ -73,8 +73,8 @@ struct JPCorpusApp: App {
                     .keyboardShortcut("y", modifiers: [.command])
                 Button(app.showStage ? "退出全屏歌词" : "全屏歌词") {
                     app.showStage.toggle()
-                    // 平时由主窗口开全屏歌词窗口；主窗口被关掉时自己开
-                    if app.showStage, MainWindow.window?.isVisible != true { MainWindow.open?(id: "stage") }
+                    // 全屏歌词在主窗口里：主窗口被 ⌘W 关掉了就先开回来
+                    if app.showStage, MainWindow.window?.isVisible != true { MainWindow.open?(id: MainWindow.id) }
                 }
                     .keyboardShortcut("f", modifiers: [.command, .shift])
                     .disabled(app.player.track == nil)
@@ -99,14 +99,6 @@ struct JPCorpusApp: App {
             }
         }
 
-        // 全屏歌词：没有标题栏的独立窗口，打开后切进原生全屏
-        Window("全屏歌词", id: "stage") {
-            LyricsStage()
-                .environment(app)
-                .frame(minWidth: 720, minHeight: 480)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1280, height: 800)
 
         Settings {
             SettingsView()

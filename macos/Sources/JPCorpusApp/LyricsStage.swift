@@ -5,16 +5,15 @@ import JPCorpusModel
 
 /// 全屏歌词。对应 Windows 版的 `LyricsStage`（照 Spotify / Apple Music 的全屏歌词）：
 ///
-/// - 单独一个没有标题栏的窗口，打开就进 macOS 的原生全屏，关掉就没了（主窗口不受影响）；
+/// - 和 Windows 版一样是主窗口里铺满的一层（不另开窗口）；右上角可以把整个窗口切成系统全屏；
 /// - 底是整张封面大幅虚化铺满，再压一层暗色，字一律白色；没有封面时是深色渐变；
 /// - 左边大封面和歌名，右边歌词：当前行放大、停在可视高度 45% 处，换行时平滑滚过去；
-/// - 点一行跳到那一句；振假名开关和歌词面板是同一份；底部是同一个播放条；
+/// - 点词查词（右边打开查词栏，不动播放进度），点行里别处跳到那一句；逐字点亮的行也一样；
+/// - 振假名开关和歌词面板是同一份；底部是同一个播放条；
 /// - Esc 或右上角的按钮退出。
 @MainActor
 struct LyricsStage: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.dismissWindow) private var dismissWindow
-    @Environment(\.openWindow) private var openWindow
     @State private var cover: NSImage?
     /// 预先虚化好的封面（见 Artwork）：全屏的实时模糊是播放时 GPU 占用的大头
     @State private var blurredCover: NSImage?
@@ -44,7 +43,7 @@ struct LyricsStage: View {
             let middle = max(geo.size.height - Self.topHeight - (hasBar ? Self.barHeight : 0), 160)
             let lookupWidth = min(max(260, sideWidth), max(260, min(720, Double(geo.size.width) - (wide ? 128 : 56) - 420 - (wide ? 104 : 48))))
             VStack(spacing: 0) {
-                topBar
+                topBar(narrow: !wide)
                     .frame(height: Self.topHeight)
                 HStack(alignment: .center, spacing: wide ? 48 : 20) {
                     if wide, lookup == nil, let track = player.track {
@@ -69,12 +68,12 @@ struct LyricsStage: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .onAppear {
-                if SmokeRun.isEnabled { SmokeRun.trace("全屏歌词窗口 \(Int(geo.size.width))×\(Int(geo.size.height))") }
+                if SmokeRun.isEnabled { SmokeRun.trace("全屏歌词 \(Int(geo.size.width))×\(Int(geo.size.height))") }
             }
         }
         .background { backdrop.ignoresSafeArea() }
         .environment(\.colorScheme, .dark)
-        .onAppear { karaoke = app.stageKaraoke; MainWindow.open = MainWindow.open ?? openWindow }
+        .onAppear { karaoke = app.stageKaraoke }
         .onChange(of: karaoke) { _, value in app.stageKaraoke = value; lookup = nil }
         .onExitCommand { if selectionLine != nil { selectionLine = nil } else { close() } }
         .popover(item: $selectionLine) { line in
@@ -106,12 +105,6 @@ struct LyricsStage: View {
             blurredCover = blurred
         }
         .background(PlaybackKeyboard(app: app, exit: { close() }))
-        .background(WindowReader { window = $0 })
-        .onChange(of: window) { _, w in enterFullScreen(w) }
-        // 窗口被关掉（红色按钮、⇧⌘F、Esc）都会走到这里：把状态收回来
-        .onDisappear { app.showStage = false }
-        // 菜单里「退出全屏歌词」时主窗口可能已经关了：自己收窗口
-        .onChange(of: app.showStage) { _, on in if !on { dismissWindow(id: "stage") } }
     }
 
     // MARK: - 各块
@@ -141,10 +134,10 @@ struct LyricsStage: View {
             }
     }
 
-    private var topBar: some View {
+    private func topBar(narrow: Bool) -> some View {
         HStack(spacing: 14) {
             Spacer()
-            if let track = app.player.track, (window?.frame.width ?? 1280) <= 900 {
+            if let track = app.player.track, narrow {
                 Text(track.title).font(.headline).lineLimit(1)
             }
             if let track = app.player.track {
@@ -155,7 +148,7 @@ struct LyricsStage: View {
             }
             FuriganaMenu()
             LyricsDisplayButton()
-            Button { window?.toggleFullScreen(nil) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+            Button { MainWindow.window?.toggleFullScreen(nil) } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                 .help("切换窗口全屏").accessibilityLabel("窗口全屏")
             Button {
                 close()
@@ -303,7 +296,13 @@ struct LyricsStage: View {
                 TimedLyricLine(text: line.text, units: units, live: current,
                                frozen: index < (active ?? 0) ? .greatestFiniteMagnitude : -1,
                                size: 34, highlight: .white) { unit in
-                    Task { await app.player.playUnit(unit, in: line) }
+                    // 和普通行一样：点到的是词就查词、不动进度；标点之类查不了的才从这个字放
+                    if let token = LyricSegments.tokenIndex(atChar: unit.charStart, text: line.text, tokens: line.tokens),
+                       LyricSegments.lookupCandidates(line.tokens).contains(token) {
+                        lookUp(line, token: token)
+                    } else {
+                        Task { await app.player.playUnit(unit, in: line) }
+                    }
                 }
             } else {
                 // 点词查词（右边打开查词栏）；点行里别的地方从这一句放
@@ -317,7 +316,7 @@ struct LyricsStage: View {
             .animation(reduceMotion ? nil : .spring(duration: 0.4), value: current)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .onTapGesture { if units == nil { Task { await app.player.playLine(line) } } }
+            .onTapGesture { Task { await app.player.playLine(line) } }
             .help(line.timeSec.map { "点词查词，点空白处从 \(formatTime($0)) 放" } ?? "点词查词（这一行没有时间戳）")
             .contextMenu {
                 Button("从这里放") { Task { await app.player.playLine(line) } }.disabled(line.timeSec == nil)
@@ -386,21 +385,7 @@ struct LyricsStage: View {
         KaraokeLyricText(line: line, units: app.player.timingUnits(for: line), sec: sec)
     }
 
-    // MARK: - 窗口
-
-    @State private var window: NSWindow?
-
-    /// 自己的窗口一拿到就进原生全屏。冒烟截图时不切：CI 的虚拟显示器上切全屏要等动画，截出来的可能是半截
-    private func enterFullScreen(_ window: NSWindow?) {
-        guard !SmokeRun.isEnabled, let window, !window.styleMask.contains(.fullScreen) else { return }
-        window.toggleFullScreen(nil)
-    }
-
-    /// 自己关掉窗口：主窗口被 ⌘W 关了的时候，没有别人替全屏歌词收窗口
-    private func close() {
-        app.showStage = false
-        dismissWindow(id: "stage")
-    }
+    private func close() { app.showStage = false }
 }
 
 /// 全屏的底：预先虚化的封面 + 三团慢慢漂的颜色。
