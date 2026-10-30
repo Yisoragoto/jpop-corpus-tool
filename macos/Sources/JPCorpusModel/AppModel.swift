@@ -86,6 +86,8 @@ public final class AppModel {
     public var analysisScope: ScopeRequest?
     /// ⌘K 全库搜索
     public var showQuickSearch = false
+    /// 主窗口的「打开语料库」选择器（文件菜单 ⌘O、欢迎页、导入页、侧栏库名都打开它）
+    public var showLibraryPicker = false
     public var paletteCommands = false
     public let scopes: SubcorpusStore
     public let visualizations = VisualizationModel()

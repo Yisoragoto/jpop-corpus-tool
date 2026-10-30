@@ -68,6 +68,7 @@ struct ContentView: View {
                 .glass(.sidebar)
             }
         }
+        .modifier(LibraryPickerHost())
         .background(GlassWindowConfigurator())
         .background(WindowReader { MainWindow.window = $0 })
         .onAppear { MainWindow.open = openWindow }
@@ -99,7 +100,6 @@ struct ContentView: View {
 @MainActor
 struct WelcomeView: View {
     @Environment(AppModel.self) private var app
-    @State private var picking = false
 
     var body: some View {
         VStack(spacing: 18) {
@@ -116,7 +116,7 @@ struct WelcomeView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .help("在默认位置建库（已经有就打开它），然后去导入页")
-                Button("打开已有语料库…") { picking = true }
+                Button("打开已有语料库…") { app.showLibraryPicker = true }
                     .help("选语料库文件夹，或直接选里面的 corpus.db")
                     .controlSize(.large)
                 Button("先看看示例") { Task { await app.openDemo() } }
@@ -130,24 +130,5 @@ struct WelcomeView: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .glass(.sidebar)
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder, UTType(filenameExtension: "db") ?? .data, UTType(filenameExtension: "sqlite") ?? .data]) { result in
-            switch result {
-            case .failure(let error):
-                app.errorMessage = error.localizedDescription
-            case .success(let url):
-                Task { await app.selectLibrary(picked: url) }
-            }
-        }
-        .alert("新建语料库？", isPresented: Binding(
-            get: { app.pendingCreationURL != nil },
-            set: { if !$0 { app.cancelCreation() } }
-        )) {
-            if let folder = app.pendingCreationURL {
-                Button("新建") { Task { await app.confirmCreation(in: folder) } }
-                Button("取消", role: .cancel) { app.cancelCreation() }
-            }
-        } message: {
-            Text("这里没有 corpus.db，要在这里新建语料库吗？\n\(app.pendingCreationURL?.path ?? "")")
-        }
     }
 }

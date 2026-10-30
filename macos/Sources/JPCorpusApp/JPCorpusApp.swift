@@ -102,6 +102,15 @@ struct JPCorpusApp: App {
                 Button("窗口全屏") { NSApplication.shared.keyWindow?.toggleFullScreen(nil) }
                     .keyboardShortcut(KeyEquivalent("\u{F70E}"), modifiers: [])
             }
+            // 文件菜单：打开 / 新建语料库。以前只有设置页里一个「换一个…」，打开过库之后很难找到
+            CommandGroup(replacing: .newItem) {
+                Button("打开语料库…") {
+                    if app.showStage { app.showStage = false }
+                    app.showLibraryPicker = true
+                }
+                .keyboardShortcut("o", modifiers: [.command])
+                Button("新建语料库") { Task { await app.createLibrary() } }
+            }
             CommandGroup(after: .textEditing) {
                 Button("全库搜索…") { app.showQuickSearch = true }
                     .keyboardShortcut("k", modifiers: [.command])

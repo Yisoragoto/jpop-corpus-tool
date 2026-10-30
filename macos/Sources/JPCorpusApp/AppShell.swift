@@ -100,8 +100,12 @@ struct AppShell<Detail: View>: View {
             }
             Spacer(minLength: 12)
             railItem(.settings)
-            LibraryBadge()
-                .transition(.opacity)
+            Button { app.showLibraryPicker = true } label: {
+                LibraryBadge()
+            }
+            .buttonStyle(.plain)
+            .help("打开其他语料库（⌘O）")
+            .transition(.opacity)
         }
         .padding(.horizontal, 10)
         .padding(.bottom, 8)
@@ -206,15 +210,22 @@ struct LibraryBadge: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(app.isDemo ? "示例语料库" : (app.libraryURL?.lastPathComponent ?? ""))
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
-            Text("\(app.tracks.count) 首")
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.isDemo ? "示例语料库" : (app.libraryURL?.lastPathComponent ?? ""))
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                Text("\(app.tracks.count) 首")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "arrow.left.arrow.right")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
+        .contentShape(Rectangle())
     }
 }

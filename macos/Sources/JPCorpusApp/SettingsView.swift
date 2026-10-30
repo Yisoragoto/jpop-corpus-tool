@@ -78,7 +78,7 @@ struct SettingsView: View {
             }
         }
         .fileImporter(isPresented: $pick.isPresented, allowedContentTypes: pick.intent == .library
-                      ? [.folder, UTType(filenameExtension: "db") ?? .data, UTType(filenameExtension: "sqlite") ?? .data]
+                      ? libraryPickerTypes
                       : [.folder]) { result in
             let kind = pick.finish()
             switch result {
