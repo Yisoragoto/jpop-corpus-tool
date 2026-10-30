@@ -84,7 +84,6 @@ struct CqlExamplesView: View {
         }
         .font(.caption)
         .frame(maxWidth: .infinity, alignment: .leading)
-        }
     }
 }
 

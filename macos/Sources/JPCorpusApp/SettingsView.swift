@@ -55,8 +55,9 @@ struct SettingsView: View {
     @AppStorage("settings.category") private var selectedCategory = SettingsCategory.appearance.rawValue
     private enum PickKind { case library, audio }
     @State private var pick = FilePickState<PickKind>()
-    @State private var lyricsOpen = false
-    @State private var maintenanceOpen = false
+    /// 一个视图只挂一个 sheet（SourceGuards）：用哪个由这里决定
+    private enum Sheet: String, Identifiable { case lyrics, maintenance; var id: String { rawValue } }
+    @State private var sheet: Sheet?
 
     private var category: SettingsCategory { SettingsCategory(rawValue: selectedCategory) ?? .appearance }
 
@@ -69,8 +70,12 @@ struct SettingsView: View {
         .controlSize(.regular)
         .glass(.sidebar)
         .frame(width: embedded ? nil : 880, height: embedded ? nil : 640)
-        .sheet(isPresented: $lyricsOpen) { LyricsLibraryView() }
-        .sheet(isPresented: $maintenanceOpen) { LibraryMaintenanceView() }
+        .sheet(item: $sheet) { which in
+            switch which {
+            case .lyrics: LyricsLibraryView()
+            case .maintenance: LibraryMaintenanceView()
+            }
+        }
         .fileImporter(isPresented: $pick.isPresented, allowedContentTypes: pick.intent == .library
                       ? [.folder, UTType(filenameExtension: "db") ?? .data, UTType(filenameExtension: "sqlite") ?? .data]
                       : [.folder]) { result in
@@ -213,11 +218,11 @@ struct SettingsView: View {
             }
             SettingDivider()
             SettingRow(icon: "externaldrive", title: "资料库管理", description: "歌曲、音频、成员、维护与迁移") {
-                Button("管理…") { maintenanceOpen = true }
+                Button("管理…") { sheet = .maintenance }
             }.disabled(app.core == nil)
             SettingDivider()
             SettingRow(icon: "text.alignleft", title: "歌词来源与补全", description: "歌词来源、批量补全与逐首预览") {
-                Button("管理…") { lyricsOpen = true }
+                Button("管理…") { sheet = .lyrics }
             }.disabled(app.core == nil)
         }
     }
