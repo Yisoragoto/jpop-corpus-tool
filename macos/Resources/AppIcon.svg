@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- macOS 应用图标（1024 画布，圆角方块按系统图标网格占 824×824）。
+       玻璃板：底色是品牌蓝（和 Windows 图标同一种 #7aa2f7），透出两团冷暖光晕；
+       顶部一层高光、一圈上亮下暗的亮边；音符是一块磨砂玻璃，带柔和投影。
+       改了这里要重新导出同目录的 AppIcon.png（1024×1024、背景透明），例如：
+       chrome --headless=new --default-background-color=00000000 --window-size=1024,1024 --screenshot=AppIcon.png 包着这张 svg 的页面 -->
+  <defs>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
+
+    <linearGradient id="base" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a9c4ff"/>
+      <stop offset="0.55" stop-color="#7aa2f7"/>
+      <stop offset="1" stop-color="#4c63e6"/>
+    </linearGradient>
+    <radialGradient id="glowCyan" cx="0.22" cy="0.18" r="0.6">
+      <stop offset="0" stop-color="#b8fff6" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#b8fff6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowViolet" cx="0.88" cy="0.92" r="0.62">
+      <stop offset="0" stop-color="#c58bff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#c58bff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.55"/>
+      <stop offset="0.7" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.95"/>
+      <stop offset="0.45" stop-color="#fff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0.45"/>
+    </linearGradient>
+
+    <linearGradient id="noteFill" x1="0" y1="256" x2="0" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#e9eeff" stop-opacity="0.58"/>
+    </linearGradient>
+    <linearGradient id="noteRim" x1="0" y1="256" x2="0" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0.35"/>
+    </linearGradient>
+
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="18"/>
+      <feOffset dy="16"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.32"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="noteShadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="22" result="blur"/>
+      <feOffset in="blur" dy="24" result="moved"/>
+      <feFlood flood-color="#2a2f8f" flood-opacity="0.42"/>
+      <feComposite operator="in" in2="moved" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="40"/></filter>
+  </defs>
+
+  <!-- 玻璃板 -->
+  <g filter="url(#tileShadow)">
+    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#base)"/>
+  </g>
+  <g clip-path="url(#tile)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#glowCyan)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#glowViolet)"/>
+    <!-- 板子里面一团更亮的光，像光透过厚玻璃 -->
+    <ellipse cx="520" cy="560" rx="260" ry="220" fill="#fff" opacity="0.22" filter="url(#soft)"/>
+    <!-- 顶部弧形高光 -->
+    <path d="M100 100 H924 V430 C760 360 520 340 100 420 Z" fill="url(#sheen)"/>
+  </g>
+  <rect x="104" y="104" width="816" height="816" rx="182" fill="none" stroke="url(#rim)" stroke-width="8"/>
+
+  <!-- 音符：磨砂玻璃（整体左移一点，视觉居中） -->
+  <g transform="translate(-22 0)">
+  <g filter="url(#noteShadow)">
+    <path fill="url(#noteFill)" d="
+      M 484 256 H 716 A 28 28 0 0 1 744 284 V 300 A 28 28 0 0 1 716 328 H 532 V 668
+      A 104 104 0 1 1 484 580 Z"/>
+  </g>
+  <path fill="none" stroke="url(#noteRim)" stroke-width="5" d="
+      M 484 256 H 716 A 28 28 0 0 1 744 284 V 300 A 28 28 0 0 1 716 328 H 532 V 668
+      A 104 104 0 1 1 484 580 Z"/>
+  <!-- 符头上的一点反光 -->
+  <ellipse cx="392" cy="628" rx="46" ry="26" transform="rotate(-28 392 628)" fill="#fff" opacity="0.8"/>
+  <!-- 符干左缘一条细高光 -->
+  <rect x="492" y="270" width="8" height="300" rx="4" fill="#fff" opacity="0.7"/>
+  </g>
+</svg>
