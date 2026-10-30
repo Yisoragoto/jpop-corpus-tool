@@ -177,6 +177,10 @@ public final class CorpusClient: @unchecked Sendable {
         try await perform { try $0.call("frequency", ["query": AnyEncodable(query)]) }
     }
 
+    public func lexicalProfile(_ query: LexicalQuery) async throws -> LexicalResult {
+        try await perform { try $0.call("lexicalProfile", ["query": AnyEncodable(query)]) }
+    }
+
     public func collocations(_ query: CollocationQuery) async throws -> CollocationResult {
         try await perform { try $0.call("collocations", ["query": AnyEncodable(query)]) }
     }

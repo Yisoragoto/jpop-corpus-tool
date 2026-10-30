@@ -88,6 +88,12 @@ public enum LyricSegments {
     }
 
     /// 从第 `index` 个词查起：把这个词到行尾的原文交给词典做最长匹配（Yomitan 的查法）
+    /// 原文第 `char` 个码点落在哪个词上（逐字单位点下去查的是这个词）。分词对不上原文时返回 nil
+    public static func tokenIndex(atChar char: Int, text: String, tokens: [LineToken]) -> Int? {
+        guard let spans = alignTokens(Array(text.unicodeScalars), tokens) else { return nil }
+        return spans.firstIndex { $0.contains(char) }
+    }
+
     public static func lookupText(_ tokens: [LineToken], from index: Int) -> String {
         guard tokens.indices.contains(index) else { return "" }
         return tokens[index...].map(\.surface).joined()

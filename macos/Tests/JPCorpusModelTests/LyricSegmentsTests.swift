@@ -52,6 +52,18 @@ final class LyricSegmentsTests: XCTestCase {
         XCTAssertEqual(segments.last, .token(index: 1, pieces: [.init(text: "家", reading: "や")]))
     }
 
+    /// 全屏里点逐字点亮的字：查的是这个字所在的那个词
+    func testCharacterMapsToItsToken() throws {
+        let line = "人生、二十七で"
+        let toks = try tokens(#"[{"surface":"人生","lemma":"人生","pos":"NOUN"},{"surface":"、","lemma":"、","pos":"PUNCT"},{"surface":"二十七","lemma":"二十七","pos":"NUM"},{"surface":"で","lemma":"で","pos":"ADP"}]"#)
+        XCTAssertEqual(LyricSegments.tokenIndex(atChar: 1, text: line, tokens: toks), 0)
+        XCTAssertEqual(LyricSegments.tokenIndex(atChar: 2, text: line, tokens: toks), 1)
+        XCTAssertEqual(LyricSegments.tokenIndex(atChar: 5, text: line, tokens: toks), 2)
+        XCTAssertEqual(LyricSegments.tokenIndex(atChar: 6, text: line, tokens: toks), 3)
+        XCTAssertNil(LyricSegments.tokenIndex(atChar: 7, text: line, tokens: toks))
+        XCTAssertNil(LyricSegments.tokenIndex(atChar: 0, text: "別の行", tokens: toks), "分词对不上原文")
+    }
+
     func testLookupTextAndCandidatesListEveryWordExceptPunctuation() throws {
         let toks = try tokens(#"[{"surface":"何","lemma":"何","pos":"PRON"},{"surface":"も","lemma":"も","pos":"ADP"},{"surface":"いら","lemma":"要る","pos":"VERB"},{"surface":"ない","lemma":"ない","pos":"AUX"},{"surface":"！","lemma":"！","pos":"PUNCT"},{"surface":" ","lemma":" ","pos":"X"}]"#)
         XCTAssertEqual(LyricSegments.lookupText(toks, from: 2), "いらない！ ")

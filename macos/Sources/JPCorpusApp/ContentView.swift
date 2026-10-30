@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
         @Bindable var app = app
@@ -80,11 +79,17 @@ struct ContentView: View {
         .onAppear { MainWindow.open = openWindow }
         .background(PlaybackKeyboard(app: app))
         .background(UpdatePresentation())
-        // 全屏歌词是单独一个窗口（JPCorpusApp 里的 Window("stage")）：盖在主窗口上做的话，
-        // 主窗口的标题栏和工具栏总会露一条出来
-        .onChange(of: app.showStage) { _, on in
-            if on { openWindow(id: "stage") } else { dismissWindow(id: "stage") }
+        // 全屏歌词和 Windows 版一样是主窗口里铺满的一层：盖住侧栏、正文和播放条；
+        // 工具栏收起来，免得在歌词上面露出一条按钮
+        .overlay {
+            if app.showStage, app.client != nil {
+                LyricsStage()
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
         }
+        .toolbar(app.showStage ? .hidden : .automatic, for: .windowToolbar)
+        .animation(.easeInOut(duration: 0.25), value: app.showStage)
         .task(id: "\(app.player.track?.id ?? "")|\(app.showFurigana)|\(app.furiganaMode.rawValue)") {
             await app.loadFurigana()
         }
