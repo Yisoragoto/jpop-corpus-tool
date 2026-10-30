@@ -17,6 +17,10 @@ extension CorpusClient {
         try await perform { try $0.call("cqlSearch", ["query": AnyEncodable(query)]) }
     }
 
+    public func cqlCheck(_ query: String) async throws {
+        try await performDetached { try $0.run("cqlCheck", ["query": AnyEncodable(query)]) }
+    }
+
     public func kwicBreakdown(_ query: BreakdownQuery) async throws -> BreakdownResult {
         try await perform { try $0.call("kwicBreakdown", ["query": AnyEncodable(query)]) }
     }
