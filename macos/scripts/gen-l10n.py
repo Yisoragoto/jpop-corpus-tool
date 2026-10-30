@@ -13,8 +13,8 @@ import argparse, glob, json, pathlib, re, sys
 HERE = pathlib.Path(__file__).resolve().parent.parent          # macos/
 REPO = HERE.parent
 HAN = re.compile(r"[\u4e00-\u9fff]")
-# 不进界面的：冒烟测试的日志
-SKIP = {"SmokeRun.swift"}
+# 不进界面的：冒烟测试的日志、翻译器自己（里面那串简体字是判断用的）
+SKIP = {"SmokeRun.swift", "L10n.swift"}
 
 
 def unescape_swift(s):
@@ -107,13 +107,20 @@ def merged():
     return table
 
 
+def not_ui():
+    """代码里的数据（日文虚词表、正则、双语的首次启动提示）：是中文/日文但不是要翻的界面文字"""
+    path = HERE / "Localization/not-ui.json"
+    return set(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else set()
+
+
 def literals_in_sources():
+    skip = not_ui()
     found = {}
     for f in sorted((HERE / "Sources").rglob("*.swift")):
         if f.name in SKIP:
             continue
         for lit in swift_literals(f.read_text(encoding="utf-8")):
-            if HAN.search(lit):
+            if HAN.search(lit) and lit not in skip:
                 found.setdefault(lit, f.relative_to(HERE).as_posix())
     return found
 
