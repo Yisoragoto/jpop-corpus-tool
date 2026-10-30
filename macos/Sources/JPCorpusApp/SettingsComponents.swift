@@ -120,7 +120,9 @@ struct SettingSlider: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Slider(title, value: $value, in: range, step: 1).frame(width: 130)
+            Slider(value: $value, in: range, step: 1) { Text(title) }
+                .labelsHidden()
+                .frame(width: 130)
             Text("\(Int(value))\(unit)")
                 .font(.callout)
                 .foregroundStyle(.secondary)

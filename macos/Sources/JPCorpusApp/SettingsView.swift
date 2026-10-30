@@ -253,7 +253,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             SettingGroup("语料库") {
                 SettingRow(icon: "externaldrive", title: app.isDemo ? "示例语料库" : "当前语料库",
-                           description: app.libraryURL?.path ?? "未选择", selectableDescription: true) {
+                           description: app.libraryURL?.appendingPathComponent(app.databaseName).path ?? "未选择", selectableDescription: true) {
                     Button("换一个…") { pick.present(.library) }
                 }
                 SettingDivider()
@@ -263,7 +263,7 @@ struct SettingsView: View {
                 SettingDivider()
                 SettingRow(icon: "folder", title: "语料库文件夹", description: "\(app.tracks.count) 首") {
                     Button("在 Finder 中显示") {
-                        if let url = app.libraryURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                        if let url = app.libraryURL { NSWorkspace.shared.activateFileViewerSelecting([url.appendingPathComponent(app.databaseName)]) }
                     }.disabled(app.libraryURL == nil)
                 }
             }
