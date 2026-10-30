@@ -661,9 +661,10 @@ mod tests {
             url: format!("{DOWNLOAD_PREFIX}v0.2.2/x.exe"),
             sha256: None,
         };
-        assert_eq!(pick_installer(&[msi.clone(), exe.clone()]), Some(exe));
-        assert_eq!(pick_installer(&[msi]), None);
-        assert_eq!(pick_installer(&[]), None);
+        let windows = |assets: &[AssetView]| pick_installer_for(assets, Platform::Windows);
+        assert_eq!(windows(&[msi.clone(), exe.clone()]), Some(exe));
+        assert_eq!(windows(&[msi]), None);
+        assert_eq!(windows(&[]), None);
     }
 
     /// 要跑的是一个 exe，地址只认自己仓库那一个前缀。
@@ -689,6 +690,11 @@ mod tests {
         assert!(releases[0].published_at.starts_with("2026-"));
         assert!(!releases[0].prerelease);
 
+        // 这份记录里只有 Windows 安装包：macOS 上编译时没有能装的
+        if Platform::CURRENT == Platform::MacOS {
+            assert!(releases[0].installer.is_none());
+            return;
+        }
         let installer = releases[0].installer.as_ref().expect("该有 setup.exe");
         assert!(installer.name.ends_with("-setup.exe"));
         assert!(installer.size > 1_000_000);
