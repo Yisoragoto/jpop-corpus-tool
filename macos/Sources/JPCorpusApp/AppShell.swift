@@ -7,6 +7,8 @@ enum NavStyle: String, CaseIterable {
     case sidebar, top
 
     static let key = "nav.style"
+    /// 没选过时用顶栏：Mac 上窗口常常不宽，顶栏把横向空间留给正文
+    static let defaultStyle: NavStyle = .top
 }
 
 /// 主窗口的骨架：导航 + 正文。
@@ -17,9 +19,9 @@ enum NavStyle: String, CaseIterable {
 @MainActor
 struct AppShell<Detail: View>: View {
     @Environment(AppModel.self) private var app
-    @AppStorage(NavStyle.key) private var stored: NavStyle = .sidebar
+    @AppStorage(NavStyle.key) private var stored: NavStyle = NavStyle.defaultStyle
     /// 真正拿来排版的样式：设置页改 AppStorage 时也要带动画，所以另存一份，在动画事务里改它
-    @State private var style: NavStyle = NavStyle(rawValue: UserDefaults.standard.string(forKey: NavStyle.key) ?? "") ?? .sidebar
+    @State private var style: NavStyle = NavStyle(rawValue: UserDefaults.standard.string(forKey: NavStyle.key) ?? "") ?? NavStyle.defaultStyle
     @State private var width: CGFloat = 1200
     @Namespace private var nav
     private let detail: Detail

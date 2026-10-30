@@ -52,7 +52,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     var embedded = false
-    @AppStorage(NavStyle.key) private var navStyle: NavStyle = .sidebar
+    @AppStorage(NavStyle.key) private var navStyle: NavStyle = NavStyle.defaultStyle
     @AppStorage("settings.category") private var selectedCategory = SettingsCategory.appearance.rawValue
     private enum PickKind { case library, audio }
     @State private var pick = FilePickState<PickKind>()
