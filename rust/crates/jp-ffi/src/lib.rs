@@ -237,6 +237,14 @@ impl Session {
         self.library_root().join("raw").join("artists")
     }
 
+    /// 库里的音频、封面路径在这台电脑上对应哪个文件（见 `jp_corpus::media::resolve`）。
+    /// 拿走的是一份快照，能带进后台作业的线程
+    fn media_resolver(&self) -> Result<impl Fn(&str) -> Option<PathBuf> + Send + 'static> {
+        let roots = self.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
+        let root = self.root.clone();
+        Ok(move |stored: &str| jp_corpus::media::resolve(stored, root.as_deref(), &roots))
+    }
+
     /// 要联网的单次操作用的连接：自己开一条，不占会话那条（识别要排 MusicBrainz 的队，封面一张十几秒）
     fn network_connection(&self) -> Result<Corpus> {
         open_worker(&self.db_path)
@@ -642,7 +650,10 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
             let total = targets.len();
             if total > 0 {
                 let db = session.db_path.clone();
-                start_scrape(session, move |cancelled, progress| jp_scrape::run_album_fill(&db, targets, cancelled, progress))?;
+                let resolve = session.media_resolver()?;
+                start_scrape(session, move |cancelled, progress| {
+                    jp_scrape::run_album_fill_with(&db, targets, &resolve, cancelled, progress)
+                })?;
             }
             json!(total)
         }
@@ -653,7 +664,10 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
             };
             let total = ids.len();
             let (db, covers) = (session.db_path.clone(), session.covers_dir());
-            start_scrape(session, move |cancelled, progress| jp_scrape::run_batch(&db, &covers, &ids, None, cancelled, progress))?;
+            let resolve = session.media_resolver()?;
+            start_scrape(session, move |cancelled, progress| {
+                jp_scrape::run_batch_with(&db, &covers, &ids, None, &resolve, cancelled, progress)
+            })?;
             json!(total)
         }
         "scrapeArtistsStart" => {
@@ -677,7 +691,8 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         "scrapeTrack" => {
             let song_id: String = arg(args, "songId")?;
             let conn = session.network_connection()?;
-            serde_json::to_value(jp_scrape::scrape_track(conn.connection(), &session.covers_dir(), &song_id, None)?)?
+            let resolve = session.media_resolver()?;
+            serde_json::to_value(jp_scrape::scrape_track_with(conn.connection(), &session.covers_dir(), &song_id, None, &resolve)?)?
         }
         "scrapeAccept" => {
             let file_path: String = arg(args, "filePath")?;
@@ -693,9 +708,7 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
         "scrapeBackfillCovers" => {
             let conn = session.network_connection()?;
             // 库可能是从别的电脑拷来的：封面路径不空但这台电脑上没有那个文件，也算缺
-            let roots = session.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
-            let root = session.root.clone();
-            let resolve = |stored: &str| jp_corpus::media::resolve(stored, root.as_deref(), &roots);
+            let resolve = session.media_resolver()?;
             serde_json::to_value(jp_scrape::backfill_and_fill_albums_with(conn.connection(), &session.covers_dir(), &resolve)?)?
         }
         "mediaStatus" => {

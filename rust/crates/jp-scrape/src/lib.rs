@@ -64,6 +64,19 @@ pub struct ScrapeProgress {
 /// **优先用 `track_original_metadata` 里的原值**：`songs` 行可能已经被
 /// 上一轮刮削覆盖过，拿它去重新匹配等于拿刮削结果再刮一次。
 pub fn track_file_for(conn: &rusqlite::Connection, song_id: &str) -> Result<Option<TrackFile>> {
+    track_file_for_with(conn, song_id, &|stored| Some(std::path::PathBuf::from(stored)))
+}
+
+/// 同 [`track_file_for`]，读音频标签前先经 `resolve` 找到这台电脑上的文件。
+///
+/// 从 Windows 拷来的库在 Mac 上：库里是 `E:\...\x.flac`，直接拿去读标签必然打不开、也不报错，
+/// ISRC 和 MusicBrainz 录音 id 就丢了，匹配只能靠歌名歌手猜（补专辑信息、重刮都受影响）。
+/// `path` 字段保持库里的原值：刮削状态按它记
+pub fn track_file_for_with(
+    conn: &rusqlite::Connection,
+    song_id: &str,
+    resolve: &dyn Fn(&str) -> Option<std::path::PathBuf>,
+) -> Result<Option<TrackFile>> {
     use rusqlite::OptionalExtension;
 
     let row = conn
@@ -95,8 +108,11 @@ pub fn track_file_for(conn: &rusqlite::Connection, song_id: &str) -> Result<Opti
         track = original;
     }
     // ISRC / MusicBrainz 录音 id 库里没存，从音频标签读
-    if !track.path.is_empty() && (track.isrc.is_empty() || track.recording_mbid.is_empty()) {
-        let tags = jp_import::scan::scan_file(std::path::Path::new(&track.path));
+    if !track.path.is_empty()
+        && (track.isrc.is_empty() || track.recording_mbid.is_empty())
+        && let Some(local) = resolve(&track.path)
+    {
+        let tags = jp_import::scan::scan_file(&local);
         if track.isrc.is_empty() {
             track.isrc = tags.isrc;
         }
@@ -426,6 +442,24 @@ pub fn run_batch(
     cancelled: &dyn Fn() -> bool,
     progress: &mut dyn FnMut(ScrapeProgress),
 ) -> Result<bool> {
+    run_batch_with(db_path, covers_dir, song_ids, apple, &identity_path, cancelled, progress)
+}
+
+/// 库里的路径原样当真（Windows 版）
+fn identity_path(stored: &str) -> Option<std::path::PathBuf> {
+    Some(std::path::PathBuf::from(stored))
+}
+
+/// 同 [`run_batch`]，音频经 `resolve` 找到这台电脑上的文件再读标签（见 [`track_file_for_with`]）
+pub fn run_batch_with(
+    db_path: &std::path::Path,
+    covers_dir: &std::path::Path,
+    song_ids: &[String],
+    apple: Option<(&str, &str)>,
+    resolve: &dyn Fn(&str) -> Option<std::path::PathBuf>,
+    cancelled: &dyn Fn() -> bool,
+    progress: &mut dyn FnMut(ScrapeProgress),
+) -> Result<bool> {
     let total = song_ids.len();
     // 自己开一条连接：占着 UI 那条十几分钟的话，期间所有查询都会卡住
     let conn = rusqlite::Connection::open(db_path)?;
@@ -464,7 +498,7 @@ pub fn run_batch(
         while metas.len() < MAX_META_IN_FLIGHT && next < song_ids.len() {
             let song_id = song_ids[next].clone();
             next += 1;
-            let Some(track) = track_file_for(&conn, &song_id)? else {
+            let Some(track) = track_file_for_with(&conn, &song_id, resolve)? else {
                 continue;
             };
             // 登记和置 running 在主线程做，网络那步才并发
@@ -551,6 +585,17 @@ pub fn run_album_fill(
     cancelled: &dyn Fn() -> bool,
     progress: &mut dyn FnMut(ScrapeProgress),
 ) -> Result<bool> {
+    run_album_fill_with(db_path, targets, &identity_path, cancelled, progress)
+}
+
+/// 同 [`run_album_fill`]，音频经 `resolve` 找到这台电脑上的文件再读标签
+pub fn run_album_fill_with(
+    db_path: &std::path::Path,
+    targets: Vec<(i64, String)>,
+    resolve: &dyn Fn(&str) -> Option<std::path::PathBuf>,
+    cancelled: &dyn Fn() -> bool,
+    progress: &mut dyn FnMut(ScrapeProgress),
+) -> Result<bool> {
     let total = targets.len();
     let mut done = 0usize;
     let conn = rusqlite::Connection::open(db_path)?;
@@ -572,7 +617,7 @@ pub fn run_album_fill(
                 done += 1;
                 continue;
             }
-            let Some(track) = track_file_for(&conn, &song_id)? else {
+            let Some(track) = track_file_for_with(&conn, &song_id, resolve)? else {
                 done += 1;
                 continue;
             };
@@ -1085,20 +1130,36 @@ pub fn backfill_covers_with(
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     for (song_id, artist, provider_id, candidates_json, audio_path, cover_path) in rows {
-        if !cover_path.trim().is_empty() && resolve(&cover_path).is_some() {
+        let stored = cover_path.trim();
+        if !stored.is_empty() && resolve(stored).is_some() {
             continue;
         }
         out.checked += 1;
-        // 文件里自带封面的先用它：不用联网，也不会配错图。
-        // 当初导入时还不认内嵌封面的那些歌，靠这一步补上。
+        // 库里记着封面、只是这台电脑上找不到（从 Windows 拷来的库）：先照刮削匹配上的那张重下，
+        // 和原来那台电脑上看到的一样，同一张专辑的歌也一致。文件自带的封面常是单曲版或别的版本
+        // （实测：834.194 的歌在 Mac 上补成了单曲的封面，专辑封面又是从歌曲封面里挑的，跟着错），
+        // 所以这种情况放到后面。原来就没有封面的歌照旧先用内嵌的：不用联网
+        let missing_here = !stored.is_empty();
         let audio = if audio_path.is_empty() { None } else { resolve(&audio_path) };
-        if let Some(audio) = audio
-            && let Some(path) = save_embedded_cover(covers_dir, &song_id, &artist, &audio)
-        {
-            out.filled += 1;
-            if !dry_run {
-                record_cover(conn, &song_id, &path)?;
+        let embedded = || audio.as_deref().and_then(|a| save_embedded_cover(covers_dir, &song_id, &artist, a));
+        // 库里原来那条路径换成新文件；原来是空的就照旧只填空
+        let record = |path: &str| -> Result<()> {
+            if dry_run {
+                return Ok(());
             }
+            if missing_here {
+                conn.execute(
+                    "UPDATE songs SET cover_path=?1 WHERE id=?2 AND cover_path=?3",
+                    rusqlite::params![path, song_id, cover_path],
+                )?;
+                Ok(())
+            } else {
+                record_cover(conn, &song_id, path)
+            }
+        };
+        if !missing_here && let Some(path) = embedded() {
+            out.filled += 1;
+            record(&path)?;
             if out.samples.len() < 8 {
                 out.samples.push(format!("{song_id}：文件内嵌的封面"));
             }
@@ -1107,6 +1168,21 @@ pub fn backfill_covers_with(
         let candidates: Vec<jp_scraper::ScrapeCandidate> =
             serde_json::from_str(&candidates_json).unwrap_or_default();
         let ordered = cover_candidates(&candidates, &provider_id);
+        let mut done = None;
+        for candidate in &ordered {
+            if let Some(path) = download_cover(covers_dir, &song_id, &artist, candidate) {
+                done = Some((path, *candidate));
+                break;
+            }
+        }
+        if done.is_none() && missing_here && let Some(path) = embedded() {
+            out.filled += 1;
+            record(&path)?;
+            if out.samples.len() < 8 {
+                out.samples.push(format!("{song_id}：文件内嵌的封面"));
+            }
+            continue;
+        }
         if ordered.is_empty() {
             out.no_candidate += 1;
             if out.samples.len() < 8 {
@@ -1115,19 +1191,10 @@ pub fn backfill_covers_with(
             }
             continue;
         }
-        let mut done = None;
-        for candidate in ordered {
-            if let Some(path) = download_cover(covers_dir, &song_id, &artist, candidate) {
-                done = Some((path, candidate));
-                break;
-            }
-        }
         match done {
             Some((path, candidate)) => {
                 out.filled += 1;
-                if !dry_run {
-                    record_cover(conn, &song_id, &path)?;
-                }
+                record(&path)?;
                 if out.samples.len() < 8 {
                     out.samples.push(format!(
                         "{song_id}：{}（{}）",
@@ -1453,7 +1520,18 @@ pub fn scrape_track(
     song_id: &str,
     apple: Option<(&str, &str)>,
 ) -> Result<jp_scraper::ScrapeSummary> {
-    let Some(track) = track_file_for(conn, song_id)? else {
+    scrape_track_with(conn, covers_dir, song_id, apple, &identity_path)
+}
+
+/// 同 [`scrape_track`]，音频经 `resolve` 找到这台电脑上的文件再读标签
+pub fn scrape_track_with(
+    conn: &rusqlite::Connection,
+    covers_dir: &std::path::Path,
+    song_id: &str,
+    apple: Option<(&str, &str)>,
+    resolve: &dyn Fn(&str) -> Option<std::path::PathBuf>,
+) -> Result<jp_scraper::ScrapeSummary> {
+    let Some(track) = track_file_for_with(conn, song_id, resolve)? else {
         anyhow::bail!("库里没有 id={song_id} 这首歌");
     };
     let resolver = jp_scraper::net::resolver_with_apple(false, apple)?;
@@ -1504,7 +1582,8 @@ pub fn fill_album_artwork_with(
         let candidates: Vec<String> = covers
             .query_map([id], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
-        if let Some(cover) = candidates.into_iter().find(|c| resolve(c).is_some())
+        // 记这台电脑上真找到的那个文件，不记原样的路径：原样的要靠猜路径尾巴才找得到，完整度会算它缺
+        if let Some(cover) = candidates.iter().find_map(|c| resolve(c)).map(|p| p.display().to_string())
             && cover != artwork
         {
             conn.execute("UPDATE albums SET artwork_path = ?1 WHERE id = ?2", rusqlite::params![cover, id])?;
@@ -1689,6 +1768,23 @@ mod tests {
         let again = super::save_embedded_cover(&covers, "001", "歌手", &audio);
         assert_eq!(again.as_deref(), Some(stored.as_str()));
         assert_eq!(std::fs::read(&stored).unwrap(), b"user's own");
+
+        // 从别的电脑拷来的库：记着封面但这里找不到，又没有刮削候选，退到内嵌的那张，
+        // 并且库里那条找不到的路径换成新文件（以前只填空的，新路径根本记不进去）
+        conn.execute(
+            "INSERT INTO songs (id, title, artist, audio_path, cover_path)
+             VALUES ('003', '曲', '歌手', ?1, 'C:\\Users\\x\\raw\\covers\\歌手\\003.jpg')",
+            [audio.display().to_string()],
+        )
+        .unwrap();
+        let on_disk = |p: &str| std::path::Path::new(p).is_file().then(|| std::path::PathBuf::from(p));
+        let report = super::backfill_covers_with(&conn, &covers, false, &on_disk).unwrap();
+        assert_eq!((report.checked, report.filled), (2, 1), "{report:?}");
+        let moved: String = conn
+            .query_row("SELECT cover_path FROM songs WHERE id='003'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(std::path::PathBuf::from(&moved), jp_scraper::cover_path_for(&covers, "003", "歌手"));
+        assert_eq!(std::fs::read(&moved).unwrap(), picture);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
