@@ -52,6 +52,15 @@ struct AppShell<Detail: View>: View {
         detail
             .padding(.leading, style == .sidebar ? Self.railWidth : 0)
             .padding(.top, style == .top ? Self.barHeight : 0)
+            // 词云页的照片底铺满整个正文区，连同顶部导航栏那一截和标题栏下面
+            .background {
+                if showsCloudBackdrop {
+                    CloudPageBackdrop()
+                        // 侧边栏样式时只铺正文那一块，侧栏的字还是按系统深浅色配的
+                        .padding(.leading, style == .sidebar ? Self.railWidth : 0)
+                        .ignoresSafeArea()
+                }
+            }
             .overlay(alignment: .topLeading) {
                 Group {
                     if style == .sidebar {
@@ -84,6 +93,10 @@ struct AppShell<Detail: View>: View {
                     .help(style == .sidebar ? "改成顶部导航栏" : "改成侧边栏")
                 }
             }
+    }
+
+    private var showsCloudBackdrop: Bool {
+        app.section == .library && app.libraryPath.isEmpty && app.libraryMode == .cloud
     }
 
     private func select(_ item: SidebarItem) {
