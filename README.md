@@ -494,6 +494,7 @@ MI 偏向低频词，t 值偏向高频词，logDice 不受语料大小影响，�
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | 词典存储设计（未复制代码） | GPL-3.0-or-later |
 | [LDDC](https://github.com/chenmozhijin/LDDC) · [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) | 逐字歌词格式与来源的参考 | GPL-3.0 · CC0-1.0 |
 | [Klee One](https://fonts.google.com/specimen/Klee+One) · [霞鹜文楷](https://github.com/lxgw/LxgwWenKai) | 随软件分发的字体 | SIL OFL 1.1 |
+| [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) | 界面图标 · [`third_party/fluent-ui-system-icons/COPYING`](third_party/fluent-ui-system-icons/COPYING) | MIT |
 | [Rubber Band Library](https://breakfastquay.com/rubberband/) | 变调。源码在 [`third_party/rubberband/`](third_party/rubberband/)，编进程序里 | GPL-2.0-or-later |
 | [LAME](https://lame.sourceforge.io/) | Anki 卡片上音频片段的 MP3 编码，编进程序里 | LGPL-2.0-or-later |
 

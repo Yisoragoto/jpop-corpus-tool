@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 播放条。只订阅状态、只发命令，自己不持有任何播放状态。
  *
@@ -399,86 +400,13 @@ function Spectrum({ enabled, active }: { enabled: boolean; active: boolean }) {
   );
 }
 
-/* 图标都用内联 SVG：不引图标库，线宽和 Windows 的 Segoe Fluent 对齐 */
-
-function IconPlay() {
-  return (
-    <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
-      <path d="M7.5 4.6c0-.9 1-1.5 1.8-1L20 10.6c.8.5.8 1.7 0 2.2L9.3 19.9c-.8.5-1.8-.1-1.8-1z" />
-    </svg>
-  );
-}
-
-function IconPause() {
-  return (
-    <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
-      <rect x="5.5" y="4" width="4.6" height="16" rx="1.4" />
-      <rect x="13.9" y="4" width="4.6" height="16" rx="1.4" />
-    </svg>
-  );
-}
-
-/** 前进 / 后退 5 秒：一道圆弧箭头里写着秒数（Apple 的 gobackward.5 那种），不是「上一首 / 下一首」 */
+// 播放条正中那颗键用实心图标（媒体播放器、Groove 都是这样），其余地方的播放用空心
+function IconPlay() { return <Icon name="playFilled" size={26} />; }
+function IconPause() { return <Icon name="pauseFilled" size={26} />; }
 function IconSkip({ back = false }: { back?: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <g transform={back ? undefined : "translate(24 0) scale(-1 1)"}>
-        <path d="M5.2 8.5A8 8 0 1 1 4 12.6" />
-        <path d="M4.6 4v4.8h4.8" />
-      </g>
-      <text x="12" y="15.6" textAnchor="middle" fontSize="8.5" fontWeight="700" fill="currentColor" stroke="none" fontFamily="Segoe UI, sans-serif">
-        {STEP_SEC}
-      </text>
-    </svg>
-  );
+  return <span className="skip-icon"><Icon name={back ? "skipBack" : "skipForward"} size={24} /><span>{STEP_SEC}</span></span>;
 }
-
-function IconLoop() {
-  return (
-    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 11V9a3 3 0 0 1 3-3h12" />
-      <path d="m16 3 3 3-3 3" />
-      <path d="M20 13v2a3 3 0 0 1-3 3H5" />
-      <path d="m8 21-3-3 3-3" />
-      <path d="M11.5 10.5 13 9.5v5" strokeWidth="1.8" />
-    </svg>
-  );
-}
-
-/** 歌词：一个带引号的对话框 */
-function IconLyrics() {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" aria-hidden="true">
-      <path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-4.5 3.5V17H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
-      <path d="M8.6 9.2h2.4v2.2c0 1-.6 1.7-1.6 2M13.2 9.2h2.4v2.2c0 1-.6 1.7-1.6 2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** 调音：三根推子 */
-function IconTune() {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
-      <path d="M6 3v18M12 3v18M18 3v18" />
-      <circle cx="6" cy="14" r="2.2" fill="currentColor" />
-      <circle cx="12" cy="8" r="2.2" fill="currentColor" />
-      <circle cx="18" cy="16" r="2.2" fill="currentColor" />
-    </svg>
-  );
-}
-
-function IconVolume({ level, muted }: { level: 0 | 2; muted: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 9.5v5h3.5L12 18V6L7.5 9.5H4z" fill="currentColor" />
-      {muted ? (
-        <path d="M16 9.5l4 5M20 9.5l-4 5" />
-      ) : level === 2 ? (
-        <>
-          <path d="M15.5 9a4.2 4.2 0 0 1 0 6" />
-          <path d="M18 6.5a7.6 7.6 0 0 1 0 11" />
-        </>
-      ) : null}
-    </svg>
-  );
-}
+function IconLoop() { return <Icon name="loop" size={20} />; }
+function IconLyrics() { return <Icon name="lyrics" size={20} />; }
+function IconTune() { return <Icon name="tune" size={20} />; }
+function IconVolume({ level, muted }: { level: 0 | 2; muted: boolean }) { return <Icon name={muted ? "volumeOff" : level === 2 ? "volume" : "volumeLow"} />; }

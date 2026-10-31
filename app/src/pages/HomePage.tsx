@@ -1,3 +1,4 @@
+import { Icon } from "../components/Icon";
 /**
  * 首页 = 打开就能接着干的地方。
  *
@@ -25,6 +26,7 @@ import {
 } from "../api";
 import { useCoverColor } from "../coverColor";
 import { Cover } from "../components/Cover";
+import { LoadError } from "../components/LoadError";
 import { hitHint, hitKey, hitLabel, KIND_LABELS, useQuickSearch } from "../components/CommandPalette";
 import { formatRelative } from "../relativeTime";
 import { useAppSettings } from "../settings";
@@ -47,12 +49,21 @@ export function HomePage({ actions, onNavigate, onError, onPickHit, playbackSong
   const [home, setHome] = useState<HomeSummary | null>(null);
   /** 今天制了几张卡。没装 Anki 是 null，那一句就不显示 */
   const [cardsToday, setCardsToday] = useState<number | null>(null);
+  /** 首次读取失败：页面上直接说，不再停在「加载中」 */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api
       .homeSummary()
-      .then(setHome)
-      .catch((e) => onError(String(e.message ?? e)));
+      .then((summary) => {
+        setHome(summary);
+        setLoadError(null);
+      })
+      .catch((e) => {
+        const message = String(e?.message ?? e);
+        setLoadError(message);
+        onError(message);
+      });
     // 读 Anki 要复制一份 collection，慢的时候别拖着首页；读不到就当没有
     api
       .ankiNotesToday()
@@ -82,7 +93,8 @@ export function HomePage({ actions, onNavigate, onError, onPickHit, playbackSong
     [actions],
   );
 
-  if (!home) return <div className="page muted pad">{tr("加载中…")}</div>;
+  if (!home && loadError !== null) return <LoadError message={loadError} onRetry={load} />;
+  if (!home) return <div className="page muted pad" role="status">{tr("加载中…")}</div>;
 
   return (
     <div className="page home">
@@ -168,10 +180,7 @@ function HomeSearch({ onPickHit }: { onPickHit: (hit: QuickHit) => void | Promis
 
   return (
     <div className="home-search" ref={boxRef}>
-      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" className="home-search-icon">
-        <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M10.4 10.4 14 14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
+      <Icon name="search" className="home-search-icon" />
       <input
         type="search"
         value={text}
@@ -250,7 +259,7 @@ function ContinueHero({
         </div>
         <div className="home-hero-actions">
           <button className="primary" onClick={() => onResume(from)}>
-            ▶ {finished ? tr("再听一遍") : tr("从 {from} 继续", { from: formatDuration(from) })}
+            <Icon name="play" /> {finished ? tr("再听一遍") : tr("从 {from} 继续", { from: formatDuration(from) })}
           </button>
           <button className="home-hero-secondary" onClick={onOpen}>{tr("看歌词")}</button>
         </div>

@@ -12,7 +12,7 @@
  * 所以窗口变宽变窄时多出来少掉的都算在正文上，两边保持用户定的宽度。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { tr } from "../i18n";
 
 export interface ColumnWidths {
@@ -64,6 +64,29 @@ export function clampColumns(
     : { left, right: Math.max(bounds.rightMin, right - shrink) };
 }
 
+/**
+ * 显示时用的宽度：窗口变窄、或者恢复的是上次在大窗口里拖出来的宽度时，
+ * 两边按各自能让出的余量（当前宽度 − 下限）**按比例**一起收，正文至少留 `centerMin`。
+ * 收不动了（两边都到下限）就停在下限，交给 CSS 的窄窗口版面去叠。
+ *
+ * 只影响显示，不改记下来的宽度——窗口再拉宽时会回到用户定的那个宽度。
+ */
+export function fitColumns(bounds: ColumnBounds, total: number, widths: ColumnWidths): ColumnWidths {
+  const left = Math.min(Math.max(widths.left, bounds.leftMin), bounds.leftMax);
+  const right = Math.min(Math.max(widths.right, bounds.rightMin), bounds.rightMax);
+  const spare = total - bounds.centerMin - SPLITTER * 2;
+  if (total === 0 || left + right <= spare) return { left, right };
+  const slackLeft = left - bounds.leftMin;
+  const slackRight = right - bounds.rightMin;
+  const slack = slackLeft + slackRight;
+  if (slack <= 0) return { left, right };
+  const shrink = Math.min(left + right - spare, slack);
+  return {
+    left: Math.round(left - (shrink * slackLeft) / slack),
+    right: Math.round(right - (shrink * slackRight) / slack),
+  };
+}
+
 /** 单侧（全屏歌词的右栏）：同样的规矩，旁边那块至少留 `restMin`。 */
 export function clampPane(bounds: PaneBounds, total: number, next: number): number {
   const size = Math.min(Math.max(next, bounds.min), bounds.max);
@@ -106,7 +129,7 @@ export function useColumnWidths(
   bounds: ColumnBounds = DEFAULT_BOUNDS,
 ) {
   const [widths, setWidths] = useState<ColumnWidths>(() => read(key, initial));
-  const container = useRef<HTMLDivElement | null>(null);
+  const total = useContainerWidth();
 
   // 切视图（换 key）时把那一套读回来
   useEffect(() => {
@@ -117,9 +140,12 @@ export function useColumnWidths(
 
   const clamp = useCallback(
     (edge: "left" | "right", next: ColumnWidths) =>
-      clampColumns(bounds, container.current?.clientWidth ?? 0, edge, next),
-    [bounds],
+      clampColumns(bounds, total.node?.clientWidth ?? 0, edge, next),
+    [bounds, total.node],
   );
+
+  /** 实际画出来的宽度：按当前容器宽度收过的。拖动从这里起算，手感才不会跳一下 */
+  const shown = useMemo(() => fitColumns(bounds, total.width, widths), [bounds, total.width, widths]);
 
   const drag = useCallback(
     (edge: "left" | "right", event: React.PointerEvent<HTMLDivElement>) => {
@@ -127,12 +153,14 @@ export function useColumnWidths(
       const handle = event.currentTarget;
       handle.setPointerCapture(event.pointerId);
       const startX = event.clientX;
-      const start = edge === "left" ? widths.left : widths.right;
+      const start = edge === "left" ? shown.left : shown.right;
+      // 一开始拖就以屏幕上看到的宽度为准，另一侧也定在看到的宽度
+      const base = shown;
 
       const move = (e: PointerEvent) => {
         const delta = e.clientX - startX;
         const size = edge === "left" ? start + delta : start - delta;
-        setWidths((prev) => clamp(edge, edge === "left" ? { ...prev, left: size } : { ...prev, right: size }));
+        setWidths(clamp(edge, edge === "left" ? { ...base, left: size } : { ...base, right: size }));
       };
       const done = () => {
         handle.releasePointerCapture(event.pointerId);
@@ -152,22 +180,20 @@ export function useColumnWidths(
       // 拖的时候整页用同一个光标，并且别顺手选中歌词
       document.body.classList.add("col-resizing");
     },
-    [clamp, key, widths.left, widths.right],
+    [clamp, key, shown],
   );
 
-  /** 键盘也能调：方向键一次 16px */
+  /** 键盘也能调：方向键一次 16px，同样从看到的宽度起算 */
   const nudge = useCallback(
     (edge: "left" | "right", step: number) => {
-      setWidths((prev) => {
-        const next = clamp(
-          edge,
-          edge === "left" ? { ...prev, left: prev.left + step } : { ...prev, right: prev.right + step },
-        );
-        write(key, next);
-        return next;
-      });
+      const next = clamp(
+        edge,
+        edge === "left" ? { ...shown, left: shown.left + step } : { ...shown, right: shown.right + step },
+      );
+      setWidths(next);
+      write(key, next);
     },
-    [clamp, key],
+    [clamp, key, shown],
   );
 
   const reset = useCallback(() => {
@@ -178,11 +204,31 @@ export function useColumnWidths(
   }, [key]);
 
   const style = useMemo(
-    () => ({ gridTemplateColumns: `${widths.left}px 6px minmax(0, 1fr) 6px ${widths.right}px` }),
-    [widths.left, widths.right],
+    () => ({ gridTemplateColumns: `${shown.left}px 6px minmax(0, 1fr) 6px ${shown.right}px` }),
+    [shown.left, shown.right],
   );
 
-  return { widths, style, drag, nudge, reset, container };
+  return { widths, shown, style, drag, nudge, reset, container: total.ref };
+}
+
+/**
+ * 量容器宽度，窗口缩放、侧栏收起都跟着变。用回调 ref 而不是 useRef：
+ * 页面先显示「加载中」、容器晚一步才挂上的时候，useEffect([]) 会错过它。
+ */
+function useContainerWidth() {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(entry.contentRect.width);
+    });
+    observer.observe(node);
+    setWidth(node.clientWidth);
+    return () => observer.disconnect();
+  }, [node]);
+  const ref = useCallback((el: HTMLDivElement | null) => setNode(el), []);
+  return { node, width, ref };
 }
 
 export interface PaneBounds {
@@ -200,12 +246,14 @@ export interface PaneBounds {
  */
 export function usePaneWidth(key: string, initial: number, bounds: PaneBounds) {
   const [width, setWidth] = useState<number>(() => read(key, { left: 0, right: initial }).right);
-  const container = useRef<HTMLDivElement | null>(null);
+  const total = useContainerWidth();
 
   const clamp = useCallback(
-    (next: number) => clampPane(bounds, container.current?.clientWidth ?? 0, next),
-    [bounds],
+    (next: number) => clampPane(bounds, total.node?.clientWidth ?? 0, next),
+    [bounds, total.node],
   );
+  /** 窗口变窄时按当前宽度收；记下来的值不变 */
+  const shown = clampPane(bounds, total.width, width);
 
   const drag = useCallback(
     (_edge: "left" | "right", event: React.PointerEvent<HTMLDivElement>) => {
@@ -213,7 +261,7 @@ export function usePaneWidth(key: string, initial: number, bounds: PaneBounds) {
       const handle = event.currentTarget;
       handle.setPointerCapture(event.pointerId);
       const startX = event.clientX;
-      const start = width;
+      const start = shown;
 
       const move = (e: PointerEvent) => setWidth(clamp(start - (e.clientX - startX)));
       const done = () => {
@@ -232,18 +280,16 @@ export function usePaneWidth(key: string, initial: number, bounds: PaneBounds) {
       handle.addEventListener("pointercancel", done);
       document.body.classList.add("col-resizing");
     },
-    [clamp, key, width],
+    [clamp, key, shown],
   );
 
   const nudge = useCallback(
     (_edge: "left" | "right", step: number) => {
-      setWidth((prev) => {
-        const next = clamp(prev + step);
-        write(key, { left: 0, right: next });
-        return next;
-      });
+      const next = clamp(shown + step);
+      setWidth(next);
+      write(key, { left: 0, right: next });
     },
-    [clamp, key],
+    [clamp, key, shown],
   );
 
   const reset = useCallback(() => {
@@ -251,7 +297,7 @@ export function usePaneWidth(key: string, initial: number, bounds: PaneBounds) {
     write(key, { left: 0, right: initial });
   }, [key, initial]);
 
-  return { width, style: { flexBasis: `${width}px` }, drag, nudge, reset, container };
+  return { width: shown, style: { flexBasis: `${shown}px` }, drag, nudge, reset, container: total.ref };
 }
 
 interface Props {

@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 设置 → 更新与系统 → 更新。
  *
@@ -149,7 +150,7 @@ export function UpdateCard({ icons, onError }: Props) {
         onClick={() => void openLog()}
       >
         <span className="setting-chevron" aria-hidden="true">
-          {showLog ? "⌄" : "›"}
+          <Icon name={showLog ? "chevronDown" : "chevronRight"} />
         </span>
       </SettingCard>
       {showLog && (

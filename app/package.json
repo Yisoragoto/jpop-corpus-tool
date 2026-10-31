@@ -22,6 +22,7 @@
     "react-dom": "^19"
   },
   "devDependencies": {
+    "@fluentui/svg-icons": "^1.1.344",
     "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",

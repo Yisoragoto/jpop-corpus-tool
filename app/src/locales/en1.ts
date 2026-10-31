@@ -122,7 +122,6 @@ export const en1: Record<string, string> = {
   "歌词行": "Lyric lines",
   "词汇": "Words",
   "没有可用的音频输出设备，播放已禁用；歌词与语料浏览不受影响。": "No audio output device is available, so playback is disabled. You can still browse lyrics and the corpus.",
-  "{notice}（点击关闭）": "{notice} (click to dismiss)",
 
   // backfill.ts
   "顺手补分词没成功（库没被改动）：{error}。可以到「曲库维护 → 补齐缺失分词」再试。": "Couldn't tokenize the missing songs (the library wasn't changed): {error}. Try again under Library maintenance → Tokenize missing songs.",

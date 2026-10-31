@@ -1027,6 +1027,7 @@ export async function call<T>(cmd: string, args?: Record<string, unknown>): Prom
 }
 
 export const api = {
+  systemAccent: () => call<Record<"accent" | "light1" | "light2" | "light3" | "dark1" | "dark2" | "dark3", string> | null>("system_accent"),
   health: () => call<HealthReport>("health"),
   /** 语料库目录的现状（设置页显示用） */
   libraryRoot: () => call<LibraryRootInfo>("library_root"),

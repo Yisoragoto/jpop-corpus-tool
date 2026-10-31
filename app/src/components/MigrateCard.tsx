@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 设置 → 曲库维护 → 从别的语料库目录迁移数据。
  *
@@ -81,7 +82,7 @@ export function MigrateCard({ icon, onError, onChanged }: Props) {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="setting-chevron" aria-hidden="true">
-          {open ? "⌄" : "›"}
+          <Icon name={open ? "chevronDown" : "chevronRight"} />
         </span>
       </SettingCard>
 

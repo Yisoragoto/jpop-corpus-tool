@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clampColumns, clampPane, DEFAULT_BOUNDS, type PaneBounds } from "./ColumnSplitter";
+import { clampColumns, clampPane, DEFAULT_BOUNDS, fitColumns, type PaneBounds } from "./ColumnSplitter";
 
 const WIDE = 1920;
 
@@ -43,6 +43,36 @@ describe("三栏的宽度", () => {
     expect(clampColumns(DEFAULT_BOUNDS, 0, "left", { left: 9999, right: 9999 })).toEqual({
       left: DEFAULT_BOUNDS.leftMax,
       right: DEFAULT_BOUNDS.rightMax,
+    });
+  });
+});
+
+describe("窗口变窄时显示的宽度", () => {
+  it("放得下就用记下来的宽度", () => {
+    expect(fitColumns(DEFAULT_BOUNDS, WIDE, { left: 300, right: 360 })).toEqual({ left: 300, right: 360 });
+  });
+
+  it("恢复的是大窗口里拖宽的值：两边按余量比例一起收，正文留够 centerMin", () => {
+    const got = fitColumns(DEFAULT_BOUNDS, 1000, { left: 500, right: 600 });
+    // 1000 - 360 - 12 = 628 给两边
+    expect(got.left + got.right).toBe(628);
+    expect(got.left).toBeGreaterThanOrEqual(DEFAULT_BOUNDS.leftMin);
+    expect(got.right).toBeGreaterThanOrEqual(DEFAULT_BOUNDS.rightMin);
+    // 余量 320 : 400，右边让得多
+    expect(500 - got.left).toBeLessThan(600 - got.right);
+  });
+
+  it("两边都到下限就不再收", () => {
+    expect(fitColumns(DEFAULT_BOUNDS, 500, { left: 500, right: 600 })).toEqual({
+      left: DEFAULT_BOUNDS.leftMin,
+      right: DEFAULT_BOUNDS.rightMin,
+    });
+  });
+
+  it("还没量到容器宽度时只按上下限夹", () => {
+    expect(fitColumns(DEFAULT_BOUNDS, 0, { left: 9999, right: 10 })).toEqual({
+      left: DEFAULT_BOUNDS.leftMax,
+      right: DEFAULT_BOUNDS.rightMin,
     });
   });
 });

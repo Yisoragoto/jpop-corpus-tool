@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 「振假名不可用：找不到 Sudachi 词典」那条横幅上的下载按钮。
  *
@@ -79,7 +80,7 @@ export function SudachiBanner({ message, onDone, onDismiss }: Props) {
       </button>
       {!busy && (
         <button className="sudachi-close" onClick={onDismiss} title={tr("先不下")} aria-label={tr("关闭")}>
-          ✕
+          <Icon name="close" />
         </button>
       )}
     </div>

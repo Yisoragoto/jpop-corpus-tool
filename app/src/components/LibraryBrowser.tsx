@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 资料库左栏：四种找法——音乐人、幕后、专辑、歌曲。
  *
@@ -179,10 +180,7 @@ export function LibraryBrowser({
       {banner}
       <div className="browser-head">
         <button className="btn browser-view-btn browser-hide" onClick={onHide} title={tr("收起左栏")} aria-label={tr("收起左栏")}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-            <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-            <path d="M9 4.5v15M15 10l-2 2 2 2" />
-          </svg>
+          <Icon name="panelHide" />
         </button>
         <input className="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
@@ -231,30 +229,17 @@ export function LibraryBrowser({
 
       <nav className="browser-views" aria-label={tr("整个资料库")}>
         <button className={view.kind === "graph" ? "on" : ""} onClick={onOpenGraph} title={tr("关系网：所有人和他们的合作")}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-            <circle cx="6" cy="7" r="2.4" />
-            <circle cx="18" cy="6" r="2" />
-            <circle cx="12" cy="17" r="2.8" />
-            <path d="m8 8.4 2.6 6.4M16.4 7.5 13.6 14.6M8.3 6.7 16 6.1" />
-          </svg>
+          <Icon name="network" />
           {tr("关系网")}
         </button>
         {onOpenTimeline && (
           <button className={view.kind === "timeline" ? "on" : ""} onClick={onOpenTimeline} title={tr("时间轴：谁在哪年发了什么")}>
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-              <path d="M3 6h18M3 12h18M3 18h18" opacity=".35" />
-              <path d="M5 6h7M9 12h10M4 18h5" strokeWidth="3" />
-            </svg>
+            <Icon name="timeline" />
             {tr("时间轴")}
           </button>
         )}
         <button className={view.kind === "cloud" ? "on" : ""} onClick={onOpenCloud} title={tr("词云：歌词里最常出现的词")}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
-            <text x="1" y="12" fontSize="10" fontWeight="700">あ</text>
-            <text x="11" y="10" fontSize="7">夢</text>
-            <text x="9" y="21" fontSize="9" fontWeight="700">君</text>
-            <text x="2" y="20" fontSize="5.5" opacity=".6">空</text>
-          </svg>
+          <Icon name="font" />
           {tr("词云")}
         </button>
       </nav>
@@ -311,7 +296,7 @@ function ArtistItems({
                 title={expanded ? tr("收起成员") : tr("展开成员")}
                 aria-expanded={expanded}
               >
-                <span className="chev" aria-hidden="true">›</span>{"  "}{tr("{length} 人", { length: row.members.length })}</button>
+                <span className="chev" aria-hidden="true"><Icon name="chevronRight" /></span>{"  "}{tr("{length} 人", { length: row.members.length })}</button>
             )}
             {expanded &&
               row.members.map((m, j) => (

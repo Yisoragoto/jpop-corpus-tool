@@ -1,5 +1,13 @@
 // 英文：components 的 L–S（键是中文原文，见 i18n.ts）
 export const en2: Record<string, string> = {
+  // SettingsPage.tsx：外观 → 主题
+  "主题": "Theme",
+  "浅色 / 深色": "Light / dark",
+  "跟随系统时会随 Windows 的「选择你的模式」一起变；全屏歌词和卡拉 OK 始终是深色": "With the system setting it follows Windows' \"Choose your mode\"; full-screen lyrics and karaoke always stay dark",
+  "跟随系统": "Use system setting",
+  "浅色": "Light",
+  "深色": "Dark",
+
   // LyricsStage.tsx
   "全屏歌词": "Full-screen lyrics",
   "退出全屏（Esc）": "Exit full screen (Esc)",
@@ -208,7 +216,6 @@ export const en2: Record<string, string> = {
   "{sharedTracks} 首共同 · {map}": "{sharedTracks} shared {sharedTracks|song|songs} · {map}",
   "读不出专辑：{err}": "Couldn't load the album: {err}",
   "首": "songs",
-  "▶ 播放": "▶ Play",
 
   // PitchCacheCard.tsx
   "变调缓存": "Pitch-shift cache",
@@ -268,7 +275,19 @@ export const en2: Record<string, string> = {
   "全部 {length} 首": "All {length} songs",
 
   // RelationGraph.tsx
-  "关系网：拖动节点、拖空白处平移、滚轮缩放，双击打开这个人": "Network: drag nodes, drag the background to pan, scroll to zoom, double-click to open a person",
+  "关系网：方向键切换人物，Enter 打开，空格选中，+ / - 缩放，0 复位；也可以拖动节点、拖空白处平移、滚轮缩放，双击打开这个人": "Network: arrow keys move between people, Enter opens, Space selects, + / - zoom, 0 resets the view; you can also drag nodes, drag the background to pan, scroll to zoom, and double-click to open a person",
+
+  // LyricsStage.tsx
+  "跳到这一句（Enter）": "Jump to this line (Enter)",
+
+  // CommandPalette.tsx
+  "命令面板": "Command palette",
+  "全局搜索": "Search everything",
+  "正在搜索…": "Searching…",
+  "搜索出错：{error}": "Search failed: {error}",
+
+  // LoadError.tsx
+  "没有读出来": "Couldn't load this page",
 
   // SongEditor.tsx
   "多人用 / 隔开": "Separate multiple names with /",

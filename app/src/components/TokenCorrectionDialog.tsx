@@ -9,7 +9,7 @@
  * 确认放在按钮上点第二下，不弹窗。
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, POS_LABELS, UPOS_TAGS, type CorrectionView, type TokenEdit } from "../api";
 import {
@@ -23,6 +23,8 @@ import {
 } from "../corrections";
 import { tr } from "../i18n";
 
+import { useModalFocus } from "../modalFocus";
+
 const KNOWN_POS = new Set<string>(UPOS_TAGS);
 
 interface Props {
@@ -34,6 +36,8 @@ interface Props {
 }
 
 export function TokenCorrectionDialog({ utteranceId, onClose, onChanged, onError }: Props) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalFocus(dialogRef);
   const [view, setView] = useState<CorrectionView | null>(null);
   const [tokens, setTokens] = useState<TokenEdit[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
@@ -133,6 +137,8 @@ export function TokenCorrectionDialog({ utteranceId, onClose, onChanged, onError
     <div className="palette-backdrop" onMouseDown={onClose}>
       <div
         className="palette tc-dialog"
+        ref={dialogRef}
+        aria-modal="true"
         role="dialog"
         aria-label={tr("分词校正")}
         onMouseDown={(e) => e.stopPropagation()}

@@ -1,3 +1,4 @@
+import { Icon } from "../components/Icon";
 /**
  * KWIC 检索页。
  *
@@ -79,7 +80,8 @@ const POS_FILTERS = ["", "NOUN", "PROPN", "VERB", "ADJ", "ADV"] as const;
 /** 结果行高。必须和 CSS 里 .kwic-row / .text-row 的高度一致，
  *  不一致会让虚拟列表滚动时跳动。 */
 const KWIC_ROW_HEIGHT = 30;
-const TEXT_ROW_HEIGHT = 46;
+/** 正文 13px + 出处 11px，行高 1.45，加上 2px 间距和上下 6px 内边距 ≈ 49px，留一点余量 */
+const TEXT_ROW_HEIGHT = 52;
 
 /** 上限。虚拟化之后渲染不再是瓶颈，但一次查询返回太多行本身就没有研究价值。 */
 const KWIC_LIMIT = 5000;
@@ -577,7 +579,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           </span>
           {near && (
             <span className="near-chip" title={tr("只看关键词左右 3 个词内有这个词的行")}>{tr("附近有「{word}」", { word: near.word })}<button className="link-btn" onClick={clearNear} aria-label={tr("取消附近词筛选")}>
-                ×
+                <Icon name="close" />
               </button>
             </span>
           )}
@@ -770,7 +772,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                       }
                       aria-label={tr("试听这一句")}
                     >
-                      ▶
+                      <Icon name="play" />
                     </button>
                     <button
                       className="kwic-play"
@@ -782,7 +784,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                       title={tr("连前后各一行一起听")}
                       aria-label={tr("连前后文试听")}
                     >
-                      ⟲
+                      <Icon name="contextPlay" />
                     </button>
                   </span>
                   <span className="kwic-left">{hit.left}</span>
@@ -791,11 +793,11 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                   <span className="kwic-meta">
                     {hit.corrected && (
                       <span className="tc-mark" title={tr("这一行做过分词校正")}>
-                        ✏
+                        <Icon name="edit" />
                       </span>
                     )}
                     {hit.artist} · {hit.title}
-                    {hit.repeatCount > 1 && <em className="repeat"> ×{hit.repeatCount}</em>}
+                    {hit.repeatCount > 1 && <em className="repeat"> <Icon name="close" />{hit.repeatCount}</em>}
                     {timed && <span className="kwic-time">{formatDuration(hit.timeSec!)}</span>}
                   </span>
                 </div>
@@ -815,6 +817,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
               <button
                 className="text-row"
                 onClick={() => void open(hit.songId, hit.utteranceId, hit.timeSec)}
+                title={hit.text}
               >
                 <span className="ex-text">{hit.text}</span>
                 <span className="ex-meta">
@@ -866,7 +869,15 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                       <tr
                         key={`${c.lemma}-${c.pos}`}
                         className={near?.word === c.lemma ? "on" : ""}
+                        tabIndex={0}
+                        aria-selected={near?.word === c.lemma}
                         onClick={() => pickCollocate(c.lemma)}
+                        onKeyDown={(e) => {
+                          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                            e.preventDefault();
+                            pickCollocate(c.lemma);
+                          }
+                        }}
                         title={tr("点一下：只看附近有「{lemma}」的行。全库 {collocateFreq} 次", { lemma: c.lemma, collocateFreq: c.collocateFreq })}
                       >
                         <td>
@@ -904,7 +915,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                             title={tr("听一句两者一起出现的歌词")}
                             aria-label={tr("试听一句例子")}
                           >
-                            ▶
+                            <Icon name="play" />
                           </button>
                         </td>
                       </tr>

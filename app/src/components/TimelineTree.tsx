@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 时间轴放大后：一位音乐人的「时间树」。竖着看（年份是树干上的节，专辑左右交替长出来，歌是小枝），
  * 或者横着看（年份在上，专辑挂在横向主干上，点一张往下长出它的歌）。横竖记住。
@@ -146,7 +147,7 @@ function SongTwig({ song, n, playing, onPlay }: { song: PersonWork; n: number; p
     <button className={`twig ${playing ? "now" : ""}`} onClick={onPlay} title={tr("从头播放")}>
       <em>{playing ? "♪" : n}</em>
       <span lang="ja">{song.title}</span>
-      <span className="twig-play">▶</span>
+      <span className="twig-play"><Icon name="play" /></span>
     </button>
   );
 }

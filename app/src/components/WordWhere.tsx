@@ -19,6 +19,7 @@ import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
 import { loadPerformers } from "./PerformerPicker";
 import { setFocusWord } from "../focusWord";
+import { Icon } from "./Icon";
 import { tr } from "../i18n";
 
 /** 弹出的歌曲列表：KWIC 最多取这么多行再按歌分组 */
@@ -271,7 +272,7 @@ export function WordWhere({
         >{tr("不在词云里显示")}</button>
         )}
         <button className="wc-pop-close" onClick={onClose} aria-label={tr("关闭（Esc）")}>
-          ✕
+          <Icon name="close" />
         </button>
       </div>
       {byArtist.length > 1 && (
@@ -346,9 +347,7 @@ export function WordWhere({
                     <b />
                   </i>
                 ) : (
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
-                    <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.6-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
-                  </svg>
+                  <Icon name="play" />
                 )}
               </button>
               {cal && (

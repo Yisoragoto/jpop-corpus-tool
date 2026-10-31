@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 有新版本时的弹窗：写清楚是哪一版、什么时候发的、改了什么，由人决定。
  *
@@ -12,8 +13,9 @@
  * 设置页「更新到 x」那个按钮也走这个窗，两处行为一样。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "../events";
+import { useModalFocus } from "../modalFocus";
 
 import { api, type ReleaseInfo, type UpdateProgress } from "../api";
 import { tr } from "../i18n";
@@ -74,6 +76,10 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
       .then(onClose).catch((err: unknown) => { setError(String(err)); setPhase("failed"); });
   }, [release, onClose]);
 
+  // 焦点关在弹窗里，关掉后还给原来的控件
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalFocus(dialogRef);
+
   const pct = progress && progress.total > 0 ? Math.min(100, Math.round((progress.received / progress.total) * 100)) : null;
   const notes = release.notes.trim();
 
@@ -81,6 +87,7 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
     <div className="palette-backdrop update-backdrop" onMouseDown={busy ? undefined : onClose}>
       <div
         className="update-dialog"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={tr("新版本 {version}", { version: release.version })}
@@ -88,11 +95,7 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
       >
         <header className="update-head">
           <span className="update-badge" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3v11" />
-              <path d="M8 10.5l4 4 4-4" />
-              <path d="M4 18.5h16" />
-            </svg>
+            <Icon name="import" />
           </span>
           <div>
             <h2>{tr("有新版本 {version}", { version: release.version })}</h2>
@@ -112,7 +115,7 @@ export function UpdateDialog({ current, release, offerSkip, onClose }: Props) {
             {phase === "downloading" && (
               <>
                 <span>{pct === null ? tr("正在下载…") : tr("正在下载 {pct}%", { pct })}</span>
-                <span className="update-bar">
+                <span className="update-bar" role="progressbar" aria-label={tr("正在下载…")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
                   <i style={{ width: `${pct ?? 6}%` }} className={pct === null ? "indeterminate" : ""} />
                 </span>
               </>

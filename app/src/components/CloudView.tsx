@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 资料库里的词云：占中栏和右栏。卡片头上一行是常用的筛选（歌手、子语料、词性、年份），
  * 字体、词数、配色、仅日文、去虚词收在「设置」弹层里。
@@ -220,7 +221,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
               }}
               title={tr("不限年份")}
             >
-              ×
+              <Icon name="close" />
             </button>
           )}
         </span>
@@ -239,11 +240,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
           aria-expanded={optionsOpen}
           title={tr("字体、词数、配色和筛选")}
         >
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-            <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
-            <circle cx="16" cy="7" r="2" />
-            <circle cx="10" cy="17" r="2" />
-          </svg>
+          <Icon name="tune" />
           {tr("设置")}
         </button>
         {optionsOpen && (

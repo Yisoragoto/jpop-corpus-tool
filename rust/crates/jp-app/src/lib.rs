@@ -6,6 +6,7 @@
 
 // 公开给集成测试用：`tests/commands.rs` 要能装配同一套状态和 handler。
 // 生产路径和测试路径共用 `register()`，命令清单只有一份。
+pub mod appearance;
 pub mod anki;
 pub mod anki_report;
 pub mod commands;
@@ -46,6 +47,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         ($builder:expr $(, $extra:path)*) => {
             $builder.invoke_handler(tauri::generate_handler![
                 $($extra,)*
+            appearance::system_accent,
             commands::health,
             commands::update_preferences,
             commands::update_set_channel,
