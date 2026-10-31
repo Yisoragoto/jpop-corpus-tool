@@ -54,11 +54,14 @@ struct KaraokeLyricText: View {
         let mask = KtvMask(parts: parts, hasRuby: hasRuby, fonts: fonts, progress: progress, pad: metrics.pad)
         ZStack {
             // 发光垫在最底下，而且是遮罩之后再糊：唱过那层的光跟着擦到哪亮到哪，擦色的边上不会切出一条硬边
-            // 两层糊：一层贴边、一层散开，和 Windows 的两个 drop-shadow（g/4、g/2）一样亮
+            // 发光是剪影的投影（一层贴边、一层散开，和 Windows 的两个 drop-shadow 一样）。投影在遮罩之后才加，
+            // 所以唱过那层的光跟着擦色走、边上是软的，不会被遮罩切成硬边
             if metrics.glow > 0 {
-                ForEach([metrics.glow / 4, metrics.glow / 2], id: \.self) { radius in
-                    layer(parts, hasRuby, fonts, unsung.silhouette(unsung.glow), metrics).blur(radius: radius)
-                    if lit { layer(parts, hasRuby, fonts, sung.silhouette(sung.glow), metrics).mask { mask }.blur(radius: radius) }
+                layer(parts, hasRuby, fonts, unsung.silhouette(unsung.glow), metrics)
+                    .shadow(color: unsung.glow, radius: metrics.glow / 4).shadow(color: unsung.glow, radius: metrics.glow / 2)
+                if lit {
+                    layer(parts, hasRuby, fonts, sung.silhouette(sung.glow), metrics).mask { mask }
+                        .shadow(color: sung.glow, radius: metrics.glow / 4).shadow(color: sung.glow, radius: metrics.glow / 2)
                 }
             }
             // 描好边的两层合成一张，再整体往右下叠出侧面：侧面接在描边外面，不会夹进字里
