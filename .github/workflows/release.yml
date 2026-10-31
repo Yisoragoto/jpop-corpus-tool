@@ -174,7 +174,7 @@ jobs:
   macos:
     needs: identity
     if: needs.identity.outputs.publish == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       JPOP_BUILD_ID: ${{ needs.identity.outputs.build_id }}
       CHANNEL: ${{ needs.identity.outputs.channel }}

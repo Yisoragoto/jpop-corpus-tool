@@ -6,23 +6,49 @@
 [![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20%C2%B7%20macOS%2014%2B-lightgrey)](https://github.com/Yisoragoto/jpop-corpus-tool/releases)
 [![built with](https://img.shields.io/badge/built%20with-Tauri%202%20%C2%B7%20React%2019%20%C2%B7%20Rust%20%C2%B7%20SwiftUI-orange)](#从源码运行)
 
-面向日语学习者的本地 J-pop 语料库。把自己拥有的歌曲和歌词导入后，跟着音频逐字读歌词、
+本地音乐语料库。把自己拥有的歌曲和歌词导入后，跟着音频逐字读歌词、
 点词查释义（Yomitan 那一套），在整个曲库里检索一个词、听它在每首歌里被唱出来的那一句，
 做词频、搭配、子语料对比这些语料分析，再把刚听到的真实例句做成 Anki 卡片。
 
 **简体中文** · [English](README.en.md)
+
+[下载](#下载) · [功能](#功能) · [第一次使用](#第一次使用) · [从源码运行](#从源码运行) · [方法](#方法基于语料库语言学)
 
 <table>
 <tr>
 <td colspan="2"><img src="docs/screenshots/lyrics-lookup.webp" alt="全屏歌词里查词"></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/karaoke.webp" alt="卡拉 OK"></td>
-<td><img src="docs/screenshots/lyrics-info.webp" alt="全屏歌词与制作人员"></td>
+<td colspan="2" align="center"><sub>Windows · 全屏歌词里点词，右栏换成查词结果</sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/artist.webp" alt="音乐人档案"></td>
-<td><img src="docs/screenshots/wordcloud.webp" alt="词云"></td>
+<td width="50%"><img src="docs/screenshots/karaoke.webp" alt="卡拉 OK"></td>
+<td width="50%"><img src="docs/screenshots/lyrics-info.webp" alt="全屏歌词与制作人员"></td>
+</tr>
+<tr>
+<td align="center"><sub>Windows · 卡拉 OK</sub></td>
+<td align="center"><sub>Windows · 全屏歌词与制作人员</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/artist.webp" alt="音乐人档案"></td>
+<td width="50%"><img src="docs/screenshots/wordcloud.webp" alt="词云"></td>
+</tr>
+<tr>
+<td align="center"><sub>Windows · 音乐人档案</sub></td>
+<td align="center"><sub>Windows · 词云</sub></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="33%"><img src="docs/screenshots/macos-lyrics-lookup.webp" alt="全屏歌词里点词查词"></td>
+<td width="33%"><img src="docs/screenshots/macos-karaoke.webp" alt="卡拉 OK 字幕样式"></td>
+<td width="33%"><img src="docs/screenshots/macos-kwic.webp" alt="CQL 检索，右侧歌词跟着播放"></td>
+</tr>
+<tr>
+<td align="center"><sub>macOS · 全屏歌词里点词查词</sub></td>
+<td align="center"><sub>macOS · 卡拉 OK 字幕样式</sub></td>
+<td align="center"><sub>macOS · CQL 检索，右侧歌词跟着播放</sub></td>
 </tr>
 </table>
 
@@ -78,7 +104,7 @@ Releases 取，校验 SHA-256 之后直接覆盖安装（不用先卸载旧版�
   实线是一起署过名，虚线是乐队和成员。能拖能缩放，按角色和「至少一起几首」过滤，双击打开档案。
 - **时间轴**按发行日期排开每张专辑和单曲，带封面和曲目表；竖排、横排可选，乐队解散处接到单飞成员那一行。
 
-<p align="center"><img src="docs/screenshots/timeline.webp" alt="时间轴" width="760"></p>
+<p align="center"><img src="docs/screenshots/timeline.webp" alt="时间轴" width="720"></p>
 
 ### 播放与歌词
 
@@ -126,7 +152,7 @@ Releases 取，校验 SHA-256 之后直接覆盖安装（不用先卸载旧版�
 可以在 [MarvNC/yomitan-dictionaries](https://github.com/MarvNC/yomitan-dictionaries) 找到下载地址。
 各词典的版权和再分发条件由各自作者决定，自行确认。
 
-![词典页](docs/screenshots/dictionary.webp)
+<p align="center"><img src="docs/screenshots/dictionary.webp" alt="词典页" width="640"></p>
 
 ### 检索：从一个词到它被唱出来的那一句
 
@@ -138,7 +164,7 @@ Releases 取，校验 SHA-256 之后直接覆盖安装（不用先卸载旧版�
   单击跳到那首歌的那一行接着放，歌词跟着高亮。
 - 搭配面板：关键词左右 3 词内的搭配词，点一个搭配词把 KWIC 收窄到「附近有它」的行。
 
-![KWIC 检索](docs/screenshots/kwic.webp)
+<p align="center"><img src="docs/screenshots/kwic.webp" alt="KWIC 检索" width="640"></p>
 
 ### 词云
 
@@ -184,7 +210,7 @@ J-pop 的副歌会反复唱：真实语料里重复行占了约 23% 的行、20%
 
 用到的统计方法和出处见文末的[方法：基于语料库语言学](#方法基于语料库语言学)。
 
-![分析页](docs/screenshots/analytics.webp)
+<p align="center"><img src="docs/screenshots/analytics.webp" alt="分析页" width="640"></p>
 
 ### 语料质量与来源追踪
 
@@ -212,7 +238,7 @@ J-pop 的副歌会反复唱：真实语料里重复行占了约 23% 的行、20%
 - 可选按歌手放进「牌组::歌手」子牌组；能读 Anki 的学习状态，排除已经学过的词。
 - Anki 页可以批量选词、预览、导出；挖词报告（HTML）按 JLPT 分级列出语料里还没做成卡片的词。
 
-![Lyrics 笔记类型的卡片背面](docs/screenshots/anki-lyrics-card.webp)
+<p align="center"><img src="docs/screenshots/anki-lyrics-card.webp" alt="Lyrics 笔记类型的卡片背面" width="720"></p>
 
 ### 导入、刮削与曲库维护
 
