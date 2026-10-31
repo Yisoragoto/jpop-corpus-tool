@@ -271,9 +271,6 @@ private struct CloudGlass: View {
     }
 }
 
-/// 整块的底：歌手照片放大、重度虚化、提饱和铺满（几位就拼几块），没有照片时是蓝紫两团光；
-/// 上面再压一层中间亮、四周暗的暗角，字才看得清
-@MainActor
 /// 词云底图的数据（歌手照片和拼好虚化的底图），页面里的词云和 AppShell 共用
 @MainActor @Observable
 final class CloudBackdropStore {
@@ -291,6 +288,9 @@ struct CloudPageBackdrop: View {
     }
 }
 
+/// 整块的底：歌手照片放大、重度虚化、提饱和铺满（几位就拼几块），没有照片时是蓝紫两团光；
+/// 上面再压一层中间亮、四周暗的暗角，字才看得清
+@MainActor
 private struct CloudBackdrop: View {
     let photos: [NSImage]
     var blurred: NSImage? = nil
