@@ -153,6 +153,14 @@ interface Props {
   stageWanted?: boolean;
   /** 收到了，把请求清掉 */
   onStageConsumed?: () => void;
+  /** 全屏歌词关掉了（App 用它回到进全屏之前的那一页） */
+  onStageClosed?: () => void;
+  /** 外面（底部「正在唱」字幕）请求回到正在放的这首歌的歌词 */
+  songWanted?: boolean;
+  onSongConsumed?: () => void;
+  /** 外面（别的页面上的「词的去处」）点「看例句和释义」：打开这个词的释义和例句 */
+  examplesWanted?: { lemma: string; jump: WordJump } | null;
+  onExamplesConsumed?: () => void;
 }
 
 export function LibraryPage({
@@ -170,6 +178,11 @@ export function LibraryPage({
   onCloudConsumed,
   stageWanted = false,
   onStageConsumed,
+  onStageClosed,
+  songWanted = false,
+  onSongConsumed,
+  examplesWanted = null,
+  onExamplesConsumed,
 }: Props) {
   const { tracks, selected, lyrics, credits, lyricsLoading, word, wordJump, wordLoading, activeLemma } =
     library;
@@ -342,6 +355,12 @@ export function LibraryPage({
   const [karaokeOpen, setKaraokeOpen] = useState(false);
   const closeKaraoke = useCallback(() => setKaraokeOpen(false), []);
   const openKaraoke = useCallback(() => { setStageOpen(false); setKaraokeOpen(true); }, []);
+  // 全屏歌词关掉（不是转去卡拉 OK）：告诉 App，从别的页面进来的就回那一页
+  const stageWasOpen = useRef(false);
+  useEffect(() => {
+    if (stageWasOpen.current && !stageOpen && !karaokeOpen) onStageClosed?.();
+    stageWasOpen.current = stageOpen;
+  }, [stageOpen, karaokeOpen, onStageClosed]);
   useEffect(() => setKaraokeOpen(false), [selected?.id]);
   // 每行拆成「词之间的原文 + 词（里面带注音）」。播放轮询每秒重渲染 10 次，拆分结果要缓存
   const lineSegments = useMemo(
@@ -712,6 +731,25 @@ export function LibraryPage({
     if (!stageOpen) releaseFullscreen("stage");
   }, [stageOpen]);
   useEffect(() => () => releaseFullscreen("stage"), []);
+
+  // 底部字幕点「回到这一行」：切到歌词（歌词自己会跟着当前行滚过去）
+  useEffect(() => {
+    if (!songWanted) return;
+    onSongConsumed?.();
+    if (selected !== null) {
+      lastSongId.current = selected.id;
+      go({ kind: "song" });
+    }
+  }, [songWanted, selected, go, onSongConsumed]);
+
+  // 别的页面上的「词的去处」点「看例句和释义」：和词云里点的是同一件事
+  useEffect(() => {
+    if (examplesWanted === null) return;
+    onExamplesConsumed?.();
+    go({ kind: "song" });
+    lookUp(examplesWanted.lemma);
+    void actions.openWord(examplesWanted.lemma, examplesWanted.jump);
+  }, [examplesWanted, onExamplesConsumed, go, lookUp, actions]);
 
   // 分析页点「打开词云」
   useEffect(() => {

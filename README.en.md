@@ -178,6 +178,10 @@ Each dictionary's licence and redistribution terms are its author's; check them 
 - Click a word to list the songs it appears in, **songs where it starts a line first**; click a song and it **plays
   from that word itself** — exact where there is word timing, otherwise you can calibrate it once by tapping as you
   hear the word, and it is remembered.
+- The same song list opens beside the **Analytics** tables and the **Dictionary**: click any word there and play it
+  from the word without leaving the page. In **KWIC**, a click plays from the matched word and keeps you on the page
+  (double-click opens the song in the Library). While something plays, every page shows the line being sung at the
+  bottom with the word highlighted; full-screen lyrics opened from there return you to where you were.
 - Full-screen mode and PNG export.
 
 ### Analysis: choruses don't inflate the numbers, and results say where they came from

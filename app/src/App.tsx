@@ -21,6 +21,8 @@ import { CommandPalette, type PaletteCommand, type PaletteMode } from "./compone
 import { NavIcon } from "./components/NavIcons";
 import { NewSongsBanner } from "./components/NewSongsBanner";
 import { invalidatePerformers } from "./components/PerformerPicker";
+import { NowCaption } from "./components/NowCaption";
+import type { WordPanelLinks } from "./components/WordWhere";
 import { Player } from "./components/Player";
 import { SudachiBanner } from "./components/SudachiBanner";
 import { warmFontOptions } from "./fonts";
@@ -40,7 +42,8 @@ import { openSettingsSection, SettingsPage } from "./pages/SettingsPage";
 import { useLibrary } from "./useLibrary";
 import { toggleFullscreen } from "./fullscreen";
 import { useHotkeys } from "./useHotkeys";
-import { usePlaybackState } from "./usePlayback";
+import { useCurrentLine, usePlaybackState } from "./usePlayback";
+import { validLyricTime } from "./wordTiming";
 import { tr } from "./i18n";
 import { installHooks } from "./e2e";
 
@@ -86,11 +89,22 @@ export default function App() {
   const playback = usePlaybackState(audioReady);
   /** 「进全屏歌词」的请求。曲库页收到之后自己清掉（和跨页跳转同一个路子） */
   const [stageWanted, setStageWanted] = useState(false);
+  /** 从别的页面进的全屏歌词：退出来回到那一页（词云就是这样，现在每一页都这样） */
+  const [stageReturn, setStageReturn] = useState<Route | null>(null);
   const openStage = useCallback(() => {
+    setStageReturn(route === "library" ? null : route);
     setRoute("library");
     setStageWanted(true);
-  }, []);
+  }, [route]);
   const consumeStage = useCallback(() => setStageWanted(false), []);
+  const onStageClosed = useCallback(() => {
+    if (stageReturn === null) return;
+    setRoute(stageReturn);
+    setStageReturn(null);
+  }, [stageReturn]);
+  /** 底部字幕「回到这一行」：去资料库看这首的歌词 */
+  const [songWanted, setSongWanted] = useState(false);
+  const consumeSong = useCallback(() => setSongWanted(false), []);
   /** 分析页点「打开词云」：去资料库开词云（请求 + 消费，和全屏歌词一样） */
   const [cloudWanted, setCloudWanted] = useState(false);
   const openCloud = useCallback(() => {
@@ -179,6 +193,25 @@ export default function App() {
   }, []);
   const [library, actions] = useLibrary(audioReady, onError);
 
+  /**
+   * 「词的去处」里点一首歌：从那个词开始放，人留在当前页面。
+   * `fullscreen` 时进全屏歌词，退出后回到当前页面。和词云里的同一套规矩。
+   */
+  const playLine = useCallback(
+    async (songId: string, utteranceId: number, timeSec: number | null, fullscreen: boolean) => {
+      const timed = validLyricTime(timeSec);
+      const opened = await actions.openTrackById(songId, { scrollTo: utteranceId, seekTo: timed ? timeSec : null, autoPlay: timed });
+      if (opened && fullscreen) openStage();
+    },
+    [actions, openStage],
+  );
+
+  // 底部「正在唱」：正在放的这首、唱到的这一句
+  const captionActive = library.selected !== null && playback.songId === library.selected.id;
+  const captionIndex = useCurrentLine(library.lyrics, playback.positionSec, captionActive);
+  const captionLine = captionActive ? library.lyrics[captionIndex] : undefined;
+
+
   useEffect(() => {
     (async () => {
       try {
@@ -234,6 +267,31 @@ export default function App() {
     setRoute("kwic");
   }, []);
   const consumeKwicRequest = useCallback(() => setKwicRequest(null), []);
+
+  /** 「看例句和释义」：去资料库打开这个词（释义 + 例句 + 制卡都在那里） */
+  const [examplesWanted, setExamplesWanted] = useState<{ lemma: string; jump: WordJump } | null>(null);
+  const consumeExamples = useCallback(() => setExamplesWanted(null), []);
+  const tracks = library.tracks;
+  const coverOf = useCallback((songId: string) => tracks.find((t) => t.id === songId)?.coverPath ?? "", [tracks]);
+  const playingNow = playback.songId !== null ? { songId: playback.songId, utteranceId: captionLine?.utteranceId ?? -1 } : null;
+  const playingKey = playingNow ? `${playingNow.songId}|${playingNow.utteranceId}` : "";
+  /** 各页面右边「词的去处」要接的线，和词云里的一样 */
+  const wordLinks = useMemo<WordPanelLinks>(
+    () => ({
+      playing: playingNow,
+      coverOf,
+      onPlayLine: (songId, utteranceId, timeSec, fullscreen) => void playLine(songId, utteranceId, timeSec, fullscreen),
+      onSearchWord: (lemma, jump) => searchWord(lemma, jump),
+      onShowExamples: (lemma, jump) => {
+        setExamplesWanted({ lemma, jump });
+        setRoute("library");
+      },
+      onError,
+    }),
+    // playingNow 每次渲染都是新对象，按 key 比
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [playingKey, coverOf, playLine, searchWord, onError],
+  );
   // 维护操作改了库之后要刷新总览，否则数字还是旧的；歌手列表也可能变了
   // **读不出来要说。** 这两条原来是 `.catch(() => undefined)`：库出问题时
   // 界面就显示「0 首歌」，一个字的报错都没有，用户只会以为数据丢了。
@@ -492,6 +550,11 @@ export default function App() {
             onCloudConsumed={consumeCloud}
             stageWanted={stageWanted}
             onStageConsumed={consumeStage}
+            onStageClosed={onStageClosed}
+            songWanted={songWanted}
+            onSongConsumed={consumeSong}
+            examplesWanted={examplesWanted}
+            onExamplesConsumed={consumeExamples}
           />
         )}
         {route === "import" && (
@@ -512,6 +575,7 @@ export default function App() {
         {route === "dict" && (
           <DictionaryPage
             onError={onError}
+            wordLinks={wordLinks}
             onOpenSettings={() => {
               openSettingsSection("dict");
               setRoute("settings");
@@ -525,7 +589,7 @@ export default function App() {
             onOverviewChanged={refreshOverview}
             actions={actions}
             onNavigate={goLibrary}
-            onSearchWord={searchWord}
+            wordLinks={wordLinks}
             onSearchPhrase={searchPhrase}
             onSearchInflected={searchInflected}
             onOpenCloud={openCloud}
@@ -533,6 +597,17 @@ export default function App() {
           />
         )}
         </div>
+        {route !== "library" && library.selected !== null && captionLine !== undefined && (
+          <NowCaption
+            track={library.selected}
+            line={captionLine}
+            onReveal={() => {
+              setSongWanted(true);
+              setRoute("library");
+            }}
+            onFullscreen={openStage}
+          />
+        )}
       </main>
 
       {pickLanguage && <LanguagePicker onDone={() => setPickLanguage(false)} />}

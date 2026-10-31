@@ -159,7 +159,7 @@ export function RepeatEffectCard({
               </td>
               <td className="num">{w.songs}</td>
               <td className="row-actions">
-                <button className="link-btn" onClick={() => onSearchWord(w.lemma)}>{tr("检索")}</button>
+                <button className="link-btn" onClick={() => onSearchWord(w.lemma)} title={tr("出现在哪些歌里，点一首就从这个词开始放")}>{tr("出处")}</button>
               </td>
             </tr>
           ))}
@@ -302,7 +302,7 @@ function KeyTable({ title, items, onSearchWord }: { title: string; items: KeyIte
                 <td className="num">{k.logRatio.toFixed(2)}</td>
                 <td className="num muted">{formatP(k.pValue)}</td>
                 <td className="row-actions">
-                  <button className="link-btn" onClick={() => onSearchWord(k.lemma)}>{tr("检索")}</button>
+                  <button className="link-btn" onClick={() => onSearchWord(k.lemma)} title={tr("出现在哪些歌里，点一首就从这个词开始放")}>{tr("出处")}</button>
                 </td>
               </tr>
             ))}

@@ -6,9 +6,12 @@
  * **一本词典都没有时**，这一页给的是导入入口而不是一个空输入框。
  *
  * 词典存在独立的 dictionaries.db，和语料库分开。
+ *
+ * 查到一个词，右边同时打开「词的去处」：这个词在语料里出现在哪些歌，点一首就从这个词开始放。
+ * 释义和真实用例并排，查词不再是死胡同。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "../events";
 
 import { CommandButton } from "../components/CommandButton";
@@ -21,15 +24,18 @@ import {
 } from "../dict/api";
 import { errorMessage, pickDictionaryFiles } from "../dict/DictionaryManager";
 import { invalidateDictionaryStyles, LookupResults } from "../dict/LookupResults";
+import { WithWordPanel, wordOf, type WordPanelLinks } from "../components/WordWhere";
 import { tr } from "../i18n";
 
 interface Props {
   onError: (message: string) => void;
   /** 去设置页管理词典 */
   onOpenSettings: () => void;
+  /** 右边「词的去处」要接的线（App 给） */
+  wordLinks: WordPanelLinks;
 }
 
-export function DictionaryPage({ onError, onOpenSettings }: Props) {
+export function DictionaryPage({ onError, onOpenSettings, wordLinks }: Props) {
   const [dictionaries, setDictionaries] = useState<DictionaryInfo[] | null>(null);
   const [legacy, setLegacy] = useState<LegacySource[]>([]);
   const [importing, setImporting] = useState(false);
@@ -102,6 +108,11 @@ export function DictionaryPage({ onError, onOpenSettings }: Props) {
     };
   }, [query, dictionaries]);
 
+  // 查到的第一个词头：右边列出它在语料里的出处。关掉之后换了词才再打开
+  const head = result?.dictionaryEntries[0]?.headwords[0]?.term ?? null;
+  const [closedFor, setClosedFor] = useState<string | null>(null);
+  const panelWord = useMemo(() => (head !== null && head !== closedFor ? wordOf(head) : null), [head, closedFor]);
+
   if (dictionaries === null) return <div className="page muted pad">{tr("加载中…")}</div>;
 
   // ── 一本都没有：给入口，不给空输入框 ──
@@ -151,6 +162,7 @@ export function DictionaryPage({ onError, onOpenSettings }: Props) {
   // ── 正常：整页就是查词 ──
   const enabled = dictionaries.filter((d) => d.enabled).length;
   return (
+    <WithWordPanel word={panelWord} onClose={() => setClosedFor(head)} links={wordLinks}>
     <div className="page dict-page">
       <div className="dict-search">
         <input
@@ -168,5 +180,6 @@ export function DictionaryPage({ onError, onOpenSettings }: Props) {
         <LookupResults result={result} loading={looking} error={lookupError} onLookup={setQuery} />
       </div>
     </div>
+    </WithWordPanel>
   );
 }
