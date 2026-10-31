@@ -169,8 +169,8 @@ struct DictionaryView: View {
                     .disabled(probe.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             if let probeRequest {
-                LookupPane(request: probeRequest) { self.probeRequest = nil }
-                    .frame(height: 440)
+                // 不限高：以前固定 440 点高、里面再滚，释义只占半页，下面空着
+                LookupPane(request: probeRequest, scrolls: false) { self.probeRequest = nil }
                     .glassCard(cornerRadius: 12)
             }
         }

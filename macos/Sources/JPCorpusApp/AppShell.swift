@@ -53,11 +53,15 @@ struct AppShell<Detail: View>: View {
             .padding(.leading, style == .sidebar ? Self.railWidth : 0)
             .padding(.top, style == .top ? Self.barHeight : 0)
             .overlay(alignment: .topLeading) {
-                if style == .sidebar {
-                    rail
-                } else {
-                    topBar
+                Group {
+                    if style == .sidebar {
+                        rail
+                    } else {
+                        topBar
+                    }
                 }
+                // 选中块的滑动只在导航里做
+                .animation(.snappy(duration: 0.28), value: app.section)
             }
             .background {
                 GeometryReader { proxy in
@@ -83,7 +87,8 @@ struct AppShell<Detail: View>: View {
     }
 
     private func select(_ item: SidebarItem) {
-        withAnimation(.snappy(duration: 0.28)) { app.section = item }
+        // 不包 withAnimation：那样整页连同右边的歌词面板都在一个动画事务里重排，面板每切一次就闪一下
+        app.section = item
     }
 
     // MARK: 侧边栏

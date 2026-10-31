@@ -253,8 +253,8 @@ struct TimelineTree: View {
     private var model: VisualizationModel { app.visualizations }
     var body: some View {
         VStack(alignment: .leading,spacing: 12) {
+            BackBar(title: "全部音乐人") { model.treePerson = nil; model.treeFocus = nil }
             HStack {
-                Button { model.treePerson = nil; model.treeFocus = nil } label: { Label("全部音乐人",systemImage: "chevron.left") }.buttonStyle(.borderless)
                 Text(model.directory.byId[personId]?.name ?? "").font(.title2.bold())
                 Spacer()
                 Picker("方向",selection: $horizontal) { Text("竖向").tag(false); Text("横向").tag(true) }.pickerStyle(.segmented).frame(width: 130)
