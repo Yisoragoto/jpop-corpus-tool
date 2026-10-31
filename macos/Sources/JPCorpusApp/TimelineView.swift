@@ -98,117 +98,190 @@ struct ReleaseTimelineView: View {
         pan = clamped(CGPoint(x: TimelinePan.zoomedOffset(pan.x, anchor: a, inset: inset, old: old, new: new), y: pan.y))
     }
 
-    private func overview(_ layout: TimelineLayout) -> some View {
-        let rows = layout.rows, connectors = layout.connectors
-        let axis = axis(layout, perYear: perYear), size = contentSize(layout, axis)
-        let step = perYear < 45 ? 5 : perYear < 70 ? 2 : 1
-        let years = Array(Int(layout.min)...Int(layout.max)).filter { $0 % step == 0 }
-        let offset = pan
-        return GeometryReader { geometry in
-            ZStack(alignment: .topLeading) {
-                // 时间区：随平移整体挪动
-                ZStack(alignment: .topLeading) {
-                    Canvas { context, _ in
-                        for year in years {
-                            let x = inset+axis.x(Double(year)); var p = Path(); p.move(to: CGPoint(x: x,y: 0)); p.addLine(to: CGPoint(x: x,y: size.height))
-                            context.stroke(p,with: .color(.secondary.opacity(0.15)),lineWidth: 0.5)
-                        }
-                        for (i,row) in rows.enumerated() {
-                            let y = Double(i)*rowHeight+rowHeight/2; var p = Path(); p.move(to: CGPoint(x: inset+axis.x(row.start),y: y)); p.addLine(to: CGPoint(x: inset+axis.x(row.end),y: y))
-                            context.stroke(p,with: .color(.accentColor.opacity(0.4)),style: StrokeStyle(lineWidth: 2,lineCap: .round))
-                            if let end = row.endedAt { let x = inset+axis.x(end); var mark = Path(); mark.move(to: CGPoint(x: x,y: y-17)); mark.addLine(to: CGPoint(x: x,y: y+17)); context.stroke(mark,with: .color(.orange),lineWidth: 2) }
-                        }
-                        for c in connectors {
-                            let a = CGPoint(x: inset+axis.x(c.fromAt),y: rowHeight/2+Double(c.fromRow)*rowHeight), b = CGPoint(x: inset+axis.x(c.toAt),y: rowHeight/2+Double(c.toRow)*rowHeight)
-                            var p = Path(); p.move(to: a); p.addCurve(to: b,control1: CGPoint(x: a.x+20,y: a.y),control2: CGPoint(x: b.x-20,y: b.y))
-                            context.stroke(p,with: .color(.orange.opacity(0.7)),style: StrokeStyle(lineWidth: 1.5,dash: [4,4]))
-                        }
-                    }
-                    .opacity(appeared ? 1 : 0)
-                    .animation(.easeOut(duration: 0.5), value: appeared)
-                    ForEach(Array(rows.enumerated()),id: \.element.id) { i,row in
-                        let centers = ReleaseTimeline.packRow(row.releases.map { PackItem(x: inset+axis.x($0.at),size: coverSize($0.release)) })
-                        ForEach(Array(row.releases.enumerated()),id: \.element.release.id) { j,item in
-                            let r = item.release, side = coverSize(r), hovered = hoveredRelease == r.id
-                            Button { model.treePerson = row.id; model.treeFocus = r.id } label: {
-                                CoverImage(path: r.coverPath,size: side,cornerRadius: 4,circle: r.albumId == nil)
-                                    .shadow(color: .black.opacity(hovered ? 0.35 : 0), radius: 6, y: 2)
-                            }
-                            .buttonStyle(.plain)
-                            .scaleEffect(appeared ? (hovered ? 1.18 : 1) : 0.4)
-                            .opacity(appeared ? 1 : 0)
-                            .animation(.spring(response: 0.45, dampingFraction: 0.72).delay(min(0.6, Double(i)*0.025+Double(j)*0.008)), value: appeared)
-                            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: hovered)
-                            .onHover { inside in hoveredRelease = inside ? r.id : (hoveredRelease == r.id ? nil : hoveredRelease) }
-                            .position(x: centers[j],y: rowHeight/2+Double(i)*rowHeight)
-                            .zIndex(hovered ? 1 : 0)
-                            .help("\(r.title) · \(r.date) · \(r.tracks) 首；点开时间树")
-                        }
-                    }
-                }
-                .frame(width: size.width,height: size.height,alignment: .topLeading)
-                .offset(x: nameWidth-offset.x, y: headerHeight-offset.y)
+    /// 一次排版要用的东西，拆成几个小视图时一起传
+    private struct TimelineFrame {
+        let rows: [TimelineRow]
+        let connectors: [TimelineConnector]
+        let axis: WarpedYears
+        let size: CGSize
+        let years: [Int]
+    }
 
-                // 上面的年份：横向跟着走，竖向不动
-                Canvas { context, canvas in
-                    for year in years {
-                        let x = inset+axis.x(Double(year))-offset.x
-                        guard x > -40, x < canvas.width+40 else { continue }
-                        context.draw(Text(String(year)).font(.caption.monospacedDigit()).foregroundColor(.secondary),at: CGPoint(x: x,y: headerHeight/2))
-                    }
+    private func overview(_ layout: TimelineLayout) -> some View {
+        let axis = axis(layout, perYear: perYear)
+        let step = perYear < 45 ? 5 : perYear < 70 ? 2 : 1
+        let frame = TimelineFrame(rows: layout.rows, connectors: layout.connectors, axis: axis, size: contentSize(layout, axis),
+                          years: Array(Int(layout.min)...Int(layout.max)).filter { $0 % step == 0 })
+        return GeometryReader { geometry in
+            frozenPanes(frame, geometry.size)
+                .modifier(TimelineInput(pan: $pan, dragStart: $dragStart, pinchStart: $pinchStart, perYear: perYear, nameWidth: nameWidth,
+                                        clamp: clamped, panBy: panBy, zoomTo: zoomTo))
+                .onAppear {
+                    viewport = geometry.size
+                    if !startedAtLatest { startedAtLatest = true; pan = clamped(CGPoint(x: Double.greatestFiniteMagnitude, y: 0)) }
+                    appeared = true
                 }
-                .frame(width: max(0,geometry.size.width-nameWidth),height: headerHeight)
+                .onChange(of: geometry.size) { _, next in viewport = next; pan = clamped(pan) }
+                .onChange(of: frame.rows.count) { _, _ in pan = clamped(pan) }
+        }
+    }
+
+    /// 四块：可平移的时间区、只横向跟随的年份、只竖向跟随的名字、左上角
+    private func frozenPanes(_ frame: TimelineFrame, _ viewport: CGSize) -> some View {
+        let offset = pan
+        return ZStack(alignment: .topLeading) {
+            timeArea(frame)
+                .frame(width: frame.size.width, height: frame.size.height, alignment: .topLeading)
+                .offset(x: nameWidth-offset.x, y: headerHeight-offset.y)
+            yearHeader(frame, offsetX: offset.x)
+                .frame(width: max(0, viewport.width-nameWidth), height: headerHeight)
                 .background(.bar)
                 .offset(x: nameWidth)
-
-                // 左边的名字：竖向跟着走，横向不动
-                VStack(spacing: 0) {
-                    ForEach(Array(rows.enumerated()),id: \.element.id) { i,row in
-                        Button { model.treePerson = row.id } label: {
-                            HStack(spacing: 8) {
-                                CoverImage(path: row.imagePath,size: row.under == nil ? 32 : 26,circle: true,identity: row.name)
-                                VStack(alignment: .leading) { Text(row.name).lineLimit(1); Text("\(row.isBand ? "乐队" : "个人") · \(row.releases.count) 次发行").font(.caption2).foregroundStyle(.secondary) }
-                                Spacer(minLength: 0)
-                            }.padding(.leading,row.under == nil ? 8 : 24).frame(width: nameWidth,height: rowHeight).contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .opacity(appeared ? 1 : 0)
-                        .offset(x: appeared ? 0 : -16)
-                        .animation(.easeOut(duration: 0.35).delay(min(0.5, Double(i)*0.03)), value: appeared)
-                        .help("放大看 \(row.name) 的时间树")
-                    }
-                }
+            nameColumn(frame.rows)
                 .offset(y: headerHeight-offset.y)
-                .frame(width: nameWidth,height: geometry.size.height,alignment: .topLeading)
+                .frame(width: nameWidth, height: viewport.height, alignment: .topLeading)
                 .clipped()
                 .background(.bar)
+            Rectangle().fill(.bar).frame(width: nameWidth, height: headerHeight)
+        }
+        .frame(width: viewport.width, height: viewport.height, alignment: .topLeading)
+        .clipped()
+        .contentShape(Rectangle())
+    }
 
-                Rectangle().fill(.bar).frame(width: nameWidth,height: headerHeight)
+    private func timeArea(_ frame: TimelineFrame) -> some View {
+        ZStack(alignment: .topLeading) {
+            timeLines(frame)
+                .opacity(appeared ? 1 : 0)
+                .animation(.easeOut(duration: 0.5), value: appeared)
+            ForEach(Array(frame.rows.enumerated()), id: \.element.id) { i, row in
+                releaseRow(row, index: i, axis: frame.axis)
             }
-            .frame(width: geometry.size.width,height: geometry.size.height,alignment: .topLeading)
-            .clipped()
+        }
+    }
+
+    private func timeLines(_ frame: TimelineFrame) -> some View {
+        let rowHeight = self.rowHeight, inset = self.inset
+        return Canvas { context, _ in
+            let axis = frame.axis
+            for year in frame.years {
+                let x = inset+axis.x(Double(year))
+                var p = Path(); p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: frame.size.height))
+                context.stroke(p, with: .color(.secondary.opacity(0.15)), lineWidth: 0.5)
+            }
+            for (i, row) in frame.rows.enumerated() {
+                let y = Double(i)*rowHeight+rowHeight/2
+                var p = Path(); p.move(to: CGPoint(x: inset+axis.x(row.start), y: y)); p.addLine(to: CGPoint(x: inset+axis.x(row.end), y: y))
+                context.stroke(p, with: .color(.accentColor.opacity(0.4)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                if let end = row.endedAt {
+                    let x = inset+axis.x(end)
+                    var mark = Path(); mark.move(to: CGPoint(x: x, y: y-17)); mark.addLine(to: CGPoint(x: x, y: y+17))
+                    context.stroke(mark, with: .color(.orange), lineWidth: 2)
+                }
+            }
+            for c in frame.connectors {
+                let a = CGPoint(x: inset+axis.x(c.fromAt), y: rowHeight/2+Double(c.fromRow)*rowHeight)
+                let b = CGPoint(x: inset+axis.x(c.toAt), y: rowHeight/2+Double(c.toRow)*rowHeight)
+                var p = Path(); p.move(to: a); p.addCurve(to: b, control1: CGPoint(x: a.x+20, y: a.y), control2: CGPoint(x: b.x-20, y: b.y))
+                context.stroke(p, with: .color(.orange.opacity(0.7)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+            }
+        }
+    }
+
+    private func releaseRow(_ row: TimelineRow, index i: Int, axis: WarpedYears) -> some View {
+        let centers = ReleaseTimeline.packRow(row.releases.map { PackItem(x: inset+axis.x($0.at), size: coverSize($0.release)) })
+        return ForEach(Array(row.releases.enumerated()), id: \.element.release.id) { j, item in
+            releaseCover(item.release, row: row, delay: min(0.6, Double(i)*0.025+Double(j)*0.008))
+                .position(x: centers[j], y: rowHeight/2+Double(i)*rowHeight)
+        }
+    }
+
+    private func releaseCover(_ r: TimelineRelease, row: TimelineRow, delay: Double) -> some View {
+        let hovered = hoveredRelease == r.id
+        let scale: CGFloat = appeared ? (hovered ? 1.18 : 1) : 0.4
+        return Button { model.treePerson = row.id; model.treeFocus = r.id } label: {
+            CoverImage(path: r.coverPath, size: coverSize(r), cornerRadius: 4, circle: r.albumId == nil)
+                .shadow(color: .black.opacity(hovered ? 0.35 : 0), radius: 6, y: 2)
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(scale)
+        .opacity(appeared ? 1 : 0)
+        .animation(.spring(response: 0.45, dampingFraction: 0.72).delay(delay), value: appeared)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: hovered)
+        .onHover { inside in
+            if inside { hoveredRelease = r.id } else if hoveredRelease == r.id { hoveredRelease = nil }
+        }
+        .zIndex(hovered ? 1 : 0)
+        .help("\(r.title) · \(r.date) · \(r.tracks) 首；点开时间树")
+    }
+
+    private func yearHeader(_ frame: TimelineFrame, offsetX: Double) -> some View {
+        let inset = self.inset, headerHeight = self.headerHeight
+        return Canvas { context, canvas in
+            for year in frame.years {
+                let x = inset+frame.axis.x(Double(year))-offsetX
+                guard x > -40, x < canvas.width+40 else { continue }
+                context.draw(Text(String(year)).font(.caption.monospacedDigit()).foregroundColor(.secondary), at: CGPoint(x: x, y: headerHeight/2))
+            }
+        }
+    }
+
+    private func nameColumn(_ rows: [TimelineRow]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                nameRow(row)
+                    .opacity(appeared ? 1 : 0)
+                    .offset(x: appeared ? 0 : -16)
+                    .animation(.easeOut(duration: 0.35).delay(min(0.5, Double(i)*0.03)), value: appeared)
+            }
+        }
+    }
+
+    private func nameRow(_ row: TimelineRow) -> some View {
+        Button { model.treePerson = row.id } label: {
+            HStack(spacing: 8) {
+                CoverImage(path: row.imagePath, size: row.under == nil ? 32 : 26, circle: true, identity: row.name)
+                VStack(alignment: .leading) {
+                    Text(row.name).lineLimit(1)
+                    Text("\(row.isBand ? "乐队" : "个人") · \(row.releases.count) 次发行").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, row.under == nil ? 8 : 24)
+            .frame(width: nameWidth, height: rowHeight)
             .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("放大看 \(row.name) 的时间树")
+    }
+}
+
+/// 时间轴的输入：滚轮/触控板平移，⌘ 滚动或捏合缩放，拖动平移
+@MainActor
+private struct TimelineInput: ViewModifier {
+    @Binding var pan: CGPoint
+    @Binding var dragStart: CGPoint?
+    @Binding var pinchStart: Double?
+    let perYear: Double
+    let nameWidth: Double
+    let clamp: (CGPoint) -> CGPoint
+    let panBy: (Double, Double) -> Void
+    let zoomTo: (Double, Double?) -> Void
+
+    func body(content: Content) -> some View {
+        content
             .background(TimelineWheel { location, dx, dy, zoom in
-                if zoom { zoomTo(perYear*exp(dy*0.01), anchor: location.x-nameWidth) }
-                else { panBy(-dx, -dy) }
+                if zoom { zoomTo(perYear*exp(dy*0.01), location.x-nameWidth) } else { panBy(-dx, -dy) }
             })
             .keepsWindowStill()
             .gesture(DragGesture(minimumDistance: 3).onChanged { value in
                 if dragStart == nil { dragStart = pan }
-                if let start = dragStart { pan = clamped(CGPoint(x: start.x-value.translation.width, y: start.y-value.translation.height)) }
+                if let start = dragStart { pan = clamp(CGPoint(x: start.x-value.translation.width, y: start.y-value.translation.height)) }
             }.onEnded { _ in dragStart = nil })
             .simultaneousGesture(MagnifyGesture().onChanged { value in
                 if pinchStart == nil { pinchStart = perYear }
-                if let start = pinchStart { zoomTo(start*value.magnification, anchor: value.startLocation.x-nameWidth) }
+                if let start = pinchStart { zoomTo(start*value.magnification, value.startLocation.x-nameWidth) }
             }.onEnded { _ in pinchStart = nil })
-            .onAppear {
-                viewport = geometry.size
-                if !startedAtLatest { startedAtLatest = true; pan = clamped(CGPoint(x: Double.greatestFiniteMagnitude, y: 0)) }
-                appeared = true
-            }
-            .onChange(of: geometry.size) { _, next in viewport = next; pan = clamped(pan) }
-            .onChange(of: rows.count) { _, _ in pan = clamped(pan) }
-        }
     }
 }
 

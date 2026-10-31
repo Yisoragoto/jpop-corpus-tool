@@ -5,7 +5,7 @@ import SwiftUI
 /// 于是在关系网上拖一个人、在时间轴上拖着平移，系统都当成拖窗口——整个页面跟着走。
 /// 在这块区域里按下鼠标时先把窗口的这个开关关掉，松开再恢复。
 extension View {
-    func keepsWindowStill() -> some View { background(WindowDragGuard()) }
+    @MainActor func keepsWindowStill() -> some View { background(WindowDragGuard()) }
 }
 
 @MainActor
