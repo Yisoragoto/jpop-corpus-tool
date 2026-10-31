@@ -261,6 +261,7 @@
  "命令面板…": "Command palette…",
  "和歌词面板里右键「查词」同一套查法（会把活用形还原）": "Uses the same lookup as the lyrics panel's context menu, including deconjugation",
  "商店地区（jp / cn / us）": "Store region (jp / cn / us)",
+ "回到当前歌词": "Back to current line",
  "回填缺失时长": "Fill in missing durations",
  "在 Finder 中显示": "Show in Finder",
  "在 Finder 中显示库文件夹": "Show corpus folder in Finder",

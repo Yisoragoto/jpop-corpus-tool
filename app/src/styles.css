@@ -2832,6 +2832,12 @@ table.data tr.current td { background: var(--accent-soft); }
 }
 
 /* 歌词来源与同步 */
+/* 自己滚了歌词后的「回到当前歌词」：贴在歌词栏顶上，不占版面 */
+.follow-resume {
+  position: sticky; top: 8px; height: 0; z-index: 3;
+  display: flex; justify-content: flex-end; overflow: visible;
+}
+.follow-resume .btn { box-shadow: var(--shadow); }
 .source-list { list-style: none; margin: 6px 0; padding: 0; }
 .source-list > li {
   display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: start;
