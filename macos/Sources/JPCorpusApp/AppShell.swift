@@ -52,6 +52,15 @@ struct AppShell<Detail: View>: View {
         detail
             .padding(.leading, style == .sidebar ? Self.railWidth : 0)
             .padding(.top, style == .top ? Self.barHeight : 0)
+            // 词云页的照片底铺满整个正文区，连同顶部导航栏那一截和标题栏下面
+            .background {
+                if showsCloudBackdrop {
+                    CloudPageBackdrop()
+                        // 侧边栏样式时只铺正文那一块，侧栏的字还是按系统深浅色配的
+                        .padding(.leading, style == .sidebar ? Self.railWidth : 0)
+                        .ignoresSafeArea()
+                }
+            }
             .overlay(alignment: .topLeading) {
                 Group {
                     if style == .sidebar {
@@ -85,6 +94,8 @@ struct AppShell<Detail: View>: View {
                 }
             }
     }
+
+    private var showsCloudBackdrop: Bool { CloudBackdropStore.coversPage(app) }
 
     private func select(_ item: SidebarItem) {
         // 不包 withAnimation：那样整页连同右边的歌词面板都在一个动画事务里重排，面板每切一次就闪一下

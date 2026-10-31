@@ -1,5 +1,6 @@
 import JPCorpusModel
 import JPCore
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -7,6 +8,8 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.openWindow) private var openWindow
+    /// 主窗口处在（或正要进入）全屏
+    @State private var fullScreen = false
 
     var body: some View {
         @Bindable var app = app
@@ -46,7 +49,10 @@ struct ContentView: View {
                             .padding(.bottom, 10)
                             .padding(.top, 4)
                     }
-                    .glass(.underWindowBackground)
+                    // 词云页由 AppShell 在正文后面铺照片底，这层毛玻璃在正文里面，会盖住它，所以词云页不画
+                    .background {
+                        if !CloudBackdropStore.coversPage(app) { GlassBackground(material: .underWindowBackground).ignoresSafeArea() }
+                    }
                     .inspector(isPresented: $app.showLyrics) {
                         LyricsPanel()
                             .inspectorColumnWidth(min: 280, ideal: 340, max: 520)
@@ -93,7 +99,15 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
-        .toolbar(app.showStage || app.visualizations.cloudPresent ? .hidden : .automatic, for: .windowToolbar)
+        // 窗口全屏时也收起工具栏：全屏下系统给工具栏垫一块不透明的灰底（toolbarBackground(.hidden) 管不到），
+        // 顶上就多一条灰带，把词云这类铺满的底图隔断。歌词面板用 ⌘Y，其余在菜单栏里
+        .toolbar(app.showStage || app.visualizations.cloudPresent || fullScreen ? .hidden : .automatic, for: .windowToolbar)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
+            if (note.object as? NSWindow) === MainWindow.window { fullScreen = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { note in
+            if (note.object as? NSWindow) === MainWindow.window { fullScreen = false }
+        }
         .animation(.easeInOut(duration: 0.25), value: app.showStage)
         // 从没有歌到有歌（第一次播放、试听）时打开歌词栏。之后用户自己关了，换歌不再弹出来
         .onChange(of: app.player.track?.id) { old, new in

@@ -1,6 +1,7 @@
 import AppKit
 import JPCore
 import JPCorpusModel
+import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -12,7 +13,6 @@ struct CloudView: View {
     @Environment(AppModel.self) private var app
     /// 全屏词云：主窗口里铺满的一层（和全屏歌词一样），盖住导航、正文和播放条
     var presenting = false
-    @AppStorage(NavStyle.key) private var navStyle: NavStyle = NavStyle.defaultStyle
     @AppStorage("cloud.count") private var count = 120
     @AppStorage("cloud.hideFunction") private var hideFunction = true
     @AppStorage("cloud.colorByPos") private var colorByPos = false
@@ -20,9 +20,10 @@ struct CloudView: View {
     @AppStorage("cloud.hidden") private var hiddenJSON = "[]"
     @State private var canvasSize = CGSize.zero
     @State private var hovered: String?
-    @State private var photos: [NSImage] = []
-    /// photos 拼好、虚化好的底图
-    @State private var blurredBackdrop: NSImage?
+    /// 底图放在共享的地方：页面里的词云由 AppShell 在整个正文（含顶部导航栏那一截）后面画底图
+    private var backdrop: CloudBackdropStore { .shared }
+    private var photos: [NSImage] { backdrop.photos }
+    private var blurredBackdrop: NSImage? { backdrop.blurred }
     /// 底图拼的是谁：选了歌手就是选中的人，没选就是曲数最多、有照片的几位（和 Windows 版一样）
     @State private var backdropPeople: [DirectoryEntry] = []
     @State private var colors = ArtworkColors()
@@ -52,12 +53,10 @@ struct CloudView: View {
         }
         .padding(presenting ? 32 : 18)
         .animation(.spring(duration: 0.35), value: model.picked?.lemma)
-        // 顶栏是 AppShell 用内边距让出来的，不算安全区：底图往上多铺一截，铺到顶栏下面，
-        // 不然顶栏和词云之间露出一道窗口底色
+        // 全屏词云自己画底图；页面里的词云由 AppShell 画（CloudBackdropStore），
+        // 这样底图从窗口最顶上铺下来，顶部导航栏、页签行和词云之间没有一道窗口底色
         .background {
-            CloudBackdrop(photos: photos, blurred: blurredBackdrop)
-                .padding(.top, !presenting && navStyle == .top ? -AppShell<EmptyView>.barHeight : 0)
-                .ignoresSafeArea()
+            if presenting { CloudBackdrop(photos: photos, blurred: blurredBackdrop).ignoresSafeArea() }
         }
         // 底是照片：不管系统深浅色，一律深底亮字（和 Windows 版一样）
         .environment(\.colorScheme, .dark)
@@ -74,7 +73,7 @@ struct CloudView: View {
             }
             // 拼图和整屏差不多宽（1.36 倍是 CloudBackdrop 往外多铺的那圈）
             let blurred = await Artwork.blurredCollage(images, radius: 48, saturation: 1.5, displayWidth: 1400 * 1.36)
-            if !Task.isCancelled { photos = images; blurredBackdrop = blurred; backdropPeople = people; colors = ArtworkColors(image: images.first) }
+            if !Task.isCancelled { backdrop.photos = images; backdrop.blurred = blurred; backdropPeople = people; colors = ArtworkColors(image: images.first) }
         }
         .onExitCommand { if !app.showStage { if model.picked != nil { model.picked = nil } else if presenting { CloudPresentation.exit(model) } } }
         // 全屏层不一定拿得到焦点，onExitCommand 收不到 Esc：另外直接听键盘
@@ -269,6 +268,28 @@ private struct CloudGlass: View {
         }
         .compositingGroup()
         .shadow(color: .black.opacity(0.35), radius: 25, y: 20)
+    }
+}
+
+/// 词云底图的数据（歌手照片和拼好虚化的底图），页面里的词云和 AppShell 共用
+@MainActor @Observable
+final class CloudBackdropStore {
+    static let shared = CloudBackdropStore()
+    var photos: [NSImage] = []
+    var blurred: NSImage?
+
+    /// 现在显示的是页面里的词云（不是详情页、不是别的页签）
+    static func coversPage(_ app: AppModel) -> Bool {
+        app.section == .library && app.libraryPath.isEmpty && app.libraryMode == .cloud
+    }
+}
+
+/// 页面里的词云的底图，AppShell 画在整个正文后面
+@MainActor
+struct CloudPageBackdrop: View {
+    var body: some View {
+        CloudBackdrop(photos: CloudBackdropStore.shared.photos, blurred: CloudBackdropStore.shared.blurred)
+            .environment(\.colorScheme, .dark)
     }
 }
 
