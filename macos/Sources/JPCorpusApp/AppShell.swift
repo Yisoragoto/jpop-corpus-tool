@@ -95,9 +95,7 @@ struct AppShell<Detail: View>: View {
             }
     }
 
-    private var showsCloudBackdrop: Bool {
-        app.section == .library && app.libraryPath.isEmpty && app.libraryMode == .cloud
-    }
+    private var showsCloudBackdrop: Bool { CloudBackdropStore.coversPage(app) }
 
     private func select(_ item: SidebarItem) {
         // 不包 withAnimation：那样整页连同右边的歌词面板都在一个动画事务里重排，面板每切一次就闪一下

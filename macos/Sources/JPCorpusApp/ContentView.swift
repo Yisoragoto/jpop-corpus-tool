@@ -49,7 +49,10 @@ struct ContentView: View {
                             .padding(.bottom, 10)
                             .padding(.top, 4)
                     }
-                    .glass(.underWindowBackground)
+                    // 词云页由 AppShell 在正文后面铺照片底，这层毛玻璃在正文里面，会盖住它，所以词云页不画
+                    .background {
+                        if !CloudBackdropStore.coversPage(app) { GlassBackground(material: .underWindowBackground).ignoresSafeArea() }
+                    }
                     .inspector(isPresented: $app.showLyrics) {
                         LyricsPanel()
                             .inspectorColumnWidth(min: 280, ideal: 340, max: 520)

@@ -277,6 +277,11 @@ final class CloudBackdropStore {
     static let shared = CloudBackdropStore()
     var photos: [NSImage] = []
     var blurred: NSImage?
+
+    /// 现在显示的是页面里的词云（不是详情页、不是别的页签）
+    static func coversPage(_ app: AppModel) -> Bool {
+        app.section == .library && app.libraryPath.isEmpty && app.libraryMode == .cloud
+    }
 }
 
 /// 页面里的词云的底图，AppShell 画在整个正文后面
