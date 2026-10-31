@@ -273,6 +273,7 @@ mod tests {
                     audio_path: path.clone(),
                     title: format!("曲{n}"),
                     artist: "歌手".into(),
+                    ..Default::default()
                 })
                 .collect();
             LibraryIndex::from_tracks(&tracks)

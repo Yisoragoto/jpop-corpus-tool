@@ -222,6 +222,46 @@ export interface SongLineage {
   tokenizers: TokenizerRunRow[];
   provenance: FieldProvenance[];
   revisions: Revision[];
+  /** 音频文件记录（现在用的排最前）。老后端没有这一项 */
+  audioFiles?: AudioFileRow[];
+}
+
+/** 一个音频文件（jp_corpus::audio_files）：文件本身的信息，和曲目元数据分开 */
+export interface AudioFileRow {
+  id: number;
+  songId: string;
+  path: string;
+  size: number | null;
+  mtime: number | null;
+  durationSec: number | null;
+  format: string;
+  sampleRate: number | null;
+  channels: number | null;
+  bitDepth: number | null;
+  bitrateKbps: number | null;
+  fingerprint: string | null;
+  trackStartMs: number;
+  status: "present" | "missing" | "replaced";
+  firstSeen: string;
+  checkedAt: string;
+}
+
+export const AUDIO_FILE_STATUS: Record<AudioFileRow["status"], string> = {
+  present: tr("在用"),
+  missing: tr("找不到"),
+  replaced: tr("已换掉"),
+};
+
+/** 「FLAC · 44.1 kHz · 16 bit · 2 声道 · 912 kbps · 24.3 MB」 */
+export function describeAudioFile(f: AudioFileRow): string {
+  const parts: string[] = [];
+  if (f.format) parts.push(f.format.toUpperCase());
+  if (f.sampleRate) parts.push(`${(f.sampleRate / 1000).toFixed(1).replace(/\.0$/, "")} kHz`);
+  if (f.bitDepth) parts.push(`${f.bitDepth} bit`);
+  if (f.channels) parts.push(tr("{n} 声道", { n: f.channels }));
+  if (f.bitrateKbps) parts.push(`${f.bitrateKbps} kbps`);
+  if (f.size !== null) parts.push(`${(f.size / 1024 / 1024).toFixed(1)} MB`);
+  return parts.join(" · ");
 }
 
 export interface SongQuality {

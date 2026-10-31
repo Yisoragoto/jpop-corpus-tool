@@ -248,6 +248,7 @@ fn split_songs(target: &Connection) -> Result<(Vec<Moving>, usize)> {
                 audio_path: row.get(1)?,
                 title: row.get(2)?,
                 artist: row.get(3)?,
+                ..Default::default()
             })
         })?;
         rows.collect::<Result<_, _>>()?
@@ -264,6 +265,7 @@ fn split_songs(target: &Connection) -> Result<(Vec<Moving>, usize)> {
                 audio_path: row.get(1)?,
                 title: row.get(2)?,
                 artist: row.get(3)?,
+                ..Default::default()
             })
         })?;
         rows.collect::<Result<_, _>>()?

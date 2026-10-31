@@ -33,7 +33,7 @@ import {
   type ScanResult,
 } from "../api";
 import { Stat } from "../components/Stat";
-import { tr } from "../i18n";
+import { tr, trBackend } from "../i18n";
 
 /** 「带着这几个文件来复核」：启动横幅上点「查看」时由外壳发过来。`nonce` 让同一批文件能再发一次 */
 export interface ImportRequest {
@@ -278,7 +278,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
           </div>
 
           {scan.summary.possibleDuplicates > 0 && (
-            <p className="warn">{tr("有 {possibleDuplicates} 首曲名歌手对得上、但文件不同。 这类", { possibleDuplicates: scan.summary.possibleDuplicates })}<strong>{tr("不会")}</strong>{tr("被导入——可能是换了音源，也可能真有两个版本， 需要你自己判断。")}</p>
+            <p className="warn">{tr("有 {n} 首和库里的是同一个录音（同一个 ISRC，或曲名、歌手、版本相同且时长相近），只是文件不同。这类", { n: scan.summary.possibleDuplicates })}<strong>{tr("不会")}</strong>{tr("被导入——多半是换了音源或挪了位置；挪了位置的用「找回音频」重新链接。Live、翻唱、重制、时长不同的版本会作为新歌导入。")}</p>
           )}
           {scan.ignored.length > 0 && (
             <p className="warn">{tr("这 {length} 个不是音频文件，没有进计划：{ignored}。 歌词文件不用在这里选——导入时会自动认音频旁边的同名 .lrc， 也可以在曲库里给某一首单独导入歌词。", { length: scan.ignored.length, ignored: scan.ignored.join(tr("、")) })}</p>
@@ -325,10 +325,12 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
                   ? progress === null
                     ? tr("导入中…")
                     : tr("导入中 {done}/{total}", { done: progress.done, total: progress.total })
-                  : tr("导入 {new} 首", { new: scan.summary.new })
+                  : scan.summary.new === 0 && (scan.summary.filesChanged ?? 0) > 0
+                    ? tr("刷新 {n} 个变了的文件", { n: scan.summary.filesChanged ?? 0 })
+                    : tr("导入 {new} 首", { new: scan.summary.new })
               }
               onClick={() => void doImport()}
-              disabled={busy !== "" || scan.summary.new === 0}
+              disabled={busy !== "" || (scan.summary.new === 0 && (scan.summary.filesChanged ?? 0) === 0)}
               primary
               title={tr("写库就在这一步")}
             />
@@ -343,7 +345,10 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
           {progress !== null && progress.title !== "" && (
             <p className="muted small">{tr("正在导：{title}", { title: progress.title })}</p>
           )}
-          {scan.summary.new === 0 && scan.summary.total > 0 && (
+          {(scan.summary.filesChanged ?? 0) > 0 && (
+            <p className="muted small">{tr("有 {n} 个库里的文件变了（大小或修改时间不同）。导入时刷新它们的文件信息；来自文件的曲名、年份、流派、时长跟着更新，你改过的字段不动，也不会往音频文件里写。", { n: scan.summary.filesChanged ?? 0 })}</p>
+          )}
+          {scan.summary.new === 0 && (scan.summary.filesChanged ?? 0) === 0 && scan.summary.total > 0 && (
             <p className="muted small">{tr("这一批里没有新东西，不需要导入。")}</p>
           )}
         </div>
@@ -354,6 +359,9 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
           <div className="card-head">
             <h2>{tr("导入结果")}</h2>
           </div>
+          {(report.filesRefreshed ?? 0) > 0 && (
+            <p className="muted small">{tr("刷新了 {n} 个变了的文件的信息。", { n: report.filesRefreshed ?? 0 })}</p>
+          )}
           {report.cancelled && (
             <p className="muted small">{tr("你中途停了。下面这 {length} 首是", { length: report.tracks.length })}<strong>{tr("真的导进去了")}</strong>{tr("（一首一个事务），剩下的一行都没写——再点一次「导入」会接着往下走。")}</p>
           )}
@@ -456,15 +464,20 @@ function explain(item: PlanItem): string {
     case "new": {
       // 新歌要写库，拿不准的地方在这里说出来：复核看的就是这几句
       const notes = [tr("将写入 id {songId}", { songId: a.songId })];
+      if (a.versionOf) notes.push(tr("是库里 {songId} 的另一个版本：{reason}", { songId: a.versionOf.songId, reason: trBackend(a.versionOf.reason) }));
       if (item.warning !== null) notes.push(item.warning);
       if (item.artistSource === "folder") notes.push(tr("歌手是从文件夹名猜的"));
       if (item.artistSource === "none") notes.push(tr("定不出歌手"));
       return notes.join(" · ");
     }
     case "alreadyImported":
-      return tr("已经是库里的 {songId}", { songId: a.songId });
+      return a.fileChanged
+        ? tr("已经是库里的 {songId}；文件变了，导入时刷新文件信息", { songId: a.songId })
+        : tr("已经是库里的 {songId}", { songId: a.songId });
     case "possibleDuplicate":
-      return tr("曲名歌手对上了库里的 {songId}（{existingPath}），不会导入", { songId: a.songId, existingPath: a.existingPath });
+      return a.reason
+        ? tr("和库里的 {songId}（{existingPath}）是同一个录音：{reason}。不会导入", { songId: a.songId, existingPath: a.existingPath, reason: trBackend(a.reason) })
+        : tr("曲名歌手对上了库里的 {songId}（{existingPath}），不会导入", { songId: a.songId, existingPath: a.existingPath });
     case "duplicateInBatch":
       return tr("本批里 {firstPath} 已经占了这个位置", { firstPath: a.firstPath });
     case "skipped":

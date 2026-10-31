@@ -53,6 +53,7 @@ pub mod word_timing;
 pub mod display_timeline;
 pub mod lyric_timeline;
 pub mod lyric_sources;
+pub mod audio_files;
 
 use std::path::Path;
 
@@ -381,6 +382,7 @@ impl Corpus {
         let tx = self.conn.transaction()?;
         let n = lineage::backfill_legacy(&tx)?;
         lyric_sources::backfill(&tx)?;
+        audio_files::backfill(&tx)?;
         tx.commit()?;
         Ok(n)
     }
