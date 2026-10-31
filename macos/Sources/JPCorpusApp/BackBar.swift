@@ -36,7 +36,7 @@ struct BackBar: View {
 
 /// Esc 和鼠标侧键。输入框正在编辑时 Esc 留给输入框；弹出面板时不管
 @MainActor
-private struct BackKeys: NSViewRepresentable {
+struct BackKeys: NSViewRepresentable {
     let action: () -> Void
     /// 全屏歌词盖在上面时 Esc 是它的
     let active: () -> Bool
