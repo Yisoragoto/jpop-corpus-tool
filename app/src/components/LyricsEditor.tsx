@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 逐行编辑歌词：改错字、补漏的行、删重复贴的行、挪时间戳。
  *
@@ -96,7 +97,7 @@ export function LyricsEditor({ songId, lines, onSaved, onCancel, onError }: Prop
               ＋
             </button>
             <button className="link-btn danger" title={tr("删掉这一行")} onClick={() => remove(i)}>
-              ✕
+              <Icon name="close" />
             </button>
           </div>
         ))}

@@ -571,6 +571,7 @@ References:
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | Dictionary storage design (no code copied) | GPL-3.0-or-later |
 | [LDDC](https://github.com/chenmozhijin/LDDC) · [AMLL TTML DB](https://github.com/amll-dev/amll-ttml-db) | Reference for word-timed lyric formats and sources | GPL-3.0 · CC0-1.0 |
 | [Klee One](https://fonts.google.com/specimen/Klee+One) · [LXGW WenKai](https://github.com/lxgw/LxgwWenKai) | Bundled fonts | SIL OFL 1.1 |
+| [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) | Interface icons · [`third_party/fluent-ui-system-icons/COPYING`](third_party/fluent-ui-system-icons/COPYING) | MIT |
 | [Rubber Band Library](https://breakfastquay.com/rubberband/) | Key changes. Source in [`third_party/rubberband/`](third_party/rubberband/), compiled into the app | GPL-2.0-or-later |
 | [LAME](https://lame.sourceforge.io/) | MP3 encoding of the audio clips on Anki cards, compiled into the app | LGPL-2.0-or-later |
 

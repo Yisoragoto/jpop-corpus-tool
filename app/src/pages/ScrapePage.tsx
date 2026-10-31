@@ -1,3 +1,4 @@
+import { Icon } from "../components/Icon";
 /**
  * 刮削页 = 库的完整度。
  *
@@ -315,7 +316,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
           >
-            ⋯
+            <Icon name="more" />
           </button>
           {menuOpen && (
             <div className="scrape-menu" role="menu">
@@ -636,7 +637,7 @@ function CompletenessRow({
   return (
     <div className={`scrape-row${full || empty ? " done" : ""}`}>
       <span className="scrape-row-mark" aria-hidden="true">
-        {full || empty ? "✓" : "●"}
+        <Icon name={full || empty ? "check" : "status"} />
       </span>
       <span className="scrape-row-label">{label}</span>
       <div className="scrape-bar">

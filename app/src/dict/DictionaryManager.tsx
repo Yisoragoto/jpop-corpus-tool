@@ -1,3 +1,4 @@
+import { Icon } from "../components/Icon";
 /**
  * 词典管理：导入、从旧版迁移、启用 / 停用、排序、删除。住在设置页「词典」那一页。
  *
@@ -27,47 +28,9 @@ import { DICT_KINDS, dictKind, dropIndex, reorderWithin, type DictKind } from ".
 import { invalidateDictionaryStyles } from "./LookupResults";
 import { tr } from "../i18n";
 
-const ICON = {
-  viewBox: "0 0 24 24",
-  width: 15,
-  height: 15,
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.6,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-  "aria-hidden": true,
-};
-
-function IconTrash() {
-  return (
-    <svg {...ICON}>
-      <path d="M5 7h14M10 7V5h4v2M7 7l.8 12h8.4L17 7" />
-    </svg>
-  );
-}
-
-function IconChevron() {
-  return (
-    <svg {...ICON}>
-      <path d="m9 6 6 6-6 6" />
-    </svg>
-  );
-}
-
-/** 拖动抓手：六个点，和各家列表里的一样 */
-function IconGrip() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
-      <circle cx="9" cy="6" r="1.4" />
-      <circle cx="15" cy="6" r="1.4" />
-      <circle cx="9" cy="12" r="1.4" />
-      <circle cx="15" cy="12" r="1.4" />
-      <circle cx="9" cy="18" r="1.4" />
-      <circle cx="15" cy="18" r="1.4" />
-    </svg>
-  );
-}
+function IconTrash() { return <Icon name="delete" />; }
+function IconChevron() { return <Icon name="chevronRight" />; }
+function IconGrip() { return <Icon name="drag" />; }
 
 export function basename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -587,7 +550,7 @@ function ImportReport({ done, onClose }: { done: DictImportDone; onClose: () => 
   return (
     <div className="dict-report">
       <button className="dm-report-close" onClick={onClose} aria-label={tr("关闭")}>
-        ×
+        <Icon name="close" />
       </button>
       <b>{tr("导入")}{done.cancelled ? tr("已取消") : tr("完成")}{tr("：成功 {length} 本", { length: ok.length })}{failed.length > 0 ? tr("，失败 {length} 本", { length: failed.length }) : ""}
       </b>

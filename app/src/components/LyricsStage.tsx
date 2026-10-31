@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 全屏歌词。对应 Python 版曲库的「展开歌词播放器」（`LyricsPlayerView`）：
  *
@@ -21,6 +22,8 @@ import { formatDuration, ROLE_LABELS, type Credit, type LyricLine, type Track } 
 import { useCoverColor } from "../coverColor";
 import { useFollowScroll } from "../playbackClock";
 import type { LyricsDisplay } from "../lyricsDisplay";
+import { useModalFocus } from "../modalFocus";
+import { prefersReducedMotion } from "../motion";
 import { useAppSettings } from "../settings";
 import { Avatar } from "./Avatar";
 import { Cover } from "./Cover";
@@ -76,6 +79,9 @@ export function LyricsStage(props: Props) {
   const [bgBroken, setBgBroken] = useState(false);
   useEffect(() => setBgBroken(false), [props.coverPath]);
   const blurCover = settings.stageCoverBlur && !bgBroken && Boolean(props.coverPath);
+  // 盖住整页：焦点进来、后面的页面 inert，退出时焦点回到打开前的按钮。播放条在上面照常能用
+  const stageRef = useRef<HTMLDivElement>(null);
+  useModalFocus(stageRef, { allow: ["footer.player"] });
 
   // Esc 退出；「显示」面板开着时那一下留给面板
   useEffect(() => {
@@ -92,7 +98,7 @@ export function LyricsStage(props: Props) {
     if (box === null || (follow.paused && !firstScroll.current)) return;
     const line = currentLine >= 0 ? box.querySelector<HTMLElement>(`[data-idx="${currentLine}"]`) : null;
     const top = line === null ? 0 : line.offsetTop + line.offsetHeight / 2 - box.clientHeight * ANCHOR;
-    box.scrollTo({ top, behavior: firstScroll.current ? "auto" : "smooth" });
+    box.scrollTo({ top, behavior: firstScroll.current || prefersReducedMotion() ? "auto" : "smooth" });
     firstScroll.current = false;
   }, [currentLine, lines, props.display.fontSize, props.withFurigana, follow.paused]);
 
@@ -107,7 +113,9 @@ export function LyricsStage(props: Props) {
         ["--stage-color" as string]: coverColor ?? "#1a1a20",
       }}
       role="dialog"
+      aria-modal="true"
       aria-label={tr("全屏歌词")}
+      ref={stageRef}
     >
       {blurCover && (
         <div className="stage-bg" aria-hidden="true">
@@ -127,7 +135,7 @@ export function LyricsStage(props: Props) {
         </div>
         <LyricsTools display={props.display} onError={props.onError} onKaraoke={props.onKaraoke} />
         <button className="stage-close" onClick={onClose} title={tr("退出全屏（Esc）")} aria-label={tr("退出全屏")}>
-          ✕
+          <Icon name="close" />
         </button>
       </header>
       <div className="stage-body" ref={side.container}>
@@ -138,20 +146,33 @@ export function LyricsStage(props: Props) {
             </div>
           )}
           {lines.length === 0 && <p className="muted stage-empty">{tr("这首歌还没有歌词")}</p>}
-          {lines.map((line, idx) => (
-            <p
-              key={line.utteranceId}
-              data-idx={idx}
-              className={`stage-line ${idx === currentLine ? "current" : ""} ${props.canSeek && line.timeSec !== null ? "seekable" : ""}`}
-              onClick={() => {
-                props.onSeekLine(idx);
-                if (props.canSeek && line.timeSec !== null) follow.resume();
-              }}
-              title={props.canSeek && line.timeSec !== null ? tr("跳到这一句") : undefined}
-            >
-              {props.renderText(idx)}
-            </p>
-          ))}
+          {lines.map((line, idx) => {
+            const seekable = props.canSeek && line.timeSec !== null;
+            return (
+              // 行里面还有可点的词（按钮），所以行本身不能是 <button>；能跳的行给 Tab 和 Enter
+              <p
+                key={line.utteranceId}
+                data-idx={idx}
+                className={`stage-line ${idx === currentLine ? "current" : ""} ${seekable ? "seekable" : ""}`}
+                aria-current={idx === currentLine ? "true" : undefined}
+                tabIndex={seekable ? 0 : undefined}
+                onClick={() => {
+                  props.onSeekLine(idx);
+                  if (seekable) follow.resume();
+                }}
+                onKeyDown={seekable ? (e) => {
+                  if (e.target === e.currentTarget && e.key === "Enter") {
+                    e.preventDefault();
+                    props.onSeekLine(idx);
+                    follow.resume();
+                  }
+                } : undefined}
+                title={seekable ? tr("跳到这一句（Enter）") : undefined}
+              >
+                {props.renderText(idx)}
+              </p>
+            );
+          })}
         </div>
         <ColumnSplitter
           edge="right"
@@ -174,7 +195,7 @@ export function LyricsStage(props: Props) {
           ) : (
             <>
               <button className="stage-side-close" onClick={props.onCloseSide} title={tr("收起")} aria-label={tr("收起查词")}>
-                ✕
+                <Icon name="close" />
               </button>
               {props.side}
             </>

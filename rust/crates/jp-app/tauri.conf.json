@@ -18,7 +18,6 @@
         "minWidth": 960,
         "minHeight": 640,
         "resizable": true,
-        "theme": "Dark",
         "transparent": true,
         "windowEffects": {
           "effects": [

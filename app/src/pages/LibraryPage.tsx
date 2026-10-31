@@ -1,3 +1,5 @@
+import { useMenuFocus } from "../menuFocus";
+import { Icon } from "../components/Icon";
 /**
  * 资料库：原来的「曲库」和「人物」合成一页。Library → 人 / 专辑 / 歌 → Lyrics → 点词 → Corpus。
  *
@@ -43,7 +45,7 @@ import { retryFurigana, useLyricsDisplay, useSongFurigana } from "../lyricsDispl
 import { csvProblem, describeDelete, describeEdit, libraryApi, type MissingAudio } from "../libraryAdmin";
 import { segmentLine, type Piece } from "../lyricSegments";
 import { albumOwner, sameView, type LibraryView } from "../libraryIndex";
-import { morph } from "../motion";
+import { morph, prefersReducedMotion } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import { WORD_EXAMPLE_LIMIT, type LibraryActions, type LibraryState } from "../useLibrary";
 import type { WordJump } from "../wordCloud";
@@ -464,7 +466,7 @@ export function LibraryPage({
     requestAnimationFrame(() => {
       lyricsRef.current
         ?.querySelector(`[data-utt="${target}"]`)
-        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+        ?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
       actions.consumeScroll();
     });
   }, [library.pendingScrollUtterance, lyrics, actions]);
@@ -475,7 +477,7 @@ export function LibraryPage({
   // 自己滚过（follow.paused）就不抢，直到点「回到当前歌词」。
   useEffect(() => {
     if (!lyricsArePlaying || playback.playState !== "playing" || follow.paused) return;
-    currentLineRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    currentLineRef.current?.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
   }, [currentLine, playback.playState, lyricsArePlaying, follow.paused]);
 
   /** 一行歌词：词之间的原文 + 可点的词（里面带振假名）。普通视图和全屏共用 */
@@ -669,6 +671,7 @@ export function LibraryPage({
   // 歌名旁的「⋯」：编辑、换歌词、删除收在里面。点外面或按 Esc 关
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  useMenuFocus(menuRef, menuOpen, () => setMenuOpen(false));
   useEffect(() => setMenuOpen(false), [selected?.id]);
   useEffect(() => {
     if (!menuOpen) return;
@@ -779,7 +782,7 @@ export function LibraryPage({
             : matchedPrefix(lookup.text, 8)}
         </span>
         <button className="corpus-dict-close" onClick={() => setLookup(null)} title={tr("关闭这次查词")}>
-          ✕
+          <Icon name="close" />
         </button>
       </h3>
       {(
@@ -844,7 +847,7 @@ export function LibraryPage({
               title={tr("试听这一句（到行尾自动停）")}
               aria-label={tr("试听这一句")}
             >
-              ▶
+              <Icon name="play" />
             </button>
           )}
         </div>
@@ -937,9 +940,7 @@ export function LibraryPage({
 
   const backButton = canBack && (
     <button className="btn nav-back" onClick={back} title={tr("返回")} aria-label={tr("返回")}>
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="m14 7-5 5 5 5" />
-      </svg>
+      <Icon name="back" />
     </button>
   );
   const songView = view?.kind === "song" || view === null;
@@ -954,10 +955,7 @@ export function LibraryPage({
     >
       {browserHidden && (
         <button className="btn browser-reveal" onClick={toggleBrowser} title={tr("展开左栏")} aria-label={tr("展开左栏")}>
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-            <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-            <path d="M9 4.5v15M13 10l2 2-2 2" />
-          </svg>
+          <Icon name="panelShow" />
         </button>
       )}
       <LibraryBrowser
@@ -1121,7 +1119,7 @@ export function LibraryPage({
                 : <span>{selected.artist || tr("未知歌手")}</span>}
               {selected.album && (
                 <>
-                  <span className="crumb-sep">›</span>
+                  <span className="crumb-sep"><Icon name="chevronRight" /></span>
                   {selected.albumId !== null ? (
                     <button onClick={() => openAlbumById(selected.albumId!, selected.album)}>{selected.album}</button>
                   ) : (
@@ -1129,7 +1127,7 @@ export function LibraryPage({
                   )}
                 </>
               )}
-              <span className="crumb-sep">›</span>
+              <span className="crumb-sep"><Icon name="chevronRight" /></span>
               <b>{selected.title}</b>
             </nav>
             <div className="track-head track-head-row">
@@ -1165,11 +1163,7 @@ export function LibraryPage({
                       aria-label={tr("更多")}
                       aria-expanded={menuOpen}
                     >
-                      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                        <circle cx="6" cy="12" r="1.6" fill="currentColor" />
-                        <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-                        <circle cx="18" cy="12" r="1.6" fill="currentColor" />
-                      </svg>
+                      <Icon name="more" />
                     </button>
                     {menuOpen && (
                       <div className="menu-panel" role="menu">

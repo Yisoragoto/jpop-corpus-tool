@@ -1,3 +1,4 @@
+import { Icon } from "../components/Icon";
 /**
  * 设置页。照 Windows 11 设置 / WinUI 的 SettingsCard：一组一组的行，
  * 左边图标、中间标题和说明、右边控件。**改了立刻生效、自动记住**，没有「确定」。
@@ -51,131 +52,25 @@ interface Props {
   onChanged: () => void;
 }
 
-const ICON = {
-  viewBox: "0 0 24 24",
-  width: 16,
-  height: 16,
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.6,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-  "aria-hidden": true,
-};
-
 const Icons = {
-  globe: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
-    </svg>
-  ),
-  report: (
-    <svg {...ICON}>
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-      <path d="M14 3v5h5M9 13h6M9 17h4" />
-    </svg>
-  ),
-  stage: (
-    <svg {...ICON}>
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="M8 19v2h8v-2" />
-    </svg>
-  ),
-  blur: (
-    <svg {...ICON}>
-      <circle cx="12" cy="12" r="7.5" />
-      <path d="M12 4.5v15" />
-    </svg>
-  ),
-  grid: (
-    <svg {...ICON}>
-      <rect x="4" y="4" width="7" height="7" rx="1.5" />
-      <rect x="13" y="4" width="7" height="7" rx="1.5" />
-      <rect x="4" y="13" width="7" height="7" rx="1.5" />
-      <rect x="13" y="13" width="7" height="7" rx="1.5" />
-    </svg>
-  ),
-  font: (
-    <svg {...ICON}>
-      <path d="M5 19 10.5 5h3L19 19" />
-      <path d="M7.6 14h8.8" />
-    </svg>
-  ),
-  ruby: (
-    <svg {...ICON}>
-      <path d="M6 18V8h4.5a3 3 0 0 1 0 6H6" />
-      <path d="M11 14l4 4" />
-      <path d="M15 5h4M17 5v4" />
-    </svg>
-  ),
-  size: (
-    <svg {...ICON}>
-      <path d="M4 18V7h6M7 7v11" />
-      <path d="M14 18v-7h5M16.5 11v7" />
-    </svg>
-  ),
-  dict: (
-    <svg {...ICON}>
-      <path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v16H6.5A1.5 1.5 0 0 1 5 18.5z" />
-      <path d="M9 4v16" />
-    </svg>
-  ),
-  card: (
-    <svg {...ICON}>
-      <rect x="3" y="6" width="18" height="12" rx="2" />
-      <path d="M7 10h6M7 14h4" />
-    </svg>
-  ),
-  db: (
-    <svg {...ICON}>
-      <ellipse cx="12" cy="6" rx="7" ry="3" />
-      <path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
-      <path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" />
-    </svg>
-  ),
-  cover: (
-    <svg {...ICON}>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  ),
-  clock: (
-    <svg {...ICON}>
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 7.5V12l3 2" />
-    </svg>
-  ),
-  update: (
-    <svg {...ICON}>
-      <path d="M20 12a8 8 0 1 1-2.3-5.6" />
-      <path d="M20 4v4h-4" />
-    </svg>
-  ),
-  install: (
-    <svg {...ICON}>
-      <path d="M12 3v11" />
-      <path d="M8 10.5l4 4 4-4" />
-      <path d="M4 18.5h16" />
-    </svg>
-  ),
-  wave: (
-    <svg {...ICON}>
-      <path d="M4 12h2l2-5 3 10 3-13 3 8h3" />
-    </svg>
-  ),
-  lyrics: (
-    <svg {...ICON}>
-      <path d="M4 6h10M4 11h16M4 16h12" />
-      <circle cx="18" cy="6" r="2" />
-    </svg>
-  ),
-  info: (
-    <svg {...ICON}>
-      <circle cx="12" cy="12" r="8.5" />
-      <path d="M12 11v5.5M12 7.6v.1" />
-    </svg>
-  ),
+  globe: <Icon name="globe" />,
+  report: <Icon name="report" />,
+  stage: <Icon name="stage" />,
+  blur: <Icon name="blur" />,
+  grid: <Icon name="grid" />,
+  font: <Icon name="font" />,
+  ruby: <Icon name="ruby" />,
+  size: <Icon name="size" />,
+  dict: <Icon name="dict" />,
+  card: <Icon name="card" />,
+  db: <Icon name="db" />,
+  cover: <Icon name="album" />,
+  clock: <Icon name="clock" />,
+  update: <Icon name="refresh" />,
+  install: <Icon name="import" />,
+  wave: <Icon name="wave" />,
+  lyrics: <Icon name="lyrics" />,
+  info: <Icon name="info" />,
 };
 
 /** 作业刚开始、第一条进度还没到时显示的占位。总数未知，所以是 0/0。 */
@@ -403,6 +298,21 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
           </header>
 
           {section === "appearance" && (
+            <Group title={tr("主题")}>
+              <SettingCard
+                icon={<Icon name="theme" />}
+                title={tr("浅色 / 深色")}
+                description={tr("跟随系统时会随 Windows 的「选择你的模式」一起变；全屏歌词和卡拉 OK 始终是深色")}
+              >
+                <SettingSelect value={settings.theme} options={[
+                  { value: "system", label: tr("跟随系统") },
+                  { value: "light", label: tr("浅色") },
+                  { value: "dark", label: tr("深色") },
+                ]} onChange={(theme) => updateSettings({ theme })} />
+              </SettingCard>
+            </Group>
+          )}
+          {section === "appearance" && (
             <Group title={tr("语言")}>
               <SettingCard
                 icon={Icons.globe}
@@ -580,7 +490,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
                           onClick={() => updateSettings({ wordCloudHidden: settings.wordCloudHidden.filter((x) => x !== w) })}
                         >
                           {w}
-                          <span aria-hidden="true">×</span>
+                          <span aria-hidden="true"><Icon name="close" /></span>
                         </button>
                       ))}
                     </span>
@@ -726,7 +636,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
               onClick={() => onNavigate("scrape")}
             >
               <span className="setting-chevron" aria-hidden="true">
-                ›
+                <Icon name="chevronRight" />
               </span>
             </SettingCard>
             {note !== "" && <SettingNote>{note}</SettingNote>}

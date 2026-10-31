@@ -8,7 +8,19 @@
  * 视觉上是一块，和 Windows 11 设置里一样。
  */
 
-import type { ReactNode } from "react";
+import { createContext, type CSSProperties, useContext, useId, type ReactNode } from "react";
+
+/**
+ * 这一行的标题 / 说明的 id。行里的滑块、下拉、开关自动拿它当可访问名称，
+ * 读屏才知道调的是「字号」还是「虚化强度」，各处调用不用每个都写 aria-label
+ */
+const RowLabel = createContext<{ titleId: string; descId: string | undefined } | null>(null);
+
+function useRowLabel(label?: string) {
+  const row = useContext(RowLabel);
+  if (label !== undefined || row === null) return { "aria-label": label };
+  return { "aria-labelledby": row.titleId, "aria-describedby": row.descId };
+}
 
 export function SettingGroup({
   title,
@@ -39,15 +51,18 @@ interface CardProps {
 }
 
 export function SettingCard({ icon, title, description, children, onClick }: CardProps) {
+  const id = useId();
+  const titleId = `${id}-title`;
+  const descId = description !== undefined ? `${id}-desc` : undefined;
   const body = (
-    <>
-      {icon !== undefined && <span className="setting-icon">{icon}</span>}
+    <RowLabel.Provider value={{ titleId, descId }}>
+      {icon !== undefined && <span className="setting-icon" aria-hidden="true">{icon}</span>}
       <span className="setting-text">
-        <span className="setting-title">{title}</span>
-        {description !== undefined && <span className="setting-desc">{description}</span>}
+        <span className="setting-title" id={titleId}>{title}</span>
+        {description !== undefined && <span className="setting-desc" id={descId}>{description}</span>}
       </span>
       {children !== undefined && <span className="setting-control">{children}</span>}
-    </>
+    </RowLabel.Provider>
   );
   if (onClick !== undefined) {
     return (
@@ -76,15 +91,17 @@ export function Switch({
   disabled?: boolean;
   label?: string;
 }) {
+  const name = useRowLabel(label);
   return (
     <label className={`switch ${disabled ? "disabled" : ""}`} title={label}>
-      <span className="switch-state">{checked ? "On" : "Off"}</span>
+      <span className="switch-state" aria-hidden="true">{checked ? "On" : "Off"}</span>
       <input
         type="checkbox"
+        role="switch"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        aria-label={label}
+        {...name}
       />
       <span className="switch-track" aria-hidden="true">
         <span className="switch-knob" />
@@ -105,9 +122,20 @@ export function SettingSlider({
   onChange: (value: number) => void;
   unit?: string;
 }) {
+  const name = useRowLabel();
   return (
     <span className="setting-slider">
-      <input type="range" min={min} max={max} step={1} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input
+        type="range"
+        style={{ "--range-progress": `${((value - min) / (max - min)) * 100}%` } as CSSProperties}
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        aria-valuetext={`${value}${unit}`}
+        onChange={(event) => onChange(Number(event.target.value))}
+        {...name}
+      />
       <span className="setting-value">
         {value}
         {unit}
@@ -128,12 +156,14 @@ export function SettingSelect<T extends string>({
   onChange: (value: T) => void;
   disabled?: boolean;
 }) {
+  const name = useRowLabel();
   return (
     <select
       className="setting-select"
       value={value}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value as T)}
+      {...name}
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>

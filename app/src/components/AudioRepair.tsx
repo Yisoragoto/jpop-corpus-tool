@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 找回丢了的音频文件。对应 Python 版的「音声修復」：扫一个文件夹自动配对，或者逐首手动选文件，确认后才写库。
  *
@@ -97,7 +98,7 @@ export function AudioRepair({ missing, onApplied, onClose, onError }: Props) {
       <div className="audio-repair-head">
         <h2>{tr("找回音频文件")}</h2>
         <button className="stage-close" onClick={onClose} title={tr("关闭")} aria-label={tr("关闭")}>
-          ✕
+          <Icon name="close" />
         </button>
       </div>
       <p className="muted small">

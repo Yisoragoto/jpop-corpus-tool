@@ -1,3 +1,4 @@
+import { Icon } from "./components/Icon";
 /**
  * 应用外壳：导航 + 页面切换 + 常驻播放条。
  *
@@ -26,6 +27,7 @@ import type { WordPanelLinks } from "./components/WordWhere";
 import { Player } from "./components/Player";
 import { SudachiBanner } from "./components/SudachiBanner";
 import { warmFontOptions } from "./fonts";
+import { useTheme } from "./theme";
 import { useAppSettings } from "./settings";
 import { Stat } from "./components/Stat";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
@@ -85,6 +87,7 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const settings = useAppSettings();
+  useTheme(settings.theme);
   const audioReady = health?.audioReady ?? false;
   const playback = usePlaybackState(audioReady);
   /** 「进全屏歌词」的请求。曲库页收到之后自己清掉（和跨页跳转同一个路子） */
@@ -493,7 +496,7 @@ export default function App() {
           />
         )}
         {notice && !notice.includes(NO_DICTIONARY) && (
-          <div className="banner error" onClick={() => setNotice(null)}>{tr("{notice}（点击关闭）", { notice })}</div>
+          <div className="banner error" role="alert"><Icon name="info" /><span>{notice}</span><button className="icon-btn banner-close" onClick={() => setNotice(null)} aria-label={tr("关闭")}><Icon name="close" /></button></div>
         )}
         {newAudio !== null && (
           <NewSongsBanner

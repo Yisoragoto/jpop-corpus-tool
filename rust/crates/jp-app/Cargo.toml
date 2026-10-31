@@ -68,6 +68,7 @@ jp-library = { path = "../jp-library" }
 # 不弹就是「双击没反应」。windows 已经在依赖树里（cpal、tao 在用），只是多开两个特性。
 windows = { version = "0.61", features = [
     "Win32_Graphics_DirectWrite",
+    "UI_ViewManagement",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

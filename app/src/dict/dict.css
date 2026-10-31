@@ -1,3 +1,54 @@
+:root {
+  --dict-shadow: rgba(0, 0, 0, .18);
+  --dict-shadow-light: rgba(255, 255, 255, .08);
+  --dict-advanced-color: #6640be;
+  --dict-advanced-color-lighter: hsl(258, 50%, 75%);
+  --dict-tag-text-color: #f1f1f1;
+  --dict-tag-default-background-color: #69696e;
+  --dict-tag-name-background-color: #992a67;
+  --dict-tag-expression-background-color: #b07f39;
+  --dict-tag-popular-background-color: #025caa;
+  --dict-tag-frequent-background-color: #4490a7;
+  --dict-tag-archaism-background-color: #b04340;
+  --dict-tag-dictionary-background-color: #9057ad;
+  --dict-tag-frequency-background-color: #489148;
+  --dict-tag-part-of-speech-background-color: #565656;
+  --dict-tag-search-background-color: #69696e;
+  --dict-tag-pronunciation-dictionary-background-color: #6640be;
+  --dict-gloss-image-background-color: #ececf1;
+  --dict-rgko12-cream: #3a3522;
+  --dict-rgko12-spring: #1f3a2c;
+  --dict-rgko12-summer: #1f3340;
+  --dict-rgko12-autumn: #40301f;
+  --dict-rgko12-winter: #2a3140;
+  --dict-rgko12-travel: #2c3a22;
+  --dict-rgko12-romance: #402533;
+  --dict-rgko12-other: #33333b;
+  --dict-rgko12-light-light-brown: #3a3026;
+  --dict-rgko12-light-light-blue: #1f2d3d;
+  --dict-rgko12-light-light-purple: #2f2640;
+  --dict-name-color: #d2b8ff;
+  --dict-name-bg: #35284c;
+}
+
+:root[data-theme="light"] {
+  --dict-shadow: rgba(0, 0, 0, .12);
+  --dict-shadow-light: rgba(255, 255, 255, .7);
+  --dict-rgko12-cream: #fff4ce;
+  --dict-rgko12-spring: #dff6dd;
+  --dict-rgko12-summer: #e3f2fd;
+  --dict-rgko12-autumn: #faeadb;
+  --dict-rgko12-winter: #e8edf7;
+  --dict-rgko12-travel: #edf3dd;
+  --dict-rgko12-romance: #f9e5ef;
+  --dict-rgko12-other: #f3f3f3;
+  --dict-rgko12-light-light-brown: #f4eadd;
+  --dict-rgko12-light-light-blue: #e5effa;
+  --dict-rgko12-light-light-purple: #f0e7fa;
+  --dict-name-color: #744da9;
+  --dict-name-bg: #f0e7fa;
+}
+
 /*
  * 词典显示。
  * 结构化内容、图片、音高部分移植自 Yomitan ext/css/structured-content.css 与
@@ -21,82 +72,82 @@
 
   /* material.css 暗色 */
   --text-color: var(--fg);
-  --text-color-light1: #aaaaaa;
-  --text-color-light2: #999999;
+  --text-color-light1: var(--muted);
+  --text-color-light2: var(--text-tertiary);
   --text-color-light3: var(--muted);
-  --text-color-light4: #777777;
+  --text-color-light4: var(--text-disabled);
   --background-color: var(--panel);
   --background-color-light: var(--bg);
-  --background-color-dark1: #2a2a34;
-  --shadow-color: rgba(105, 105, 105, 0.185);
-  --shadow-color-light: rgba(255, 255, 255, 0.085);
+  --background-color-dark1: var(--solid-base);
+  --shadow-color: var(--dict-shadow);
+  --shadow-color-light: var(--dict-shadow-light);
   --accent-color: var(--accent);
-  --accent-color-dark: #9bb8f9;
-  --accent-color-light: #1a73e8;
-  --accent-color-lighter: #135dbe;
-  --accent-color-lightest: #0e4690;
+  --accent-color-dark: var(--accent-text);
+  --accent-color-light: var(--accent-soft);
+  --accent-color-lighter: var(--accent-soft);
+  --accent-color-lightest: var(--accent-soft);
   --danger-color: var(--danger);
-  --danger-color-light: #c83c28;
-  --danger-color-lighter: #9e301f;
-  --danger-color-lightest: #732317;
-  --success-color: #75cf54;
-  --disabled-color: #444444;
-  --disabled-color-light: #585858;
-  --disabled-color-lighter: #777777;
-  --button-default-icon-color: #cccccc;
-  --button-default-icon-color-light: #999999;
-  --advanced-color: #6640be;
-  --advanced-color-lighter: hsl(258, 50%, 75%);
+  --danger-color-light: var(--danger);
+  --danger-color-lighter: var(--critical-bg);
+  --danger-color-lightest: var(--critical-bg);
+  --success-color: var(--success);
+  --disabled-color: var(--btn-fill-disabled);
+  --disabled-color-light: var(--text-disabled);
+  --disabled-color-lighter: var(--text-tertiary);
+  --button-default-icon-color: var(--fg);
+  --button-default-icon-color-light: var(--muted);
+  --advanced-color: var(--dict-advanced-color);
+  --advanced-color-lighter: var(--dict-advanced-color-lighter);
 
   /* display.css 暗色 */
   --link-color: var(--accent-color);
   --reason-text-color: var(--text-color-light3);
   --headword-text-color: var(--text-color);
   --headword-reading-text-color: var(--text-color);
-  --light-border-color: #2f2f2f;
-  --medium-border-color: #3f3f3f;
-  --dark-border-color: #888888;
-  --tag-text-color: #f1f1f1;
+  --light-border-color: var(--card-stroke);
+  --medium-border-color: var(--line);
+  --dark-border-color: var(--stroke-strong);
+  --tag-text-color: var(--dict-tag-text-color);
   --tag-border-color: transparent;
-  --tag-default-background-color: #69696e;
-  --tag-name-background-color: #992a67;
-  --tag-expression-background-color: #b07f39;
-  --tag-popular-background-color: #025caa;
-  --tag-frequent-background-color: #4490a7;
-  --tag-archaism-background-color: #b04340;
-  --tag-dictionary-background-color: #9057ad;
-  --tag-frequency-background-color: #489148;
-  --tag-part-of-speech-background-color: #565656;
-  --tag-search-background-color: #69696e;
-  --tag-pronunciation-dictionary-background-color: #6640be;
+  --tag-default-background-color: var(--dict-tag-default-background-color);
+  --tag-name-background-color: var(--dict-tag-name-background-color);
+  --tag-expression-background-color: var(--dict-tag-expression-background-color);
+  --tag-popular-background-color: var(--dict-tag-popular-background-color);
+  --tag-frequent-background-color: var(--dict-tag-frequent-background-color);
+  --tag-archaism-background-color: var(--dict-tag-archaism-background-color);
+  --tag-dictionary-background-color: var(--dict-tag-dictionary-background-color);
+  --tag-frequency-background-color: var(--dict-tag-frequency-background-color);
+  --tag-part-of-speech-background-color: var(--dict-tag-part-of-speech-background-color);
+  --tag-search-background-color: var(--dict-tag-search-background-color);
+  --tag-pronunciation-dictionary-background-color: var(--dict-tag-pronunciation-dictionary-background-color);
   --sidebar-button-danger-background-color: transparent;
-  --sidebar-button-danger-background-color-hover: #dd2222;
-  --sidebar-button-danger-background-color-active: #bb2222;
-  --sidebar-button-icon-color: #cccccc;
-  --scrollbar-thumb-color: #444444;
-  --scrollbar-track-color: #2f2f2f;
-  --scrollbar-inverse-thumb-color: #c1c1c1;
+  --sidebar-button-danger-background-color-hover: var(--critical-bg);
+  --sidebar-button-danger-background-color-active: var(--critical-bg);
+  --sidebar-button-icon-color: var(--fg);
+  --scrollbar-thumb-color: var(--stroke-strong);
+  --scrollbar-track-color: var(--alt-fill);
+  --scrollbar-inverse-thumb-color: var(--muted);
   /* 和 Yomitan 不同：要垫底色的栅格插图多是透明底黑线，浅色底才看得清（Yomitan 暗色用 #2f2f2f） */
-  --gloss-image-background-color: #ececf1;
+  --gloss-image-background-color: var(--dict-gloss-image-background-color);
   --pronunciation-annotation-color: var(--fg);
 
   /*
    * 小学館例解学習国語的几种浅色底框，回退链落到 --tag-text-color（暗色下是浅色），
    * 在 Yomitan 暗色主题里一样刺眼。作者留了 --rgko12-* 这组变量给使用者覆盖，这里给深色调。
    */
-  --rgko12-cream: #3a3522;
-  --rgko12-spring: #1f3a2c;
-  --rgko12-summer: #1f3340;
-  --rgko12-autumn: #40301f;
-  --rgko12-winter: #2a3140;
-  --rgko12-travel: #2c3a22;
-  --rgko12-romance: #402533;
-  --rgko12-other: #33333b;
-  --rgko12-light-light-brown: #3a3026;
-  --rgko12-light-light-blue: #1f2d3d;
-  --rgko12-light-light-purple: #2f2640;
+  --rgko12-cream: var(--dict-rgko12-cream);
+  --rgko12-spring: var(--dict-rgko12-spring);
+  --rgko12-summer: var(--dict-rgko12-summer);
+  --rgko12-autumn: var(--dict-rgko12-autumn);
+  --rgko12-winter: var(--dict-rgko12-winter);
+  --rgko12-travel: var(--dict-rgko12-travel);
+  --rgko12-romance: var(--dict-rgko12-romance);
+  --rgko12-other: var(--dict-rgko12-other);
+  --rgko12-light-light-brown: var(--dict-rgko12-light-light-brown);
+  --rgko12-light-light-blue: var(--dict-rgko12-light-light-blue);
+  --rgko12-light-light-purple: var(--dict-rgko12-light-light-purple);
   --bg-color: var(--panel-2);
-  --gaiji-border: #4a4a58;
+  --gaiji-border: var(--stroke-strong);
 }
 
 /* ── 页面：整页就是查词，管理在设置页 ── */
@@ -116,7 +167,7 @@
 }
 .dict-grip:hover:not(:disabled) { background: var(--panel-2); color: var(--fg); }
 .dict-grip:active { cursor: grabbing; }
-.dict-grip:disabled { opacity: .3; cursor: default; }
+.dict-grip:disabled { color: var(--text-disabled); cursor: default; }
 .dict-legacy { margin-bottom: 24px; }
 .dict-manager .toolbar { flex-wrap: wrap; }
 .dict-progress { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
@@ -136,7 +187,7 @@
 .dict-item-actions button:disabled { opacity: .3; cursor: default; }
 .dict-report {
   position: relative; font-size: 12px; border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 10px 34px 10px 12px; margin-bottom: 14px; background: var(--panel); animation: dm-drop-in 260ms var(--ease-out);
+  padding: 10px 34px 10px 12px; margin-bottom: 14px; background: var(--panel); animation: dm-drop-in var(--motion-fast) var(--ease-out);
 }
 .dm-report-close { position: absolute; right: 6px; top: 6px; width: 24px; height: 24px; border-radius: 5px; color: var(--muted); font-size: 16px; line-height: 1; }
 .dm-report-close:hover { background: var(--control-hover); color: var(--fg); }
@@ -168,8 +219,8 @@
 .dict-dictionary-preview:hover { color: var(--fg); }
 .dict-clamp[data-clamped=true] .dict-clamp-body {
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
-  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, var(--mask-opaque) 70%, transparent);
+  mask-image: linear-gradient(to bottom, var(--mask-opaque) 70%, transparent);
 }
 .dict-clamp-toggle { margin-top: 2px; font-size: 12px; color: var(--accent); }
 .dict-clamp-toggle:hover { text-decoration: underline; }
@@ -177,7 +228,7 @@
 .corpus .dict-entry, .stage-side .dict-entry { padding: 8px 10px 10px; }
 .corpus .dict-headword, .stage-side .dict-headword { font-size: 20px; }
 .token-lookup { cursor: pointer; border-radius: 2px; }
-.token-lookup:hover { background: rgba(122,162,247,.1); }
+.token-lookup:hover { background: var(--accent-soft); }
 
 /* ── 词条 ── */
 .dict-results { display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.6; }
@@ -197,11 +248,11 @@
 
 .dict-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; vertical-align: baseline; }
 .dict-tag { padding: 0 6px; border-radius: 3px; font-size: 11px; line-height: 1.7; background: var(--panel-2); color: var(--muted); cursor: default; }
-.dict-tag[data-category=partOfSpeech] { color: #9ece6a; background: rgba(158,206,106,.1); }
+.dict-tag[data-category=partOfSpeech] { color: var(--success); background: var(--success-bg); }
 .dict-tag[data-category=popular],
-.dict-tag[data-category=frequent] { color: var(--warn); background: rgba(224,175,104,.12); }
-.dict-tag[data-category=archaism] { color: var(--danger); background: rgba(247,118,142,.1); }
-.dict-tag[data-category=name] { color: #bb9af7; background: rgba(187,154,247,.1); }
+.dict-tag[data-category=frequent] { color: var(--warn); background: var(--caution-bg); }
+.dict-tag[data-category=archaism] { color: var(--danger); background: var(--critical-bg); }
+.dict-tag[data-category=name] { color: var(--dict-name-color); background: var(--dict-name-bg); }
 
 .dict-frequencies,
 .dict-pronunciations { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; font-size: 12px; }
@@ -219,9 +270,9 @@
 .dict-dictionary-name {
   display: inline-flex; align-items: baseline; flex: none; margin-bottom: 2px; padding: 0 6px 0 2px;
   border-radius: 3px; font-size: 11px; line-height: 1.8; color: var(--accent);
-  background: rgba(122,162,247,.12); cursor: pointer;
+  background: var(--accent-soft); cursor: pointer;
 }
-.dict-dictionary-name:hover { background: rgba(122,162,247,.22); }
+.dict-dictionary-name:hover { background: var(--accent-soft); }
 .dict-definition-list { margin: 0; padding-left: 1.6em; }
 .dict-definition-list:has(> li:only-child) { list-style: none; padding-left: 0; }
 .dict-definition { margin: 2px 0; }
@@ -351,16 +402,16 @@
 /* ── 制卡按钮 ── */
 .dict-entry-actions { margin-left: auto; align-self: center; display: flex; gap: 6px; }
 .mine-btn {
-  padding: 2px 9px; border: 1px solid rgba(122,162,247,.4); border-radius: 5px;
+  padding: 2px 9px; border: 1px solid var(--accent); border-radius: 5px;
   font-size: 12px; line-height: 1.6; color: var(--accent); white-space: nowrap;
 }
-.mine-btn:hover:not(:disabled) { background: rgba(122,162,247,.14); }
+.mine-btn:hover:not(:disabled) { background: var(--accent-soft); }
 .mine-btn:disabled { opacity: .45; cursor: default; }
-.mine-btn.done { border-color: rgba(158,206,106,.45); color: #9ece6a; }
-.mine-btn.done.partial { border-color: rgba(224,175,104,.5); color: var(--warn); }
+.mine-btn.done { border-color: var(--success); color: var(--success); }
+.mine-btn.done.partial { border-color: var(--warn); color: var(--warn); }
 .mine-btn.existing { border-color: var(--line); color: var(--muted); }
 .mine-btn.existing:hover { color: var(--fg); }
-.mine-btn.failed { border-color: rgba(247,118,142,.5); color: var(--danger); }
+.mine-btn.failed { border-color: var(--danger); color: var(--danger); }
 
 /* ── 设置 → 词典：分类、筛选、指针拖动排序 ── */
 .dm { display: flex; flex-direction: column; }
@@ -373,7 +424,7 @@
 .dm-progress {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 14px;
   border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); font-size: 12px;
-  animation: dm-drop-in 260ms var(--ease-out);
+  animation: dm-drop-in var(--motion-fast) var(--ease-out);
 }
 .dm-progress-text { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dm-progress-bar { width: 140px; height: 4px; border-radius: 2px; background: var(--panel-2); overflow: hidden; }
@@ -400,8 +451,8 @@
 .dm-list { display: flex; flex-direction: column; gap: 3px; }
 .dm-row {
   position: relative; border: 1px solid var(--line); border-radius: 5px; background: var(--panel);
-  transition: transform 200ms var(--ease-out), background 160ms, opacity 200ms, box-shadow 200ms;
-  animation: dm-row-in 360ms calc(var(--n, 0) * 22ms) var(--ease-out) backwards;
+  transition: transform var(--motion-fast) var(--ease-out), background 160ms, opacity var(--motion-fast), box-shadow var(--motion-fast);
+  animation: none;
 }
 @keyframes dm-row-in { from { opacity: 0; transform: translateY(8px); } }
 .dm-list > .dm-row:first-child { border-top-left-radius: var(--radius); border-top-right-radius: var(--radius); }
@@ -412,9 +463,9 @@
 /* 拖起来的那一行浮在上面、跟手走，不要过渡（否则会拖着一条尾巴） */
 .dm-row.lifted {
   z-index: 5; transition: none; background: var(--surface-pop); border-color: var(--line-strong);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, .45), 0 0 0 1px var(--accent-soft); cursor: grabbing;
+  box-shadow: 0 14px 34px var(--dict-shadow), 0 0 0 1px var(--accent-soft); cursor: grabbing;
 }
-.dm-row.lifted.settling { transition: transform 200ms var(--ease-out), box-shadow 200ms; box-shadow: none; }
+.dm-row.lifted.settling { transition: transform var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast); box-shadow: none; }
 .dm-list.sorting { user-select: none; }
 /* 换完顺序那一帧：各行的位移是一下子清掉的，不能再过渡，否则会先跳开再滑回来 */
 .dm-list.frozen .dm-row { transition: none; }
@@ -426,16 +477,16 @@
 .dm-name { font-size: 13px; overflow-wrap: anywhere; }
 .dm-meta { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dm-expand { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 5px; color: var(--muted); flex: 0 0 auto; }
-.dm-expand svg { transition: transform 220ms var(--ease-out); }
+.dm-expand svg { transition: transform var(--motion-fast) var(--ease-out); }
 .dm-expand.on svg { transform: rotate(90deg); }
 .dm-expand:hover { background: var(--control-hover); color: var(--fg); }
 
 /* 展开详情：grid 行高 0fr → 1fr，高度能过渡，不用量 */
-.dm-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 240ms var(--ease-out); }
+.dm-detail { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--motion-fast) var(--ease-out); }
 .dm-detail > div { overflow: hidden; min-height: 0; }
 .dm-row.open .dm-detail { grid-template-rows: 1fr; }
-.dm-detail-body { padding: 2px 16px 14px 66px; font-size: 12px; opacity: 0; transition: opacity 200ms; }
-.dm-row.open .dm-detail-body { opacity: 1; transition-delay: 60ms; }
+.dm-detail-body { padding: 2px 16px 14px 66px; font-size: 12px; opacity: 0; transition: opacity var(--motion-fast); }
+.dm-row.open .dm-detail-body { opacity: 1; transition-delay: 0ms; }
 .dm-detail-body dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 20px; margin: 0 0 8px; }
 .dm-detail-body dl div { min-width: 0; }
 .dm-detail-body dt { font-size: 11px; color: var(--muted); }

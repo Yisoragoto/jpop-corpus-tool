@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, formatDuration, POS_LABELS, ROLE_LABELS, type QuickHit } from "../api";
 import { tr } from "../i18n";
+import { useModalFocus } from "../modalFocus";
 
 /** 一条可执行的命令。 */
 export interface PaletteCommand {
@@ -42,13 +43,19 @@ const DEBOUNCE_MS = 140;
  * 全库搜索：防抖 + 丢弃过期响应。命令面板和首页的搜索栏共用。
  * `query` 为空串时不发请求、结果清空。
  */
-export function useQuickSearch(query: string, perKind = 6): { hits: QuickHit[]; busy: boolean } {
+export function useQuickSearch(
+  query: string,
+  perKind = 6,
+): { hits: QuickHit[]; busy: boolean; error: string | null } {
   const [hits, setHits] = useState<QuickHit[]>([]);
   const [busy, setBusy] = useState(false);
+  // 查询失败要和「没有结果」分开：失败时说「没有结果」会让人以为库里真没有
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (query.length === 0) {
       setHits([]);
       setBusy(false);
+      setError(null);
       return;
     }
     let alive = true;
@@ -60,8 +67,13 @@ export function useQuickSearch(query: string, perKind = 6): { hits: QuickHit[]; 
           // 慢的那次请求可能后到，不能让它覆盖新结果
           if (!alive) return;
           setHits([...r.tracks, ...r.people, ...r.albums, ...r.words, ...r.lyrics]);
+          setError(null);
         })
-        .catch(() => alive && setHits([]))
+        .catch((e: unknown) => {
+          if (!alive) return;
+          setHits([]);
+          setError(e instanceof Error ? e.message : String(e));
+        })
         .finally(() => alive && setBusy(false));
     }, DEBOUNCE_MS);
     return () => {
@@ -69,7 +81,7 @@ export function useQuickSearch(query: string, perKind = 6): { hits: QuickHit[]; 
       clearTimeout(timer);
     };
   }, [query, perKind]);
-  return { hits, busy };
+  return { hits, busy, error };
 }
 
 export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit }: Props) {
@@ -77,11 +89,14 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Tab 不跑到遮罩后面去；关掉后焦点回到打开前的地方
+  const boxRef = useRef<HTMLDivElement>(null);
+  useModalFocus(boxRef, { initial: inputRef });
 
   // `>` 开头 = 命令模式，和编辑器的约定一致
   const commandMode = text.startsWith(">");
   const query = commandMode ? text.slice(1).trim() : text.trim();
-  const { hits, busy } = useQuickSearch(commandMode ? "" : query);
+  const { hits, busy, error } = useQuickSearch(commandMode ? "" : query);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -150,7 +165,14 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
 
   return (
     <div className="palette-backdrop" onMouseDown={onClose}>
-      <div className="palette" onMouseDown={(e) => e.stopPropagation()}>
+      <div
+        className="palette"
+        ref={boxRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={commandMode ? tr("命令面板") : tr("全局搜索")}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         <input
           ref={inputRef}
           className="palette-input"
@@ -196,7 +218,13 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
               </button>
             ))}
 
-          {!commandMode && query.length > 0 && !busy && hits.length === 0 && (
+          {!commandMode && query.length > 0 && busy && hits.length === 0 && (
+            <p className="muted pad" role="status">{tr("正在搜索…")}</p>
+          )}
+          {!commandMode && query.length > 0 && !busy && error !== null && (
+            <p className="pad error-text" role="alert">{tr("搜索出错：{error}", { error })}</p>
+          )}
+          {!commandMode && query.length > 0 && !busy && error === null && hits.length === 0 && (
             <p className="muted pad">{tr("没有结果")}</p>
           )}
           {!commandMode && query.length === 0 && (

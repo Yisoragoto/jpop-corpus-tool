@@ -1,3 +1,4 @@
+import { Icon } from "../components/Icon";
 /**
  * 词典页：只做一件事——查词。
  *
@@ -15,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "../events";
 
 import { CommandButton } from "../components/CommandButton";
+import { LoadError } from "../components/LoadError";
 import {
   dictApi,
   type DictImportDone,
@@ -45,13 +47,17 @@ export function DictionaryPage({ onError, onOpenSettings, wordLinks }: Props) {
   const [looking, setLooking] = useState(false);
   const errorRef = useRef(onError);
   errorRef.current = onError;
+  /** 词典列表读不出来：页面上说，并且能重试 */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
       const [list, sources] = await Promise.all([dictApi.list(), dictApi.legacySources()]);
       setDictionaries(list);
       setLegacy(sources);
+      setLoadError(null);
     } catch (e) {
+      setLoadError(errorMessage(e));
       errorRef.current(errorMessage(e));
     }
   }, []);
@@ -113,7 +119,8 @@ export function DictionaryPage({ onError, onOpenSettings, wordLinks }: Props) {
   const [closedFor, setClosedFor] = useState<string | null>(null);
   const panelWord = useMemo(() => (head !== null && head !== closedFor ? wordOf(head) : null), [head, closedFor]);
 
-  if (dictionaries === null) return <div className="page muted pad">{tr("加载中…")}</div>;
+  if (dictionaries === null && loadError !== null) return <LoadError message={loadError} onRetry={() => void reload()} />;
+  if (dictionaries === null) return <div className="page muted pad" role="status">{tr("加载中…")}</div>;
 
   // ── 一本都没有：给入口，不给空输入框 ──
   if (dictionaries.length === 0) {
@@ -121,10 +128,7 @@ export function DictionaryPage({ onError, onOpenSettings, wordLinks }: Props) {
     return (
       <div className="page dict-page empty">
         <div className="empty-state">
-          <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v16H6.5A1.5 1.5 0 0 1 5 18.5z" />
-            <path d="M9 4v16" />
-          </svg>
+          <Icon name="dict" size={46} />
           <h2>{tr("还没有词典")}</h2>
           <p>
             {tr("导入 Yomitan 格式的 zip 就能查词：Jitendex、大辞泉、明鏡、JPDB 词频、アクセント辞典都认。导进来之后，曲库里点歌词上的词也会出释义。")}

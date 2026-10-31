@@ -6,7 +6,7 @@
  * 系统开了「减少动态效果」时一口气摆好、不做动画。
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { nodeAt, Simulation, type Graph, type GraphNode } from "../graph";
@@ -399,18 +399,80 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
     return () => canvas.removeEventListener("wheel", onWheel);
   }, [compact, kick]);
 
+  // 键盘：方向键在人物之间走（借用悬停高亮），Enter 打开，空格选中，+/- 缩放，0 复位
+  const [spoken, setSpoken] = useState("");
+  const zoomBy = (factor: number) => {
+    const st = state.current;
+    const px = st.size.w / 2;
+    const py = st.size.h / 2;
+    const k = Math.min(5, Math.max(0.12, st.view.k * factor));
+    st.view = { k, x: px - ((px - st.view.x) / st.view.k) * k, y: py - ((py - st.view.y) / st.view.k) * k };
+    st.userMoved = true;
+    kick();
+  };
+  const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const st = state.current;
+    const count = graph.nodes.length;
+    if (count === 0) return;
+    const move = (step: number) => {
+      const from = st.hover < 0 ? (step > 0 ? -1 : 0) : st.hover;
+      st.hover = (from + step + count) % count;
+      const node = graph.nodes[st.hover]!;
+      setSpoken(node.name);
+      kick();
+    };
+    const current = st.hover >= 0 ? graph.nodes[st.hover] : undefined;
+    switch (e.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        move(1);
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        move(-1);
+        break;
+      case "Enter":
+        if (current) props.current.onOpen?.(current.id);
+        break;
+      case " ":
+        if (current) props.current.onSelect?.(current.id);
+        break;
+      case "+":
+      case "=":
+        if (!compact) zoomBy(1.25);
+        break;
+      case "-":
+        if (!compact) zoomBy(0.8);
+        break;
+      case "0":
+        st.userMoved = false;
+        fit();
+        kick();
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+  };
+
   return (
-    <canvas
-      ref={canvasRef}
-      className={`relation-graph ${className ?? ""}`}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onPointerLeave={onLeave}
-      onDoubleClick={onDoubleClick}
-      aria-label={tr("关系网：拖动节点、拖空白处平移、滚轮缩放，双击打开这个人")}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className={`relation-graph ${className ?? ""}`}
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onPointerLeave={onLeave}
+        onDoubleClick={onDoubleClick}
+        onKeyDown={onKeyDown}
+        onBlur={onLeave}
+        aria-label={tr("关系网：方向键切换人物，Enter 打开，空格选中，+ / - 缩放，0 复位；也可以拖动节点、拖空白处平移、滚轮缩放，双击打开这个人")}
+      />
+      <span className="sr-only" aria-live="polite">{spoken}</span>
+    </>
   );
 }
 

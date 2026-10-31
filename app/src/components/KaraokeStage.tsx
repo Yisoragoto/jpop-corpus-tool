@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 卡拉 OK 模式：背景是这首歌的封面，底下两行 KTV 式逐字歌词（上下交替，唱完一行换下下行），
  * 入句前倒数，前奏显示歌名和词曲。右上角「打轴」进打轴页，可以自己打、自己调。
@@ -9,7 +10,7 @@
  * - 以后的 MV / 视频背景替换的是 `.ktv-bg` 这一层，歌词层不变。
  */
 
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { api, ROLE_LABELS, type Credit, type LyricLine, type PlaybackState, type Track } from "../api";
@@ -18,6 +19,7 @@ import { tr } from "../i18n";
 import { ktvLayout, type KtvLayout } from "../karaoke";
 import { karaokeCssVars, useKaraokeStyle } from "../karaokeStyle";
 import { lyricFontStack, useLyricFontFiles } from "../fonts";
+import { useModalFocus } from "../modalFocus";
 import type { Segment } from "../lyricSegments";
 import { advanceClock, paintKaraoke, type ClockState } from "../useKaraoke";
 import type { CharTimeline, WordTiming } from "../wordTiming";
@@ -41,6 +43,9 @@ interface Props {
   onError: (message: string) => void;
   onClose: () => void;
 }
+
+/** 长句缩字号的下限：再小就看不清了，宁可折行 */
+const KTV_MIN_SCALE = 0.55;
 
 const EMPTY_LAYOUT: KtvLayout = { slots: [null, null], active: null, countdown: 0, intro: false };
 
@@ -119,6 +124,39 @@ export function KaraokeStage(props: Props) {
     // 暂停时拖进度条也要重画一帧
   }, [editing, playing, playback.rate, ktvLines, timelines, layout, playing ? 0 : playback.positionSec]);
 
+  // 长句放不下一行时按实际宽度缩字号，最小缩到 55%；再放不下才折行。
+  // 换行、改窗口大小时重量。只在低频时候做（不在每帧里），不影响逐字上色
+  const lyricsRef = useRef<HTMLDivElement>(null);
+  // 盖住整页的一层：焦点关在里面，播放条除外
+  const rootRef = useRef<HTMLDivElement>(null);
+  useModalFocus(rootRef, { allow: ["footer.player"] });
+  useLayoutEffect(() => {
+    const fit = () => {
+      for (const ref of slotRefs) {
+        const row = ref.current;
+        const text = row?.querySelector<HTMLElement>(".ktv-text");
+        if (!row || !text) continue;
+        row.style.fontSize = "";
+        row.classList.remove("ktv-row-wrap");
+        // .ktv-text 是行内元素，scrollWidth 恒为 0，要量包围盒
+        const room = row.clientWidth;
+        const need = text.getBoundingClientRect().width;
+        if (room <= 0 || need <= room) continue;
+        const scale = Math.max(KTV_MIN_SCALE, Math.floor((room / need) * 100) / 100);
+        row.style.fontSize = `${scale}em`;
+        if (text.getBoundingClientRect().width > row.clientWidth) row.classList.add("ktv-row-wrap");
+      }
+    };
+    fit();
+    const box = lyricsRef.current;
+    if (!box) return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(box);
+    return () => observer.disconnect();
+    // slotRefs 是固定的两个 ref
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout.slots[0], layout.slots[1], editing]);
+
   // 键盘：空格播放/暂停，Esc 退出（打轴页自己管键盘）
   useEffect(() => {
     if (editing) return;
@@ -176,7 +214,9 @@ export function KaraokeStage(props: Props) {
       className={`ktv ${editing ? "ktv-editing" : ""} ${layout.intro && !editing ? "ktv-intro-on" : ""} ${ktvStyle.staggered ? "" : "ktv-centered"}`}
       style={{ ...props.style, ...ktvVars, ["--player-h" as string]: `${playerHeight}px` }}
       role="dialog"
+      aria-modal="true"
       aria-label={tr("卡拉 OK")}
+      ref={rootRef}
     >
       <div className="ktv-bg" aria-hidden="true">
         {props.coverPath && !bgBroken && (
@@ -201,8 +241,8 @@ export function KaraokeStage(props: Props) {
             {tr("字幕样式")}
           </button>
         )}
-        <button className={`ktv-btn ${fullscreen ? "on" : ""}`} onClick={toggleFullscreen} title={tr("窗口全屏")} aria-label={tr("窗口全屏")}>⛶</button>
-        <button className="ktv-btn" onClick={onClose} title={tr("退出卡拉 OK（Esc）")} aria-label={tr("退出卡拉 OK")}>✕</button>
+        <button className={`ktv-btn ${fullscreen ? "on" : ""}`} onClick={toggleFullscreen} title={tr("窗口全屏")} aria-label={tr("窗口全屏")}><Icon name="fullscreen" /></button>
+        <button className="ktv-btn" onClick={onClose} title={tr("退出卡拉 OK（Esc）")} aria-label={tr("退出卡拉 OK")}><Icon name="close" /></button>
       </header>
 
       {editing ? (
@@ -242,7 +282,7 @@ export function KaraokeStage(props: Props) {
               <button className="ktv-btn on" onClick={() => setEditing(true)}>{tr("自己打轴")}</button>
             </div>
           )}
-          <div className="ktv-lyrics" lang="ja">
+          <div className="ktv-lyrics" lang="ja" ref={lyricsRef}>
             {layout.slots.map((index, slot) => (
               <div
                 key={slot}

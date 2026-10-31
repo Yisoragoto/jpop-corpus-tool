@@ -1,3 +1,5 @@
+import { useMenuFocus } from "../menuFocus";
+import { Icon } from "./Icon";
 /**
  * 资料库里的「人」：档案头（照片、角色、所属乐队、数字）和下面四页（概览、作品、成员与合作、时间轴）。
  * 档案占满中栏和右栏，合作者、小关系网都在「成员与合作」里。
@@ -263,6 +265,7 @@ export function PersonProfile({
   // 「⋯」菜单：换照片、恢复刮削的照片、资料来源
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  useMenuFocus(menuRef, menuOpen, () => setMenuOpen(false));
   useEffect(() => {
     if (!menuOpen) return;
     const close = (e: PointerEvent) => {
@@ -440,9 +443,7 @@ export function PersonProfile({
           <div className="hero-actions">
             {works !== null && works.length > 0 && (
               <button className="primary play-all" onClick={() => onPlayAll(sections[0]?.works ?? works)}>
-                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-                  <path d="M7 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 7 5.5Z" fill="currentColor" />
-                </svg>{tr("播放")}</button>
+                <Icon name="play" />{tr("播放")}</button>
             )}
             {canCloud && (
               <button className="btn" onClick={onOpenCloud} title={tr("这个人唱的歌里最常出现的词")}>{tr("词云")}</button>
@@ -456,11 +457,7 @@ export function PersonProfile({
                 aria-label={tr("更多")}
                 aria-expanded={menuOpen}
               >
-                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-                  <circle cx="6" cy="12" r="1.6" fill="currentColor" />
-                  <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-                  <circle cx="18" cy="12" r="1.6" fill="currentColor" />
-                </svg>
+                <Icon name="more" />
               </button>
               {menuOpen && (
                 <div className="menu-panel menu-left" role="menu">
@@ -496,10 +493,10 @@ export function PersonProfile({
                   <span className="muted small">{tr("{n} 首 · 最新在前 · 点一下就播放", { n: songs.length })}</span>
                   <span className="view-switch" role="group" aria-label={tr("显示方式")}>
                     <button className={singlesView === "rows" ? "on" : ""} aria-pressed={singlesView === "rows"} title={tr("横条")} aria-label={tr("横条")} onClick={() => setSinglesView("rows")}>
-                      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h12" /></svg>
+                      <Icon name="list" />
                     </button>
                     <button className={singlesView === "rows" ? "" : "on"} aria-pressed={singlesView !== "rows"} title={tr("大封面")} aria-label={tr("大封面")} onClick={() => setSinglesView("covers")}>
-                      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></svg>
+                      <Icon name="grid" />
                     </button>
                   </span>
                 </div>
@@ -517,7 +514,7 @@ export function PersonProfile({
                       >
                         <span className="song-cover">
                           <Cover path={t.coverPath} size={52} rounded={6} />
-                          <span className="song-play" aria-hidden="true">{now ? "♪" : "▶"}</span>
+                          <span className="song-play" aria-hidden="true"><Icon name={now ? "music" : "play"} /></span>
                         </span>
                         <span>
                           <b>{t.title}</b>
@@ -534,7 +531,7 @@ export function PersonProfile({
                       >
                         <span className="song-cover">
                           <Cover path={t.coverPath} size={160} rounded={8} />
-                          <span className="song-play" aria-hidden="true">{now ? "♪" : "▶"}</span>
+                          <span className="song-play" aria-hidden="true"><Icon name={now ? "music" : "play"} /></span>
                         </span>
                         <b>{t.title}</b>
                         <small>{meta}</small>
@@ -961,7 +958,7 @@ export function AlbumView({
           </div>
         </div>
         {tracks !== null && tracks.length > 0 && (
-          <button className="primary play-all" onClick={() => onPlayAll(tracks)}>{tr("▶ 播放")}</button>
+          <button className="primary play-all" onClick={() => onPlayAll(tracks)}><Icon name="play" />{tr("播放")}</button>
         )}
       </header>
       <section className="album-tracklist">

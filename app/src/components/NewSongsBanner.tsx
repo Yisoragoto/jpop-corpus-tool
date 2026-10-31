@@ -1,3 +1,4 @@
+import { Icon } from "./Icon";
 /**
  * 「语料库的文件夹里有新歌」那条横幅。启动时后端查到了才出现（见 `App.tsx`）。
  *
@@ -149,7 +150,7 @@ export function NewSongsBanner({ found, onImported, onReview, onIgnore, onDismis
         {lyrics === "running" && <span className="muted small">{tr("正在补歌词…")}</span>}
         {lyrics !== "running" && (
           <button className="new-songs-close" onClick={onDismiss} title={tr("关闭")} aria-label={tr("关闭")}>
-            ✕
+            <Icon name="close" />
           </button>
         )}
       </div>
@@ -181,7 +182,7 @@ export function NewSongsBanner({ found, onImported, onReview, onIgnore, onDismis
       )}
       <button className="link-btn" onClick={() => onIgnore(paths)} title={tr("这几个文件以后不再提示。可以在导入页恢复")}>{tr("不再提示")}</button>
       <button className="new-songs-close" onClick={onDismiss} title={tr("这次先不管，下次启动再提")} aria-label={tr("关闭")}>
-        ✕
+        <Icon name="close" />
       </button>
     </div>
   );

@@ -13,6 +13,8 @@ import { useSyncExternalStore } from "react";
 import { PITCH_CACHE_LIMIT_RANGE } from "./pitchCache";
 
 export interface AppSettings {
+  /** 外观：跟随系统 / 浅色 / 深色。窗口本身（亚克力、标题栏）也跟着切，见 `theme.ts` */
+  theme: "system" | "light" | "dark";
   /** 全屏歌词的背景：封面虚化铺满，而不是从封面取一个纯色 */
   stageCoverBlur: boolean;
   /** 虚化强度，px */
@@ -48,6 +50,7 @@ export const DAILY_GOAL_LIMITS = [5, 180] as const;
 export const WORD_CLOUD_COUNT_LIMITS = [30, 250] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  theme: "system",
   stageCoverBlur: true,
   stageBlurRadius: 64,
   spectrum: true,
@@ -78,6 +81,7 @@ export function parseSettings(raw: string | null): AppSettings {
     const parsed = JSON.parse(raw) as Partial<Record<keyof AppSettings, unknown>>;
     const d = DEFAULT_SETTINGS;
     return {
+      theme: parsed.theme === "light" || parsed.theme === "dark" ? parsed.theme : d.theme,
       stageCoverBlur: typeof parsed.stageCoverBlur === "boolean" ? parsed.stageCoverBlur : d.stageCoverBlur,
       stageBlurRadius: clamp(parsed.stageBlurRadius, STAGE_BLUR_LIMITS, d.stageBlurRadius),
       spectrum: typeof parsed.spectrum === "boolean" ? parsed.spectrum : d.spectrum,
@@ -122,6 +126,8 @@ function load(): AppSettings {
 
 let settings = load();
 const listeners = new Set<() => void>();
+
+export function getAppSettings(): AppSettings { return settings; }
 
 export function updateSettings(patch: Partial<AppSettings>) {
   settings = parseSettings(JSON.stringify({ ...settings, ...patch }));
