@@ -108,20 +108,24 @@ struct LyricsDisplayButton: View {
 /// 注册了新字体后要清掉：同名字族可能刚变成能用
 @MainActor func resetLyricFontCache() { lyricFontCache.removeAll() }
 
+/// familyWeight：选了具体字体家族时按 NSFontManager 的 0–15 档取粗细（5 常规、9 粗体）；歌词正文一直是 5
 @MainActor
-func lyricFont(_ display: LyricsDisplay, size: Double, weight: NSFont.Weight = .bold) -> Font {
-    let key = [display.fontFamily, display.fallbackFamily, "\(size)", "\(weight.rawValue)"].joined(separator: "|")
+func lyricFont(_ display: LyricsDisplay, size: Double, weight: NSFont.Weight = .bold, familyWeight: Int = 5) -> Font {
+    let key = [display.fontFamily, display.fallbackFamily, "\(size)", "\(weight.rawValue)", "\(familyWeight)"].joined(separator: "|")
     if let hit = lyricFontCache[key] { return hit }
     if lyricFontCache.count > 256 { lyricFontCache.removeAll() }
-    let font = makeLyricFont(display, size: size, weight: weight)
+    let font = makeLyricFont(display, size: size, weight: weight, familyWeight: familyWeight)
     lyricFontCache[key] = font
     return font
 }
 
 @MainActor
-private func makeLyricFont(_ display: LyricsDisplay, size: Double, weight: NSFont.Weight) -> Font {
+private func makeLyricFont(_ display: LyricsDisplay, size: Double, weight: NSFont.Weight, familyWeight: Int) -> Font {
     func chosen(_ family: String) -> NSFont? {
         guard !family.isEmpty else { return nil }
+        if familyWeight != 5, let weighted = NSFontManager.shared.font(withFamily: family, traits: [], weight: familyWeight, size: size) {
+            return weighted
+        }
         return NSFont(name: family, size: size) ?? NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size)
     }
     let base = chosen(display.fontFamily) ?? NSFont.systemFont(ofSize: size, weight: weight)

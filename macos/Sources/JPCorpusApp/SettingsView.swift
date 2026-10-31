@@ -36,7 +36,7 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .appearance: return "全屏歌词的背景、播放条、首页的收听目标"
-        case .lyrics: return "振假名、字体、字号和行距"
+        case .lyrics: return "振假名、字体、字号和行距，卡拉 OK 的字幕样式"
         case .wordcloud: return "资料库里词云的字体，以及哪些词不进词云"
         case .dict: return "导入、启用、排序 Yomitan 词典"
         case .mining: return "发到 Anki 的牌组、笔记类型和字段"
@@ -338,6 +338,7 @@ private struct LyricsPreferencesView: View {
             playbackSettings
             fontSettings
             layoutSettings
+            KaraokeStyleControls(families: families.map(\.family))
             if !problems.isEmpty {
                 ForEach(problems, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             }

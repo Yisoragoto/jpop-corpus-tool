@@ -19,6 +19,7 @@ struct LyricsStage: View {
     @State private var blurredCover: NSImage?
     @State private var coverPath: String?
     @State private var karaoke = false
+    @State private var stylingKaraoke = false
     @State private var credits: [Credit] = []
     @State private var colors = ArtworkColors()
     @State private var lookup: LookupRequest?
@@ -165,6 +166,14 @@ struct LyricsStage: View {
                     .help(karaoke ? "切换为滚动歌词" : "切换为卡拉 OK")
                     .accessibilityLabel(karaoke ? "滚动歌词" : "卡拉 OK")
                 LyricsToolsButton(songId: track.id, timing: true, iconOnly: true)
+                if karaoke {
+                    Button { stylingKaraoke.toggle() } label: { Image(systemName: "paintpalette") }
+                        .help("字体、颜色、描边、发光、阴影").accessibilityLabel("字幕样式")
+                        .popover(isPresented: $stylingKaraoke, arrowEdge: .bottom) {
+                            ScrollView { KaraokeStyleControls(families: InstalledFonts.families).padding(14) }
+                                .frame(width: 460, height: 560)
+                        }
+                }
             }
             FuriganaMenu()
             LyricsDisplayButton()
@@ -392,7 +401,9 @@ struct LyricsStage: View {
     /// 两行 KTV（上行靠左、下行靠右，唱完一行换下下行），入句前倒数，前奏显示歌名和词曲。
     /// 30 帧足够让扫亮看着连贯；每行的起止是换歌词时算好的（player.ktvLines），每帧只做一次查找
     private func karaokeLyrics(width: CGFloat) -> some View {
-        let size = min(60, max(28, width * 0.042))
+        // 窗口够宽时是样式里定的字号，窄了按比例缩（和 Windows 的 clamp(20px, 0.075×字号 vw, 字号) 一样）
+        let target = app.karaokeStyle.fontSize
+        let size = min(target, max(20, width * target * 0.00075))
         return TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !app.player.isPlaying)) { _ in
             let player = app.player
             let sec = player.timingPosition
@@ -437,12 +448,12 @@ struct LyricsStage: View {
 
     private func karaokeRow(slot: Int, layout: KtvLayout, sec: Double, size: CGFloat) -> some View {
         HStack(alignment: .lastTextBaseline, spacing: size * 0.3) {
-            if slot == 1 { Spacer(minLength: 0) }
+            if slot == 1 || !app.karaokeStyle.staggered { Spacer(minLength: 0) }
             if let index = layout.slots[slot], app.player.lines.indices.contains(index) {
                 if layout.active == index && layout.countdown > 0 {
                     Text(String(repeating: "●", count: layout.countdown))
                         .font(.system(size: size * 0.5))
-                        .foregroundStyle(KaraokeLyricText.sung)
+                        .foregroundStyle(Color(hex: app.karaokeStyle.sungFill))
                         .accessibilityLabel("倒数 \(layout.countdown)")
                 }
                 let line = app.player.lines[index]
@@ -450,7 +461,7 @@ struct LyricsStage: View {
                     .opacity(index == layout.active ? 1 : 0.82)
                     .id(line.utteranceId)
             }
-            if slot == 0 { Spacer(minLength: 0) }
+            if slot == 0 || !app.karaokeStyle.staggered { Spacer(minLength: 0) }
         }
         .frame(minHeight: size * 1.5 * (app.showFurigana ? 1.4 : 1), alignment: .bottom)
         .clipped()
