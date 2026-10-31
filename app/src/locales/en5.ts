@@ -704,4 +704,5 @@ export const en5: Record<string, string> = {
   "在线请求失败，可以重试": "Online request failed; you can retry",
   "在线候选对不准，等你挑": "Online candidates are uncertain; pick one yourself",
   "{sign}{sec} 秒": "{sign}{sec} s",
+  "回到当前歌词": "Back to current line",
 };

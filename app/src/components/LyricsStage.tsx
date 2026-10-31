@@ -3,7 +3,7 @@
  *
  * - 铺满整个窗口，**播放条盖在它上面**：播放条是半透明的，底下这张虚化封面会透上来，
  *   这样底部那一条和上面才是一体的（倍速、音调、进度都在播放条里，不再做一份）；
- * - 当前行放大加粗、停在屏幕中间偏上，换行时平滑滚过去；滚轮可以自己翻，下一次换行再回到当前行；
+ * - 当前行放大加粗、停在屏幕中间偏上，换行时平滑滚过去；自己滚了就先不跟，点「回到当前歌词」或点一行再跟；
  * - 点一行跳到那一句；点词在右边查词（和曲库页右栏同一套内容），可以制卡；
  * - 右上角同样有振假名开关和「显示」面板；Esc 退出（「显示」面板开着时先收起面板）。
  *
@@ -19,6 +19,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { formatDuration, ROLE_LABELS, type Credit, type LyricLine, type Track } from "../api";
 import { useCoverColor } from "../coverColor";
+import { useFollowScroll } from "../playbackClock";
 import type { LyricsDisplay } from "../lyricsDisplay";
 import { useAppSettings } from "../settings";
 import { Avatar } from "./Avatar";
@@ -64,6 +65,8 @@ export function LyricsStage(props: Props) {
   const { lines, currentLine, onClose } = props;
   const scroller = useRef<HTMLDivElement>(null);
   const firstScroll = useRef(true);
+  // 自己滚了（滚轮、拖滚动条、翻页键）就先不跟；换歌（lines 换了）自动恢复
+  const follow = useFollowScroll(scroller, lines);
   const playerHeight = usePlayerHeight();
   const coverColor = useCoverColor(props.coverPath);
   const settings = useAppSettings();
@@ -86,12 +89,12 @@ export function LyricsStage(props: Props) {
   // 当前行居中：刚打开时直接跳过去，之后平滑滚
   useLayoutEffect(() => {
     const box = scroller.current;
-    if (box === null) return;
+    if (box === null || (follow.paused && !firstScroll.current)) return;
     const line = currentLine >= 0 ? box.querySelector<HTMLElement>(`[data-idx="${currentLine}"]`) : null;
     const top = line === null ? 0 : line.offsetTop + line.offsetHeight / 2 - box.clientHeight * ANCHOR;
     box.scrollTo({ top, behavior: firstScroll.current ? "auto" : "smooth" });
     firstScroll.current = false;
-  }, [currentLine, lines, props.display.fontSize, props.withFurigana]);
+  }, [currentLine, lines, props.display.fontSize, props.withFurigana, follow.paused]);
 
   return (
     <div
@@ -129,13 +132,21 @@ export function LyricsStage(props: Props) {
       </header>
       <div className="stage-body" ref={side.container}>
         <div className="stage-lyrics" ref={scroller}>
+          {follow.paused && currentLine >= 0 && (
+            <div className="follow-resume">
+              <button className="btn" onClick={follow.resume}>{tr("回到当前歌词")}</button>
+            </div>
+          )}
           {lines.length === 0 && <p className="muted stage-empty">{tr("这首歌还没有歌词")}</p>}
           {lines.map((line, idx) => (
             <p
               key={line.utteranceId}
               data-idx={idx}
               className={`stage-line ${idx === currentLine ? "current" : ""} ${props.canSeek && line.timeSec !== null ? "seekable" : ""}`}
-              onClick={() => props.onSeekLine(idx)}
+              onClick={() => {
+                props.onSeekLine(idx);
+                if (props.canSeek && line.timeSec !== null) follow.resume();
+              }}
               title={props.canSeek && line.timeSec !== null ? tr("跳到这一句") : undefined}
             >
               {props.renderText(idx)}

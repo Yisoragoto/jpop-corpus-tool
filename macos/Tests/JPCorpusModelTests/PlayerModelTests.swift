@@ -43,6 +43,31 @@ private final class FakePlaybackEngine: PlaybackEngine {
 }
 
 final class PlayerModelTests: XCTestCase {
+    func testCurrentLineIsFoundByBinarySearchWithTheOldTieRule() {
+        // 第 2 行没有时间；第 3、4 行同一时刻（并列取靠后的）；第 5 行时间比前面早（乱序也按时间算）
+        let starts: [Double?] = [1, 3, nil, 5, 5, 2]
+        let sorted = PlayerModel.sortStarts(starts)
+        func line(_ t: Double) -> Int? { PlayerModel.currentSlot(sorted, at: t).map { sorted[$0].index } }
+        XCTAssertNil(line(0.5), "第一行之前没有当前行")
+        XCTAssertEqual(line(1), 0)
+        XCTAssertEqual(line(2.5), 5)
+        XCTAssertEqual(line(4.9), 1)
+        XCTAssertEqual(line(5), 4)
+        XCTAssertEqual(line(99), 4)
+        XCTAssertNil(line(.nan))
+        // 和原来的线性扫描逐点一致
+        for step in 0...130 {
+            let t = Double(step) / 20
+            var expected: Int?
+            var latest = -Double.infinity
+            for (i, start) in starts.enumerated() {
+                guard let s = start, s <= t, s >= latest else { continue }
+                latest = s; expected = i
+            }
+            XCTAssertEqual(line(t), expected, "t=\(t)")
+        }
+    }
+
     private let trackJSON = #"{"id":"001","title":"試験曲","artist":"歌手","album":"","year":"","genre":"","audioPath":"tone.flac","coverPath":"","durationSec":99,"lineCount":2}"#
 
     @MainActor

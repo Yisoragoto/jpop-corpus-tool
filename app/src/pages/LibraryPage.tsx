@@ -47,7 +47,8 @@ import { morph } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import { WORD_EXAMPLE_LIMIT, type LibraryActions, type LibraryState } from "../useLibrary";
 import type { WordJump } from "../wordCloud";
-import { useCurrentLine, useLineLoop } from "../usePlayback";
+import { timedLines, useLineLoop } from "../usePlayback";
+import { useFollowScroll, useSyncedLine } from "../playbackClock";
 import { useAppSettings } from "../settings";
 import { useKaraoke } from "../useKaraoke";
 import { charTimeline, lyricEndBound, validLyricTime, type WordTiming } from "../wordTiming";
@@ -390,7 +391,17 @@ export function LibraryPage({
   const syncedLyrics = useMemo(() => lyrics.map((line, index) => ({
     ...line, timeSec: validLyricTime(line.timeSec) ? line.timeSec : timelines[index]?.starts[0] ?? null,
   })), [lyrics, timelines]);
-  const currentLine = useCurrentLine(syncedLyrics, playback.positionSec, lyricsArePlaying);
+  // 当前行：播放器位置为准、两拍之间按倍速插值（playbackClock.ts），行变了才重渲染
+  const timedSynced = useMemo(() => timedLines(syncedLyrics), [syncedLyrics]);
+  const currentLine = useSyncedLine(
+    timedSynced,
+    playback.positionSec,
+    playback.playState === "playing",
+    playback.rate,
+    lyricsArePlaying,
+  );
+  // 自己滚了歌词就先不跟，等点「回到当前歌词」或换歌
+  const follow = useFollowScroll(lyricsRef, selected?.id);
   const karaoke = karaokeEnabled && lyricsArePlaying ? timelines[currentLine] ?? null : null;
   useKaraoke(
     karaoke,
@@ -442,10 +453,11 @@ export function LibraryPage({
   // 歌词跟随。只在播放时滚——用户手动翻歌词时被抢走滚动位置很烦人。
   // 也只在看的就是正在放的那一首时滚：否则换歌、或者一边放一边翻别的歌时，
   // 另一首的位置会把这一屏歌词拖走。
+  // 自己滚过（follow.paused）就不抢，直到点「回到当前歌词」。
   useEffect(() => {
-    if (!lyricsArePlaying || playback.playState !== "playing") return;
+    if (!lyricsArePlaying || playback.playState !== "playing" || follow.paused) return;
     currentLineRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [currentLine, playback.playState, lyricsArePlaying]);
+  }, [currentLine, playback.playState, lyricsArePlaying, follow.paused]);
 
   /** 一行歌词：词之间的原文 + 可点的词（里面带振假名）。普通视图和全屏共用 */
   const renderLineText = (idx: number): ReactNode => {
@@ -1034,6 +1046,16 @@ export function LibraryPage({
         style={lyricsStyle}
       >
         {backButton}
+        {follow.paused && lyricsArePlaying && currentLine >= 0 && (
+          <div className="follow-resume">
+            <button className="btn" onClick={() => {
+              follow.resume();
+              currentLineRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+            }}>
+              {tr("回到当前歌词")}
+            </button>
+          </div>
+        )}
         {panel === "repair" && (
           <AudioRepair
             missing={missing}
@@ -1229,7 +1251,11 @@ export function LibraryPage({
                   <button
                     className="time"
                     disabled={!audioReady || !validLyricTime(startSec)}
-                    onClick={() => validLyricTime(startSec) && void api.audioSeek(startSec)}
+                    onClick={() => {
+                      if (!validLyricTime(startSec)) return;
+                      follow.resume();
+                      void api.audioSeek(startSec);
+                    }}
                     title={!validLyricTime(startSec) ? tr("这行没有时间轴") : tr("跳到这一句")}
                   >
                     {!validLyricTime(startSec) ? "—" : formatDuration(startSec)}
