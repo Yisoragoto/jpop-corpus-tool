@@ -47,6 +47,18 @@ struct LyricsLineageDetails: View {
                     Text("\(run.engine) \(run.engineVersion) · \(run.dictDescription) · \(run.splitMode) · \(run.lineCount) 行")
                         .font(.caption).help("指纹 \(run.fingerprint) · 配置 \(run.configHash)")
                 }
+                if let files = data.audioFiles, !files.isEmpty {
+                    DisclosureGroup("音频文件") {
+                        ForEach(files) { file in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(audioStatus(file.status)) · \(file.summary.isEmpty ? "—" : file.summary)").font(.caption)
+                                Text(file.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                            }
+                        }
+                        Text("曲目的身份不跟文件走：文件挪了、换了音源，收藏、播放记录、歌词都还在。程序只读音频文件，从不往里写。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 if !data.provenance.isEmpty {
                     DisclosureGroup("字段来源") {
                         ForEach(data.provenance, id: \.field) { p in
@@ -72,6 +84,7 @@ struct LyricsLineageDetails: View {
                 .font(.caption).foregroundStyle(item.severity == "info" ? Color.secondary : .orange)
         }
     }
+    private func audioStatus(_ status: String) -> String { ["present": "在用", "missing": "找不到", "replaced": "已换掉"][status] ?? status }
     private func percent(_ number: Double?) -> String { number.map { String(format: "%.0f%%", $0 * 100) } ?? "—" }
     private func tokenLabel(_ status: String) -> String { ["pending": "未分词", "auto": "自动分词", "corrected": "已校正", "empty": "无实词"][status] ?? status }
     private func revisionLabel(_ kind: String) -> String {

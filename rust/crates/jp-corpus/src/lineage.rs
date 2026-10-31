@@ -182,12 +182,14 @@ pub fn record_version(
         },
     )?;
     apply_language(conn, song_id, &validation.language)?;
+    crate::lyric_sources::register_applied(conn, song_id, source, raw_text, lines)?;
     Ok(NewVersion { id, version_no, validation, replaced })
 }
 
 /// 歌词被清掉了（马上要换一份，或者就是不要了）：当前版不再是当前版。原文留着。
 pub fn retire_current(conn: &Connection, song_id: &str) -> Result<()> {
     conn.execute("UPDATE lyric_versions SET is_current=0 WHERE song_id=?1", params![song_id])?;
+    crate::lyric_sources::on_cleared(conn, song_id)?;
     Ok(())
 }
 
@@ -468,6 +470,8 @@ pub fn provenance(conn: &Connection, entity_type: &str, entity_id: &str) -> Resu
 pub fn forget_song(conn: &Connection, song_id: &str) -> Result<()> {
     crate::identity::forget(conn,"song",song_id)?;
     conn.execute("DELETE FROM lyric_versions WHERE song_id=?1", params![song_id])?;
+    crate::lyric_sources::forget(conn, song_id)?;
+    crate::audio_files::forget(conn, song_id)?;
     conn.execute("DELETE FROM field_provenance WHERE entity_type='song' AND entity_id=?1", params![song_id])?;
     Ok(())
 }
@@ -568,6 +572,8 @@ pub struct SongLineage {
     pub tokenizers: Vec<TokenizerRunRow>,
     pub provenance: Vec<FieldProvenance>,
     pub revisions: Vec<Revision>,
+    /// 音频文件记录（现在用的排最前；换掉的、找不到的也在）。和曲目元数据分开记
+    pub audio_files: Vec<crate::audio_files::AudioFileRow>,
 }
 
 pub fn song_lineage(conn: &Connection, song_id: &str) -> Result<SongLineage> {
@@ -610,6 +616,7 @@ pub fn song_lineage(conn: &Connection, song_id: &str) -> Result<SongLineage> {
         tokenizers,
         provenance: provenance(conn, "song", song_id)?,
         revisions: revisions(conn, song_id, 200)?,
+        audio_files: crate::audio_files::for_song(conn, song_id)?,
     })
 }
 

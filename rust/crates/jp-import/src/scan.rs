@@ -79,6 +79,22 @@ pub struct ScannedTrack {
     pub disc_number: Option<u32>,
     pub duration_sec: Option<f64>,
     pub size: Option<u64>,
+    /// 修改时间（Unix 秒）。和大小一起判断重扫时文件变没变
+    #[serde(default)]
+    pub mtime: Option<f64>,
+    // ── 文件本身（写进 audio_files，和曲目元数据分开）──
+    #[serde(default)]
+    pub sample_rate: Option<u32>,
+    #[serde(default)]
+    pub channels: Option<u8>,
+    #[serde(default)]
+    pub bit_depth: Option<u8>,
+    #[serde(default)]
+    pub bitrate_kbps: Option<u32>,
+    /// 库里已经有这个文件、大小和修改时间都没变：**没读标签**，只有路径、大小、修改时间。
+    /// 计划直接判「已在库中」，不拿它的空标签去比对
+    #[serde(default)]
+    pub unchanged: bool,
     /// 旁边找到的 .lrc 文件
     pub lyrics_path: Option<String>,
     /// 文件里内嵌的歌词。不送给界面（界面只要知道有没有歌词，见 [`Self::lyrics_pick`]）
@@ -159,16 +175,13 @@ impl ScannedTrack {
         }
     }
 
-    /// 歌词用哪一份：**内嵌的优先**，其次外挂 .lrc。
+    /// 歌词用哪一份：**音频旁边的同名文件优先**，其次内嵌歌词。
     ///
-    /// 内嵌的是文件自己带的，不会配错歌；外挂的 .lrc 只是名字对上了。
-    /// 唯一的例外：内嵌的没有时间轴、外挂的 .lrc 又存在时用 .lrc——
-    /// 没时间轴的歌词跟不上播放、也切不出 Anki 片段，丢掉时间轴比换个来源亏得多。
+    /// 两份都在时另一份不会丢：「歌词来源」里能看到、能换（`jp_lyrics::sources`）。
     pub fn lyrics_pick(&self) -> Option<LyricsPick<'_>> {
         match (&self.embedded_lyrics, &self.lyrics_path) {
-            (Some(e), None) => Some(LyricsPick::Embedded(&e.text)),
-            (Some(e), Some(_)) if e.synced => Some(LyricsPick::Embedded(&e.text)),
             (_, Some(path)) => Some(LyricsPick::File(path)),
+            (Some(e), None) => Some(LyricsPick::Embedded(&e.text)),
             (None, None) => None,
         }
     }
@@ -177,6 +190,73 @@ impl ScannedTrack {
     pub fn has_identity(&self) -> bool {
         !self.title().trim().is_empty()
     }
+
+    /// 文件本身的信息（`audio_files` 那一行）。
+    pub fn facts(&self) -> jp_corpus::audio_files::FileFacts {
+        jp_corpus::audio_files::FileFacts {
+            path: self.path.clone(),
+            size: self.size,
+            mtime: self.mtime,
+            duration_sec: self.duration_sec,
+            format: jp_corpus::audio_files::format_of(&self.path),
+            sample_rate: self.sample_rate,
+            channels: self.channels,
+            bit_depth: self.bit_depth,
+            bitrate_kbps: self.bitrate_kbps,
+        }
+    }
+}
+
+/// 大小和修改时间（读不出来就是 None）。
+pub fn file_stamp(path: &Path) -> (Option<u64>, Option<f64>) {
+    let Ok(meta) = std::fs::metadata(path) else { return (None, None) };
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs_f64());
+    (Some(meta.len()), mtime)
+}
+
+/// 「这个路径、这个大小和修改时间，库里已经记过且没变吗」
+pub type KnownStamp<'a> = dyn Fn(&str, Option<u64>, Option<f64>) -> bool + 'a;
+
+/// 同 [`scan_file`]，但 `known(路径, 大小, 修改时间)` 说「库里有、没变」的文件不读标签，
+/// 只回一条 `unchanged` 的记录。重扫整个曲库时绝大多数文件走这条路。
+pub fn scan_file_known(path: &Path, known: &KnownStamp) -> ScannedTrack {
+    let (size, mtime) = file_stamp(path);
+    let stored = platform_path(path);
+    if known(&stored, size, mtime) {
+        return ScannedTrack {
+            file_name: path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string(),
+            path: stored,
+            size,
+            mtime,
+            unchanged: true,
+            ..Default::default()
+        };
+    }
+    scan_file(path)
+}
+
+/// 只读一个文件的技术信息（大小、修改时间、时长、采样率……），不读标签和歌词。
+/// 重新链接音频时用。
+pub fn file_facts(path: &Path) -> jp_corpus::audio_files::FileFacts {
+    let (size, mtime) = file_stamp(path);
+    let mut track = ScannedTrack { path: platform_path(path), size, mtime, ..Default::default() };
+    let options = ParseOptions::new().read_cover_art(false).read_tags(false);
+    if let Ok(tagged) = Probe::open(path).and_then(|p| p.options(options).read()) {
+        read_properties(&mut track, tagged.properties());
+    }
+    track.facts()
+}
+
+fn read_properties(track: &mut ScannedTrack, props: &lofty::properties::FileProperties) {
+    track.duration_sec = Some(props.duration().as_secs_f64()).filter(|d| *d > 0.0);
+    track.sample_rate = props.sample_rate().filter(|r| *r > 0);
+    track.channels = props.channels().filter(|c| *c > 0);
+    track.bit_depth = props.bit_depth().filter(|b| *b > 0);
+    track.bitrate_kbps = props.audio_bitrate().or(props.overall_bitrate()).filter(|b| *b > 0);
 }
 
 /// 读一个文件。**任何读取失败都归到 `warning`，不抛出去**——
@@ -189,7 +269,8 @@ pub fn scan_file(path: &Path) -> ScannedTrack {
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string(),
-        size: std::fs::metadata(path).ok().map(|m| m.len()),
+        size: file_stamp(path).0,
+        mtime: file_stamp(path).1,
         lyrics_path: find_lyrics(path).map(|p| platform_path(&p)),
         unsupported: unsupported_reason(path).map(str::to_owned),
         ..Default::default()
@@ -199,8 +280,7 @@ pub fn scan_file(path: &Path) -> ScannedTrack {
     let options = ParseOptions::new().read_cover_art(false);
     match Probe::open(path).and_then(|p| p.options(options).read()) {
         Ok(tagged) => {
-            track.duration_sec = Some(tagged.properties().duration().as_secs_f64())
-                .filter(|d| *d > 0.0);
+            read_properties(&mut track, tagged.properties());
             if let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) {
                 track.tag_title = tag.title().unwrap_or_default().to_string();
                 track.tag_artist = tag.artist().unwrap_or_default().to_string();
@@ -289,8 +369,13 @@ fn find_lyrics(audio: &Path) -> Option<PathBuf> {
 ///
 /// `max_depth` 防止在符号链接成环时无限下去。
 pub fn scan_dir(root: &Path, max_depth: usize) -> Vec<ScannedTrack> {
+    scan_dir_known(root, max_depth, &|_, _, _| false)
+}
+
+/// 同 [`scan_dir`]，库里有、没变的文件不读标签（见 [`scan_file_known`]）。
+pub fn scan_dir_known(root: &Path, max_depth: usize, known: &KnownStamp) -> Vec<ScannedTrack> {
     let mut out: Vec<ScannedTrack> =
-        list_audio(root, max_depth).iter().map(|path| scan_file(path)).collect();
+        list_audio(root, max_depth).iter().map(|path| scan_file_known(path, known)).collect();
     // 按存进库的那个路径串排，和拆出 `list_audio` 之前一样：计划按这个顺序分配 id
     out.sort_by(|a, b| a.path.cmp(&b.path));
     out

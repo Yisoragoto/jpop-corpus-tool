@@ -124,6 +124,10 @@ public final class PlayerModel {
     /// 每行验证过的逐字单位和起点，歌词、时间轴、行区间变了才重算（渲染时会被反复问到）
     @ObservationIgnored private var unitCache: [Int64: (text: String, units: [LyricTimingUnit]?)] = [:]
     @ObservationIgnored private var lineStarts: [Double?] = []
+    /// 有起点的行按（起点, 下标）排好，二分找当前行用
+    @ObservationIgnored private var sortedStarts: [(start: Double, index: Int)] = []
+    /// 下一行快到时补的那一次刷新（时钟 50ms 一拍，换行不必等下一拍）
+    @ObservationIgnored private var boundaryTask: Task<Void, Never>?
     /// 卡拉 OK 版式要的每行起止（和 `lines` 一一对应）。换歌词时算一次，全屏卡拉 OK 每帧只做查找
     public private(set) var ktvLines: [KtvLine] = []
 
@@ -141,23 +145,56 @@ public final class PlayerModel {
         }
         unitCache = cache
         lineStarts = starts
+        sortedStarts = PlayerModel.sortStarts(starts)
         if ktv != ktvLines { ktvLines = ktv }
         refreshCurrentLine()
     }
 
-    private func refreshCurrentLine() {
-        var index: Int?
-        if track != nil {
-            var latest = -Double.infinity
-            for (i, start) in lineStarts.enumerated() {
-                guard let t = start, t <= position, t >= latest else { continue }
-                latest = t
-                index = i
-            }
+    /// 有起点的行按（起点, 下标）升序排；起点相同的保持原顺序
+    nonisolated static func sortStarts(_ starts: [Double?]) -> [(start: Double, index: Int)] {
+        starts.enumerated()
+            .compactMap { index, start in start.map { (start: $0, index: index) } }
+            .sorted { $0.start != $1.start ? $0.start < $1.start : $0.index < $1.index }
+    }
+
+    /// 当前行：起点不晚于 `position` 的行里起点最大的（并列取靠后的）。二分，O(log 行数)。
+    /// 返回在 `sorted` 里的位置，nil = 还没到第一行
+    nonisolated static func currentSlot(_ sorted: [(start: Double, index: Int)], at position: Double) -> Int? {
+        guard position.isFinite else { return nil }
+        var lo = 0, hi = sorted.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if sorted[mid].start <= position { lo = mid + 1 } else { hi = mid }
         }
+        return lo == 0 ? nil : lo - 1
+    }
+
+    private func refreshCurrentLine() {
+        let slot = track == nil ? nil : PlayerModel.currentSlot(sortedStarts, at: position)
+        let index = slot.map { sortedStarts[$0].index }
         let id = index.flatMap { $0 < lines.count ? lines[$0].utteranceId : nil }
         if currentIndex != index { currentIndex = index }
         if currentUtterance != id { currentUtterance = id }
+        scheduleBoundary(after: slot)
+    }
+
+    /// 下一行在下一拍之前就开始的话，到点再按引擎时钟刷一次——换行准到毫秒级，而不是晚最多一拍。
+    /// 暂停、倍速、跳转都会再走一遍 refreshCurrentLine，把这次安排换掉
+    private func scheduleBoundary(after slot: Int?) {
+        boundaryTask?.cancel()
+        boundaryTask = nil
+        guard isPlaying, rate > 0 else { return }
+        let next = slot.map { $0 + 1 } ?? 0
+        guard next < sortedStarts.count else { return }
+        let wait = (sortedStarts[next].start - position) / Double(rate)
+        guard wait > 0, wait < 0.06 else { return }
+        boundaryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard let self, !Task.isCancelled, self.isPlaying else { return }
+            let now = self.timingPosition
+            // 只往前补：引擎时钟还没到就等下一拍，不让当前行往回闪
+            if now > self.position { self.setPosition(now) }
+        }
     }
 
     private func validatedUnits(for line: LyricLine) -> [LyricTimingUnit]? {

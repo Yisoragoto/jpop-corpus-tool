@@ -449,3 +449,99 @@ CREATE TABLE IF NOT EXISTS word_timings (
     source       TEXT    NOT NULL,
     PRIMARY KEY (utterance_id, char_start, source)
 );
+
+-- ── 歌词来源与选择（20261031）──────────────────────────────────
+-- 设计说明见 jp-corpus/src/lyric_sources.rs。
+-- 一首歌的每个来源各存一行：原文、格式、更新时间、是不是用户改过的。
+-- 自动扫描和在线更新只会改自动来源那一行，用户导入 / 编辑的是单独的 kind='user' 行。
+-- kind：user（你导入、编辑、恢复的）/ sibling（音频旁边的同名文件）/ embedded（音频内嵌）/
+--       online（在线来源）/ legacy（老库里已有、来处不明）
+-- role：original（原文）/ translation（译文，language 是 zh-Hans 之类）
+CREATE TABLE IF NOT EXISTS lyric_sources (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    song_id       TEXT    NOT NULL,
+    kind          TEXT    NOT NULL,
+    -- 在线来源是 provider 名，本地来源是文件名
+    provider      TEXT    NOT NULL DEFAULT '',
+    -- 路径，或在线条目「曲名 — 歌手」
+    source_ref    TEXT    NOT NULL DEFAULT '',
+    role          TEXT    NOT NULL DEFAULT 'original',
+    language      TEXT    NOT NULL DEFAULT '',
+    -- 挂上歌词时 lyric_versions.source_type 用的那个值，重新挑这个来源时照原样记版本
+    source_type   TEXT    NOT NULL DEFAULT '',
+    -- lrc / enhanced_lrc / srt / text / yrc / qrc / krc / ttml
+    raw_format    TEXT    NOT NULL DEFAULT '',
+    -- 原文。老库补登记、当时没留原文的是 NULL
+    raw_text      TEXT,
+    content_hash  TEXT    NOT NULL DEFAULT '',
+    line_count    INTEGER NOT NULL DEFAULT 0,
+    timed_line_count INTEGER NOT NULL DEFAULT 0,
+    -- none / line / word
+    precision     TEXT    NOT NULL DEFAULT 'none',
+    user_modified INTEGER NOT NULL DEFAULT 0,
+    -- 本地文件不见了
+    missing       INTEGER NOT NULL DEFAULT 0,
+    -- 这个来源记住的整体偏移（毫秒）。重新挑它时照这个偏移落库
+    offset_ms     INTEGER NOT NULL DEFAULT 0,
+    updated_at    TEXT    NOT NULL DEFAULT '',
+    UNIQUE (song_id, kind, provider, role, language)
+);
+CREATE INDEX IF NOT EXISTS idx_lyric_sources_song ON lyric_sources(song_id);
+
+-- 每首歌现在用哪个来源。chosen_by：user（你选的，自动流程不换）/ auto / legacy（升级前就在库里的，自动流程不换）
+-- offset_ms 是已经加进 utterances.time_sec 的偏移
+CREATE TABLE IF NOT EXISTS lyric_selection (
+    song_id               TEXT PRIMARY KEY,
+    source_id             INTEGER,
+    translation_source_id INTEGER,
+    -- 1 = 你明确选了「不要译文」
+    translation_off       INTEGER NOT NULL DEFAULT 0,
+    chosen_by             TEXT    NOT NULL DEFAULT 'auto',
+    offset_ms             INTEGER NOT NULL DEFAULT 0,
+    updated_at            TEXT    NOT NULL DEFAULT ''
+);
+
+-- 在线查歌词的结果。not_found 有 retry_after（负缓存），failed 没有（网络问题，随时可以重试），
+-- ambiguous 是候选不止一个、挑不准，等你自己选
+CREATE TABLE IF NOT EXISTS lyric_lookups (
+    song_id     TEXT NOT NULL,
+    provider    TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    message     TEXT NOT NULL DEFAULT '',
+    checked_at  TEXT NOT NULL DEFAULT '',
+    retry_after TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (song_id, provider)
+);
+
+-- 来源解析出的时间轴缓存。parser_version 和 content_hash 都对得上才用，否则重新解析
+CREATE TABLE IF NOT EXISTS lyric_timeline_cache (
+    source_id      INTEGER PRIMARY KEY,
+    parser_version INTEGER NOT NULL,
+    content_hash   TEXT    NOT NULL,
+    timeline_json  TEXT    NOT NULL,
+    built_at       TEXT    NOT NULL DEFAULT ''
+);
+
+-- 音频文件记录：曲目（songs）和它的文件分开记（jp_corpus::audio_files）。
+-- songs.audio_path 仍是现在用的那个文件；这里同路径那一行 status='present'，
+-- 换掉的旧路径 'replaced'，找不到的 'missing'。track_start_ms 给将来的 CUE 整轨留着，现在恒为 0。
+CREATE TABLE IF NOT EXISTS audio_files (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    song_id        TEXT    NOT NULL,
+    path           TEXT    NOT NULL,
+    size           INTEGER,
+    mtime          REAL,
+    duration_sec   REAL,
+    format         TEXT    NOT NULL DEFAULT '',
+    sample_rate    INTEGER,
+    channels       INTEGER,
+    bit_depth      INTEGER,
+    bitrate_kbps   INTEGER,
+    fingerprint    TEXT,
+    track_start_ms INTEGER NOT NULL DEFAULT 0,
+    status         TEXT    NOT NULL DEFAULT 'present',
+    first_seen     TEXT    NOT NULL DEFAULT '',
+    checked_at     TEXT    NOT NULL DEFAULT '',
+    UNIQUE (song_id, path)
+);
+CREATE INDEX IF NOT EXISTS idx_audio_files_song ON audio_files(song_id);

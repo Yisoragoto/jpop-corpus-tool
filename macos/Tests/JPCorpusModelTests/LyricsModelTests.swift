@@ -41,6 +41,29 @@ final class LyricsModelTests: XCTestCase {
         let calls = await fake.calls
         XCTAssertTrue(calls.contains(.init(name: "audioPeaks", arguments: ["001", "100"])))
     }
+    @MainActor
+    func testLyricSourcesOffsetIsClampedAndChoiceReloadsLyrics() async throws {
+        let fake = await fixture()
+        let view = #"{"songId":"001","sources":[{"id":7,"songId":"001","kind":"sibling","provider":"001.lrc","sourceRef":"/m/001.lrc","role":"original","language":"","sourceType":"sibling","rawFormat":"lrc","hasRaw":true,"contentHash":"a","lineCount":2,"timedLineCount":2,"precision":"line","userModified":false,"missing":false,"offsetMs":0,"updatedAt":"2026-10-31T00:00:00Z"},{"id":8,"songId":"001","kind":"embedded","provider":"tag","sourceRef":"","role":"original","language":"","sourceType":"embedded","rawFormat":"text","hasRaw":true,"contentHash":"b","lineCount":2,"timedLineCount":0,"precision":"none","userModified":false,"missing":false,"offsetMs":0,"updatedAt":"2026-10-31T00:00:00Z"}],"selection":{"sourceId":8,"translationSourceId":null,"translationOff":false,"chosenBy":"legacy","offsetMs":0,"updatedAt":""},"recommended":7,"translationSourceId":null,"lookups":[]}"#
+        await fake.respondToLyrics("lyricSourceView", json: view)
+        await fake.respondToLyrics("lyricSourceApply", json: attached)
+        let model = LyricsModel(songId: "001")
+        await model.load(fake); await model.loadSources(fake)
+        XCTAssertEqual(model.currentSource?.id, 8)
+        XCTAssertTrue(model.sourceUntimed, "纯文本来源没有时间轴，偏移不可用")
+        XCTAssertEqual(model.recommendedSource?.id, 7)
+        let before = model.revision
+        await model.useSource(7, client: fake)
+        XCTAssertEqual(model.revision, before + 1, "换来源后歌词要重载")
+        await model.setOffset(99_999, client: fake)
+        let calls = await fake.calls
+        XCTAssertTrue(calls.contains(.init(name: "lyricSourceApply", arguments: ["001", "7"])))
+        XCTAssertTrue(calls.contains(.init(name: "lyricOffsetSet", arguments: ["001", "30000"])), "偏移超出上限要截到 ±30 秒")
+        XCTAssertEqual(LyricsModel.formatOffset(-250), "-0.25 秒")
+        XCTAssertEqual(LyricsModel.formatOffset(500), "+0.5 秒")
+        XCTAssertEqual(SongLyricTimeline.trackMs(1_000, offsetMs: 250), 1_250)
+        XCTAssertEqual(SongLyricTimeline.lyricMs(1_250, offsetMs: 250), 1_000)
+    }
     private let attached = #"{"songId":"001","source":"edited","matched":"","lyricLines":1,"tokens":0,"credits":0,"correctionsRestored":0,"lrcPath":"/tmp/001.lrc"}"#
     private let idle = #"{"running":false,"finished":false,"cancelled":false,"done":0,"total":0,"stage":"","result":null,"error":null}"#
     private let running = #"{"running":true,"finished":false,"cancelled":false,"done":0,"total":2,"stage":"試験曲","result":null,"error":null}"#

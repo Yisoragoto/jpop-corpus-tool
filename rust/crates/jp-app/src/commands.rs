@@ -1558,9 +1558,9 @@ fn plan_targets(
     paths: &[String],
     max_depth: Option<usize>,
 ) -> anyhow::Result<ScanResult> {
-    let (tracks, ignored) = jp_import::scan_targets(paths, max_depth.unwrap_or(8));
-
+    // 先读现有曲库：库里有、大小和修改时间都没变的文件不再读标签
     let index = jp_import::LibraryIndex::from_corpus(&state.corpus())?;
+    let (tracks, ignored) = jp_import::scan_targets_known(paths, max_depth.unwrap_or(8), Some(&index));
     let result = review(state, &tracks, &index, ignored);
 
     // 记下扫描结果，等确认。存扫描结果而不是计划：导入时会重新算，
@@ -2747,4 +2747,76 @@ pub fn dict_styles(state: State<'_, AppState>) -> CmdResult<Vec<DictionaryStyles
             Ok(out)
         })?
         .unwrap_or_default())
+}
+
+// ── 歌词来源与偏移 ───────────────────────────────────────────────
+
+/// 一首歌的全部歌词来源、当前选择、在线查询记录。先找一遍音频旁边的文件和内嵌歌词
+#[tauri::command(async)]
+pub fn lyric_source_view(state: State<'_, AppState>, song_id: String) -> CmdResult<jp_lyrics::sources::SourcesView> {
+    Ok(jp_lyrics::sources::refresh_and_view(state.corpus().connection(), &song_id, None)?)
+}
+
+/// 一个来源的原文（预览用）
+#[tauri::command(async)]
+pub fn lyric_source_raw(state: State<'_, AppState>, source_id: i64) -> CmdResult<Option<String>> {
+    Ok(jp_corpus::lyric_sources::raw_text(state.corpus().connection(), source_id)?)
+}
+
+/// 一个来源解析出的时间轴（预览、看译文能不能对上）
+#[tauri::command(async)]
+pub fn lyric_source_timeline(state: State<'_, AppState>, source_id: i64) -> CmdResult<jp_corpus::lyric_timeline::LyricTimeline> {
+    Ok(jp_lyrics::sources::source_timeline(state.corpus().connection(), source_id)?)
+}
+
+/// 这首歌当前的统一时间轴（行的起止、精度、偏移、译文）
+#[tauri::command(async)]
+pub fn lyric_song_timeline(state: State<'_, AppState>, song_id: String) -> CmdResult<jp_corpus::lyric_timeline::LyricTimeline> {
+    Ok(jp_lyrics::sources::song_timeline(state.corpus().connection(), &song_id)?)
+}
+
+/// 用某个来源当这首歌的歌词。记成你的选择，自动流程之后不再换它
+#[tauri::command]
+pub async fn lyric_source_apply<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+    source_id: i64,
+) -> CmdResult<crate::lyrics::Attached> {
+    blocking(app, move |state| {
+        let lyrics_dir = state.lyrics_dir.clone();
+        let mut corpus = state.corpus();
+        jp_lyrics::sources::apply_source(corpus.connection_mut(), &lyrics_dir, &song_id, source_id, true, state.analyzer().as_deref())
+    })
+    .await
+}
+
+/// 交还给自动选择：按优先级挑最好的那份（选择不再算你定的）
+#[tauri::command]
+pub async fn lyric_source_auto<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_id: String,
+) -> CmdResult<Option<crate::lyrics::Attached>> {
+    blocking(app, move |state| {
+        let lyrics_dir = state.lyrics_dir.clone();
+        let mut corpus = state.corpus();
+        let conn = corpus.connection_mut();
+        if jp_corpus::lyric_sources::selection(conn, &song_id)?.is_some() {
+            jp_corpus::lyric_sources::set_chosen_by(conn, &song_id, "auto")?;
+        }
+        jp_lyrics::sources::reconcile(conn, &lyrics_dir, &song_id, None, state.analyzer().as_deref())
+    })
+    .await
+}
+
+/// 选译文；null = 不要译文
+#[tauri::command(async)]
+pub fn lyric_translation_select(state: State<'_, AppState>, song_id: String, source_id: Option<i64>) -> CmdResult<()> {
+    Ok(jp_corpus::lyric_sources::select_translation(state.corpus().connection(), &song_id, source_id)?)
+}
+
+/// 整体偏移（毫秒，正值 = 歌词晚一点出现）。返回改了几行
+#[tauri::command(async)]
+pub fn lyric_offset_set(state: State<'_, AppState>, song_id: String, offset_ms: i64) -> CmdResult<usize> {
+    let mut corpus = state.corpus();
+    Ok(jp_lyrics::sources::set_offset(corpus.connection_mut(), &song_id, offset_ms)?)
 }

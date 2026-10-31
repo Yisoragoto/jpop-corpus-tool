@@ -27,6 +27,8 @@ pub mod metadata_csv;
 pub mod plan;
 pub mod review;
 pub mod scan;
+pub mod srt;
+pub mod version;
 pub mod watch;
 
 pub use lrc::{ParsedLrc, parse_file as parse_lrc_file};
@@ -34,8 +36,11 @@ pub use import::{
     ImportReport, ImportedTrack, LyricSource, Outcome, Stats, add_credit, attach_lines, attach_lyrics, attach_lyrics_text, execute,
     execute_cancellable, execute_with_progress, get_or_create_person,
 };
-pub use review::{PlanItemView, ScanResult, review, scan_targets};
-pub use plan::{Action, ImportPlan, LibraryIndex, PlanSummary, PlannedTrack, plan};
+pub use review::{PlanItemView, ScanResult, review, scan_targets, scan_targets_known};
+pub use plan::{Action, ImportPlan, LibraryIndex, PlanSummary, PlannedTrack, VersionOf, plan};
 pub use embedded::{EmbeddedCover, EmbeddedLyrics};
-pub use scan::{ArtistSource, LyricsPick, ScannedTrack, is_audio_file, list_audio, scan_dir, scan_file, scan_file_path};
+pub use scan::{
+    ArtistSource, LyricsPick, ScannedTrack, file_facts, file_stamp, is_audio_file, list_audio, scan_dir, scan_dir_known, scan_file,
+    scan_file_known, scan_file_path,
+};
 pub use watch::{UnknownAudio, WatchReason, WatchedFolder, unknown_audio, watched_folders};

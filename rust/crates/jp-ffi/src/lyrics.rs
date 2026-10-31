@@ -60,6 +60,50 @@ pub(super) fn dispatch(session: &Session, method: &str, args: &Value) -> Result<
             session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).forget(&id);
             serde_json::to_value(attached)?
         }
+        // 歌词来源与偏移（同名的 Tauri command：lyric_source_* / lyric_offset_set）
+        "lyricSourceView" | "lyricSourceAuto" => {
+            let id: String = arg(args, "songId")?;
+            let audio = resolved_audio(session, &id)?;
+            let mut corpus = session.network_connection()?;
+            let conn = corpus.connection_mut();
+            if method == "lyricSourceView" {
+                serde_json::to_value(jp_lyrics::sources::refresh_and_view(conn, &id, audio.as_deref())?)?
+            } else {
+                if jp_corpus::lyric_sources::selection(conn, &id)?.is_some() {
+                    jp_corpus::lyric_sources::set_chosen_by(conn, &id, "auto")?;
+                }
+                let attached = jp_lyrics::sources::reconcile(conn, &dir, &id, audio.as_deref(), session.analyzer().as_deref())?;
+                serde_json::to_value(attached)?
+            }
+        }
+        "lyricSourceRaw" => {
+            let corpus = session.network_connection()?;
+            serde_json::to_value(jp_corpus::lyric_sources::raw_text(corpus.connection(), arg(args, "sourceId")?)?)?
+        }
+        "lyricSourceTimeline" => {
+            let corpus = session.network_connection()?;
+            serde_json::to_value(jp_lyrics::sources::source_timeline(corpus.connection(), arg(args, "sourceId")?)?)?
+        }
+        "lyricSongTimeline" => {
+            let corpus = session.network_connection()?;
+            serde_json::to_value(jp_lyrics::sources::song_timeline(corpus.connection(), &arg::<String>(args, "songId")?)?)?
+        }
+        "lyricSourceApply" => {
+            let id: String = arg(args, "songId")?;
+            let mut corpus = session.network_connection()?;
+            let attached = jp_lyrics::sources::apply_source(corpus.connection_mut(), &dir, &id, arg(args, "sourceId")?, true, session.analyzer().as_deref())?;
+            session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).forget(&id);
+            serde_json::to_value(attached)?
+        }
+        "lyricTranslationSelect" => {
+            let corpus = session.network_connection()?;
+            jp_corpus::lyric_sources::select_translation(corpus.connection(), &arg::<String>(args, "songId")?, arg_or(args, "sourceId", None)?)?;
+            Value::Null
+        }
+        "lyricOffsetSet" => {
+            let mut corpus = session.network_connection()?;
+            json!(jp_lyrics::sources::set_offset(corpus.connection_mut(), &arg::<String>(args, "songId")?, arg(args, "offsetMs")?)?)
+        }
         "lyricsRevalidate" => {
             let mut corpus = session.network_connection()?;
             json!(jp_lyrics::management::revalidate(corpus.connection_mut(), arg_or(args, "songId", None)?)?)
@@ -123,4 +167,14 @@ pub(super) fn dispatch(session: &Session, method: &str, args: &Value) -> Result<
         _ => return Ok(None),
     };
     Ok(Some(v))
+}
+
+/// 这首歌的音频在这台机器上的真实路径（库里可能记的是相对路径，或者是别的机器上的路径）。
+fn resolved_audio(session: &Session, song_id: &str) -> Result<Option<PathBuf>> {
+    let Some(track) = session.network_connection()?.track(song_id)? else { return Ok(None) };
+    if track.audio_path.trim().is_empty() {
+        return Ok(None);
+    }
+    let roots = session.audio_roots.lock().map_err(|_| anyhow!("锁坏了"))?.clone();
+    Ok(jp_corpus::media::resolve(&track.audio_path, session.root.as_deref(), &roots))
 }

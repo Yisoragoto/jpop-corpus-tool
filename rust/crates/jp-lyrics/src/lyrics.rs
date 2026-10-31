@@ -214,6 +214,38 @@ fn apply_lrc_inner(
     restored_from: Option<i64>,
     original: Option<(&str,&str)>,
 ) -> Result<Attached> {
+    apply_with_lineage(conn, lyrics_dir, song, lrc_text, source, matched, None, analyzer, saved, restored_from, original)
+}
+
+fn stats_has_words(conn: &Connection, song_id: &str) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM word_timings w JOIN utterances u ON u.id=w.utterance_id WHERE u.song_id=?1)",
+        [song_id],
+        |r| r.get(0),
+    )?)
+}
+
+fn stats_timed(conn: &Connection, song_id: &str) -> Result<bool> {
+    Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM utterances WHERE song_id=?1 AND time_sec IS NOT NULL)", [song_id], |r| r.get(0))?)
+}
+
+/// 和 [`apply_lrc_inner`] 一样，只是版本记录的来处可以照给定的写（重新挑一个已登记的来源时，
+/// 照它原来的 source_type / 名字记，才会落回同一行来源）。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn apply_with_lineage(
+    conn: &mut Connection,
+    lyrics_dir: &Path,
+    song: SongRef<'_>,
+    lrc_text: &str,
+    source: LyricsSource,
+    matched: &str,
+    lineage: Option<jp_import::LyricSource>,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+    saved: Option<&[crate::timed_lyrics::SavedLine]>,
+    restored_from: Option<i64>,
+    original: Option<(&str,&str)>,
+) -> Result<Attached> {
+    let lineage = lineage.unwrap_or_else(|| source.lineage(matched));
     let SongRef { id: song_id, artist, title } = song;
     if lrc_text.trim().is_empty() {
         bail!("歌词是空的");
@@ -225,11 +257,11 @@ fn apply_lrc_inner(
     crate::timed_lyrics::archive_before(&tx, &crate::timed_lyrics::snapshot(&tx, song_id)?)?;
     jp_import::maintain::clear_lyrics(&tx, song_id)?;
     let stats = if let Some(lines) = saved {
-        let stats = jp_import::attach_lines(&tx, song_id, lrc_text, crate::timed_lyrics::saved_lines(lines), &source.lineage(matched), analyzer, artist, title)?;
+        let stats = jp_import::attach_lines(&tx, song_id, lrc_text, crate::timed_lyrics::saved_lines(lines), &lineage, analyzer, artist, title)?;
         crate::timed_lyrics::restore_timings(&tx, song_id, lines)?;
         stats
     } else {
-        jp_import::attach_lyrics_text(&tx, song_id, lrc_text, &source.lineage(matched), analyzer, artist, title)?
+        jp_import::attach_lyrics_text(&tx, song_id, lrc_text, &lineage, analyzer, artist, title)?
     };
     if stats.lyric_lines == 0 {
         // 解析出 0 行：这份文件不是歌词（空文件、纯标签、纯时间轴）。
@@ -242,6 +274,8 @@ fn apply_lrc_inner(
     }
     if let Some((format,raw)) = original {
         tx.execute("UPDATE lyric_versions SET raw_format=?2,source_raw=?3 WHERE song_id=?1 AND is_current=1",params![song_id,format,raw])?;
+        let precision = if stats_has_words(&tx, song_id)? { "word" } else if stats_timed(&tx, song_id)? { "line" } else { "none" };
+        jp_corpus::lyric_sources::update_current_format(&tx, song_id, format, precision, Some(raw))?;
     }
     // source_file 记一笔来处。存量库这一列是空的，不靠它判断有无歌词（见 `missing`），
     // 但重装、迁库时它是唯一能回答「这份歌词哪来的」的东西。
@@ -640,7 +674,15 @@ pub fn attach_from_file(
     analyzer: Option<&jp_tokenizer::Analyzer>,
 ) -> Result<Attached> {
     let (artist, title) = song_names(conn, song_id)?;
-    let converted = crate::timed_lyrics::file_to_lrc(path)?;
+    let mut converted = crate::timed_lyrics::file_to_lrc(path)?;
+    if converted.is_none() && path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("srt")) {
+        let original = read_text(path)?;
+        converted = Some(crate::timed_lyrics::ConvertedFile {
+            text: crate::sources::canonical_lrc(&original, "srt")?,
+            original,
+            format: "srt".into(),
+        });
+    }
     let text = match &converted {
         Some(file) => file.text.clone(),
         None => read_text(path)?,
@@ -695,11 +737,10 @@ fn song_names(conn: &Connection, song_id: &str) -> Result<(String, String)> {
     .with_context(|| format!("找不到曲目 {song_id}"))
 }
 
-/// 一首歌走一遍「先本地、再在线」：内嵌的 → 旁边的 .lrc → 在线搜。
+/// 一首歌走一遍「先本地、再在线」：旁边的 .lrc → 内嵌的 → 在线搜。
 ///
 /// 本地优先是因为它必然对：文件就在那首歌旁边，不存在挑错的风险，还不用联网。
-/// 内嵌和外挂之间的取舍和导入时一样（见 `jp_import::ScannedTrack::lyrics_pick`）：
-/// 内嵌的优先，只有它没时间轴、旁边又有 .lrc 时让给 .lrc。
+/// 外挂和内嵌之间的取舍和导入时一样（见 `jp_import::ScannedTrack::lyrics_pick`）。
 pub fn fill_one(
     conn: &mut Connection,
     lyrics_dir: &Path,
@@ -708,10 +749,10 @@ pub fn fill_one(
     analyzer: Option<&jp_tokenizer::Analyzer>,
 ) -> Result<Option<Attached>> {
     let sibling = sibling_lrc(&target.audio_path);
-    let embedded = (!target.audio_path.is_empty())
+    // 旁边的同名文件优先，没有才用内嵌的（见 jp_corpus::lyric_sources 的优先级）
+    let embedded = (!target.audio_path.is_empty() && sibling.is_none())
         .then(|| jp_import::embedded::read_lyrics(Path::new(&target.audio_path)))
-        .flatten()
-        .filter(|e| e.synced || sibling.is_none());
+        .flatten();
     if let Some(embedded) = embedded {
         let name = Path::new(&target.audio_path)
             .file_name()
