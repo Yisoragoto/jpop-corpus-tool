@@ -769,6 +769,16 @@ pub fn apply(
     let native = candidate_mode(found) == "karaoke";
     let report = serde_json::json!({"status":"validated", "mode":candidate_mode(found),"native":native,"algorithmGenerated":false,"textAgreement":if before.lines.is_empty(){None}else{Some(jp_scraper::similarity::difflib_ratio(&body_key(&before.text()),&body_key(&found.lyrics.lines.iter().map(|l|l.text.as_str()).collect::<String>())))}, "manualPreserved":manual.len(), "lineCount":parsed.lines.len()});
     tx.execute("UPDATE lyric_versions SET raw_format=?2,source_raw=?3,sync_granularity=?4,timing_origin=?5,timing_validation_json=?6 WHERE song_id=?1 AND is_current=1",params![pending.song_id,found.format,found.raw_text,if native {"unit"} else if candidate_mode(found)=="plain" {"plain"} else {"line"},if native {"native"} else {"source"},report.to_string()])?;
+    let format = match found.format.to_ascii_lowercase().as_str() {
+        "elrc" => "enhanced_lrc".to_string(),
+        other => other.to_string(),
+    };
+    let precision = if native { "word" } else if candidate_mode(found) == "plain" { "none" } else { "line" };
+    jp_corpus::lyric_sources::update_current_format(&tx, &pending.song_id, &format, precision, Some(&found.raw_text))?;
+    if !pending.automatic {
+        // 你在候选里点了「用这个」：之后的自动流程不再替换它
+        jp_corpus::lyric_sources::set_chosen_by(&tx, &pending.song_id, "user")?;
+    }
     let ids: Vec<i64> = tx
         .prepare("SELECT id FROM utterances WHERE song_id=?1 ORDER BY line_idx, id")?
         .query_map([&pending.song_id], |r| r.get(0))?

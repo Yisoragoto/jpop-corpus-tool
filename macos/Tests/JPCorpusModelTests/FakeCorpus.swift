@@ -143,6 +143,23 @@ extension FakeCorpus: LyricsCalling {
     func lyricsUpgradeStart() async throws { calls.append(Call(name: "lyricsUpgradeStart", arguments: [])) }
     func lyricsTimedSearch(_ songId: String) async throws -> TimedLyricsSearch { try lyricValue("lyricsTimedSearch", arguments: [songId]) }
     func lyricsTimedApply(_ songId: String, candidateId: String) async throws -> LyricsAttached { try lyricValue("lyricsTimedApply", arguments: [songId, candidateId]) }
+    func lyricSourceView(_ songId: String) async throws -> LyricSourcesView { try lyricValue("lyricSourceView", arguments: [songId]) }
+    func lyricSourceTimeline(_ sourceId: Int64) async throws -> SongLyricTimeline { try lyricValue("lyricSourceTimeline", arguments: [String(sourceId)]) }
+    func lyricSourceApply(_ songId: String, sourceId: Int64) async throws -> LyricsAttached {
+        calls.append(Call(name: "lyricSourceApply", arguments: [songId, String(sourceId)]))
+        return try lyricValue("lyricSourceApply", arguments: [songId, String(sourceId)])
+    }
+    func lyricSourceAuto(_ songId: String) async throws -> LyricsAttached? {
+        calls.append(Call(name: "lyricSourceAuto", arguments: [songId]))
+        return try lyricValue("lyricSourceAuto", arguments: [songId])
+    }
+    func lyricTranslationSelect(_ songId: String, sourceId: Int64?) async throws {
+        calls.append(Call(name: "lyricTranslationSelect", arguments: [songId, sourceId.map { String($0) } ?? "nil"]))
+    }
+    func lyricOffsetSet(_ songId: String, offsetMs: Int) async throws -> Int {
+        calls.append(Call(name: "lyricOffsetSet", arguments: [songId, String(offsetMs)]))
+        return offsetMs
+    }
     func wordTimeSet(utteranceId: Int64, charStart: Int, charEnd: Int, startSec: Double) async throws {
         calls.append(Call(name: "wordTimeSet", arguments: [String(utteranceId), String(charStart), String(charEnd), String(startSec)]))
     }

@@ -4,6 +4,7 @@ pub mod lyrics;
 pub mod timed_lyrics;
 pub mod lyric_upgrade;
 pub mod management;
+pub mod sources;
 
 use std::sync::OnceLock;
 

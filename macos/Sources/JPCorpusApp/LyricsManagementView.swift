@@ -56,6 +56,7 @@ struct LyricsManagementView: View {
                 Text("来源与版本").tag(1)
                 Text("在线歌词").tag(2)
                 Text("卡拉 OK 打轴").tag(3)
+                Text("多来源与偏移").tag(4)
             }
             .pickerStyle(.segmented)
             .disabled(model.dirty || model.busy || model.songId.isEmpty)
@@ -74,6 +75,7 @@ struct LyricsManagementView: View {
                 case 0: lineEditor
                 case 1: versions
                 case 2: online
+                case 4: LyricSourcesSection(model: model)
                 default: timingEditor
                 }
             }
@@ -108,7 +110,7 @@ struct LyricsManagementView: View {
             }
             Button("放弃并关闭", role: .destructive) { dismiss() }
         } message: { Text("库内已保存的版本不受影响。") }
-        .fileImporter(isPresented: $importing, allowedContentTypes: ["lrc", "txt", "yrc", "qrc", "krc", "ttml"].map { UTType(filenameExtension: $0) ?? UTType(importedAs: "org.jpcorpus.lyrics.\($0)") }, allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $importing, allowedContentTypes: ["lrc", "srt", "txt", "yrc", "qrc", "krc", "ttml"].map { UTType(filenameExtension: $0) ?? UTType(importedAs: "org.jpcorpus.lyrics.\($0)") }, allowsMultipleSelection: false) { result in
             switch result {
             case .failure(let error): model.errorMessage = error.localizedDescription
             case .success(let urls):

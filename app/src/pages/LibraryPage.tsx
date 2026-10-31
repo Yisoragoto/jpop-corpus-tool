@@ -34,6 +34,7 @@ import { KaraokeStage } from "../components/KaraokeStage";
 import { SongEditor } from "../components/SongEditor";
 import { LyricsEditor } from "../components/LyricsEditor";
 import { SongLineagePanel } from "../components/SongLineagePanel";
+import { LyricSourcesPanel } from "../components/LyricSourcesPanel";
 import { SubcorpusPicker } from "../components/SubcorpusPicker";
 import { LyricsTools } from "../components/LyricsTools";
 import { LyricsFill } from "../components/LyricsFill";
@@ -256,7 +257,7 @@ export function LibraryPage({
   const coverOf = useCallback((songId: string) => tracks.find((t) => t.id === songId)?.coverPath ?? "", [tracks]);
 
   // 曲库维护：编辑、删除（两步确认，不弹窗）、找回丢了的音频
-  const [panel, setPanel] = useState<null | "edit" | "repair" | "lineage" | "lyrics">(null);
+  const [panel, setPanel] = useState<null | "edit" | "repair" | "lineage" | "lyrics" | "sources">(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // 维护操作的结果说明，记着是哪首歌的：删掉之后（没有选中的歌）也要看得到删了什么
   const [maintainNote, setMaintainNote] = useState<{ forSong: string | null; text: string } | null>(null);
@@ -1113,6 +1114,7 @@ export function LibraryPage({
                     {menuOpen && (
                       <div className="menu-panel" role="menu">
                         <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "edit" ? null : "edit"); }}>{tr("编辑信息")}</button>
+                        <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "sources" ? null : "sources"); }}>{tr("歌词来源与同步")}</button>
                         <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lineage" ? null : "lineage"); }}>{tr("来源与校验")}</button>
                         {lyrics.length > 0 && (
                           <button role="menuitem" onClick={() => { setMenuOpen(false); setPanel(panel === "lyrics" ? null : "lyrics"); }}>{tr("逐行编辑歌词")}</button>
@@ -1160,6 +1162,15 @@ export function LibraryPage({
                   void actions.reloadLyrics();
                 }}
                 onCancel={() => setPanel(null)}
+                onError={onAudioError}
+              />
+            )}
+            {panel === "sources" && (
+              <LyricSourcesPanel
+                key={selected.id}
+                songId={selected.id}
+                onLyricsChanged={() => void actions.reloadLyrics()}
+                onClose={() => setPanel(null)}
                 onError={onAudioError}
               />
             )}

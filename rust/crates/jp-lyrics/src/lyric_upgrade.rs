@@ -141,6 +141,10 @@ impl Batch {
 }
 
 pub fn protected(conn: &Connection, song_id: &str) -> Result<bool> {
+    // 你在「歌词来源」里选定的（包括手动挑的在线候选）也不让自动流程换
+    if jp_corpus::lyric_sources::selection(conn, song_id)?.is_some_and(|s| s.chosen_by == "user") {
+        return Ok(true);
+    }
     Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM lyric_versions WHERE song_id=?1 AND is_current=1 AND source_type IN ('manual_file','manual_edit','restored')) OR EXISTS(SELECT 1 FROM word_timings w JOIN utterances u ON u.id=w.utterance_id WHERE u.song_id=?1 AND w.source='manual')", [song_id], |r| r.get(0))?)
 }
 
@@ -309,17 +313,16 @@ fn local_fallback(
     if audio.is_empty() {
         return Ok(None);
     }
+    // 本地来源的优先级：旁边的同名文件 → 内嵌歌词（见 jp_corpus::lyric_sources）
     let sibling = crate::lyrics::sibling_lrc(&audio);
-    let embedded = jp_import::embedded::read_lyrics(Path::new(&audio))
-        .filter(|e| e.synced || sibling.is_none());
-    let (text, source, reference) = if let Some(e) = embedded {
-        (e.text, "embedded", audio)
-    } else if let Some(path) = sibling {
+    let (text, source, reference) = if let Some(path) = sibling {
         (
             crate::lyrics::read_text(&path)?,
             "sibling",
             path.display().to_string(),
         )
+    } else if let Some(e) = jp_import::embedded::read_lyrics(Path::new(&audio)) {
+        (e.text, "embedded", audio)
     } else {
         return Ok(None);
     };
@@ -383,14 +386,52 @@ pub fn fetch_one(
     {
         return Ok(None);
     }
+    // 本地的（旁边的文件、内嵌）优先于在线：只在还没有歌词时用得上
+    if let Some(local) = local_fallback(conn, dir, &before, analyzer)? {
+        return Ok(Some(local));
+    }
     let mut options = options.clone();
     options.apple = false;
     let found =
         jp_scraper::timed_sources::search(&before.title, &before.artist, before.duration, &options);
-    match apply_best(conn, dir, &before, &found, analyzer)? {
-        some @ Some(_) => Ok(some),
-        None => local_fallback(conn, dir, &before, analyzer),
+    let applied = apply_best(conn, dir, &before, &found, analyzer)?;
+    record_lookup(conn, song_id, &before, &found, applied.is_some(), &options)?;
+    Ok(applied)
+}
+
+/// 在线查询的结论：找到了、候选挑不准（等你选）、请求失败（随时可重试）、没找到（负缓存）。
+pub(crate) fn lookup_status(found: &SearchOutput, applied: bool) -> &'static str {
+    if applied {
+        "found"
+    } else if !found.candidates.is_empty() || !found.fallback.is_empty() {
+        "ambiguous"
+    } else if !found.warnings.is_empty() {
+        "failed"
+    } else {
+        "not_found"
     }
+}
+
+fn record_lookup(
+    conn: &Connection,
+    song_id: &str,
+    before: &timed::Snapshot,
+    found: &SearchOutput,
+    applied: bool,
+    options: &SourceOptions,
+) -> Result<()> {
+    let status = lookup_status(found, applied);
+    let message = match status {
+        "ambiguous" => review_reason(before, found).to_string(),
+        "failed" => found
+            .warnings
+            .iter()
+            .map(|w| format!("{}: {}", w.source, timed::redact(&w.message, options)))
+            .collect::<Vec<_>>()
+            .join(" · "),
+        _ => String::new(),
+    };
+    jp_corpus::lyric_sources::record_lookup(conn, song_id, "online", status, &message)
 }
 
 pub fn enqueue(
@@ -518,6 +559,20 @@ fn enqueue_inner(
                     if before.line_count() > 0 && before.timed_lines() == before.line_count() {
                         return Ok(("complete", String::new(), String::new()));
                     }
+                    // 本地有的不上网
+                    if let Some((attached, high)) =
+                        local_fallback(&mut conn, &lyrics_dir, &before, analyzer.as_ref())?
+                    {
+                        return Ok((
+                            if high { "upgraded" } else { "lineFilled" },
+                            attached.source.as_str().into(),
+                            String::new(),
+                        ));
+                    }
+                    // 上次在线没找到、负缓存还没过期：批量里不再去问（单首「补齐本首」照样会问）
+                    if jp_corpus::lyric_sources::recently_not_found(&conn, &id, "online")? {
+                        return Ok(("cachedNotFound", String::new(), String::new()));
+                    }
                     let mut opts = options.clone();
                     opts.apple = false;
                     let found = jp_scraper::timed_sources::search_with_transport(
@@ -535,22 +590,15 @@ fn enqueue_inner(
                     if cancelled.load(Ordering::SeqCst) {
                         return Ok(("cancelled", String::new(), String::new()));
                     }
-                    match apply_best(&mut conn, &lyrics_dir, &before, &found, analyzer.as_ref())? {
+                    let applied = apply_best(&mut conn, &lyrics_dir, &before, &found, analyzer.as_ref())?;
+                    record_lookup(&conn, &id, &before, &found, applied.is_some(), &opts)?;
+                    match applied {
                         Some((attached, high)) => Ok((
                             if high { "upgraded" } else { "lineFilled" },
                             attached.source.as_str().into(),
                             String::new(),
                         )),
                         None => {
-                            if let Some((attached, high)) =
-                                local_fallback(&mut conn, &lyrics_dir, &before, analyzer.as_ref())?
-                            {
-                                return Ok((
-                                    if high { "upgraded" } else { "lineFilled" },
-                                    attached.source.as_str().into(),
-                                    String::new(),
-                                ));
-                            }
                             // 已经是逐字、只是没找到覆盖更多行的候选：不是要人复核的事。
                             let kept = before.timed_lines() > 0
                                 && found.candidates.iter().any(|c| {
@@ -600,7 +648,7 @@ fn enqueue_inner(
                     "upgraded" => q.progress.upgraded += 1,
                     "lineFilled" => q.progress.line_filled += 1,
                     "failed" => q.progress.failed += 1,
-                    "notFound" => q.progress.not_found += 1,
+                    "notFound" | "cachedNotFound" => q.progress.not_found += 1,
                     "cancelled" => {}
                     _ => q.progress.skipped += 1,
                 }
