@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// 两层：底下一层整行画「没唱」那套，上面一层整行画「唱过」那套，用逐字的遮罩露出唱到的部分。
 /// 两层都不随时间变（`KtvLayer` 是 Equatable，每帧不重画），每帧只换遮罩里每个字那一条矩形的宽度——
-/// 描边是一圈偏移的拷贝、阴影是一串投影，重画很贵，不能每秒 30 次。
+/// 描边是一圈偏移的拷贝，重画很贵，不能每秒 30 次。发光在遮罩之后糊，侧面在两层合成之后叠。
 ///
 /// 单位内按码点顺序扫亮，原始单位时间不变；没有逐字时间的行到点整行亮起，不按字数估算。
 @MainActor
@@ -49,12 +49,25 @@ struct KaraokeLyricText: View {
                              ruby: karaokeFont(style, app.lyricsDisplay, size: size * 0.38))
         let count = parts.last.map { $0.start + $0.chars.count } ?? 0
         let progress = (0..<count).map(progress(at:))
+        let lit = progress.contains { $0 > 0 }
+        let unsung = KtvLook.unsung(style), sung = KtvLook.sung(style)
+        let mask = KtvMask(parts: parts, hasRuby: hasRuby, fonts: fonts, progress: progress, pad: metrics.pad)
+        func layer(_ look: KtvLook) -> some View {
+            KtvLayer(parts: parts, hasRuby: hasRuby, fonts: fonts, look: look, metrics: metrics).equatable()
+        }
         ZStack {
-            KtvLayer(parts: parts, hasRuby: hasRuby, fonts: fonts, look: .unsung(style), metrics: metrics).equatable()
-            if progress.contains(where: { $0 > 0 }) {
-                KtvLayer(parts: parts, hasRuby: hasRuby, fonts: fonts, look: .sung(style), metrics: metrics).equatable()
-                    .mask { KtvMask(parts: parts, hasRuby: hasRuby, fonts: fonts, progress: progress, pad: metrics.pad) }
+            // 发光垫在最底下，而且是遮罩之后再糊：唱过那层的光跟着擦到哪亮到哪，擦色的边上不会切出一条硬边
+            if metrics.glow > 0 {
+                layer(unsung.silhouette(unsung.glow)).blur(radius: metrics.glow / 2)
+                if lit { layer(sung.silhouette(sung.glow)).mask { mask }.blur(radius: metrics.glow / 2) }
             }
+            // 描好边的两层合成一张，再整体往右下叠出侧面：侧面接在描边外面，不会夹进字里
+            ZStack {
+                layer(unsung)
+                if lit { layer(sung).mask { mask } }
+            }
+            .compositingGroup()
+            .modifier(KtvExtrude(color: unsung.shadow, steps: KaraokeStyle.extrusionSteps(metrics.depth), unit: metrics.step))
         }
         // 两层和遮罩都在四周留了 pad 给描边、发光、阴影；排版时把这圈让回去
         .padding(-metrics.pad)
@@ -101,6 +114,8 @@ struct KtvLook: Equatable {
     static func unsung(_ s: KaraokeStyle) -> KtvLook {
         .init(fill: Color(hex: s.unsungFill), stroke: Color(hex: s.unsungStroke), glow: Color(hex: s.unsungGlow), shadow: Color(hex: s.shadowColor))
     }
+    /// 整块一个颜色（填色、描边都是它）：发光用的剪影
+    func silhouette(_ color: Color) -> KtvLook { .init(fill: color, stroke: color, glow: color, shadow: color) }
     static func sung(_ s: KaraokeStyle) -> KtvLook {
         .init(fill: Color(hex: s.sungFill), stroke: Color(hex: s.sungStroke), glow: Color(hex: s.sungGlow), shadow: Color(hex: s.shadowColor))
     }
@@ -137,8 +152,8 @@ private struct KtvGlyphs: View {
     }
 }
 
-/// 一整行按一套样式画好：描边是一圈偏移的拷贝（SwiftUI 的 Text 没有描边），
-/// 立体阴影是一串 1 步一叠的实心投影（往右下堆出厚度），发光是两层模糊投影
+/// 一整行按一套样式画好填色和描边：描边是一圈偏移的拷贝（SwiftUI 的 Text 没有描边）。
+/// 侧面（KtvExtrude）和发光在外面加，见 KaraokeLyricText.body
 struct KtvLayer: View, Equatable {
     let parts: [KaraokeLyricText.Part]
     let hasRuby: Bool
@@ -165,22 +180,28 @@ struct KtvLayer: View, Equatable {
     }
 
     var body: some View {
-        let outlined = ZStack {
+        ZStack {
             ForEach(Array(ring.enumerated()), id: \.offset) { _, offset in
                 KtvGlyphs(parts: parts, hasRuby: hasRuby, fonts: fonts, color: look.stroke).offset(offset)
             }
             KtvGlyphs(parts: parts, hasRuby: hasRuby, fonts: fonts, color: look.fill)
         }
-        .compositingGroup()
-        var extruded = AnyView(outlined)
-        // 每叠一层投影都把之前的也带上：1 步 1 步往右下堆，堆出来是连着的一块「侧面」
-        for _ in 0..<metrics.depth {
-            extruded = AnyView(extruded.shadow(color: look.shadow, radius: 0, x: metrics.step, y: metrics.step))
+        .padding(metrics.pad)
+    }
+}
+
+/// 立体侧面：每一步都把之前叠好的整块再往右下挪一次（1、2、4… 翻倍），几步就连成一整块实心的侧面
+struct KtvExtrude: ViewModifier {
+    let color: Color
+    let steps: [Int]
+    let unit: CGFloat
+    func body(content: Content) -> some View {
+        var out = AnyView(content)
+        for step in steps {
+            let d = CGFloat(step) * unit
+            out = AnyView(out.shadow(color: color, radius: 0, x: d, y: d))
         }
-        return extruded
-            .shadow(color: metrics.glow > 0 ? look.glow : .clear, radius: metrics.glow / 2)
-            .shadow(color: metrics.glow > 0 ? look.glow : .clear, radius: metrics.glow / 4)
-            .padding(metrics.pad)
+        return out
     }
 }
 

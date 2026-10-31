@@ -39,12 +39,12 @@ export type KaraokePresetId = "classic" | "pink" | "plain";
 const base = { fontFamily: "", fontSize: 56, staggered: true } as const;
 
 export const KARAOKE_PRESETS: Record<KaraokePresetId, KaraokeStyle> = {
-  // 经典 KTV：白字黑边，唱过变蓝、白边、蓝色发光
+  // 经典 KTV：白字细黑边、贴边一圈蓝光，唱过变蓝、白边，浅浅一层侧面
   classic: {
     ...base, fontWeight: 900,
-    unsungFill: "#ffffff", unsungStroke: "#10121a", unsungGlow: "#1e6fff",
-    sungFill: "#2f86ff", sungStroke: "#ffffff", sungGlow: "#3aa2ff",
-    strokeWidth: 5, glowStrength: 12, shadowColor: "#000000", shadowDepth: 3,
+    unsungFill: "#f4f4f4", unsungStroke: "#000000", unsungGlow: "#2a78ff",
+    sungFill: "#3a8cf5", sungStroke: "#ffffff", sungGlow: "#2a78ff",
+    strokeWidth: 3, glowStrength: 8, shadowColor: "#000000", shadowDepth: 2,
   },
   // 粉色像素风 MV：白字粉紫边，唱过变粉、白边、粉色发光
   pink: {
@@ -62,7 +62,8 @@ export const KARAOKE_PRESETS: Record<KaraokePresetId, KaraokeStyle> = {
   },
 };
 
-export const DEFAULT_KARAOKE_STYLE: KaraokeStyle = KARAOKE_PRESETS.classic;
+// 默认是原来的样子；KTV 风格的预设由用户自己挑
+export const DEFAULT_KARAOKE_STYLE: KaraokeStyle = KARAOKE_PRESETS.plain;
 
 export const KARAOKE_LIMITS = {
   fontSize: [28, 96],

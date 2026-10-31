@@ -32,11 +32,11 @@ public struct KaraokeStyle: Codable, Equatable, Sendable {
     }
 
     public static let presets: [Preset: KaraokeStyle] = [
-        // 经典 KTV：白字黑边，唱过变蓝、白边、蓝色发光
+        // 经典 KTV：白字细黑边、贴边一圈蓝光，唱过变蓝、白边，浅浅一层侧面
         .classic: .init(fontFamily: "", fontSize: 56, fontWeight: 900,
-                        unsungFill: "#ffffff", unsungStroke: "#10121a", unsungGlow: "#1e6fff",
-                        sungFill: "#2f86ff", sungStroke: "#ffffff", sungGlow: "#3aa2ff",
-                        strokeWidth: 5, glowStrength: 12, shadowColor: "#000000", shadowDepth: 3, staggered: true),
+                        unsungFill: "#f4f4f4", unsungStroke: "#000000", unsungGlow: "#2a78ff",
+                        sungFill: "#3a8cf5", sungStroke: "#ffffff", sungGlow: "#2a78ff",
+                        strokeWidth: 3, glowStrength: 8, shadowColor: "#000000", shadowDepth: 2, staggered: true),
         // 粉色像素风 MV：白字粉紫边，唱过变粉、白边、粉色发光
         .pink: .init(fontFamily: "", fontSize: 56, fontWeight: 800,
                      unsungFill: "#ffffff", unsungStroke: "#d96bf0", unsungGlow: "#e070ff",
@@ -49,7 +49,8 @@ public struct KaraokeStyle: Codable, Equatable, Sendable {
                       strokeWidth: 0, glowStrength: 6, shadowColor: "#000000", shadowDepth: 0, staggered: true),
     ]
 
-    public static var standard: KaraokeStyle { presets[.classic]! }
+    /// 默认是原来的样子；KTV 风格的预设由用户自己挑
+    public static var standard: KaraokeStyle { presets[.plain]! }
 
     public static let fontSizeRange: ClosedRange<Double> = 28...96
     public static let fontWeightRange: ClosedRange<Int> = 400...900
@@ -133,6 +134,15 @@ public struct KaraokeStyle: Codable, Equatable, Sendable {
         out.fontFamily = fontFamily
         out.fontSize = fontSize
         return out
+    }
+
+    /// 立体侧面的几步位移：1、2、4… 翻倍叠，最后补零头（和 Windows 的 extrusionSteps 一样）。
+    /// 每一步都把之前叠好的整块再挪一次，所以几步就能连成 0…厚度 的一整块
+    public static func extrusionSteps(_ depth: Int) -> [Int] {
+        var steps: [Int] = [], covered = 0, next = 1
+        while covered + next <= depth { steps.append(next); covered += next; next *= 2 }
+        if covered < depth { steps.append(depth - covered) }
+        return steps
     }
 
     /// `#rrggbb` → 0...1 的 RGB
