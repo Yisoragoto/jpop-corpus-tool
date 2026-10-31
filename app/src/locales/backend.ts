@@ -725,4 +725,13 @@ export const backendEn: Record<string, string> = {
   "这是一份译文，不能当原文用；在「译文」里选它": "This is a translation and cannot be used as the original; choose it under Translation",
   "这个来源当时没有保存原文，没法重新挂上": "This source's original text was not saved, so it cannot be applied again",
   "这首歌还没有歌词，没法调偏移": "This song has no lyrics, so the offset cannot be changed",
+  "音频文件记录（路径、大小、修改时间、时长、格式、指纹、曲目起点）": "Audio file records (path, size, modification time, length, format, fingerprint, track start)",
+  "同一个 MusicBrainz 录音": "same MusicBrainz recording",
+  "同一个 ISRC": "same ISRC",
+  "ISRC 不同（{0} / {1}）": "different ISRC ({0} / {1})",
+  "MusicBrainz 录音编号不同": "different MusicBrainz recording IDs",
+  "版本不同：库里的是{0}，这个是{1}": "different version: the library has {0}, this is {1}",
+  "时长差 {0} 秒": "lengths differ by {0} s",
+  "曲名、歌手相同，时长相差 {0} 秒": "same title and artist, lengths within {0} s",
+  "曲名、歌手相同（没有时长可比）": "same title and artist (no length to compare)",
 };

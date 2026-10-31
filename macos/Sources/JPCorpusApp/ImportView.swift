@@ -94,11 +94,12 @@ struct ImportView: View {
                 Toggle("同时分词", isOn: Binding(get: { model.tokenize }, set: { model.tokenize = $0 }))
                     .disabled(!plan.tokenizerReady)
                     .help(plan.tokenizerReady ? "分词后才能检索、做分析" : "没有分词词典：先在上面下载一份，或者先导入、之后再补分词")
-                Button("导入 \(plan.summary.new) 首") {
+                Button(plan.summary.new == 0 && (plan.summary.filesChanged ?? 0) > 0
+                       ? "刷新 \(plan.summary.filesChanged ?? 0) 个变了的文件" : "导入 \(plan.summary.new) 首") {
                     Task { await model.runImport(app: app) }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(plan.summary.new == 0 || model.importing || model.scanning)
+                .disabled(!plan.summary.hasWork || model.importing || model.scanning)
             }
         }
     }
@@ -198,7 +199,7 @@ private struct PlanTable: View {
                 TableColumn("处置") { item in
                     Label(Self.label(item.action), systemImage: item.action.writes ? "plus.circle" : "minus.circle")
                         .foregroundStyle(item.action.writes ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                        .help(item.action.reason ?? item.action.existingPath ?? "")
+                        .help(Self.explain(item.action))
                 }
                 .width(min: 90, ideal: 110)
                 TableColumn("曲名", value: \.title)
@@ -236,13 +237,27 @@ private struct PlanTable: View {
         let s = plan.summary
         var parts = ["共 \(s.total) 个音频", "新歌 \(s.new) 首"]
         if s.alreadyImported > 0 { parts.append("已在库中 \(s.alreadyImported)") }
-        if s.possibleDuplicates > 0 { parts.append("可能重复 \(s.possibleDuplicates)（不导）") }
+        if s.possibleDuplicates > 0 { parts.append("同一录音、换了文件 \(s.possibleDuplicates)（不导）") }
+        if let changed = s.filesChanged, changed > 0 { parts.append("文件变了 \(changed)（刷新文件信息）") }
+        let versions = plan.items.filter { $0.action.versionOf != nil }.count
+        if versions > 0 { parts.append("同名的其他版本 \(versions)（作为新歌导入）") }
         if s.duplicatesInBatch > 0 { parts.append("本批重复 \(s.duplicatesInBatch)") }
         if s.skipped > 0 { parts.append("导不了 \(s.skipped)") }
         let withLyrics = plan.items.filter { $0.action.writes && $0.hasLyrics }.count
         parts.append("其中有歌词 \(withLyrics)")
         if !plan.ignored.isEmpty { parts.append("不是音频、没算进去：\(plan.ignored.joined(separator: "、"))") }
         return parts.joined(separator: " · ")
+    }
+
+    /// 每条处置的理由（悬停提示）
+    static func explain(_ action: PlanAction) -> String {
+        if let version = action.versionOf { return "是库里 \(version.songId) 的另一个版本：\(version.reason)" }
+        if action.fileChanged == true, let id = action.songId { return "已经是库里的 \(id)；文件变了，导入时刷新文件信息" }
+        if action.kind == .possibleDuplicate, let id = action.songId {
+            let reason = action.reason ?? ""
+            return reason.isEmpty ? "曲名歌手对上了库里的 \(id)，不会导入" : "和库里的 \(id) 是同一个录音：\(reason)。不会导入"
+        }
+        return action.reason ?? action.existingPath ?? action.firstPath ?? ""
     }
 
     static func label(_ action: PlanAction) -> String {

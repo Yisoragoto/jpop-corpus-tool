@@ -890,11 +890,12 @@ fn start_dict_import(session: &Session, paths: Vec<String>) -> Result<()> {
 ///
 /// 翻目录、读 tag 可能要好几秒，这期间不拿会话的锁；只在读现有曲库时拿一下
 fn plan_targets(session: &Session, paths: &[String], max_depth: Option<usize>) -> Result<jp_import::ScanResult> {
-    let (tracks, ignored) = jp_import::scan_targets(paths, max_depth.unwrap_or(8));
+    // 先读现有曲库：库里有、大小和修改时间都没变的文件不再读标签
     let index = {
         let corpus = session.corpus.lock().map_err(|_| anyhow!("语料库连接已损坏"))?;
         jp_import::LibraryIndex::from_corpus(&corpus)?
     };
+    let (tracks, ignored) = jp_import::scan_targets_known(paths, max_depth.unwrap_or(8), Some(&index));
     let result = jp_import::review(&tracks, &index, session.analyzer().is_some(), ignored);
     *session.pending_scan.lock().unwrap_or_else(|e| e.into_inner()) = tracks;
     Ok(result)

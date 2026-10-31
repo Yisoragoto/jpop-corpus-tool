@@ -54,13 +54,20 @@ pub struct ScanResult {
 ///
 /// 返回（按路径排好的扫描结果，选中但不是音频的文件名）。
 pub fn scan_targets(paths: &[String], max_depth: usize) -> (Vec<ScannedTrack>, Vec<String>) {
+    scan_targets_known(paths, max_depth, None)
+}
+
+/// 同 [`scan_targets`]，给了现有曲库的索引时，库里有、大小和修改时间都没变的文件不读标签
+/// （[`LibraryIndex::unchanged`]）——重扫几百首的目录不用再把每个文件打开一遍。
+pub fn scan_targets_known(paths: &[String], max_depth: usize, index: Option<&LibraryIndex>) -> (Vec<ScannedTrack>, Vec<String>) {
+    let known = |path: &str, size: Option<u64>, mtime: Option<f64>| index.is_some_and(|i| i.unchanged(path, size, mtime));
     let mut tracks: Vec<ScannedTrack> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut ignored: Vec<String> = Vec::new();
 
     for path in paths {
         let target = Path::new(path);
-        let found = crate::scan_dir(target, max_depth);
+        let found = crate::scan_dir_known(target, max_depth, &known);
         if found.is_empty() && target.is_file() {
             // 不是音频（.lrc、封面图、歌单文件……）。扫目录时这种文件本来就不计数，
             // 但用户明确选中它的时候要说一声。
