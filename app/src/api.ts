@@ -1288,6 +1288,8 @@ export const api = {
     call<number>("scrape_start", { onlyMissing, limit }),
   /** 给已识别的歌补专辑信息（发行类型、曲目数）。返回要查的歌数，0 表示都齐了 */
   scrapeAlbumFillStart: () => call<number>("scrape_album_fill_start"),
+  /** 一键刮削：识别曲目 → 歌手照片 → 补封面 → 补专辑信息，后台按顺序跑完 */
+  scrapeAllStart: () => call<void>("scrape_all_start"),
   scrapeCancel: () => call<void>("scrape_cancel"),
   scrapeIsRunning: () => call<boolean>("scrape_is_running"),
   /** 用户在复核界面选定一条候选。真的会写 songs、信用和封面。 */
@@ -1912,6 +1914,9 @@ export interface ScrapeProgress {
    * `finished: true, cancelled: false`——界面显示「完成」，而其实一首都没刮完。
    */
   error: string;
+  /** 一键刮削（scrape_all_start）里这是第几步、一共几步；单项作业里都是 0 */
+  step: number;
+  steps: number;
 }
 
 export const SCRAPE_STATUS_LABELS: Record<ScrapeStatusName, string> = {

@@ -36,7 +36,7 @@ fn log_warn(message: impl std::fmt::Display) {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScrapeProgress {
-    /// "track" 或 "artist"。两种作业共用一个事件通道，UI 据此分开显示。
+    /// "track"、"artist"、"cover"、"album"。作业共用一个事件通道，UI 据此分开显示。
     pub kind: String,
     pub done: usize,
     pub total: usize,
@@ -57,6 +57,9 @@ pub struct ScrapeProgress {
     /// `finished: true, cancelled: false`——用户看到的是「完成」。
     /// anki / dict / lyrics 三处早就报了，只有刮削把错误吞了。
     pub error: String,
+    /// 一键刮削（[`run_all`]）里这是第几步、一共几步；单项作业里都是 0
+    pub step: u8,
+    pub steps: u8,
 }
 
 /// 库里一首歌，转成刮削要的输入。
@@ -542,6 +545,7 @@ pub fn run_batch_with(
             finished: false,
             cancelled: false,
             error: String::new(),
+            ..Default::default()
         });
     }
 
@@ -648,6 +652,91 @@ pub fn run_album_fill_with(
             matched: if filled { "filled".into() } else { String::new() },
             ..Default::default()
         });
+    }
+    Ok(false)
+}
+
+// ────────────────────────── 一键刮削 ──────────────────────────
+
+/// 一键刮削一共几步（进度里的 `steps`）
+pub const ALL_STEPS: u8 = 4;
+
+/// 一键刮削：识别曲目 → 歌手照片 → 补封面 → 补专辑信息，一个作业按顺序跑完。
+///
+/// 以前这是刮削页上四个按钮，要一个跑完再点下一个，顺序还得自己知道（先识别才有封面候选，
+/// 先有封面才能填专辑图）。每一步的目标在那一步开始时才算：第一步新认出的歌，后面几步接着补。
+/// 每条进度带 `step`/`steps`，界面显示「第 2/4 步 · 歌手照片」。取消时停在当前这一步，后面的不再跑。
+pub fn run_all(
+    db_path: &std::path::Path,
+    covers_dir: &std::path::Path,
+    artists_dir: &std::path::Path,
+    apple: Option<(&str, &str)>,
+    cancelled: &dyn Fn() -> bool,
+    progress: &mut dyn FnMut(ScrapeProgress),
+) -> Result<bool> {
+    run_all_with(db_path, covers_dir, artists_dir, apple, &identity_path, cancelled, progress)
+}
+
+/// 同 [`run_all`]，库里的路径经 `resolve` 找到这台电脑上的文件（从别的电脑拷来的库）
+pub fn run_all_with(
+    db_path: &std::path::Path,
+    covers_dir: &std::path::Path,
+    artists_dir: &std::path::Path,
+    apple: Option<(&str, &str)>,
+    resolve: &dyn Fn(&str) -> Option<std::path::PathBuf>,
+    cancelled: &dyn Fn() -> bool,
+    progress: &mut dyn FnMut(ScrapeProgress),
+) -> Result<bool> {
+    let conn = rusqlite::Connection::open(db_path)?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+    conn.busy_timeout(std::time::Duration::from_secs(30))?;
+    let mut tagged = |step: u8, p: ScrapeProgress| progress(ScrapeProgress { step, steps: ALL_STEPS, ..p });
+    // 一步开始时先报一条（total=0 时界面也知道走到哪一步了）
+    fn announce(tagged: &mut dyn FnMut(u8, ScrapeProgress), step: u8, kind: &str, total: usize) {
+        tagged(step, ScrapeProgress { kind: kind.into(), total, ..Default::default() });
+    }
+
+    // 1. 识别还没认出的歌
+    let ids = songs_to_scrape(&conn, true, i64::MAX)?;
+    announce(&mut tagged, 1, "track", ids.len());
+    if !ids.is_empty() && run_batch_with(db_path, covers_dir, &ids, apple, resolve, cancelled, &mut |p| tagged(1, p))? {
+        return Ok(true);
+    }
+    if cancelled() {
+        return Ok(true);
+    }
+
+    // 2. 还没有照片的歌手（第一步新认出的歌手也算上）
+    let names = library_artists_with_files(&conn, true, Some(artists_dir))?;
+    announce(&mut tagged, 2, "artist", names.len());
+    if !names.is_empty() && run_artist_batch(db_path, artists_dir, &names, cancelled, &mut |p| tagged(2, p))? {
+        return Ok(true);
+    }
+    if cancelled() {
+        return Ok(true);
+    }
+
+    // 3. 补封面，再用曲目封面填专辑图。不重新搜索，只用刮削时存下的候选和内嵌图
+    announce(&mut tagged, 3, "cover", 1);
+    let covers = backfill_and_fill_albums_with(&conn, covers_dir, resolve)?;
+    tagged(3, ScrapeProgress {
+        kind: "cover".into(),
+        done: 1,
+        total: 1,
+        status: "success".into(),
+        title: format!("检查 {} 首，补上 {} 张封面", covers.checked, covers.filled),
+        cover_saved: covers.filled > 0,
+        ..Default::default()
+    });
+    if cancelled() {
+        return Ok(true);
+    }
+
+    // 4. 补专辑信息（发行类型、曲目数）
+    let targets = album_fill_targets(&conn)?;
+    announce(&mut tagged, 4, "album", targets.len());
+    if !targets.is_empty() && run_album_fill_with(db_path, targets, resolve, cancelled, &mut |p| tagged(4, p))? {
+        return Ok(true);
     }
     Ok(false)
 }
@@ -1041,6 +1130,7 @@ pub fn run_artist_batch(
             finished: false,
             cancelled: false,
             error: String::new(),
+            ..Default::default()
         });
     }
     Ok(false)
@@ -1576,7 +1666,16 @@ pub fn fill_album_artwork_with(
     )?;
     let mut changed = 0;
     for (id, artwork) in albums {
-        if !artwork.trim().is_empty() && resolve(&artwork).is_some() {
+        if !artwork.trim().is_empty()
+            && let Some(found) = resolve(&artwork)
+        {
+            // 找得到，但要靠猜路径尾巴（库里还是 Windows 那台电脑的路径）：换成这台电脑上的真实路径。
+            // 不换的话刮削页的完整度按原样路径数，显示「专辑封面 0/119」，可封面其实都在
+            let found = found.display().to_string();
+            if found != artwork {
+                conn.execute("UPDATE albums SET artwork_path = ?1 WHERE id = ?2", rusqlite::params![found, id])?;
+                changed += 1;
+            }
             continue;
         }
         let candidates: Vec<String> = covers
@@ -1621,6 +1720,23 @@ pub fn save_imported_covers(conn: &rusqlite::Connection, covers_dir: &std::path:
 #[cfg(test)]
 mod tests {
 
+    /// 一键刮削：每条进度带第几步；一开始就取消，停在第一步，后面几步不跑（不联网）
+    #[test]
+    fn scrape_all_tags_steps_and_stops_when_cancelled() {
+        let dir = std::env::temp_dir().join(format!("jp-scrape-all-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = jp_corpus::fixture::write_to(&dir).unwrap();
+        let mut seen = Vec::new();
+        let cancelled =
+            super::run_all(&db, &dir.join("covers"), &dir.join("artists"), None, &|| true, &mut |p| seen.push(p)).unwrap();
+        assert!(cancelled);
+        assert!(!seen.is_empty());
+        assert!(seen.iter().all(|p| p.step == 1 && p.steps == super::ALL_STEPS), "{seen:?}");
+        assert_eq!(seen[0].kind, "track");
+        assert!(seen[0].total > 0, "示例库里有没刮过的歌");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
     #[test]
     fn covers_on_another_computer_count_as_missing() {
         let dir = std::env::temp_dir().join(format!("jp-scrape-moved-{}", std::process::id()));
@@ -1640,6 +1756,11 @@ mod tests {
         assert_eq!(fill_album_artwork_with(&conn, &nothing).unwrap(), 0);
         assert_eq!(fill_album_artwork_with(&conn, &only_004).unwrap(), 1);
         assert_eq!(fill_album_artwork_with(&conn, &only_004).unwrap(), 0, "再跑一次不重复改");
+        // 专辑图是那台电脑的路径、这里按尾巴找到了：换成这里的真实路径（完整度按它数）
+        let elsewhere = |p: &str| (p == "E:/music/covers/004.jpg").then(|| std::path::PathBuf::from("/Users/me/raw/covers/004.jpg"));
+        assert_eq!(fill_album_artwork_with(&conn, &elsewhere).unwrap(), 1);
+        let stored: String = conn.query_row("SELECT artwork_path FROM albums WHERE artwork_path <> '' LIMIT 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(stored, std::path::PathBuf::from("/Users/me/raw/covers/004.jpg").display().to_string());
         drop(conn);
         std::fs::remove_dir_all(dir).ok();
     }

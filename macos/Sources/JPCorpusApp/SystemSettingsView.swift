@@ -194,7 +194,7 @@ private func installUpdate(app: AppModel) async {
         app.updates.errorMessage = "\(jobs.joined(separator: "、"))还在进行，等它结束再更新"
         return
     }
-    await app.updates.downloadAndInstall(appPath: Bundle.main.bundlePath) { NSApplication.shared.terminate(nil) }
+    await app.updates.downloadAndInstall(appPath: Bundle.main.bundlePath) { AppQuit.request() }
 }
 
 private struct UpdateDownloadProgress: View {

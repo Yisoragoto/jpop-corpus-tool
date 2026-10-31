@@ -45,3 +45,70 @@ extension Menu where Label == Text {
         self.init(content: content) { Text(verbatim: L10n.t(title)) }
     }
 }
+
+// 下面这些控件的 String 标题默认走 LocalizedStringKey → 系统的 Localizable.strings，跟的是系统语言，
+// 应用里切成英文时它们还是中文（导入页的「语料库文件夹」「选择音乐文件夹」就是这样漏的）。
+// 一律改走 L10n。转成 Substring 是为了调到 SwiftUI 的 StringProtocol 版本，而不是又回到这里。
+
+extension DisclosureGroup where Label == Text {
+    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.init(Substring(L10n.t(title)), content: content)
+    }
+    init(_ title: String, isExpanded: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) {
+        self.init(Substring(L10n.t(title)), isExpanded: isExpanded, content: content)
+    }
+}
+
+extension ContentUnavailableView where Label == SwiftUI.Label<Text, Image>, Description == Text?, Actions == EmptyView {
+    init(_ title: String, systemImage: String, description: Text? = nil) {
+        self.init(Substring(L10n.t(title)), systemImage: systemImage, description: description)
+    }
+}
+
+extension TextField where Label == Text {
+    init(_ title: String, text: Binding<String>) {
+        self.init(Substring(L10n.t(title)), text: text)
+    }
+}
+
+extension SecureField where Label == Text {
+    init(_ title: String, text: Binding<String>) {
+        self.init(Substring(L10n.t(title)), text: text)
+    }
+}
+
+extension Picker where Label == Text {
+    init(_ title: String, selection: Binding<SelectionValue>, @ViewBuilder content: () -> Content) {
+        self.init(Substring(L10n.t(title)), selection: selection, content: content)
+    }
+}
+
+extension Stepper where Label == Text {
+    init<V: Strideable>(_ title: String, value: Binding<V>, in bounds: ClosedRange<V>) {
+        self.init(Substring(L10n.t(title)), value: value, in: bounds)
+    }
+}
+
+extension ProgressView where Label == Text, CurrentValueLabel == EmptyView {
+    init(_ title: String) {
+        self.init(Substring(L10n.t(title)))
+    }
+}
+
+extension CommandMenu {
+    init(_ name: String, @ViewBuilder content: () -> Content) {
+        self.init(Substring(L10n.t(name)), content: content)
+    }
+}
+
+extension View {
+    func alert<A: View>(_ title: String, isPresented: Binding<Bool>, @ViewBuilder actions: () -> A) -> some View {
+        alert(Text(verbatim: L10n.t(title)), isPresented: isPresented, actions: actions)
+    }
+    func alert<A: View, M: View>(_ title: String, isPresented: Binding<Bool>, @ViewBuilder actions: () -> A, @ViewBuilder message: () -> M) -> some View {
+        alert(Text(verbatim: L10n.t(title)), isPresented: isPresented, actions: actions, message: message)
+    }
+    func accessibilityLabel(_ label: String) -> some View {
+        accessibilityLabel(Text(verbatim: L10n.t(label)))
+    }
+}

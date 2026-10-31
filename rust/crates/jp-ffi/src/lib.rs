@@ -228,6 +228,13 @@ impl Session {
         self.lyric_sources.get_or_init(|| Mutex::new(jp_lyrics::timed_lyrics::Session::load(&self.library_root())))
     }
 
+    /// 来源设置里开了 Apple Music 并且填了开发者令牌时，刮削也问它：（地区, 令牌）。
+    /// 和 Windows 版 jp-app 的 `scrape::apple_source` 同一条规则
+    fn scrape_apple(&self) -> Option<(String, String)> {
+        let options = self.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).options();
+        (options.apple && !options.apple_developer_token.is_empty()).then_some((options.apple_storefront, options.apple_developer_token))
+    }
+
     /// 刮下来的封面、歌手照片放哪（和 Windows 版一样：`raw/covers`、`raw/artists`）
     fn covers_dir(&self) -> PathBuf {
         self.library_root().join("raw").join("covers")
@@ -665,10 +672,23 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
             let total = ids.len();
             let (db, covers) = (session.db_path.clone(), session.covers_dir());
             let resolve = session.media_resolver()?;
+            let apple = session.scrape_apple();
             start_scrape(session, move |cancelled, progress| {
-                jp_scrape::run_batch_with(&db, &covers, &ids, None, &resolve, cancelled, progress)
+                let apple = apple.as_ref().map(|(region, token)| (region.as_str(), token.as_str()));
+                jp_scrape::run_batch_with(&db, &covers, &ids, apple, &resolve, cancelled, progress)
             })?;
             json!(total)
+        }
+        // 一键刮削：识别曲目 → 歌手照片 → 补封面 → 补专辑信息，一个作业跑完（见 jp_scrape::run_all）
+        "scrapeAllStart" => {
+            let (db, covers, artists) = (session.db_path.clone(), session.covers_dir(), session.artists_dir());
+            let resolve = session.media_resolver()?;
+            let apple = session.scrape_apple();
+            start_scrape(session, move |cancelled, progress| {
+                let apple = apple.as_ref().map(|(region, token)| (region.as_str(), token.as_str()));
+                jp_scrape::run_all_with(&db, &covers, &artists, apple, &resolve, cancelled, progress)
+            })?;
+            Value::Null
         }
         "scrapeArtistsStart" => {
             let dir = session.artists_dir();
@@ -692,7 +712,11 @@ fn dispatch_unlocked(session: &Session, method: &str, args: &Value) -> Result<Op
             let song_id: String = arg(args, "songId")?;
             let conn = session.network_connection()?;
             let resolve = session.media_resolver()?;
-            serde_json::to_value(jp_scrape::scrape_track_with(conn.connection(), &session.covers_dir(), &song_id, None, &resolve)?)?
+            {
+                let apple = session.scrape_apple();
+                let apple = apple.as_ref().map(|(region, token)| (region.as_str(), token.as_str()));
+                serde_json::to_value(jp_scrape::scrape_track_with(conn.connection(), &session.covers_dir(), &song_id, apple, &resolve)?)?
+            }
         }
         "scrapeAccept" => {
             let file_path: String = arg(args, "filePath")?;
@@ -842,8 +866,13 @@ fn start_scrape(
     session.scrape_job.spawn("刮削", move |job| {
         let mut items = Vec::new();
         let cancelled = work(&|| job.cancelled(), &mut |p: jp_scrape::ScrapeProgress| {
-            job.report(p.done as u64, p.total as u64, p.title.clone());
-            items.push(p);
+            // 一键刮削时 stage 写成「第几步/共几步|种类|标题」，界面拆开再翻译（见 ScrapeView 的 ScrapeStage）
+            let stage = if p.steps > 0 { format!("{}/{}|{}|{}", p.step, p.steps, p.kind, p.title) } else { p.title.clone() };
+            job.report(p.done as u64, p.total as u64, stage);
+            // 一键刮削每步开头那条只是报「到第几步了」，不是一条结果
+            if !p.status.is_empty() {
+                items.push(p);
+            }
         })?;
         Ok((json!({ "items": items }), cancelled))
     })

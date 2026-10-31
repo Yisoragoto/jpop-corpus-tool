@@ -29,6 +29,19 @@ final class TimelineTests: XCTestCase {
         let a = ReleaseTimeline.warpYears([[2020.1,2020.2,2020.3].map { WarpItem(at: $0,size: 40) },[WarpItem(at: 2021.5,size: 40)]],min: 2020,max: 2022,perYear: 90)
         XCTAssertEqual([a.x(2020),a.x(2021),a.x(2022),a.width,a.x(2021.5)],[0,144,234,324,189])
     }
+    func testWarpInverseAndAnchoredZoom() {
+        let rows = [[2020.1,2020.2,2020.3].map { WarpItem(at: $0,size: 40) },[WarpItem(at: 2021.5,size: 40)]]
+        let a = ReleaseTimeline.warpYears(rows,min: 2020,max: 2022,perYear: 90)
+        for year in [2020.0,2020.5,2021.0,2021.5,2022.0] { XCTAssertEqual(a.at(a.x(year)),year,accuracy: 1e-9) }
+        XCTAssertEqual(a.at(-10),2020)
+        // 放大后光标（视口内 300 处，左边留 40）下面还是同一年
+        let b = ReleaseTimeline.warpYears(rows,min: 2020,max: 2022,perYear: 200)
+        let before = a.at(50+300-40), offset = TimelinePan.zoomedOffset(50,anchor: 300,inset: 40,old: a,new: b)
+        XCTAssertEqual(b.at(offset+300-40),before,accuracy: 1e-9)
+        XCTAssertEqual(TimelinePan.clamp(-5,content: 500,viewport: 300),0)
+        XCTAssertEqual(TimelinePan.clamp(900,content: 500,viewport: 300),200)
+        XCTAssertEqual(TimelinePan.clamp(50,content: 200,viewport: 300),0)
+    }
     func testRowPacking() { XCTAssertEqual(ReleaseTimeline.packRow([PackItem(x: 10,size: 40),PackItem(x: 12,size: 40),PackItem(x: 200,size: 30),PackItem(x: 14,size: 20)]),[10,56,200,92]) }
     private func tree(_ id: Int64) throws -> [TreePart] {
         let rs = [rel(1,"2014-10-08","フェイク",album: 7,tracks: 2),rel(2,"2018-06-27","空から"),rel(2,"2020-11-25","PLANET",album: 9)]

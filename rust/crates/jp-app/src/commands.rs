@@ -2181,6 +2181,20 @@ pub fn scrape_start<R: tauri::Runtime>(
     Ok(total)
 }
 
+/// 一键刮削：识别曲目 → 歌手照片 → 补封面 → 补专辑信息，后台按顺序跑完，进度走 `scrape://progress`
+#[tauri::command(async)]
+pub fn scrape_all_start<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, AppState>) -> CmdResult<()> {
+    crate::scrape::spawn_all(
+        app,
+        state.scrape_job(),
+        state.db_path.clone(),
+        state.covers_dir.clone(),
+        state.artists_dir.clone(),
+        state.timed_lyrics.lock().unwrap_or_else(|e| e.into_inner()).options(),
+    )?;
+    Ok(())
+}
+
 /// 给已经识别过的歌补专辑信息（发行类型、曲目数）。返回要查的歌数，0 表示都齐了。
 #[tauri::command(async)]
 pub fn scrape_album_fill_start<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: State<'_, AppState>) -> CmdResult<usize> {

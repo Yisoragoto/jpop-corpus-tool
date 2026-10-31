@@ -115,7 +115,12 @@ export function ScrapePage({ onError, onChanged }: Props) {
         const p = event.payload;
         // 整批断了要说出来：这是真错误，走横幅
         if (p.error) errorRef.current(tr("刮削中断：{error}", { error: p.error }));
-        note(p.kind === "artist" ? "photos" : p.kind === "album" ? "albumInfo" : "identified", tr("{v}：处理 {done}/{total}", { v: p.cancelled ? tr("已中断") : tr("跑完了"), done: p.done, total: p.total }));
+        note(
+          p.kind === "artist" ? "photos" : p.kind === "album" ? "albumInfo" : "identified",
+          p.kind === "all"
+            ? p.cancelled ? tr("一键刮削已中断") : tr("一键刮削跑完了")
+            : tr("{v}：处理 {done}/{total}", { v: p.cancelled ? tr("已中断") : tr("跑完了"), done: p.done, total: p.total }),
+        );
         void refresh();
         onChanged();
       }
@@ -174,6 +179,18 @@ export function ScrapePage({ onError, onChanged }: Props) {
     },
     [],
   );
+
+  /** 一键刮削：一个后台作业按顺序跑完四步，进度和单项作业走同一个事件 */
+  const startAll = useCallback(async () => {
+    setMenuOpen(false);
+    try {
+      await api.scrapeAllStart();
+      setRunning(true);
+      setProgress({ ...EMPTY_PROGRESS, kind: "all", step: 1, steps: 4 });
+    } catch (e) {
+      errorRef.current(errorText(e));
+    }
+  }, []);
 
   /** 一次性的操作：跑完写一句结果到那一行，然后刷新计数 */
   const runOnce = useCallback(
@@ -260,15 +277,16 @@ export function ScrapePage({ onError, onChanged }: Props) {
   const jobLine =
     running && progress !== null
       ? {
-          label: progress.kind === "artist" ? tr("歌手照片") : progress.kind === "album" ? tr("专辑信息") : tr("识别曲目"),
+          label: progress.steps > 0 ? scrapeStepLabel(progress) : tr("正在{label}", { label: scrapeStepLabel(progress) }),
           done: progress.done,
           total: progress.total,
-          detail: `${progress.title}${progress.matched ? ` → ${progress.matched}` : ""}`,
+          // 补封面那一步的标题是 Rust 拼的一句中文汇总，界面上不另外显示
+          detail: progress.kind === "cover" ? "" : `${progress.title}${progress.matched ? ` → ${progress.matched}` : ""}`,
           stop: () => void api.scrapeCancel(),
         }
       : lyricsRunning && lyricsJob !== null
         ? {
-            label: tr("补歌词"),
+            label: tr("正在{label}", { label: tr("补歌词") }),
             done: lyricsJob.done,
             total: lyricsJob.total,
             detail: lyricsJob.title,
@@ -285,11 +303,11 @@ export function ScrapePage({ onError, onChanged }: Props) {
         <div className="scrape-head-actions" ref={menuRef}>
           <CommandButton
             icon="scrape"
-            label={running ? tr("刮削中…") : tr("刮新加的歌")}
+            label={running ? tr("刮削中…") : tr("一键刮削")}
             primary
             disabled={blocked}
-            onClick={() => void startJob("track", "identified", () => api.scrapeStart(true, 1000), tr("没有要刮的：每首都刮过了"))}
-            title={tr("只刮还没刮过、或者刮失败过的。认不准的不会写进库，停在下面「需要你确认」")}
+            onClick={() => void startAll()}
+            title={tr("按顺序做完：识别没认出的歌 → 歌手照片 → 补封面 → 补专辑信息。认不准的不会写进库，停在下面「需要你确认」")}
           />
           <button
             className="btn scrape-more"
@@ -301,6 +319,12 @@ export function ScrapePage({ onError, onChanged }: Props) {
           </button>
           {menuOpen && (
             <div className="scrape-menu" role="menu">
+              <button
+                role="menuitem"
+                disabled={blocked}
+                onClick={() => void startJob("track", "identified", () => api.scrapeStart(true, 1000), tr("没有要刮的：每首都刮过了"))}
+              >{tr("刮新加的歌")}<span>{tr("只做第一步：识别还没认出的歌")}</span>
+              </button>
               <button
                 role="menuitem"
                 disabled={blocked}
@@ -477,7 +501,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
 
       {jobLine !== null && (
         <div className="scrape-job" role="status">
-          <span className="scrape-job-label">{tr("正在{label}", { label: jobLine.label })}</span>
+          <span className="scrape-job-label">{jobLine.label}</span>
           <div className="scrape-bar">
             <div style={{ width: `${jobLine.total > 0 ? (jobLine.done / jobLine.total) * 100 : 0}%` }} />
           </div>
@@ -567,6 +591,8 @@ const EMPTY_PROGRESS: ScrapeProgress = {
   finished: false,
   cancelled: false,
   error: "",
+  step: 0,
+  steps: 0,
 };
 
 const EMPTY_LYRICS: LyricsProgress = {
@@ -756,4 +782,11 @@ function CandidateRow({
       </div>
     </div>
   );
+}
+
+/** 进度行的标题。一键刮削时是「第 2/4 步 · 歌手照片」 */
+function scrapeStepLabel(p: ScrapeProgress): string {
+  const what =
+    p.kind === "artist" ? tr("歌手照片") : p.kind === "album" ? tr("专辑信息") : p.kind === "cover" ? tr("补封面") : tr("识别曲目");
+  return p.steps > 0 ? tr("第 {step}/{steps} 步 · {what}", { step: p.step, steps: p.steps, what }) : what;
 }

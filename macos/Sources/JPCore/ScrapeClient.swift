@@ -138,6 +138,11 @@ extension CorpusClient {
         try await performDetached { try $0.call("scrapeStart", ["onlyMissing": AnyEncodable(onlyMissing)]) }
     }
 
+    /// 一键刮削：识别曲目 → 歌手照片 → 补封面 → 补专辑信息，一个作业跑完。进度的 stage 见 ``ScrapeStage``
+    public func scrapeAllStart() async throws {
+        let _: LyricJSON = try await performDetached { try $0.call("scrapeAllStart") }
+    }
+
     /// 批量刮歌手（资料和照片）。和曲目共用一个作业
     @discardableResult
     public func scrapeArtistsStart(onlyMissing: Bool = true) async throws -> Int {

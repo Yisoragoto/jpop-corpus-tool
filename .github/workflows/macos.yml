@@ -189,6 +189,8 @@ jobs:
           grep -Eq '^\[step\] player-bar height=[0-9]+(\.[0-9]+)? status=pass$' "$out/smoke.txt"
           grep -q '^\[step\] library-edit readback=true status=pass$' "$out/smoke.txt"
           grep -q '^\[step\] complete status=pass$' "$out/smoke.txt"
+          # 从 Task 里请求退出要真的退掉（应用内更新曾卡死在「正在退出」）
+          test -f "$out/quit.txt"
 
       # 英文界面再跑一遍冒烟，只为截图核对（不重复卡中文那一遍的断言，走完就行）
       - name: Smoke run in English (screenshots)
