@@ -13,6 +13,8 @@ struct LyricsPanel: View {
     @State private var showProfile = false
     /// 正在查的那段文字（从点的词开始到行尾，Yomitan 式从开头查）
     @State private var lookup: LookupRequest?
+    /// 自己滚过歌词：先不跟，等点「回到当前歌词」、点一行或换歌
+    @State private var manualScroll = false
     /// 右键「选择原文」打开的那一行
     @State private var correcting: Int64?
     @State private var selectionLine: LyricLine?
@@ -56,6 +58,7 @@ struct LyricsPanel: View {
                         .padding(.vertical, 40)
                     }
                     .scrollIndicators(.never)
+                    .background(StageScrollObserver { manualScroll = true })
                     .mask(
                         // 上下两头渐隐，像 Apple Music 的歌词
                         LinearGradient(stops: [
@@ -66,8 +69,22 @@ struct LyricsPanel: View {
                         ], startPoint: .top, endPoint: .bottom)
                     )
                     .onChange(of: player.currentUtterance) { _, id in
-                        guard let id, player.isPlaying else { return }
+                        guard let id, player.isPlaying, !manualScroll else { return }
                         withAnimation(.spring(duration: 0.45)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: 0.35)) }
+                    }
+                    .onChange(of: player.track?.id) { _, _ in manualScroll = false }
+                    .overlay(alignment: .bottom) {
+                        if manualScroll, player.currentUtterance != nil {
+                            Button("回到当前歌词") {
+                                manualScroll = false
+                                if let id = player.currentUtterance {
+                                    withAnimation(.spring(duration: 0.45)) { proxy.scrollTo(id, anchor: UnitPoint(x: 0, y: 0.35)) }
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .padding(.bottom, 10)
+                        }
                     }
                     .onChange(of: player.focusUtterance) { _, id in
                         guard let id else { return }
@@ -244,7 +261,7 @@ struct LyricsPanel: View {
         .animation(.easeInOut(duration: 0.25), value: current)
         .contentShape(Rectangle())
         // 点词由词自己接住（查词）；点到行里别的地方才跳过去放
-        .onTapGesture { if !karaoke, mode != .plain { Task { await player.playLine(line) } } }
+        .onTapGesture { if !karaoke, mode != .plain { manualScroll = false; Task { await player.playLine(line) } } }
         .help(hint)
         .contextMenu {
             Button("从这里放") { Task { await player.playLine(line) } }

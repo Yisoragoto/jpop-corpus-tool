@@ -24,6 +24,26 @@ const SNAP_SEC = 0.6;
 /** 差得不多时每帧追回这么多比例：几帧之内悄悄对齐，看不出抖 */
 const PULL = 0.12;
 
+/** 新的一拍和预期差这么多（秒）就算跳了：轮询抖动通常在几十毫秒内 */
+export const JUMP_SEC = 0.35;
+
+export interface PolledSample {
+  /** 轮询回来的位置（秒） */
+  pos: number;
+  /** 收到它的时刻（performance.now()，毫秒） */
+  at: number;
+}
+
+/**
+ * 新的一拍是不是一次跳转（拖进度条、点行、循环回绕）。
+ * 按上一拍的位置、经过的时间和倍速推一个预期位置，差得多就是跳了。
+ */
+export function isJump(prev: PolledSample | null, next: PolledSample, playing: boolean, rate: number): boolean {
+  if (prev === null) return false;
+  const expected = prev.pos + (playing ? Math.max(0, (next.at - prev.at) / 1000) * rate : 0);
+  return Math.abs(next.pos - expected) > JUMP_SEC;
+}
+
 export interface ClockState {
   /** 上一帧显示到第几秒 */
   sec: number;
@@ -82,11 +102,14 @@ export function useKaraoke(
   /** 字的 DOM 换了（开关全屏、振假名）时变一下：暂停着也要把新的字重新点上 */
   repaintKey: unknown,
 ): void {
-  const polled = useRef({ pos: positionSec, at: performance.now() });
-  // 每拍位置一变就记下「这一刻在这里」
+  const polled = useRef<PolledSample>({ pos: positionSec, at: performance.now() });
+  const jumped = useRef(false);
+  // 每拍位置一变就记下「这一刻在这里」；拖了进度条、点行跳转时下一帧直接落过去（往回跳也不等）
   useEffect(() => {
-    polled.current = { pos: positionSec, at: performance.now() };
-  }, [positionSec]);
+    const next = { pos: positionSec, at: performance.now() };
+    if (isJump(polled.current, next, playing, rate)) jumped.current = true;
+    polled.current = next;
+  }, [positionSec, playing, rate]);
 
   useEffect(() => {
     const elements = () => document.querySelectorAll<HTMLElement>(".karaoke-line .kc");
@@ -94,7 +117,8 @@ export function useKaraoke(
     let frame = 0;
     let clock: ClockState | null = null;
     const paint = () => {
-      clock = advanceClock(clock, polled.current, performance.now(), playing, rate);
+      clock = advanceClock(jumped.current ? null : clock, polled.current, performance.now(), playing, rate);
+      jumped.current = false;
       paintKaraoke(timeline, clock.sec, elements());
       if (playing) frame = requestAnimationFrame(paint);
     };

@@ -270,12 +270,16 @@ struct LyricsStage: View {
                 guard manualScroll == nil, let id else { return }
                 withAnimation(reduceMotion ? nil : .spring(duration: 0.55)) { proxy.scrollTo(id, anchor: Self.anchor) }
             }
-            .task(id: manualScroll) {
-                guard manualScroll != nil else { return }
-                do { try await Task.sleep(for: .seconds(4)) } catch { return }
-                manualScroll = nil
-                if let id = player.currentUtterance {
-                    withAnimation(reduceMotion ? nil : .spring(duration: 0.55)) { proxy.scrollTo(id, anchor: Self.anchor) }
+            .overlay(alignment: .bottom) {
+                if manualScroll != nil, player.currentUtterance != nil {
+                    Button("回到当前歌词") {
+                        manualScroll = nil
+                        if let id = player.currentUtterance {
+                            withAnimation(reduceMotion ? nil : .spring(duration: 0.55)) { proxy.scrollTo(id, anchor: Self.anchor) }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.bottom, 24)
                 }
             }
             .onChange(of: player.track?.id) { _, _ in
@@ -337,7 +341,10 @@ struct LyricsStage: View {
             .animation(reduceMotion ? nil : .spring(duration: 0.4), value: current)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .onTapGesture { Task { await app.player.playLine(line) } }
+            .onTapGesture {
+                if line.timeSec != nil { manualScroll = nil }
+                Task { await app.player.playLine(line) }
+            }
             .help(line.timeSec.map { "点词查词，点空白处从 \(formatTime($0)) 放" } ?? "点词查词（这一行没有时间戳）")
             .contextMenu {
                 Button("从这里放") { Task { await app.player.playLine(line) } }.disabled(line.timeSec == nil)
@@ -507,7 +514,8 @@ private struct StageBackdrop: View {
 }
 
 @MainActor
-private struct StageScrollObserver: NSViewRepresentable {
+/// 用户自己滚了（滚轮 / 触控板）：歌词跟随暂停，直到点「回到当前歌词」、点一行或换歌
+struct StageScrollObserver: NSViewRepresentable {
     let scrolled: () -> Void
     func makeCoordinator() -> Coordinator { Coordinator(scrolled) }
     func makeNSView(context: Context) -> NSView {
