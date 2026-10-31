@@ -1421,9 +1421,9 @@ export function formatDuration(seconds: number | null): string {
  * 那边用了 `#[serde(tag = "kind")]`，所以这里是可辨识联合。
  */
 export type ImportAction =
-  | { kind: "new"; songId: string }
-  | { kind: "alreadyImported"; songId: string }
-  | { kind: "possibleDuplicate"; songId: string; existingPath: string }
+  | { kind: "new"; songId: string; versionOf?: { songId: string; existingPath: string; reason: string } }
+  | { kind: "alreadyImported"; songId: string; fileChanged?: boolean }
+  | { kind: "possibleDuplicate"; songId: string; existingPath: string; reason?: string }
   | { kind: "duplicateInBatch"; firstPath: string }
   | { kind: "skipped"; reason: string };
 
@@ -1447,6 +1447,8 @@ export interface PlanSummary {
   new: number;
   alreadyImported: number;
   possibleDuplicates: number;
+  /** 已在库中、但文件变了（导入时刷新文件信息） */
+  filesChanged?: number;
   duplicatesInBatch: number;
   skipped: number;
 }
@@ -1781,6 +1783,8 @@ export interface ImportReport {
    * 既不能说「全部完成」，也不能说「什么都没做」。
    */
   cancelled: boolean;
+  /** 已在库中、但文件变了而刷新了文件信息的首数 */
+  filesRefreshed?: number;
   /** metadata/songs.csv 同步：updated / noFile / unchanged，其余是出错原因（库已经导进去了） */
   csv?: string;
 }

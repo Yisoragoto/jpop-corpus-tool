@@ -72,6 +72,9 @@ pub struct ImportReport {
     /// 不能说成「全部完成」，也不能说成「什么都没做」。
     #[serde(default)]
     pub cancelled: bool,
+    /// 已在库中、但文件变了（换了压制、改了标签）而刷新了文件信息的首数
+    #[serde(default)]
+    pub files_refreshed: usize,
 }
 
 impl ImportReport {
@@ -165,13 +168,27 @@ pub fn execute_cancellable(
     let total = todo.len();
     let mut report = ImportReport::default();
 
+    // 已在库中的：补记 / 刷新文件信息（读过标签的才有东西可记；没变的那些连标签都没读）。
+    // 一首一个事务；出错只记日志，不挡导入
+    for item in &plan.items {
+        let crate::plan::Action::AlreadyImported { song_id, file_changed } = &item.action else { continue };
+        if item.track.unchanged {
+            continue;
+        }
+        let tx = conn.transaction().context("开不了事务")?;
+        match refresh_known(&tx, song_id, &item.track, *file_changed).and_then(|()| Ok(tx.commit()?)) {
+            Ok(()) => report.files_refreshed += usize::from(*file_changed),
+            Err(err) => eprintln!("刷新文件信息失败 {}: {err:#}", item.track.path),
+        }
+    }
+
     for (index, item) in todo.into_iter().enumerate() {
         if should_stop() {
             report.cancelled = true;
             break;
         }
         let song_id = match &item.action {
-            crate::plan::Action::New { song_id } => song_id.clone(),
+            crate::plan::Action::New { song_id, .. } => song_id.clone(),
             // to_import() 只放 New，走不到这里
             _ => continue,
         };
@@ -260,6 +277,8 @@ fn import_one(
     if let Err(err) = jp_corpus::fingerprint::refresh(tx, song_id, std::path::Path::new(&track.path)) {
         eprintln!("音频指纹未写入 {}: {err:#}", track.path);
     }
+    // 文件本身（大小、修改时间、格式、采样率……）单独记一行，和曲目元数据分开
+    jp_corpus::audio_files::record(tx, song_id, &track.facts(), current_fingerprint(tx, song_id)?.as_deref())?;
 
     // ── 演唱者 ──
     // 只按斜杠拆，和 Python 的 split_artists(slash_only=True) 一致。
@@ -303,6 +322,58 @@ fn import_one(
     }
 
     Ok(stats)
+}
+
+fn current_fingerprint(conn: &Connection, song_id: &str) -> Result<Option<String>> {
+    Ok(conn.query_row("SELECT audio_fingerprint FROM songs WHERE id=?1", [song_id], |r| r.get(0))?)
+}
+
+/// 已在库中的文件：记下（或更新）它的文件信息。
+///
+/// `changed`（大小或修改时间和上次不同）时还要：重算指纹；**来自文件的字段**
+/// （字段来源是 tag / filename / audio 的曲名、年份、流派、时长）跟着新标签更新。
+/// 你改过的（manual）、刮削来的不动；歌手和专辑牵涉署名和专辑归属，也不自动改。
+/// 从不往音频文件里写。
+pub fn refresh_known(conn: &Connection, song_id: &str, track: &ScannedTrack, changed: bool) -> Result<()> {
+    if changed {
+        jp_corpus::audio_files::clear_fingerprint(conn, song_id, &track.path)?;
+        if let Err(err) = jp_corpus::fingerprint::refresh(conn, song_id, std::path::Path::new(&track.path)) {
+            eprintln!("音频指纹未更新 {}: {err:#}", track.path);
+        }
+        let duration = track.duration_sec.map(|d| format!("{d}")).unwrap_or_default();
+        for (field, value) in [
+            ("title", track.title()),
+            ("year", track.tag_year.as_str()),
+            ("genre", track.tag_genre.as_str()),
+            ("duration_sec", duration.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                continue;
+            }
+            let source = jp_corpus::lineage::source_of(conn, "song", song_id, field)?;
+            if !matches!(source.as_deref(), Some("tag" | "filename" | "audio")) {
+                continue;
+            }
+            // 字段名来自上面的固定表
+            let updated = if field == "duration_sec" {
+                conn.execute(
+                    "UPDATE songs SET duration_sec=?1 WHERE id=?2 AND COALESCE(duration_sec,-1)<>?1",
+                    params![track.duration_sec, song_id],
+                )?
+            } else {
+                conn.execute(
+                    &format!("UPDATE songs SET {field}=?1 WHERE id=?2 AND COALESCE({field},'')<>?1"),
+                    params![value, song_id],
+                )?
+            };
+            if updated > 0 {
+                let source = source.unwrap_or_default();
+                jp_corpus::lineage::set_provenance(conn, "song", song_id, field, &source, &track.path, None)?;
+            }
+        }
+    }
+    jp_corpus::audio_files::record(conn, song_id, &track.facts(), current_fingerprint(conn, song_id)?.as_deref())?;
+    Ok(())
 }
 
 /// 导入时每个元数据字段是从哪来的：文件标签，还是从文件名、目录猜的。空字段不记。
@@ -1024,6 +1095,7 @@ mod tests {
             audio_path: "D:/a/1.flac".into(),
             title: "曲一".into(),
             artist: "ヨルシカ".into(),
+            ..Default::default()
         }]);
         let p = plan(&[track("D:/a/2.flac", "曲二", "ヨルシカ")], &index);
         execute(&mut conn, &p, None).unwrap();
@@ -1106,6 +1178,7 @@ mod tests {
             audio_path: "D:/a/1.flac".into(),
             title: "夜行".into(),
             artist: "ヨルシカ".into(),
+            ..Default::default()
         }]);
         let p = plan(&[t], &index);
         let report = execute(&mut conn, &p, None).unwrap();

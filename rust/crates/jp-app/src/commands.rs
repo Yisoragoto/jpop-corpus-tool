@@ -1558,9 +1558,9 @@ fn plan_targets(
     paths: &[String],
     max_depth: Option<usize>,
 ) -> anyhow::Result<ScanResult> {
-    let (tracks, ignored) = jp_import::scan_targets(paths, max_depth.unwrap_or(8));
-
+    // 先读现有曲库：库里有、大小和修改时间都没变的文件不再读标签
     let index = jp_import::LibraryIndex::from_corpus(&state.corpus())?;
+    let (tracks, ignored) = jp_import::scan_targets_known(paths, max_depth.unwrap_or(8), Some(&index));
     let result = review(state, &tracks, &index, ignored);
 
     // 记下扫描结果，等确认。存扫描结果而不是计划：导入时会重新算，

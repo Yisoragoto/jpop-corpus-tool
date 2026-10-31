@@ -24,7 +24,18 @@ public struct PlanAction: Codable, Hashable, Sendable {
     public var songId: String?
     public var existingPath: String?
     public var firstPath: String?
+    /// 跳过的原因；可能重复时是判成同一个录音的依据
     public var reason: String?
+    /// 新建：库里同名同歌手那首的另一个版本（Live、翻唱、重制、时长不同……）
+    public var versionOf: VersionOf?
+    /// 已在库中，但文件变了（导入时刷新文件信息）
+    public var fileChanged: Bool?
+
+    public struct VersionOf: Codable, Hashable, Sendable {
+        public var songId: String
+        public var existingPath: String
+        public var reason: String
+    }
 
     /// 会不会真的往库里写
     public var writes: Bool { kind == .new }
@@ -37,6 +48,10 @@ public struct PlanSummary: Codable, Hashable, Sendable {
     public var possibleDuplicates: Int
     public var duplicatesInBatch: Int
     public var skipped: Int
+    /// 已在库中、但文件变了的。老后端没有这一项
+    public var filesChanged: Int?
+    /// 有没有要做的事：新歌，或者变了的文件要刷新
+    public var hasWork: Bool { new > 0 || (filesChanged ?? 0) > 0 }
 }
 
 public struct PlanItem: Codable, Hashable, Identifiable, Sendable {
@@ -109,6 +124,8 @@ public struct ImportResult: Codable, Hashable, Sendable {
     public var lyricLines: Int
     public var tokens: Int
     public var csv: String?
+    /// 已在库中、文件变了而刷新了文件信息的首数
+    public var filesRefreshed: Int?
 }
 
 /// `runImport` 的立即返回：这一批会不会带分词
