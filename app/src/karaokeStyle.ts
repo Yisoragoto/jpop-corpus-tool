@@ -39,12 +39,12 @@ export type KaraokePresetId = "classic" | "pink" | "plain";
 const base = { fontFamily: "", fontSize: 56, staggered: true } as const;
 
 export const KARAOKE_PRESETS: Record<KaraokePresetId, KaraokeStyle> = {
-  // 经典 KTV：白字黑边，唱过变蓝、白边、蓝色发光
+  // 经典 KTV：白字细黑边、贴边一圈蓝光，唱过变蓝、白边，浅浅一层侧面
   classic: {
     ...base, fontWeight: 900,
-    unsungFill: "#ffffff", unsungStroke: "#10121a", unsungGlow: "#1e6fff",
-    sungFill: "#2f86ff", sungStroke: "#ffffff", sungGlow: "#3aa2ff",
-    strokeWidth: 5, glowStrength: 12, shadowColor: "#000000", shadowDepth: 3,
+    unsungFill: "#f4f4f4", unsungStroke: "#000000", unsungGlow: "#2a78ff",
+    sungFill: "#3a8cf5", sungStroke: "#ffffff", sungGlow: "#2a78ff",
+    strokeWidth: 3, glowStrength: 8, shadowColor: "#000000", shadowDepth: 2,
   },
   // 粉色像素风 MV：白字粉紫边，唱过变粉、白边、粉色发光
   pink: {
@@ -62,7 +62,8 @@ export const KARAOKE_PRESETS: Record<KaraokePresetId, KaraokeStyle> = {
   },
 };
 
-export const DEFAULT_KARAOKE_STYLE: KaraokeStyle = KARAOKE_PRESETS.classic;
+// 默认是原来的样子；KTV 风格的预设由用户自己挑
+export const DEFAULT_KARAOKE_STYLE: KaraokeStyle = KARAOKE_PRESETS.plain;
 
 export const KARAOKE_LIMITS = {
   fontSize: [28, 96],
@@ -121,18 +122,30 @@ export function applyPreset(style: KaraokeStyle, id: KaraokePresetId): KaraokeSt
   return { ...KARAOKE_PRESETS[id], fontFamily: style.fontFamily, fontSize: style.fontSize };
 }
 
+/** 立体阴影的几步位移：1、2、4… 翻倍叠，最后补零头。每一步都把之前叠好的整块再挪一次，
+ *  所以 k 步就能连成 0…厚度 的一整块侧面（厚度 12 只要 4 步，不用 12 个滤镜） */
+export function extrusionSteps(depth: number): number[] {
+  const steps: number[] = [];
+  let covered = 0;
+  for (let next = 1; covered + next <= depth; next *= 2) { steps.push(next); covered += next; }
+  if (covered < depth) steps.push(depth - covered);
+  return steps;
+}
+
 /**
  * 给 `.ktv` 的 CSS 变量。长度都换成 em（按 fontSize 折算），窗口窄了字缩小时描边、发光、阴影一起缩。
- * 立体阴影是一串 1px 一步往右下叠的实心投影，叠起来是一块有厚度的「侧面」，不是糊开的影子。
+ *
+ * 立体阴影和发光用 `filter: drop-shadow`，不用 text-shadow：Chromium 画描边字时 text-shadow 描边一份、
+ * 填色一份，填色那份会盖在描边上面，阴影就错位地夹在描边和字之间。drop-shadow 投的是描好边的整个字。
+ * 先叠侧面（实心、往右下），再在外面发光。
  */
 export function karaokeCssVars(style: KaraokeStyle): Record<string, string> {
   const em = (px: number) => `${(px / style.fontSize).toFixed(4)}em`;
+  const extrusion = extrusionSteps(style.shadowDepth).map((n) => `drop-shadow(${em(n)} ${em(n)} 0 ${style.shadowColor})`);
   const glow = (color: string) => style.glowStrength === 0
     ? []
-    : [`0 0 ${em(style.glowStrength)} ${color}`, `0 0 ${em(style.glowStrength / 2)} ${color}`];
-  const depth: string[] = [];
-  for (let i = 1; i <= style.shadowDepth; i++) depth.push(`${em(i)} ${em(i)} 0 ${style.shadowColor}`);
-  const shadow = (color: string) => [...glow(color), ...depth].join(", ") || "none";
+    : [`drop-shadow(0 0 ${em(style.glowStrength / 4)} ${color})`, `drop-shadow(0 0 ${em(style.glowStrength / 2)} ${color})`];
+  const filter = (color: string) => [...extrusion, ...glow(color)].join(" ") || "none";
   return {
     "--ktv-size": `${style.fontSize}px`,
     "--ktv-size-vw": `${(style.fontSize * 0.075).toFixed(3)}vw`,
@@ -143,8 +156,8 @@ export function karaokeCssVars(style: KaraokeStyle): Record<string, string> {
     "--ktv-sung-stroke": style.sungStroke,
     // 描边居中画在字形轮廓上、填色盖住里面一半（paint-order），所以要画两倍宽，露在外面的才是设定的粗细
     "--ktv-stroke": em(style.strokeWidth * 2),
-    "--ktv-unsung-shadow": shadow(style.unsungGlow),
-    "--ktv-sung-shadow": shadow(style.sungGlow),
+    "--ktv-unsung-filter": filter(style.unsungGlow),
+    "--ktv-sung-filter": filter(style.sungGlow),
   };
 }
 

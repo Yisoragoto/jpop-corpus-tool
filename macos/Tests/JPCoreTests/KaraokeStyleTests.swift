@@ -56,6 +56,15 @@ final class KaraokeStyleTests: XCTestCase {
         XCTAssertNil(edited.matchingPreset)
     }
 
+    func testExtrusionStepsCoverEveryOffset() {
+        for depth in 0...12 {
+            var reach: Set<Int> = [0]
+            for step in KaraokeStyle.extrusionSteps(depth) { reach.formUnion(reach.map { $0 + step }) }
+            XCTAssertEqual(reach.sorted(), Array(0...depth), "depth \(depth)")
+        }
+        XCTAssertEqual(KaraokeStyle.extrusionSteps(12).count, 4)
+    }
+
     func testHexRoundTrip() {
         let c = KaraokeStyle.rgb("#ec4f95")
         XCTAssertEqual(KaraokeStyle.hex(r: c.r, g: c.g, b: c.b), "#ec4f95")

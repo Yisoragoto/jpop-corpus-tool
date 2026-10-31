@@ -1,21 +1,21 @@
 {
   "comment": "Karaoke subtitle style shared by Windows (app/src/karaokeStyle.ts) and macOS (JPCore/KaraokeStyle.swift). Both test suites read this file, so the field names, presets and normalisation rules stay identical on the two clients.",
-  "defaultPreset": "classic",
+  "defaultPreset": "plain",
   "presets": {
     "classic": {
       "fontFamily": "",
       "fontSize": 56,
       "fontWeight": 900,
-      "unsungFill": "#ffffff",
-      "unsungStroke": "#10121a",
-      "unsungGlow": "#1e6fff",
-      "sungFill": "#2f86ff",
+      "unsungFill": "#f4f4f4",
+      "unsungStroke": "#000000",
+      "unsungGlow": "#2a78ff",
+      "sungFill": "#3a8cf5",
       "sungStroke": "#ffffff",
-      "sungGlow": "#3aa2ff",
-      "strokeWidth": 5,
-      "glowStrength": 12,
+      "sungGlow": "#2a78ff",
+      "strokeWidth": 3,
+      "glowStrength": 8,
       "shadowColor": "#000000",
-      "shadowDepth": 3,
+      "shadowDepth": 2,
       "staggered": true
     },
     "pink": {
@@ -54,7 +54,7 @@
   "normalize": [
     {
       "input": {},
-      "output": "classic"
+      "output": "plain"
     },
     {
       "input": {
@@ -75,11 +75,11 @@
         "fontSize": 96,
         "fontWeight": 600,
         "unsungFill": "#abcdef",
-        "unsungStroke": "#10121a",
-        "unsungGlow": "#1e6fff",
-        "sungFill": "#2f86ff",
-        "sungStroke": "#ffffff",
-        "sungGlow": "#3aa2ff",
+        "unsungStroke": "#000000",
+        "unsungGlow": "#000000",
+        "sungFill": "#4cc2ff",
+        "sungStroke": "#000000",
+        "sungGlow": "#000000",
         "strokeWidth": 0,
         "glowStrength": 13,
         "shadowColor": "#000000",
@@ -101,11 +101,11 @@
         "fontSize": 28,
         "fontWeight": 400,
         "unsungFill": "#ffffff",
-        "unsungStroke": "#10121a",
-        "unsungGlow": "#1e6fff",
-        "sungFill": "#2f86ff",
-        "sungStroke": "#ffffff",
-        "sungGlow": "#3aa2ff",
+        "unsungStroke": "#000000",
+        "unsungGlow": "#000000",
+        "sungFill": "#4cc2ff",
+        "sungStroke": "#000000",
+        "sungGlow": "#000000",
         "strokeWidth": 12,
         "glowStrength": 40,
         "shadowColor": "#000000",

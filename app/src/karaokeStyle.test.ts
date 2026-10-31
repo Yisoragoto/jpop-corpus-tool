@@ -5,6 +5,7 @@ import shared from "../../macos/Tests/JPCoreTests/Fixtures/KaraokeStyle.json";
 import {
   applyPreset,
   DEFAULT_KARAOKE_STYLE,
+  extrusionSteps,
   KARAOKE_PRESETS,
   karaokeCssVars,
   matchingPreset,
@@ -47,10 +48,20 @@ describe("karaoke style", () => {
   });
 
   it("scales stroke, glow and shadow with the font", () => {
-    const vars = karaokeCssVars({ ...KARAOKE_PRESETS.classic, fontSize: 50, strokeWidth: 5, shadowDepth: 2, glowStrength: 0 });
+    const vars = karaokeCssVars({ ...KARAOKE_PRESETS.classic, fontSize: 50, strokeWidth: 5, shadowDepth: 3, glowStrength: 0 });
     expect(vars["--ktv-stroke"]).toBe("0.2000em");
-    expect(vars["--ktv-unsung-shadow"]).toBe("0.0200em 0.0200em 0 #000000, 0.0400em 0.0400em 0 #000000");
-    expect(karaokeCssVars(KARAOKE_PRESETS.plain)["--ktv-sung-shadow"]).not.toContain("NaN");
-    expect(karaokeCssVars({ ...KARAOKE_PRESETS.plain, glowStrength: 0 })["--ktv-sung-shadow"]).toBe("none");
+    // 侧面：1 + 2 两步叠出 0…3 的整块
+    expect(vars["--ktv-unsung-filter"]).toBe("drop-shadow(0.0200em 0.0200em 0 #000000) drop-shadow(0.0400em 0.0400em 0 #000000)");
+    expect(karaokeCssVars(KARAOKE_PRESETS.plain)["--ktv-sung-filter"]).not.toContain("NaN");
+    expect(karaokeCssVars({ ...KARAOKE_PRESETS.plain, glowStrength: 0 })["--ktv-sung-filter"]).toBe("none");
+  });
+
+  it("builds a contiguous extrusion from doubling steps", () => {
+    for (let depth = 0; depth <= 12; depth++) {
+      let reach = new Set([0]);
+      for (const step of extrusionSteps(depth)) reach = new Set([...reach, ...[...reach].map((x) => x + step)]);
+      expect([...reach].sort((a, b) => a - b)).toEqual(Array.from({ length: depth + 1 }, (_, i) => i));
+    }
+    expect(extrusionSteps(12).length).toBe(4);
   });
 });

@@ -3593,26 +3593,31 @@ table.data th.sortable:hover { color: var(--fg); }
 /* 每个字两层：本身画「没唱」那套，::after 用同一个字画「唱过」那套，按 --p 从左往右露出来。
    描边居中画在轮廓上、paint-order 让填色盖在描边上面，所以字形不会被描边吃细 */
 .ktv-row .kc {
-  position: relative;
+  /* 每个字自己一个行框、行高 1：::after 那份拷贝的行框和它一模一样，两层逐像素重合。
+     原来 .kc 是行内元素，::after 绝对定位后按 1.5 倍行高排，字往下错开半个行距 */
+  position: relative; display: inline-block; line-height: 1;
   color: var(--ktv-unsung-fill);
   -webkit-text-stroke: var(--ktv-stroke) var(--ktv-unsung-stroke);
   paint-order: stroke fill;
-  text-shadow: var(--ktv-unsung-shadow);
+  /* 侧面和发光投的是「描好边的字 + 唱过那层」合起来的形状，见 karaokeCssVars */
+  filter: var(--ktv-unsung-filter);
 }
 .ktv-row .kc::after {
   content: attr(data-ch);
-  position: absolute; left: 0; top: 0;
-  display: none;
+  position: absolute; left: 0; top: 0; right: 0;
+  display: none; line-height: inherit; white-space: pre;
   color: var(--ktv-sung-fill);
   -webkit-text-stroke: var(--ktv-stroke) var(--ktv-sung-stroke);
   paint-order: stroke fill;
-  text-shadow: var(--ktv-sung-shadow);
   pointer-events: none;
 }
-/* 唱完的字：底下那层整个藏起来（只留占位），不然没唱那套的发光会从唱过的字后面透出来 */
-.ktv-row .kc.kc-on, .ktv-row.ktv-line-on .kc { color: transparent; -webkit-text-stroke-color: transparent; text-shadow: none; }
+/* 唱完的字：底下那层整个藏起来（只留占位），发光换成唱过那套的颜色 */
+.ktv-row .kc.kc-on, .ktv-row.ktv-line-on .kc {
+  color: transparent; -webkit-text-stroke-color: transparent;
+  filter: var(--ktv-sung-filter);
+}
 .ktv-row .kc.kc-on::after, .ktv-row.ktv-line-on .kc::after { display: block; }
-/* 正在唱的字：上下左右多留出一截，发光和阴影不被切；右边界跟着 --p 走 */
+/* 正在唱的字：上下左右多留出一截，描边不被切；右边界跟着 --p 走 */
 .ktv-row .kc.kc-now::after { display: block; clip-path: inset(-1em calc(100% - var(--p, 0%)) -1em -1em); }
 /* 振假名同一套样式：字号是正文的 .38，描边、发光、阴影的 em 跟着它自己的字号缩；底下有字唱到了就换成唱过那套 */
 .ktv-row ruby rt {
@@ -3620,17 +3625,17 @@ table.data th.sortable:hover { color: var(--fg); }
   color: var(--ktv-unsung-fill);
   -webkit-text-stroke: calc(var(--ktv-stroke) * 1.6) var(--ktv-unsung-stroke);
   paint-order: stroke fill;
-  text-shadow: var(--ktv-unsung-shadow);
+  filter: var(--ktv-unsung-filter);
 }
 .ktv-row ruby:has(.kc-on, .kc-now) rt, .ktv-row.ktv-line-on ruby rt {
   color: var(--ktv-sung-fill);
   -webkit-text-stroke-color: var(--ktv-sung-stroke);
-  text-shadow: var(--ktv-sung-shadow);
+  filter: var(--ktv-sung-filter);
 }
 .ktv-row:not(.ktv-row-active) { opacity: .82; }
 .ktv-countdown {
   display: inline-block; margin-right: .3em; font-size: .5em; vertical-align: middle; letter-spacing: .15em;
-  color: var(--ktv-sung-fill); text-shadow: var(--ktv-sung-shadow);
+  color: var(--ktv-sung-fill); filter: var(--ktv-sung-filter);
 }
 .ktv-text { display: inline; }
 /* 缩到下限还放不下（KaraokeStage 的 fit）：允许折行，不再裁掉 */
