@@ -180,6 +180,20 @@ enum SmokeRun {
             app.showStage = false
             await settle(1)
 
+            // 卡拉 OK 字幕样式：两套预设各截一张（描边、发光、立体阴影、逐字擦色）
+            let savedStyle = app.karaokeStyle
+            app.stageKaraoke = true
+            for preset in [KaraokeStyle.Preset.classic, .pink] {
+                app.karaokeStyle = savedStyle.applying(preset)
+                app.showStage = true
+                await settle(2)
+                shot("03d-karaoke-\(preset.rawValue)", into: out, note: note)
+                app.showStage = false
+                await settle(1)
+            }
+            app.karaokeStyle = savedStyle
+            app.stageKaraoke = false
+
             // 首页：刚才那次试听到行尾自动暂停，播放记录里有了，「继续听」应该是这首
             app.section = .home
             await settle(2)

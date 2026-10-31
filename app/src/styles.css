@@ -773,15 +773,15 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 .karaoke-line { --k-dim: color-mix(in srgb, var(--fg) 50%, transparent); --k-lit: var(--accent); }
 .stage-line .karaoke-line { --k-dim: rgba(255, 255, 255, .5); --k-lit: #fff; }
 /* 字的颜色不做过渡：正在唱的字是透明字 + 渐变底，换成「唱过」时要是从 transparent 渐变过去，每个字都会闪一下 */
-.karaoke-line .kc, .ktv-row .kc { color: var(--k-dim); }
-.karaoke-line .kc.kc-on, .ktv-row .kc.kc-on { color: var(--k-lit); }
-.karaoke-line .kc-now, .ktv-row .kc-now {
+.karaoke-line .kc { color: var(--k-dim); }
+.karaoke-line .kc.kc-on { color: var(--k-lit); }
+.karaoke-line .kc-now {
   color: transparent;
   background: linear-gradient(90deg, var(--k-lit) var(--p, 0%), var(--k-dim) var(--p, 0%));
   -webkit-background-clip: text; background-clip: text;
 }
 /* 注音跟着它下面的字亮：底下有一个字亮了，注音就亮 */
-.karaoke-line ruby:has(.kc-on, .kc-now) rt, .ktv-row ruby:has(.kc-on, .kc-now) rt { color: var(--k-lit); opacity: 1; }
+.karaoke-line ruby:has(.kc-on, .kc-now) rt { color: var(--k-lit); opacity: 1; }
 .stage-line .karaoke-line .kc.kc-on { text-shadow: 0 0 18px rgba(255, 255, 255, .25); }
 .banner.error { color: var(--danger); background: rgba(247,118,142,.08); cursor: pointer; }
 
@@ -3358,25 +3358,85 @@ table.data th.sortable:hover { color: var(--fg); }
   position: relative; margin-top: auto;
   display: flex; flex-direction: column; gap: 6px;
   padding: 0 6vw 28px;
-  font-family: var(--lyric-font);
-  font-size: clamp(28px, 4.2vw, 60px);
-  font-weight: 700; line-height: 1.5;
+}
+/* 字幕样式（karaokeStyle.ts 给的变量）：字号窗口够宽时是设定值，窄了按比例缩；
+   描边、发光、立体阴影都是 em，跟着一起缩 */
+.ktv-lyrics, .ktv-preview {
+  font-family: var(--ktv-font, var(--lyric-font));
+  font-size: clamp(20px, var(--ktv-size-vw, 4.2vw), var(--ktv-size, 56px));
+  font-weight: var(--ktv-weight, 800); line-height: 1.5;
 }
 .ktv-row {
   min-height: 1.5em; white-space: nowrap; overflow: hidden;
-  /* 描边：两层投影，背景图再亮也读得清。用 filter 不用 text-stroke，正在唱那个字的渐变填色才不受影响 */
-  filter: drop-shadow(0 0 2px var(--ktv-shadow)) drop-shadow(0 2px 6px var(--ktv-shadow));
-  --k-dim: var(--ktv-unsung); --k-lit: var(--ktv-sung);
-  color: var(--ktv-unsung);
+  /* 发光和阴影会画到行框外面：留出位置，别被 overflow 切掉 */
+  padding: .12em .3em .2em; margin: 0 -.3em;
 }
 .ktv-row-top { text-align: left; }
 .ktv-row-bottom { text-align: right; }
-.ktv-row ruby rt { font-size: .38em; font-weight: 600; color: var(--ktv-unsung); }
+.ktv-centered .ktv-row { text-align: center; }
+/* 每个字两层：本身画「没唱」那套，::after 用同一个字画「唱过」那套，按 --p 从左往右露出来。
+   描边居中画在轮廓上、paint-order 让填色盖在描边上面，所以字形不会被描边吃细 */
+.ktv-row .kc {
+  position: relative;
+  color: var(--ktv-unsung-fill);
+  -webkit-text-stroke: var(--ktv-stroke) var(--ktv-unsung-stroke);
+  paint-order: stroke fill;
+  text-shadow: var(--ktv-unsung-shadow);
+}
+.ktv-row .kc::after {
+  content: attr(data-ch);
+  position: absolute; left: 0; top: 0;
+  display: none;
+  color: var(--ktv-sung-fill);
+  -webkit-text-stroke: var(--ktv-stroke) var(--ktv-sung-stroke);
+  paint-order: stroke fill;
+  text-shadow: var(--ktv-sung-shadow);
+  pointer-events: none;
+}
+/* 唱完的字：底下那层整个藏起来（只留占位），不然没唱那套的发光会从唱过的字后面透出来 */
+.ktv-row .kc.kc-on, .ktv-row.ktv-line-on .kc { color: transparent; -webkit-text-stroke-color: transparent; text-shadow: none; }
+.ktv-row .kc.kc-on::after, .ktv-row.ktv-line-on .kc::after { display: block; }
+/* 正在唱的字：上下左右多留出一截，发光和阴影不被切；右边界跟着 --p 走 */
+.ktv-row .kc.kc-now::after { display: block; clip-path: inset(-1em calc(100% - var(--p, 0%)) -1em -1em); }
+/* 振假名同一套样式：字号是正文的 .38，描边、发光、阴影的 em 跟着它自己的字号缩；底下有字唱到了就换成唱过那套 */
+.ktv-row ruby rt {
+  font-size: .38em; font-weight: inherit;
+  color: var(--ktv-unsung-fill);
+  -webkit-text-stroke: calc(var(--ktv-stroke) * 1.6) var(--ktv-unsung-stroke);
+  paint-order: stroke fill;
+  text-shadow: var(--ktv-unsung-shadow);
+}
+.ktv-row ruby:has(.kc-on, .kc-now) rt, .ktv-row.ktv-line-on ruby rt {
+  color: var(--ktv-sung-fill);
+  -webkit-text-stroke-color: var(--ktv-sung-stroke);
+  text-shadow: var(--ktv-sung-shadow);
+}
 .ktv-row:not(.ktv-row-active) { opacity: .82; }
-/* 没有逐字时间的行：到点整行变色，不按字估算 */
-.ktv-row.ktv-line-on .kc { color: var(--ktv-sung); }
-.ktv-countdown { display: inline-block; margin-right: .3em; font-size: .5em; vertical-align: middle; color: var(--ktv-sung); letter-spacing: .15em; }
+.ktv-countdown {
+  display: inline-block; margin-right: .3em; font-size: .5em; vertical-align: middle; letter-spacing: .15em;
+  color: var(--ktv-sung-fill); text-shadow: var(--ktv-sung-shadow);
+}
 .ktv-text { display: inline; }
+
+/* 字幕样式面板：盖在歌词上方，右上角 */
+.ktv-style-panel {
+  position: absolute; z-index: 3; top: 56px; right: 24px;
+  width: min(520px, calc(100% - 48px)); max-height: calc(100% - 72px - var(--player-h, 0px));
+  overflow: auto; padding: 4px 12px 12px; border-radius: 10px;
+  background: var(--surface-pop); border: 1px solid var(--line-strong);
+  box-shadow: 0 16px 48px var(--ktv-shadow);
+}
+.ktv-style-panel .ktv-preview { font-size: 34px; }
+.ktv-preview {
+  display: block; margin-top: 6px; padding: 10px 14px; border-radius: 8px;
+  background: radial-gradient(circle at 30% 20%, var(--ktv-panel), var(--ktv-bg));
+  font-size: 40px; max-width: 100%; overflow: hidden;
+}
+.ktv-preview .ktv-row { overflow: visible; }
+.ktv-colors { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ktv-color { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.ktv-color input[type="color"] { width: 28px; height: 22px; padding: 0; border: 1px solid var(--line-strong); border-radius: 4px; background: none; cursor: pointer; }
+.ktv-style-editor.compact .setting-group-title { margin-top: 8px; }
 
 /* ── 打轴 ── */
 .te { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 0 24px 12px; }

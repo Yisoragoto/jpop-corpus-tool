@@ -102,6 +102,10 @@ public final class AppModel {
     public var lyricsDisplay = LyricsDisplay() {
         didSet { if let data = try? JSONEncoder().encode(lyricsDisplay) { defaults.set(data, forKey: "lyrics-display") } }
     }
+    /// 卡拉 OK 字幕样式（和 Windows 同一套字段，存成同样的 JSON）
+    public var karaokeStyle = KaraokeStyle.standard {
+        didSet { if let data = try? JSONEncoder().encode(karaokeStyle) { defaults.set(data, forKey: "karaoke-style") } }
+    }
     public var importedLyricFonts: [String] = [] {
         didSet { defaults.set(importedLyricFonts, forKey: "lyrics-imported-fonts") }
     }
@@ -218,6 +222,7 @@ public final class AppModel {
             display.normalize(); lyricsDisplay = display
         }
         importedLyricFonts = defaults.stringArray(forKey: "lyrics-imported-fonts") ?? []
+        if let data = defaults.data(forKey: "karaoke-style") { karaokeStyle = KaraokeStyle.decode(data) }
         player.app = self
     }
 

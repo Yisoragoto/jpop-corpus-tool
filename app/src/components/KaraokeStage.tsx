@@ -16,11 +16,14 @@ import { api, ROLE_LABELS, type Credit, type LyricLine, type PlaybackState, type
 import { holdFullscreen, isFullscreenHeld, releaseFullscreen } from "../fullscreen";
 import { tr } from "../i18n";
 import { ktvLayout, type KtvLayout } from "../karaoke";
+import { karaokeCssVars, useKaraokeStyle } from "../karaokeStyle";
+import { lyricFontStack, useLyricFontFiles } from "../fonts";
 import type { Segment } from "../lyricSegments";
 import { advanceClock, paintKaraoke, type ClockState } from "../useKaraoke";
 import type { CharTimeline, WordTiming } from "../wordTiming";
 import { usePlayerHeight } from "./LyricsStage";
 import { TimingEditor } from "./TimingEditor";
+import { KaraokeStyleEditor } from "./KaraokeStyleEditor";
 
 interface Props {
   track: Track;
@@ -48,6 +51,14 @@ function sameLayout(a: KtvLayout, b: KtvLayout): boolean {
 export function KaraokeStage(props: Props) {
   const { track, lyrics, timelines, playback, onClose } = props;
   const [editing, setEditing] = useState(false);
+  const [styling, setStyling] = useState(false);
+  const ktvStyle = useKaraokeStyle();
+  useLyricFontFiles([ktvStyle.fontFamily], props.onError);
+  const ktvVars = useMemo(() => {
+    const vars: Record<string, string> = karaokeCssVars(ktvStyle);
+    if (ktvStyle.fontFamily !== "") vars["--ktv-font"] = lyricFontStack(ktvStyle.fontFamily, "");
+    return vars;
+  }, [ktvStyle]);
   const [bgBroken, setBgBroken] = useState(false);
   useEffect(() => setBgBroken(false), [props.coverPath]);
   const playerHeight = usePlayerHeight();
@@ -112,8 +123,9 @@ export function KaraokeStage(props: Props) {
   useEffect(() => {
     if (editing) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "Escape") { e.preventDefault(); onClose(); }
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      // 样式面板开着时 Esc 先关面板
+      if (e.key === "Escape") { e.preventDefault(); if (styling) setStyling(false); else onClose(); }
       else if (e.key === " ") {
         e.preventDefault();
         if (document.activeElement instanceof HTMLButtonElement) document.activeElement.blur();
@@ -122,7 +134,7 @@ export function KaraokeStage(props: Props) {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [editing, onClose]);
+  }, [editing, styling, onClose]);
 
   const renderLine = (index: number): ReactNode => {
     const line = lyrics[index];
@@ -130,7 +142,8 @@ export function KaraokeStage(props: Props) {
     let c = 0;
     const chars = (text: string) => [...text].map((ch) => {
       const at = c++;
-      return <span key={at} className="kc" data-c={at}>{ch}</span>;
+      // data-ch：唱过的那层（::after）画的是同一个字，按 --p 从左往右露出来
+      return <span key={at} className="kc" data-c={at} data-ch={ch}>{ch}</span>;
     });
     const segs = props.segments[index];
     if (segs === null || segs === undefined) return chars(line.text);
@@ -160,8 +173,8 @@ export function KaraokeStage(props: Props) {
 
   return (
     <div
-      className={`ktv ${editing ? "ktv-editing" : ""} ${layout.intro && !editing ? "ktv-intro-on" : ""}`}
-      style={{ ...props.style, ["--player-h" as string]: `${playerHeight}px` }}
+      className={`ktv ${editing ? "ktv-editing" : ""} ${layout.intro && !editing ? "ktv-intro-on" : ""} ${ktvStyle.staggered ? "" : "ktv-centered"}`}
+      style={{ ...props.style, ...ktvVars, ["--player-h" as string]: `${playerHeight}px` }}
       role="dialog"
       aria-label={tr("卡拉 OK")}
     >
@@ -183,6 +196,11 @@ export function KaraokeStage(props: Props) {
           title={tr("自己打逐字时间轴、手动微调")}>
           {editing ? tr("回到卡拉 OK") : tr("打轴")}
         </button>
+        {!editing && (
+          <button className={`ktv-btn ${styling ? "on" : ""}`} onClick={() => setStyling((v) => !v)} title={tr("字体、颜色、描边、发光、阴影")}>
+            {tr("字幕样式")}
+          </button>
+        )}
         <button className={`ktv-btn ${fullscreen ? "on" : ""}`} onClick={toggleFullscreen} title={tr("窗口全屏")} aria-label={tr("窗口全屏")}>⛶</button>
         <button className="ktv-btn" onClick={onClose} title={tr("退出卡拉 OK（Esc）")} aria-label={tr("退出卡拉 OK")}>✕</button>
       </header>
@@ -210,6 +228,11 @@ export function KaraokeStage(props: Props) {
                   {r.names.join(" / ")}
                 </p>
               ))}
+            </div>
+          )}
+          {styling && (
+            <div className="ktv-style-panel">
+              <KaraokeStyleEditor onError={props.onError} compact />
             </div>
           )}
           {lyrics.length === 0 && <p className="ktv-empty">{tr("这首歌还没有歌词")}</p>}

@@ -29,6 +29,7 @@ import { TokenizeCard } from "../components/TokenizeCard";
 import { PitchCacheCard } from "../components/PitchCacheCard";
 import { DiagnosticsCard } from "../components/DiagnosticsCard";
 import { MineSettingsCard } from "../dict/MineSettingsCard";
+import { KaraokeStyleEditor } from "../components/KaraokeStyleEditor";
 import { lyricFontStack, pickFontFiles, useFontOptions, useLyricFontFiles } from "../fonts";
 import {
   DISPLAY_LIMITS,
@@ -210,7 +211,7 @@ type SectionId = "appearance" | "lyrics" | "wordcloud" | "dict" | "mining" | "li
 /** 左边那一列：点一项换一页，不再是一整条长页面里跳锚点 */
 const SECTIONS: { id: SectionId; label: string; lead: string; icon: keyof typeof Icons }[] = [
   { id: "appearance", label: tr("外观"), lead: tr("界面语言、全屏歌词的背景、播放条、首页的收听目标"), icon: "stage" },
-  { id: "lyrics", label: tr("歌词"), lead: tr("振假名、字体、字号和行距。在歌词右上角的「显示」面板里改也是同一份"), icon: "lyrics" },
+  { id: "lyrics", label: tr("歌词"), lead: tr("振假名、字体、字号和行距，卡拉 OK 的字幕样式。在歌词右上角的「显示」面板里改也是同一份"), icon: "lyrics" },
   { id: "wordcloud", label: tr("词云"), lead: tr("资料库里词云的字体，以及哪些词不进词云"), icon: "font" },
   { id: "dict", label: tr("词典"), lead: tr("导入、启用、排序 Yomitan 词典。查词结果按这里的顺序排"), icon: "dict" },
   { id: "mining", label: tr("制卡"), lead: tr("一键制卡发到 Anki 的牌组、笔记类型和字段"), icon: "card" },
@@ -544,6 +545,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
               <button className="link-btn" onClick={resetLyricsDisplay}>{tr("恢复默认")}</button>
             </SettingCard>
               </Group>
+              <KaraokeStyleEditor onError={onError} />
             </>
           )}
 
