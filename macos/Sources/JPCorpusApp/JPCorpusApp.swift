@@ -185,9 +185,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if SmokeRun.isEnabled {
+            // 冒烟也走下面真正的退出流程（先写播放历史再退）：应用内更新就是从这条路卡死的，
+            // 以前冒烟在这里直接放行，CI 看不出来。退干净了 willTerminate 会留下 quit.txt
             let visible = sender.windows.filter { $0.isVisible }.count
             SmokeRun.trace("shouldTerminate，窗口数 \(sender.windows.count)，可见 \(visible)")
-            return .terminateNow
         }
         guard let model = MainWindow.model else { return .terminateNow }
         // 正在听的这首还没记进播放历史：写完再退（最多等 2 秒，写入卡住也不拦着退出）
@@ -196,15 +197,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await model.player.finishHistory()
             gate.reply()
         }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            gate.reply()
-        }
+        // 兜底用 run loop 定时器，不用 Task.sleep：terminate 要是在主队列上的一个 Task 里调的，
+        // 系统等回复时转的是嵌套 run loop，主队列被那个 Task 占着，排在主线程上的 Task 一个都轮不到，
+        // 历史写不完、2 秒兜底也不响，程序就永远卡在「正在退出」（应用内更新卡死、⌘Q 也退不了就是这样）。
+        // common 模式的定时器在那个嵌套 run loop 里照样会响
+        let fallback = Timer(timeInterval: 2, repeats: false) { _ in MainActor.assumeIsolated { gate.reply() } }
+        RunLoop.main.add(fallback, forMode: .common)
         return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if SmokeRun.isEnabled { SmokeRun.trace("willTerminate") }
+        if SmokeRun.isEnabled {
+            SmokeRun.trace("willTerminate")
+            SmokeRun.markQuit()
+        }
+    }
+}
+
+/// 从 async 代码（Task 里）退出程序。
+///
+/// 不能在 Task 里直接调 `terminate`：它在当前这个主队列任务里同步转嵌套 run loop 等
+/// `applicationShouldTerminate` 的回复，而回复要靠别的主线程 Task，主队列被占着，永远等不到。
+/// 交给 run loop 的定时器去调，`terminate` 就不在任何主队列任务里，等回复时主队列照常运转
+@MainActor
+enum AppQuit {
+    static func request() {
+        let timer = Timer(timeInterval: 0, repeats: false) { _ in
+            MainActor.assumeIsolated { NSApplication.shared.terminate(nil) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 }
 

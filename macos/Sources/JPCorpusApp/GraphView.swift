@@ -28,9 +28,14 @@ struct GraphView: View {
                     let active = graph.nodes.indices.contains(hover) ? hover : selectedIndex
                     let neighbors = active.map { Set(graph.neighbors[$0]+[$0]) }
                     for l in graph.links {
-                        var path = Path(); path.move(to: point(graph.nodes[l.s])); path.addLine(to: point(graph.nodes[l.t]))
-                        let lit = active == l.s || active == l.t
-                        context.stroke(path,with: .color(.secondary.opacity(lit ? 0.7 : 0.18)),style: StrokeStyle(lineWidth: lit ? 1.6 : 0.8,dash: l.member ? [4,4] : []))
+                        let a = point(graph.nodes[l.s]), b = point(graph.nodes[l.t])
+                        // 微微弯一点：直线全挤在一起时分不清谁连谁
+                        let mid = CGPoint(x: (a.x+b.x)/2-(b.y-a.y)*0.08,y: (a.y+b.y)/2+(b.x-a.x)*0.08)
+                        var path = Path(); path.move(to: a); path.addQuadCurve(to: b,control: mid)
+                        let lit = active == l.s || active == l.t, dimmed = active != nil && !lit
+                        let width = 0.7+log2(Double(max(1,l.shared))+1)*0.6
+                        context.stroke(path,with: .color(lit ? Color.accentColor.opacity(0.85) : .secondary.opacity(dimmed ? 0.07 : 0.22)),
+                                       style: StrokeStyle(lineWidth: lit ? width+0.8 : width,lineCap: .round,dash: l.member ? [4,4] : []))
                     }
                     for (i,n) in graph.nodes.enumerated() {
                         let p = point(n), r = min(n.r*k,21)*(i == hover ? 1.08 : 1)
@@ -38,14 +43,20 @@ struct GraphView: View {
                         var c = context
                         let match = query.isEmpty || n.name.lowercased().contains(query)
                         c.opacity = match && (neighbors == nil || neighbors!.contains(i)) ? 1 : 0.2
-                        let color = graphRoleColor(n.role)
-                        c.fill(Path(ellipseIn: rect),with: .color(color.opacity(0.3)))
+                        let color = graphRoleColor(n.role), focused = n.id == selected || i == hover
+                        if focused {
+                            c.fill(Path(ellipseIn: rect.insetBy(dx: -7,dy: -7)),with: .color(color.opacity(0.22)))
+                        }
+                        var shadowed = c
+                        shadowed.addFilter(.shadow(color: .black.opacity(0.28),radius: focused ? 6 : 3,y: 1))
+                        shadowed.fill(Path(ellipseIn: rect),with: .color(Color(nsColor: .windowBackgroundColor)))
+                        c.fill(Path(ellipseIn: rect),with: .linearGradient(Gradient(colors: [color.opacity(0.45),color.opacity(0.2)]),startPoint: rect.origin,endPoint: CGPoint(x: rect.maxX,y: rect.maxY)))
                         if let image = photos[n.id] {
                             var clipped = c; clipped.clip(to: Path(ellipseIn: rect)); clipped.draw(image,in: rect)
                         } else {
-                            c.draw(Text(String(n.name.prefix(1))).font(.system(size: max(9,r*0.7))).foregroundColor(color),at: p)
+                            c.draw(Text(String(n.name.prefix(1))).font(.system(size: max(9,r*0.7),weight: .semibold,design: .rounded)).foregroundColor(.primary.opacity(0.85)),at: p)
                         }
-                        c.stroke(Path(ellipseIn: rect.insetBy(dx: -2,dy: -2)),with: .color(color),lineWidth: n.isBand || n.id == selected ? 2 : 0.6)
+                        c.stroke(Path(ellipseIn: rect.insetBy(dx: -1.5,dy: -1.5)),with: .color(color.opacity(focused ? 1 : 0.85)),lineWidth: n.isBand || focused ? 2.5 : 1.2)
                     }
                     var boxes: [CGRect] = []
                     let order = graph.nodes.indices.sorted { a,b in
@@ -69,11 +80,12 @@ struct GraphView: View {
                         boxes.append(box); var c = context
                         let match = query.isEmpty || n.name.lowercased().contains(query)
                         c.opacity = priority ? 1 : match && (neighbors == nil || neighbors!.contains(i)) ? 0.9 : 0.18
-                        c.fill(Path(roundedRect: box,cornerRadius: 4),with: .color(.black.opacity(0.12)))
+                        c.fill(Path(roundedRect: box,cornerRadius: 10),with: .color(Color(nsColor: .windowBackgroundColor).opacity(priority ? 0.92 : 0.7)))
                         c.draw(Text(name).font(.system(size: 12,weight: .medium)).foregroundColor(.primary),at: CGPoint(x: cx,y: top+2),anchor: .top)
                     }
                 }
                 .background(WheelZoom { point, delta in zoom(at: point,delta: delta) })
+                .keepsWindowStill()
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 3).onChanged { value in
                     if dragOrigin == nil { dragOrigin = offset; let i = hit(value.startLocation); dragging = i >= 0 ? i : nil }
@@ -91,10 +103,18 @@ struct GraphView: View {
 
                 VStack(alignment: .leading,spacing: 10) {
                     TextField("找一个人",text: $model.graphQuery).textFieldStyle(.roundedBorder)
-                    HStack { ForEach(["performer","composer","lyricist","arranger"],id: \.self) { role in
-                        Button { if model.roles.contains(role) { if model.roles.count > 1 { model.roles.remove(role) } } else { model.roles.insert(role) } } label: {
-                            Text(roleLabels[role] ?? role).foregroundStyle(model.roles.contains(role) ? graphRoleColor(role) : .secondary)
-                        }.buttonStyle(.borderless)
+                    HStack(spacing: 6) { ForEach(["performer","composer","lyricist","arranger"],id: \.self) { role in
+                        let on = model.roles.contains(role)
+                        Button { if on { if model.roles.count > 1 { model.roles.remove(role) } } else { model.roles.insert(role) } } label: {
+                            HStack(spacing: 4) {
+                                Circle().fill(on ? graphRoleColor(role) : .secondary.opacity(0.4)).frame(width: 7,height: 7)
+                                Text(roleLabels[role] ?? role).font(.caption).foregroundStyle(on ? .primary : .secondary)
+                            }
+                            .padding(.horizontal,7).padding(.vertical,3)
+                            .background(Capsule().fill(on ? graphRoleColor(role).opacity(0.16) : .clear))
+                            .overlay(Capsule().strokeBorder(on ? graphRoleColor(role).opacity(0.5) : .secondary.opacity(0.25),lineWidth: 0.8))
+                            .contentShape(Capsule())
+                        }.buttonStyle(.plain)
                     } }
                     Text("至少一起 \(model.minShared) 首").font(.caption)
                     Slider(value: Binding(get: { Double(model.minShared) },set: { model.minShared = Int64($0) }),in: 1...6,step: 1)

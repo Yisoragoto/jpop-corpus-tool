@@ -77,6 +77,15 @@ struct ContentView: View {
         .background(UpdatePresentation())
         // 全屏歌词和 Windows 版一样是主窗口里铺满的一层：盖住侧栏、正文和播放条；
         // 工具栏收起来，免得在歌词上面露出一条按钮
+        // 全屏词云：同样是盖住整个窗口的一层，在全屏歌词下面
+        .overlay {
+            if app.visualizations.cloudPresent, app.client != nil {
+                CloudView(presenting: true)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: app.visualizations.cloudPresent)
         .overlay {
             if app.showStage, app.client != nil {
                 LyricsStage()
@@ -84,7 +93,7 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
-        .toolbar(app.showStage ? .hidden : .automatic, for: .windowToolbar)
+        .toolbar(app.showStage || app.visualizations.cloudPresent ? .hidden : .automatic, for: .windowToolbar)
         .animation(.easeInOut(duration: 0.25), value: app.showStage)
         // 从没有歌到有歌（第一次播放、试听）时打开歌词栏。之后用户自己关了，换歌不再弹出来
         .onChange(of: app.player.track?.id) { old, new in

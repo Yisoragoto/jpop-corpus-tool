@@ -25,21 +25,49 @@ struct GlassBackground: NSViewRepresentable {
     }
 }
 
-/// 把窗口本身调成适合毛玻璃的样子：标题栏透明、内容铺到标题栏下面、可以拖背景移动窗口
+/// 把窗口本身调成适合毛玻璃的样子：标题栏透明、内容铺到标题栏下面、可以拖背景移动窗口。
+///
+/// 全屏时系统默认让工具栏一直显示，还给它垫一块不透明的灰底（toolbarBackground(.hidden) 管不到全屏），
+/// 顶上就多出一条去不掉的灰带。全屏期间改成工具栏和菜单栏一起自动隐藏，鼠标移到顶上才滑出来
 @MainActor
 struct GlassWindowConfigurator: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+        let view = NSView(), coordinator = context.coordinator
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             window.titlebarAppearsTransparent = true
             window.styleMask.insert(.fullSizeContentView)
             window.isMovableByWindowBackground = true
+            coordinator.watch(window)
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) { coordinator.stop() }
+
+    @MainActor final class Coordinator {
+        private var observers: [NSObjectProtocol] = []
+
+        func watch(_ window: NSWindow) {
+            stop()
+            let center = NotificationCenter.default
+            observers.append(center.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) { _ in
+                MainActor.assumeIsolated { NSApp.presentationOptions = [.fullScreen, .autoHideToolbar, .autoHideMenuBar] }
+            })
+            observers.append(center.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: .main) { _ in
+                MainActor.assumeIsolated { NSApp.presentationOptions = [] }
+            })
+        }
+
+        func stop() {
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+        }
+    }
 }
 
 extension View {

@@ -44,6 +44,20 @@ pub fn spawn_batch<R: Runtime>(
     }, "刮削作业中断")
 }
 
+/// 一键刮削（识别曲目 → 歌手照片 → 补封面 → 补专辑信息），后台一个作业跑完。进度带 step/steps
+pub fn spawn_all<R: Runtime>(
+    app: AppHandle<R>,
+    job: Arc<ScrapeJob>,
+    db_path: std::path::PathBuf,
+    covers_dir: std::path::PathBuf,
+    artists_dir: std::path::PathBuf,
+    sources: jp_scraper::timed_sources::SourceOptions,
+) -> Result<()> {
+    spawn(app, job, "all", move |cancelled, progress| {
+        jp_scrape::run_all(&db_path, &covers_dir, &artists_dir, apple_source(&sources), cancelled, progress)
+    }, "一键刮削中断")
+}
+
 /// 设置里开了 Apple Music 而且填了开发者令牌时，给 resolver 的（地区, 令牌）
 pub fn apple_source(options: &jp_scraper::timed_sources::SourceOptions) -> Option<(&str, &str)> {
     (options.apple && !options.apple_developer_token.is_empty())

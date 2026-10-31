@@ -17,15 +17,21 @@ struct LibraryView: View {
                 }
             }
             .id(route)
-            .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Button { app.libraryPath.removeLast() } label: {
-                        Label("返回", systemImage: "chevron.left")
-                    }
-                    .keyboardShortcut("[", modifiers: [.command]).help("返回（⌘[）")
-                }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                BackBar(title: backTitle) { if !app.libraryPath.isEmpty { app.libraryPath.removeLast() } }
             }
         } else { LibraryRoot() }
+    }
+
+    /// 返回到哪：上一层是详情就说是专辑还是音乐人，否则回资料库
+    private var backTitle: String {
+        let path = app.libraryPath
+        guard path.count > 1 else { return "资料库" }
+        switch path[path.count-2] {
+        case .song: return "返回歌曲"
+        case .album(let album): return album.title
+        case .person: return "返回音乐人"
+        }
     }
 }
 

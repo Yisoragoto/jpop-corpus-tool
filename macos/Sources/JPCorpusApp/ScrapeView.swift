@@ -26,6 +26,7 @@ struct ScrapeView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 completenessCard
                 actions
+                ScrapeSourcesView().disabled(running || busy)
                 if let job, job.running { progress(job) }
                 if let lastBatch, !lastBatch.items.isEmpty { results(lastBatch) }
                 reviewSection
@@ -74,36 +75,49 @@ struct ScrapeView: View {
     // MARK: - 动作
 
     private var actions: some View {
+        // 一个主按钮把四步按顺序跑完（以前要自己知道顺序、一个跑完再点下一个）；单项收进菜单
         HStack(spacing: 10) {
             Button {
-                Task { await start(artists: false) }
+                Task { await startAll() }
             } label: {
-                Label("刮削曲目", systemImage: "wand.and.stars")
+                Label("一键刮削", systemImage: "wand.and.stars")
             }
             .buttonStyle(.borderedProminent)
-            .help("只刮还没识别、也没被跳过的歌。整库一两百首大约十分钟，可以随时停")
-            Button {
-                Task { await start(artists: true) }
+            .controlSize(.large)
+            .help("按顺序做完：识别没认出的歌 → 歌手照片 → 补封面 → 补专辑信息。可以随时停")
+            Menu {
+                Button { Task { await start(artists: false) } } label: { Label("刮削曲目", systemImage: "music.note") }
+                Button { Task { await start(artists: true) } } label: { Label("刮削歌手照片", systemImage: "person.crop.square") }
+                Button { Task { await backfill() } } label: { Label("补封面", systemImage: "photo.on.rectangle") }
+                Button {
+                    Task {
+                        do { _ = try await app.core?.scrapeAlbumFillStart(); await follow() }
+                        catch { app.errorMessage = error.localizedDescription }
+                    }
+                } label: { Label("补专辑信息", systemImage: "square.stack") }
             } label: {
-                Label("刮削歌手照片", systemImage: "person.crop.square")
+                Text("单项")
             }
-            .help("还没有照片的歌手：MusicBrainz 查资料和别名，Deezer 拿照片")
-            Button {
-                Task { await backfill() }
-            } label: {
-                Label("补封面", systemImage: "photo.on.rectangle")
-            }
-            .help("识别成功但没有封面的：先用音频里内嵌的，再用刮削时存下的候选。不重新搜索")
+            .fixedSize()
+            .help("只做其中一步")
             if (summary?.failed ?? 0) > 0 {
                 Button("重试失败的 \(summary?.failed ?? 0) 首") { Task { await retryFailed() } }
             }
-            Button("补专辑信息") { Task {
-                do { _ = try await app.core?.scrapeAlbumFillStart(); await follow() }
-                catch { app.errorMessage = error.localizedDescription }
-            } }
             Spacer()
         }
         .disabled(running || busy)
+    }
+
+    private func startAll() async {
+        guard let client = app.core else { return }
+        lastBatch = nil
+        message = nil
+        do {
+            try await client.scrapeAllStart()
+            await follow()
+        } catch {
+            app.errorMessage = error.localizedDescription
+        }
     }
 
     private func progress(_ job: JobProgress<ScrapeBatch>) -> some View {
@@ -113,7 +127,15 @@ struct ScrapeView: View {
             } else {
                 ProgressView().controlSize(.small)
             }
-            Text("\(job.done) / \(job.total)  \(job.stage)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+            if let stage = ScrapeStage(job.stage) {
+                // 一键刮削：「第 2/4 步 · 歌手照片  3 / 12  ヨルシカ」
+                Text("第 \(stage.step)/\(stage.steps) 步").font(.callout.weight(.semibold))
+                Text(verbatim: L10n.t(stage.label)).font(.callout.weight(.semibold))
+                Text(verbatim: stage.kind == "cover" ? L10n.t(stage.title) : "\(job.done) / \(job.total)  \(stage.title)")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+            } else {
+                Text("\(job.done) / \(job.total)  \(job.stage)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+            }
             Button("停止") { Task { try? await app.core?.scrapeCancel() } }
                 .controlSize(.small)
         }
@@ -352,5 +374,77 @@ private struct ReviewCard: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(cornerRadius: 12)
+    }
+}
+
+// MARK: - 刮削来源
+
+/// 刮削问哪些地方。MusicBrainz、iTunes、Deezer 一直问；Apple Music 要开发者令牌，开了才问。
+/// 和歌词管理里的「Apple Music 来源设置」是同一份设置（Windows 版也是这样）
+@MainActor
+private struct ScrapeSourcesView: View {
+    @Environment(AppModel.self) private var app
+    @State private var sources: LyricsSources?
+    @State private var token = ""
+    @State private var saving = false
+    @State private var note: String?
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("MusicBrainz、iTunes、Deezer 每次都会查。Apple Music 要你自己的开发者令牌，打开后排在最前面先问。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let binding = Binding($sources) {
+                    Toggle("也查 Apple Music", isOn: binding.apple)
+                    HStack(spacing: 10) {
+                        TextField("商店地区（jp / cn / us）", text: binding.appleStorefront).frame(maxWidth: 160)
+                        SecureField(binding.wrappedValue.appleDeveloperTokenSet ? "开发者令牌已设置（留空保留）" : "开发者令牌", text: $token)
+                            .frame(maxWidth: 320)
+                    }
+                    .disabled(!binding.wrappedValue.apple)
+                    if binding.wrappedValue.apple && !binding.wrappedValue.appleDeveloperTokenSet && token.isEmpty {
+                        Text("没有开发者令牌时 Apple Music 不会被查。").font(.caption).foregroundStyle(.orange)
+                    }
+                    HStack {
+                        Button("保存") { Task { await save() } }.disabled(saving)
+                        if let note { Text(L10n.t(note)).font(.caption).foregroundStyle(.secondary) }
+                    }
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .padding(.top, 6)
+        } label: {
+            Text("刮削来源").font(.headline)
+            Text(summary).font(.caption).foregroundStyle(.secondary)
+        }
+        .task { await load() }
+    }
+
+    private var summary: String {
+        guard let sources else { return "" }
+        let apple = sources.apple && sources.appleDeveloperTokenSet
+        return apple ? "Apple Music · MusicBrainz · iTunes · Deezer" : "MusicBrainz · iTunes · Deezer"
+    }
+
+    private func load() async {
+        guard let client = app.core else { return }
+        do { sources = try await client.lyricsSourcesGet() } catch { app.errorMessage = error.localizedDescription }
+    }
+
+    private func save() async {
+        guard let client = app.core, let current = sources else { return }
+        saving = true
+        defer { saving = false }
+        let input = LyricsSourcesInput(current, developerToken: token.isEmpty ? nil : token)
+        token = ""
+        do {
+            sources = try await client.lyricsSourcesSet(input)
+            note = "已保存，下次刮削起用"
+        } catch {
+            app.errorMessage = error.localizedDescription
+        }
     }
 }

@@ -32,6 +32,8 @@ enum MineDefaults {
 struct LookupPane: View {
     @Environment(AppModel.self) private var app
     let request: LookupRequest
+    /// false：内容按实际高度全部展开，由外面的页面滚动（词典页）。弹出的小面板里仍然自己滚
+    var scrolls = true
     let close: () -> Void
     @AppStorage("dict.collapsed") private var collapsedJSON = "[]"
     private var collapsed: Set<String> { Set((try? JSONDecoder().decode([String].self, from: Data(collapsedJSON.utf8))) ?? []) }
@@ -69,18 +71,24 @@ struct LookupPane: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            ScrollView {
-                if tab == "examples" {
-                    WordExamplesView(lemma: request.corpusLemma, localScope: request.scope)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    dictionary
-                }
+            if scrolls {
+                ScrollView { tabContent }
+            } else {
+                tabContent
             }
         }
         .padding(14)
         .task(id: request) { await load() }
         .task(id: "\(request.corpusLemma)|\(String(describing: request.scope))|\(String(describing: app.scopes.active))|\(app.library.version)") { await loadWord() }
+    }
+
+    @ViewBuilder private var tabContent: some View {
+        if tab == "examples" {
+            WordExamplesView(lemma: request.corpusLemma, localScope: request.scope)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            dictionary
+        }
     }
 
     /// 和 Windows 的查词栏一样：词的原形下面先给出现次数、歌曲、歌手，年份和主要词性

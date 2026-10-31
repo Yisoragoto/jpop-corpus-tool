@@ -23,6 +23,25 @@ public struct WarpedYears: Sendable {
         let frac = Swift.min(1,Swift.max(0,at-Double(first+k)))
         return starts[k]+frac*widths[k]
     }
+    /// x 的反函数：横坐标落在哪一年的哪个位置。缩放时用它把光标下的那一年钉住
+    public func at(_ x: Double) -> Double {
+        guard !widths.isEmpty else { return Double(first) }
+        if x <= 0 { return Double(first) }
+        let k = (starts.lastIndex { $0 <= x }) ?? 0
+        return Double(first+k)+Swift.min(1,(x-starts[k])/Swift.max(1e-9,widths[k]))
+    }
+}
+
+/// 时间轴的平移和缩放：内容比视口大多少就能挪多少，缩放时光标下那一年不动
+public enum TimelinePan {
+    public static func clamp(_ offset: Double, content: Double, viewport: Double) -> Double {
+        Swift.min(Swift.max(0,content-viewport),Swift.max(0,offset))
+    }
+    /// 换了缩放（old → new）之后新的横向偏移：光标在视口里的 anchor 处，原来对着哪一年，现在还对着哪一年
+    public static func zoomedOffset(_ offset: Double, anchor: Double, inset: Double, old: WarpedYears, new: WarpedYears) -> Double {
+        let year = old.at(offset+anchor-inset)
+        return new.x(year)+inset-anchor
+    }
 }
 public struct TreeRelease: Sendable { public var release: DatedRelease; public var songs: [PersonWork]; public var personId: Int64 }
 public struct TreeAfter: Sendable { public var bandName: String; public var ended: String }

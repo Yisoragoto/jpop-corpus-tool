@@ -706,6 +706,8 @@ export const backendEn: Record<string, string> = {
   "程序路径没有上级目录": "The program path has no parent folder",
   "{0} 写不进去，没法替换程序；请确认当前用户有权限修改这个文件夹，或到发布页手动下载": "{0} is not writable, so the app cannot be replaced. Make sure this user can modify that folder, or download it manually from the releases page",
   "启动替换脚本失败": "Failed to start the update script",
+  "一键刮削中断": "Scrape everything stopped with an error",
+  "检查 {0} 首，补上 {1} 张封面": "Checked {0} {0|song|songs}, added {1} {1|cover|covers}",
   "不认识的选择方式：{0}": "Unknown selection mode: {0}",
   "偏移最多 ±{0} 秒": "The offset can be at most ±{0} seconds",
   "这首歌还没有登记歌词来源，没法调偏移": "This song has no registered lyrics source, so the offset cannot be changed",

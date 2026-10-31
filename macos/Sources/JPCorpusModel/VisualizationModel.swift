@@ -66,11 +66,11 @@ public final class VisualizationModel {
         let result = await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
         guard request == graphRequest, !Task.isCancelled else { return }; graph = result; graphBusy = false
     }
-    public func moveNode(_ index: Int,x: Double,y: Double) { guard graph.nodes.indices.contains(index) else { return }; graphRequest = UUID(); graph.nodes[index].x = x; graph.nodes[index].y = y }
+    public func moveNode(_ index: Int,x: Double,y: Double) { guard graph.nodes.indices.contains(index) else { return }; graphRequest = UUID(); graph.nodes[index].x = x; graph.nodes[index].y = y; graph.nodes[index].fx = x; graph.nodes[index].fy = y }
     public func relaxGraph() async {
         let request = UUID(); graphRequest = request; let current = graph
         let task = Task.detached(priority: .userInitiated) { () -> RelationGraph in
-            var sim = GraphSimulation(current,alpha: 0.6); sim.settle(); return sim.graph
+            var sim = GraphSimulation(current,alpha: 0.25); sim.settle(); return sim.graph
         }
         let result = await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
         if request == graphRequest && !Task.isCancelled { graph = result }

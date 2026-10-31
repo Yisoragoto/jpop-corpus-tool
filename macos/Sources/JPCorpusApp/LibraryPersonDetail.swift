@@ -385,10 +385,8 @@ private struct LibraryArtistHero<Actions: View>: View {
                         .font(.system(size: 160)).foregroundStyle(.white.opacity(0.12)).padding(.trailing, 60)
                 }
         } else {
-            // 宽度那么大的正方形，靠上裁：人像照片脸一般在上半部分
-            CoverImage(path: imagePath, size: max(width, Self.height), cornerRadius: 0, placeholder: "person.fill")
-                .frame(width: width, height: Self.height, alignment: .top)
-                .clipped()
+            // 按人脸裁（见 HeroFraming）：以前固定靠上裁正方形，合照、人在下半部的照片只剩背景
+            ArtistHeroImage(path: imagePath, size: CGSize(width: width, height: Self.height))
         }
     }
 

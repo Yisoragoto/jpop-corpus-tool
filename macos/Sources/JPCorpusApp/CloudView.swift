@@ -10,6 +10,9 @@ import UniformTypeIdentifiers
 @MainActor
 struct CloudView: View {
     @Environment(AppModel.self) private var app
+    /// 全屏词云：主窗口里铺满的一层（和全屏歌词一样），盖住导航、正文和播放条
+    var presenting = false
+    @AppStorage(NavStyle.key) private var navStyle: NavStyle = NavStyle.defaultStyle
     @AppStorage("cloud.count") private var count = 120
     @AppStorage("cloud.hideFunction") private var hideFunction = true
     @AppStorage("cloud.colorByPos") private var colorByPos = false
@@ -47,9 +50,15 @@ struct CloudView: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .padding(18)
+        .padding(presenting ? 32 : 18)
         .animation(.spring(duration: 0.35), value: model.picked?.lemma)
-        .background { CloudBackdrop(photos: photos, blurred: blurredBackdrop).ignoresSafeArea() }
+        // 顶栏是 AppShell 用内边距让出来的，不算安全区：底图往上多铺一截，铺到顶栏下面，
+        // 不然顶栏和词云之间露出一道窗口底色
+        .background {
+            CloudBackdrop(photos: photos, blurred: blurredBackdrop)
+                .padding(.top, !presenting && navStyle == .top ? -AppShell<EmptyView>.barHeight : 0)
+                .ignoresSafeArea()
+        }
         // 底是照片：不管系统深浅色，一律深底亮字（和 Windows 版一样）
         .environment(\.colorScheme, .dark)
         .foregroundStyle(.white)
@@ -67,8 +76,14 @@ struct CloudView: View {
             let blurred = await Artwork.blurredCollage(images, radius: 48, saturation: 1.5, displayWidth: 1400 * 1.36)
             if !Task.isCancelled { photos = images; blurredBackdrop = blurred; backdropPeople = people; colors = ArtworkColors(image: images.first) }
         }
-        .onAppear { model.cloudPresent = NSApplication.shared.keyWindow?.styleMask.contains(.fullScreen) ?? false }
-        .onExitCommand { if !app.showStage { if model.picked != nil { model.picked = nil } else if model.cloudPresent { NSApplication.shared.keyWindow?.toggleFullScreen(nil); model.cloudPresent = false } } }
+        .onExitCommand { if !app.showStage { if model.picked != nil { model.picked = nil } else if presenting { CloudPresentation.exit(model) } } }
+        // 全屏层不一定拿得到焦点，onExitCommand 收不到 Esc：另外直接听键盘
+        .background {
+            if presenting {
+                BackKeys(action: { if model.picked != nil { model.picked = nil } else { CloudPresentation.exit(model) } },
+                         active: { [app] in !app.showStage })
+            }
+        }
         .onChange(of: model.error) { _, error in if let error { app.errorMessage = error; model.error = nil } }
     }
 
@@ -108,10 +123,10 @@ struct CloudView: View {
             CloudSettings(count: $count,hideFunction: $hideFunction,colorByPos: $colorByPos,family: $family)
             Button { export() } label: { Image(systemName: "square.and.arrow.up") }.buttonStyle(.borderless).help("保存 PNG")
             Button {
-                let window = NSApplication.shared.keyWindow
-                model.cloudPresent = !(window?.styleMask.contains(.fullScreen) ?? false)
-                window?.toggleFullScreen(nil)
-            } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.borderless).help("全屏词云")
+                if presenting { CloudPresentation.exit(model) } else { CloudPresentation.enter(model) }
+            } label: { Image(systemName: presenting ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") }
+                .buttonStyle(.borderless)
+                .help(presenting ? "退出全屏（Esc）" : "全屏词云")
         }
     }
 
@@ -335,4 +350,27 @@ struct WordCloudPainting: View {
 func cloudPosColor(_ pos: String) -> Color {
     let rgb = CloudLayout.posColors[pos] ?? [220,220,228]
     return Color(red: rgb[0]/255,green: rgb[1]/255,blue: rgb[2]/255)
+}
+
+/// 进出全屏词云。进的时候窗口不是全屏就顺手全屏，退出时只撤销自己做的那次
+@MainActor
+enum CloudPresentation {
+    private static var enteredFullScreen = false
+
+    static func enter(_ model: VisualizationModel) {
+        model.picked = nil
+        model.cloudPresent = true
+        if let window = MainWindow.window ?? NSApplication.shared.keyWindow, !window.styleMask.contains(.fullScreen) {
+            enteredFullScreen = true
+            window.toggleFullScreen(nil)
+        }
+    }
+
+    static func exit(_ model: VisualizationModel) {
+        model.cloudPresent = false
+        if enteredFullScreen, let window = MainWindow.window ?? NSApplication.shared.keyWindow, window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        }
+        enteredFullScreen = false
+    }
 }
