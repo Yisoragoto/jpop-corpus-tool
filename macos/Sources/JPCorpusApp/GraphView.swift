@@ -85,7 +85,6 @@ struct GraphView: View {
                     }
                 }
                 .background(WheelZoom { point, delta in zoom(at: point,delta: delta) })
-                .keepsWindowStill()
                 .contentShape(Rectangle())
                 .gesture(DragGesture(minimumDistance: 3).onChanged { value in
                     if dragOrigin == nil { dragOrigin = offset; let i = hit(value.startLocation); dragging = i >= 0 ? i : nil }

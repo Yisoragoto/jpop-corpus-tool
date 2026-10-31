@@ -206,6 +206,21 @@ enum SmokeRun {
             for _ in 0..<60 { if !app.visualizations.words.isEmpty && !app.visualizations.placed.isEmpty && !app.visualizations.cloudBusy { break }; await settle(0.2) }
             try require(!app.visualizations.words.isEmpty && !app.visualizations.placed.isEmpty,"cloud","words=\(app.visualizations.words.count) placed=\(app.visualizations.placed.count)")
             await settle(0.5); shot("04i-cloud",into: out,note: note)
+            // 窗口全屏：工具栏要收起（不然顶上一条灰底），背景不能拖着移动窗口（不然时间轴、关系网拖不动）
+            if let window = MainWindow.window {
+                note("[step] window-drag movable=\(window.isMovableByWindowBackground)")
+                window.toggleFullScreen(nil)
+                for _ in 0..<30 { if window.styleMask.contains(.fullScreen) { break }; await settle(0.2) }
+                await settle(1)
+                let entered = window.styleMask.contains(.fullScreen)
+                note("[step] fullscreen entered=\(entered) toolbar=\(window.toolbar.map { $0.isVisible ? "visible" : "hidden" } ?? "none")")
+                shot("04j-cloud-fullscreen",into: out,note: note)
+                if entered {
+                    window.toggleFullScreen(nil)
+                    for _ in 0..<30 { if !window.styleMask.contains(.fullScreen) { break }; await settle(0.2) }
+                    await settle(1)
+                }
+            }
             app.libraryMode = .songs; app.showLyrics = lyricsWereVisible
 
             // 歌手详情、歌曲详情

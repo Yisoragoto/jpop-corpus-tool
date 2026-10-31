@@ -73,8 +73,15 @@ struct ReleaseTimelineView: View {
     private func axis(_ layout: TimelineLayout, perYear: Double) -> WarpedYears {
         ReleaseTimeline.warpYears(layout.rows.map { $0.releases.map { WarpItem(at: $0.at,size: coverSize($0.release)) } },min: layout.min,max: layout.max,perYear: perYear)
     }
+    /// 宽度要算到挤开后最右边那张封面：同一年发得多的人（一年十几张单曲）封面会一张张往右推，
+    /// 远远超过时间轴的终点。只按轴宽算的话，平移到头也看不到最后那一截
     private func contentSize(_ layout: TimelineLayout, _ axis: WarpedYears) -> CGSize {
-        CGSize(width: axis.width+inset*2, height: Double(layout.rows.count)*rowHeight+16)
+        var right = axis.width+inset*2
+        for row in layout.rows {
+            let items = row.releases.map { PackItem(x: inset+axis.x($0.at), size: coverSize($0.release)) }
+            for (center, item) in zip(ReleaseTimeline.packRow(items), items) { right = max(right, center+item.size/2+inset) }
+        }
+        return CGSize(width: right, height: Double(layout.rows.count)*rowHeight+16)
     }
 
     // MARK: - 平移与缩放
@@ -273,7 +280,6 @@ private struct TimelineInput: ViewModifier {
             .background(TimelineWheel { location, dx, dy, zoom in
                 if zoom { zoomTo(perYear*exp(dy*0.01), location.x-nameWidth) } else { panBy(-dx, -dy) }
             })
-            .keepsWindowStill()
             .gesture(DragGesture(minimumDistance: 3).onChanged { value in
                 if dragStart == nil { dragStart = pan }
                 if let start = dragStart { pan = clamp(CGPoint(x: start.x-value.translation.width, y: start.y-value.translation.height)) }
