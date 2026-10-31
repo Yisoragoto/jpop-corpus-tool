@@ -52,19 +52,16 @@ struct KaraokeLyricText: View {
         let lit = progress.contains { $0 > 0 }
         let unsung = KtvLook.unsung(style), sung = KtvLook.sung(style)
         let mask = KtvMask(parts: parts, hasRuby: hasRuby, fonts: fonts, progress: progress, pad: metrics.pad)
-        func layer(_ look: KtvLook) -> some View {
-            KtvLayer(parts: parts, hasRuby: hasRuby, fonts: fonts, look: look, metrics: metrics).equatable()
-        }
         ZStack {
             // 发光垫在最底下，而且是遮罩之后再糊：唱过那层的光跟着擦到哪亮到哪，擦色的边上不会切出一条硬边
             if metrics.glow > 0 {
-                layer(unsung.silhouette(unsung.glow)).blur(radius: metrics.glow / 2)
-                if lit { layer(sung.silhouette(sung.glow)).mask { mask }.blur(radius: metrics.glow / 2) }
+                layer(parts, hasRuby, fonts, unsung.silhouette(unsung.glow), metrics).blur(radius: metrics.glow / 2)
+                if lit { layer(parts, hasRuby, fonts, sung.silhouette(sung.glow), metrics).mask { mask }.blur(radius: metrics.glow / 2) }
             }
             // 描好边的两层合成一张，再整体往右下叠出侧面：侧面接在描边外面，不会夹进字里
             ZStack {
-                layer(unsung)
-                if lit { layer(sung).mask { mask } }
+                layer(parts, hasRuby, fonts, unsung, metrics)
+                if lit { layer(parts, hasRuby, fonts, sung, metrics).mask { mask } }
             }
             .compositingGroup()
             .modifier(KtvExtrude(color: unsung.shadow, steps: KaraokeStyle.extrusionSteps(metrics.depth), unit: metrics.step))
@@ -73,6 +70,10 @@ struct KaraokeLyricText: View {
         .padding(-metrics.pad)
         .lineLimit(1)
         .animation(nil, value: sec)
+    }
+
+    private func layer(_ parts: [Part], _ hasRuby: Bool, _ fonts: KtvFonts, _ look: KtvLook, _ metrics: KtvMetrics) -> some View {
+        KtvLayer(parts: parts, hasRuby: hasRuby, fonts: fonts, look: look, metrics: metrics).equatable()
     }
 
     private func progress(at index: Int) -> Double {
