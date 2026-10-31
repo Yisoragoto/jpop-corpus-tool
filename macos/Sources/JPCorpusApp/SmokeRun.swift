@@ -182,6 +182,13 @@ enum SmokeRun {
 
             // 卡拉 OK 字幕样式：两套预设各截一张（描边、发光、立体阴影、逐字擦色）
             let savedStyle = app.karaokeStyle
+            let savedPosition = app.player.timingPosition
+            // 停在第二句中间：前奏只显示歌名，看不到唱过 / 没唱两套样式和擦色
+            let timed = app.player.ktvLines.filter { $0.start != nil }
+            if let line = timed.dropFirst().first ?? timed.first, let start = line.start {
+                await app.player.seek(to: line.end.map { (start + $0) / 2 } ?? start + 0.3)
+            }
+            note("[step] karaoke at \(app.player.timingPosition)s, \(timed.count) timed lines")
             app.stageKaraoke = true
             for preset in [KaraokeStyle.Preset.classic, .pink] {
                 app.karaokeStyle = savedStyle.applying(preset)
@@ -193,6 +200,7 @@ enum SmokeRun {
             }
             app.karaokeStyle = savedStyle
             app.stageKaraoke = false
+            await app.player.seek(to: savedPosition)
 
             // 首页：刚才那次试听到行尾自动暂停，播放记录里有了，「继续听」应该是这首
             app.section = .home

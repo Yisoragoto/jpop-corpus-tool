@@ -464,7 +464,7 @@ struct LyricsStage: View {
             if slot == 0 || !app.karaokeStyle.staggered { Spacer(minLength: 0) }
         }
         .frame(minHeight: size * 1.5 * (app.showFurigana ? 1.4 : 1), alignment: .bottom)
-        .clipped()
+        // 不裁：描边、发光、立体阴影要画到行框外面，裁了会切出硬边
     }
 
     private func karaokeIntro(_ track: Track) -> some View {
