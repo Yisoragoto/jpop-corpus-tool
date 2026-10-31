@@ -9,7 +9,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  AUDIO_FILE_STATUS,
   completenessLabel,
+  describeAudioFile,
   FIELD_SOURCE_LABELS,
   issueLabel,
   LANGUAGE_LABELS,
@@ -214,6 +216,26 @@ export function SongLineagePanel({ songId, onLyricsChanged, onClose, onError }: 
             </tbody>
           </table>
           {raw && <pre className="raw-lyrics">{raw.text ?? tr("（这一版没有保存原文）")}</pre>}
+        </>
+      )}
+
+      {(data.audioFiles?.length ?? 0) > 0 && (
+        <>
+          <h4>{tr("音频文件")}</h4>
+          <ul className="provenance-list small">
+            {data.audioFiles!.map((f) => (
+              <li key={f.id}>
+                <span>{AUDIO_FILE_STATUS[f.status] ?? f.status}</span>
+                <span>
+                  {describeAudioFile(f) || "—"}
+                  <small className="muted source-ref" title={f.path}>{" "}{f.path}</small>
+                  {f.trackStartMs > 0 && <small className="muted">{" "}{tr("从文件的 {sec} 秒开始", { sec: (f.trackStartMs / 1000).toFixed(2) })}</small>}
+                </span>
+                <small className="muted">{when(f.checkedAt || f.firstSeen)}</small>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">{tr("曲目的身份不跟文件走：文件挪了、换了音源，收藏、播放记录、歌词都还在。程序只读音频文件，从不往里写。")}</p>
         </>
       )}
 

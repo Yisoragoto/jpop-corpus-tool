@@ -57,7 +57,7 @@ fn main() -> anyhow::Result<()> {
             Action::PossibleDuplicate { song_id, .. } => format!("疑似重复（库里的 {song_id}）"),
             Action::DuplicateInBatch { .. } => "本批重复".to_string(),
             Action::Skipped { reason } => format!("跳过：{reason}"),
-            Action::AlreadyImported { song_id } => format!("已在库中 {song_id}（不该出现在这里）"),
+            Action::AlreadyImported { song_id, .. } => format!("已在库中 {song_id}（不该出现在这里）"),
         };
         println!(
             "  {what}  {} — {}（歌手来自 {:?}）  {}",

@@ -16,27 +16,43 @@ use serde::Serialize;
 
 use crate::filename::matching_key;
 use crate::scan::ScannedTrack;
+use crate::version::{self, VersionFacts};
 
 /// 打算对一个扫描条目做什么。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Action {
     /// 库里没有，新建。`songId` 是预分配好的，执行时直接用。
+    ///
+    /// `versionOf`：库里有同名同歌手的歌，但这是**另一个版本**（Live、翻唱、重制、时长不同……），
+    /// 照常作为一首新歌导入，界面提一句「是 012 的另一个版本」。
     // 结构体变体的字段名要单独改：枚举上的 rename_all 只管变体名。
     #[serde(rename_all = "camelCase")]
-    New { song_id: String },
+    New {
+        song_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        version_of: Option<VersionOf>,
+    },
     /// 这个文件路径已经在库里。重跑扫描时绝大多数条目都落这里。
-    #[serde(rename_all = "camelCase")]
-    AlreadyImported { song_id: String },
-    /// 曲名 + 歌手对得上，但指向另一个文件。
     ///
-    /// 可能是换了音源（FLAC 换成 MP3），也可能真有两个版本
-    /// （原版 / Live）。**不自动决定**——猜错的代价是把用户的库弄脏，
-    /// 交给人看。
+    /// `fileChanged`：同一路径，但大小或修改时间变了（换了压制、改了标签）。
+    /// 导入时刷新文件信息；来自文件的字段跟着更新，你改过的、刮削来的不动。
+    #[serde(rename_all = "camelCase")]
+    AlreadyImported {
+        song_id: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        file_changed: bool,
+    },
+    /// 同一个录音换了个文件：同一个 ISRC / MusicBrainz 录音，或者曲名歌手相同、版本标记相同、时长相近。
+    ///
+    /// 可能是换了音源（FLAC 换成 MP3），也可能是挪了位置。**不自动决定**——
+    /// 猜错的代价是把用户的库弄脏，交给人看。`reason` 说是凭什么判的。
     #[serde(rename_all = "camelCase")]
     PossibleDuplicate {
         song_id: String,
         existing_path: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reason: String,
     },
     /// 同一批扫描里出现了重复，只导第一个。
     #[serde(rename_all = "camelCase")]
@@ -45,10 +61,30 @@ pub enum Action {
     Skipped { reason: String },
 }
 
+/// 「这是库里某首的另一个版本」。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionOf {
+    pub song_id: String,
+    pub existing_path: String,
+    /// 为什么算另一个版本（「版本不同：库里的是原版，这个是 Live」「时长差 21 秒」）
+    pub reason: String,
+}
+
 impl Action {
     /// 会不会真的往库里写。
     pub fn writes(&self) -> bool {
         matches!(self, Action::New { .. })
+    }
+
+    /// 新建（没有同名的其他版本）
+    pub fn new_song(song_id: impl Into<String>) -> Self {
+        Action::New { song_id: song_id.into(), version_of: None }
+    }
+
+    /// 已在库中、文件没变
+    pub fn already(song_id: impl Into<String>) -> Self {
+        Action::AlreadyImported { song_id: song_id.into(), file_changed: false }
     }
 }
 
@@ -62,50 +98,94 @@ pub struct PlannedTrack {
 
 /// 库里已有的一条。计划阶段只需要这几个字段——
 /// 刻意不用 `jp_corpus::Track`，这样计划层能脱离数据库测试。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ExistingTrack {
     pub id: String,
     pub audio_path: String,
     pub title: String,
     pub artist: String,
+    pub album: String,
+    pub duration_sec: Option<f64>,
+    pub isrc: String,
+    pub recording_mbid: String,
 }
 
-/// 现有曲库的索引：路径 → id，(歌手, 曲名) → id。
+impl ExistingTrack {
+    fn facts(&self) -> VersionFacts<'_> {
+        VersionFacts {
+            title: &self.title,
+            album: &self.album,
+            duration_sec: self.duration_sec,
+            isrc: &self.isrc,
+            recording_mbid: &self.recording_mbid,
+        }
+    }
+}
+
+fn scanned_facts(track: &ScannedTrack) -> VersionFacts<'_> {
+    VersionFacts {
+        title: track.title(),
+        album: track.album(),
+        duration_sec: track.duration_sec,
+        isrc: &track.isrc,
+        recording_mbid: &track.recording_mbid,
+    }
+}
+
+/// 现有曲库的索引：路径 → id，(歌手, 曲名) → 同名的那几首，ISRC / 录音编号 → id，
+/// 外加每个在用文件的大小和修改时间（重扫时判断变没变）。
 pub struct LibraryIndex {
     by_path: HashMap<String, String>,
-    by_identity: HashMap<(String, String), (String, String)>,
+    by_identity: HashMap<(String, String), Vec<ExistingTrack>>,
+    by_isrc: HashMap<String, ExistingTrack>,
+    by_mbid: HashMap<String, ExistingTrack>,
+    stamps: HashMap<String, (Option<u64>, Option<f64>)>,
     /// 下一个可用的数字 id
     next_num: u32,
     /// id 零填充宽度。库里是 `001` 这种三位，超过 999 自然变四位。
     width: usize,
 }
 
+fn code_key(code: &str) -> String {
+    code.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_uppercase()
+}
+
 impl LibraryIndex {
     pub fn from_tracks(tracks: &[ExistingTrack]) -> Self {
-        let mut by_path = HashMap::new();
-        let mut by_identity = HashMap::new();
+        let mut index = Self {
+            by_path: HashMap::new(),
+            by_identity: HashMap::new(),
+            by_isrc: HashMap::new(),
+            by_mbid: HashMap::new(),
+            stamps: HashMap::new(),
+            next_num: 1,
+            width: 3,
+        };
         let mut max_num = 0u32;
-        let mut width = 3usize;
-
         for track in tracks {
-            by_path.insert(path_key(&track.audio_path), track.id.clone());
-            if let Some(key) = identity_key(&track.artist, &track.title) {
-                // 先到先得：库里若已有同名同歌手的两条，报第一条就够了
-                by_identity
-                    .entry(key)
-                    .or_insert_with(|| (track.id.clone(), track.audio_path.clone()));
-            }
+            index.insert(track);
             // 非数字 id（比如手工加的）不参与序号分配，但也不能撞上
             if let Ok(num) = track.id.trim().parse::<u32>() {
                 max_num = max_num.max(num);
-                width = width.max(track.id.trim().len());
+                index.width = index.width.max(track.id.trim().len());
             }
         }
-        Self {
-            by_path,
-            by_identity,
-            next_num: max_num + 1,
-            width,
+        index.next_num = max_num + 1;
+        index
+    }
+
+    fn insert(&mut self, track: &ExistingTrack) {
+        self.by_path.insert(path_key(&track.audio_path), track.id.clone());
+        if let Some(key) = identity_key(&track.artist, &track.title) {
+            self.by_identity.entry(key).or_default().push(track.clone());
+        }
+        let isrc = code_key(&track.isrc);
+        if !isrc.is_empty() {
+            self.by_isrc.entry(isrc).or_insert_with(|| track.clone());
+        }
+        let mbid = track.recording_mbid.trim().to_ascii_lowercase();
+        if !mbid.is_empty() {
+            self.by_mbid.entry(mbid).or_insert_with(|| track.clone());
         }
     }
 
@@ -116,9 +196,9 @@ impl LibraryIndex {
 
     /// 从数据库读一份索引。
     pub fn from_corpus(corpus: &jp_corpus::Corpus) -> anyhow::Result<Self> {
-        let mut stmt = corpus
-            .connection()
-            .prepare("SELECT id, audio_path, title, artist FROM songs")?;
+        let mut stmt = corpus.connection().prepare(
+            "SELECT id, audio_path, title, artist, COALESCE(album,''), duration_sec, COALESCE(isrc,''), COALESCE(recording_mbid,'') FROM songs",
+        )?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(ExistingTrack {
@@ -126,10 +206,39 @@ impl LibraryIndex {
                     audio_path: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
                     title: row.get(2)?,
                     artist: row.get(3)?,
+                    album: row.get(4)?,
+                    duration_sec: row.get(5)?,
+                    isrc: row.get(6)?,
+                    recording_mbid: row.get(7)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self::from_tracks(&rows))
+        let mut index = Self::from_tracks(&rows);
+        index.stamps = jp_corpus::audio_files::stamps(corpus.connection())?;
+        Ok(index)
+    }
+
+    /// 记下一个在用文件的大小和修改时间（测试、迁移用；`from_corpus` 自己会读）。
+    pub fn set_stamp(&mut self, audio_path: &str, size: Option<u64>, mtime: Option<f64>) {
+        self.stamps.insert(path_key(audio_path), (size, mtime));
+    }
+
+    /// 这个文件库里有、大小和修改时间都和上次一样：重扫时不用再读标签。
+    pub fn unchanged(&self, audio_path: &str, size: Option<u64>, mtime: Option<f64>) -> bool {
+        let key = path_key(audio_path);
+        self.by_path.contains_key(&key)
+            && self.stamps.get(&key).is_some_and(|stamp| jp_corpus::audio_files::same_stamp(*stamp, (size, mtime)))
+    }
+
+    /// 库里有这个路径、上次记过它的大小和修改时间，而这次不一样了。
+    /// 没记过（升级前导入的）不算变了：那次只是补记一下。
+    pub fn file_changed(&self, audio_path: &str, size: Option<u64>, mtime: Option<f64>) -> bool {
+        match self.stamps.get(&path_key(audio_path)) {
+            Some(&(Some(old_size), old_mtime)) => {
+                !jp_corpus::audio_files::same_stamp((Some(old_size), old_mtime), (size, mtime)) && size.is_some()
+            }
+            _ => false,
+        }
     }
 
     fn allocate(&self, num: u32) -> String {
@@ -145,7 +254,8 @@ impl LibraryIndex {
     pub fn song_for_identity(&self, artist: &str, title: &str) -> Option<&str> {
         identity_key(artist, title)
             .and_then(|key| self.by_identity.get(&key))
-            .map(|(id, _)| id.as_str())
+            .and_then(|tracks| tracks.first())
+            .map(|track| track.id.as_str())
     }
 
     /// 取下一个 id 并占住它。**连着分很多个时用这个**——
@@ -158,12 +268,13 @@ impl LibraryIndex {
 
     /// 把一首歌记进索引。迁移时边分边记，免得源库里本来就有的重复歌被搬两份。
     pub fn remember(&mut self, id: &str, audio_path: &str, artist: &str, title: &str) {
-        self.by_path.insert(path_key(audio_path), id.to_string());
-        if let Some(key) = identity_key(artist, title) {
-            self.by_identity
-                .entry(key)
-                .or_insert_with(|| (id.to_string(), audio_path.to_string()));
-        }
+        self.insert(&ExistingTrack {
+            id: id.to_string(),
+            audio_path: audio_path.to_string(),
+            title: title.to_string(),
+            artist: artist.to_string(),
+            ..Default::default()
+        });
     }
 }
 
@@ -184,6 +295,9 @@ pub struct PlanSummary {
     pub possible_duplicates: usize,
     pub duplicates_in_batch: usize,
     pub skipped: usize,
+    /// 已在库中、但文件变了的（导入时只刷新文件信息）
+    #[serde(default)]
+    pub files_changed: usize,
 }
 
 impl ImportPlan {
@@ -195,13 +309,21 @@ impl ImportPlan {
         for item in &self.items {
             match item.action {
                 Action::New { .. } => s.new += 1,
-                Action::AlreadyImported { .. } => s.already_imported += 1,
+                Action::AlreadyImported { file_changed, .. } => {
+                    s.already_imported += 1;
+                    s.files_changed += usize::from(file_changed);
+                }
                 Action::PossibleDuplicate { .. } => s.possible_duplicates += 1,
                 Action::DuplicateInBatch { .. } => s.duplicates_in_batch += 1,
                 Action::Skipped { .. } => s.skipped += 1,
             }
         }
         s
+    }
+
+    /// 有没有要做的事：新歌，或者变了的文件要刷新
+    pub fn has_work(&self) -> bool {
+        self.items.iter().any(|i| i.action.writes() || matches!(i.action, Action::AlreadyImported { file_changed: true, .. }))
     }
 
     /// 真正会写库的条目。
@@ -214,12 +336,19 @@ impl ImportPlan {
 pub fn plan(tracks: &[ScannedTrack], index: &LibraryIndex) -> ImportPlan {
     let mut items = Vec::with_capacity(tracks.len());
     let mut next_num = index.next_num;
-    // 同一批里已经见过的，防止一次扫描把同一首导两遍
+    // 同一批里已经见过的，防止一次扫描把同一首导两遍（同名的另一个版本照导）
     let mut batch_paths: HashMap<String, String> = HashMap::new();
-    let mut batch_identities: HashMap<(String, String), String> = HashMap::new();
+    let mut batch_identities: HashMap<(String, String), Vec<&ScannedTrack>> = HashMap::new();
 
     for track in tracks {
         let pkey = path_key(&track.path);
+        // 库里有、没变、没读标签的：直接「已在库中」，别拿它的空标签去比
+        if track.unchanged
+            && let Some(id) = index.by_path.get(&pkey)
+        {
+            items.push(PlannedTrack { track: track.clone(), action: Action::already(id.clone()) });
+            continue;
+        }
         // 放不了的格式不入库。但旧版本导进去过的那些照实报「已在库中」——
         // 它确实在库里，说「跳过」反而是错的
         let unsupported = track.unsupported.as_ref().filter(|_| !index.by_path.contains_key(&pkey));
@@ -227,42 +356,66 @@ pub fn plan(tracks: &[ScannedTrack], index: &LibraryIndex) -> ImportPlan {
             Action::Skipped {
                 reason: reason.clone(),
             }
+        } else if let Some(id) = index.by_path.get(&pkey) {
+            // 路径相同是最硬的证据，优先于曲名歌手；没有曲名也照样是「已在库中」
+            Action::AlreadyImported {
+                song_id: id.clone(),
+                file_changed: index.file_changed(&track.path, track.size, track.mtime),
+            }
         } else if !track.has_identity() {
             Action::Skipped {
                 reason: "没有曲名，tag 和文件名都定不出".into(),
             }
+        } else if let Some(first) = batch_paths.get(&pkey) {
+            Action::DuplicateInBatch {
+                first_path: first.clone(),
+            }
         } else {
-            // 路径相同是最硬的证据，优先于曲名歌手
-            if let Some(id) = index.by_path.get(&pkey) {
-                Action::AlreadyImported {
-                    song_id: id.clone(),
+            let facts = scanned_facts(track);
+            let ikey = identity_key(track.artist(), track.title());
+            let same_code = Some(code_key(&track.isrc))
+                .filter(|c| !c.is_empty())
+                .and_then(|c| index.by_isrc.get(&c))
+                .or_else(|| {
+                    Some(track.recording_mbid.trim().to_ascii_lowercase())
+                        .filter(|m| !m.is_empty())
+                        .and_then(|m| index.by_mbid.get(&m))
+                });
+            let candidates: &[ExistingTrack] = ikey.as_ref().and_then(|k| index.by_identity.get(k)).map_or(&[], Vec::as_slice);
+            if let Some(existing) = same_code {
+                // 外部编号最硬：同一个 ISRC / 录音编号就是同一个录音，曲名写法不同也一样
+                Action::PossibleDuplicate {
+                    song_id: existing.id.clone(),
+                    existing_path: existing.audio_path.clone(),
+                    reason: if code_key(&track.isrc).is_empty() { "同一个 MusicBrainz 录音".into() } else { "同一个 ISRC".into() },
                 }
-            } else if let Some(first) = batch_paths.get(&pkey) {
+            } else if let Some(existing) = candidates.iter().find(|c| version::difference(&c.facts(), &facts).is_none()) {
+                Action::PossibleDuplicate {
+                    song_id: existing.id.clone(),
+                    existing_path: existing.audio_path.clone(),
+                    reason: version::sameness(&existing.facts(), &facts),
+                }
+            } else if let Some(first) = ikey
+                .as_ref()
+                .and_then(|k| batch_identities.get(k))
+                .and_then(|seen| seen.iter().find(|t| version::difference(&scanned_facts(t), &facts).is_none()))
+            {
                 Action::DuplicateInBatch {
-                    first_path: first.clone(),
+                    first_path: first.path.clone(),
                 }
             } else {
-                let ikey = identity_key(track.artist(), track.title());
-                match ikey.as_ref().and_then(|k| index.by_identity.get(k)) {
-                    Some((id, path)) => Action::PossibleDuplicate {
-                        song_id: id.clone(),
-                        existing_path: path.clone(),
-                    },
-                    None => match ikey.as_ref().and_then(|k| batch_identities.get(k)) {
-                        Some(first) => Action::DuplicateInBatch {
-                            first_path: first.clone(),
-                        },
-                        None => {
-                            let id = index.allocate(next_num);
-                            next_num += 1;
-                            batch_paths.insert(pkey, track.path.clone());
-                            if let Some(k) = ikey {
-                                batch_identities.insert(k, track.path.clone());
-                            }
-                            Action::New { song_id: id }
-                        }
-                    },
+                let id = index.allocate(next_num);
+                next_num += 1;
+                batch_paths.insert(pkey, track.path.clone());
+                if let Some(k) = ikey {
+                    batch_identities.entry(k).or_default().push(track);
                 }
+                let version_of = candidates.first().map(|existing| VersionOf {
+                    song_id: existing.id.clone(),
+                    existing_path: existing.audio_path.clone(),
+                    reason: version::difference(&existing.facts(), &facts).unwrap_or_default(),
+                });
+                Action::New { song_id: id, version_of }
             }
         };
         items.push(PlannedTrack {
@@ -302,6 +455,7 @@ mod tests {
             audio_path: path.into(),
             title: title.into(),
             artist: artist.into(),
+            ..Default::default()
         }
     }
 
@@ -323,9 +477,7 @@ mod tests {
         let plan = plan(&[scanned("D:/a/新曲.flac", "新曲", "米津玄師")], &index);
         assert_eq!(
             plan.items[0].action,
-            Action::New {
-                song_id: "210".into()
-            }
+            Action::new_song("210")
         );
     }
 
@@ -337,9 +489,7 @@ mod tests {
         );
         assert_eq!(
             plan.items[0].action,
-            Action::New {
-                song_id: "001".into()
-            }
+            Action::new_song("001")
         );
     }
 
@@ -349,9 +499,7 @@ mod tests {
         let plan = plan(&[scanned("D:/a/001.flac", "夜行", "ヨルシカ")], &index);
         assert_eq!(
             plan.items[0].action,
-            Action::AlreadyImported {
-                song_id: "001".into()
-            }
+            Action::already("001")
         );
     }
 
@@ -384,6 +532,7 @@ mod tests {
             Action::PossibleDuplicate {
                 song_id: "001".into(),
                 existing_path: "D:/a/001.flac".into(),
+                reason: "曲名、歌手相同（没有时长可比）".into(),
             }
         );
         // 关键：不写库
@@ -452,9 +601,9 @@ mod tests {
             plan.items[0].action,
             Action::Skipped { reason: "不支持 Opus：播放器没有这种格式的解码器".into() }
         );
-        assert_eq!(plan.items[1].action, Action::AlreadyImported { song_id: "007".into() });
+        assert_eq!(plan.items[1].action, Action::already("007"));
         // 被跳过的那个不能占住「夜行 / ヨルシカ」，后面同名的 FLAC 照常导入
-        assert_eq!(plan.items[2].action, Action::New { song_id: "008".into() });
+        assert_eq!(plan.items[2].action, Action::new_song("008"));
         assert_eq!(plan.to_import().count(), 1);
     }
 
@@ -499,9 +648,7 @@ mod tests {
         let plan = plan(&[scanned("D:/a/2.flac", "c", "d")], &index);
         assert_eq!(
             plan.items[0].action,
-            Action::New {
-                song_id: "1000".into()
-            }
+            Action::new_song("1000")
         );
     }
 
@@ -514,9 +661,7 @@ mod tests {
         let plan = plan(&[scanned("D:/a/3.flac", "e", "f")], &index);
         assert_eq!(
             plan.items[0].action,
-            Action::New {
-                song_id: "008".into()
-            }
+            Action::new_song("008")
         );
     }
 
@@ -540,9 +685,126 @@ mod tests {
                 possible_duplicates: 1,
                 duplicates_in_batch: 1,
                 skipped: 1,
+                files_changed: 0,
             }
         );
         assert_eq!(plan.to_import().count(), 1);
+    }
+}
+
+#[cfg(test)]
+mod versions {
+    use super::*;
+
+    fn existing(id: &str, path: &str, album: &str, duration: Option<f64>, isrc: &str) -> ExistingTrack {
+        ExistingTrack {
+            id: id.into(),
+            audio_path: path.into(),
+            title: "夜に駆ける".into(),
+            artist: "YOASOBI".into(),
+            album: album.into(),
+            duration_sec: duration,
+            isrc: isrc.into(),
+            ..Default::default()
+        }
+    }
+
+    fn scanned(path: &str, title: &str, album: &str, duration: Option<f64>, isrc: &str) -> ScannedTrack {
+        ScannedTrack {
+            path: path.into(),
+            tag_title: title.into(),
+            tag_artist: "YOASOBI".into(),
+            tag_album: album.into(),
+            duration_sec: duration,
+            isrc: isrc.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_live_or_shorter_version_is_imported_as_its_own_song() {
+        let index = LibraryIndex::from_tracks(&[existing("012", "D:/a/夜に駆ける.flac", "THE BOOK", Some(261.0), "")]);
+        let plan = plan(
+            &[
+                scanned("D:/b/夜に駆ける.flac", "夜に駆ける", "YOASOBI LIVE 2023", Some(275.0), ""),
+                scanned("D:/c/夜に駆ける.flac", "夜に駆ける", "THE BOOK", Some(201.0), ""),
+            ],
+            &index,
+        );
+        let Action::New { version_of: Some(live), .. } = &plan.items[0].action else { panic!("{:?}", plan.items[0].action) };
+        assert_eq!(live.song_id, "012");
+        assert!(live.reason.contains("Live"), "{}", live.reason);
+        let Action::New { version_of: Some(short), .. } = &plan.items[1].action else { panic!("{:?}", plan.items[1].action) };
+        assert!(short.reason.contains("时长差 60 秒"), "{}", short.reason);
+        assert_eq!(plan.summary().new, 2);
+    }
+
+    #[test]
+    fn the_same_recording_in_another_file_is_flagged_not_imported() {
+        let index = LibraryIndex::from_tracks(&[existing("012", "D:/a/夜に駆ける.flac", "THE BOOK", Some(261.0), "JPXX12000001")]);
+        let plan = plan(
+            &[
+                // 同一个录音换成 MP3：时长差不到一秒
+                scanned("D:/b/夜に駆ける.mp3", "夜に駆ける", "THE BOOK", Some(261.4), ""),
+                // 曲名写法不同，但 ISRC 一样
+                scanned("D:/b/yorunikakeru.flac", "Racing into the Night", "", Some(261.0), "JP-XX1-20-00001"),
+            ],
+            &index,
+        );
+        assert_eq!(
+            plan.items[0].action,
+            Action::PossibleDuplicate {
+                song_id: "012".into(),
+                existing_path: "D:/a/夜に駆ける.flac".into(),
+                reason: "曲名、歌手相同，时长相差 0.4 秒".into(),
+            }
+        );
+        assert!(matches!(&plan.items[1].action, Action::PossibleDuplicate { reason, .. } if reason == "同一个 ISRC"));
+        assert_eq!(plan.summary().new, 0);
+    }
+
+    #[test]
+    fn different_isrcs_mean_different_recordings() {
+        let index = LibraryIndex::from_tracks(&[existing("012", "D:/a/1.flac", "", Some(261.0), "JPXX12000001")]);
+        let plan = plan(&[scanned("D:/b/1.flac", "夜に駆ける", "", Some(261.0), "JPXX12100009")], &index);
+        assert!(matches!(&plan.items[0].action, Action::New { version_of: Some(v), .. } if v.reason.starts_with("ISRC 不同")));
+    }
+
+    #[test]
+    fn two_versions_in_one_batch_are_both_imported() {
+        let plan = plan(
+            &[
+                scanned("D:/a/1.flac", "夜に駆ける", "THE BOOK", Some(261.0), ""),
+                scanned("D:/a/2.flac", "夜に駆ける", "LIVE", Some(280.0), ""),
+                scanned("D:/a/3.mp3", "夜に駆ける", "THE BOOK", Some(261.2), ""),
+            ],
+            &LibraryIndex::empty(),
+        );
+        assert!(matches!(plan.items[0].action, Action::New { .. }));
+        assert!(matches!(plan.items[1].action, Action::New { .. }));
+        assert_eq!(plan.items[2].action, Action::DuplicateInBatch { first_path: "D:/a/1.flac".into() });
+    }
+
+    #[test]
+    fn unchanged_files_are_already_imported_without_reading_tags_and_changed_ones_are_flagged() {
+        let mut index = LibraryIndex::from_tracks(&[
+            existing("012", "D:/a/1.flac", "", None, ""),
+            existing("013", "D:/a/2.flac", "", None, ""),
+            existing("014", "D:/a/3.flac", "", None, ""),
+        ]);
+        index.set_stamp("D:/a/1.flac", Some(100), Some(1_000.0));
+        index.set_stamp("D:/a/2.flac", Some(100), Some(1_000.0));
+        assert!(index.unchanged("D:/a/1.flac", Some(100), Some(1_000.5)));
+        assert!(!index.unchanged("D:/a/2.flac", Some(120), Some(1_000.0)));
+        assert!(!index.unchanged("D:/a/3.flac", Some(1), Some(1.0)), "没记过大小的要读一遍");
+        assert!(!index.unchanged("D:/z/new.flac", Some(100), Some(1_000.0)));
+        let stub = ScannedTrack { path: "D:/a/1.flac".into(), size: Some(100), mtime: Some(1_000.0), unchanged: true, ..Default::default() };
+        let changed = ScannedTrack { size: Some(120), mtime: Some(2_000.0), ..scanned("D:/a/2.flac", "夜に駆ける", "", None, "") };
+        let unknown = ScannedTrack { size: Some(1), mtime: Some(1.0), ..scanned("D:/a/3.flac", "夜に駆ける", "", None, "") };
+        let plan = plan(&[stub, changed, unknown], &index);
+        assert_eq!(plan.items[0].action, Action::already("012"));
+        assert_eq!(plan.items[1].action, Action::AlreadyImported { song_id: "013".into(), file_changed: true });
+        assert_eq!(plan.items[2].action, Action::already("014"), "升级前导入、没记过的不算变了");
     }
 }
 
@@ -557,6 +819,7 @@ mod wire_format {
         let dup = serde_json::to_value(Action::PossibleDuplicate {
             song_id: "001".into(),
             existing_path: "D:/a.flac".into(),
+            reason: String::new(),
         })
         .unwrap();
         assert_eq!(dup["kind"], "possibleDuplicate");
@@ -569,7 +832,7 @@ mod wire_format {
         .unwrap();
         assert_eq!(batch["firstPath"], "D:/b.flac", "实际序列化出来的是：{batch}");
 
-        let new = serde_json::to_value(Action::New { song_id: "002".into() }).unwrap();
+        let new = serde_json::to_value(Action::new_song("002")).unwrap();
         assert_eq!(new["songId"], "002", "实际序列化出来的是：{new}");
     }
 }

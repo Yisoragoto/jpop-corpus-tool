@@ -33,4 +33,13 @@ final class NewSongsTests: XCTestCase {
     func testIgnoresDeduplicate() { let once = NewSongs.withIgnored(.init(),.init(folders:["D:\\m"],files:["D:\\m\\a.flac"])); XCTAssertEqual(NewSongs.withIgnored(once,.init(folders:["D:/m/"],files:["d:/M/A.flac","D:\\m\\b.flac"])),.init(folders:["D:\\m"],files:["D:\\m\\a.flac","D:\\m\\b.flac"])) }
     func testRestoreFolder() { XCTAssertEqual(NewSongs.withoutIgnoredFolder(.init(folders:["D:\\m","E:\\other"],files:["D:\\m\\a.flac"]),"d:/m/"),.init(folders:["E:\\other"],files:["D:\\m\\a.flac"])) }
     func testPathKey() { XCTAssertEqual(NewSongs.pathKey("D:\\Music\\ヨルシカ\\"),"d:/music/ヨルシカ"); XCTAssertEqual(NewSongs.pathKey("d:/music/ヨルシカ"),"d:/music/ヨルシカ") }
+    func testVersionAndChangedFileDecode() throws {
+        let version = try decoded(PlanAction.self, #"{"kind":"new","songId":"240","versionOf":{"songId":"004","existingPath":"E:/m/a.flac","reason":"版本不同：库里的是原版，这个是Live"}}"#)
+        XCTAssertEqual(version.versionOf?.songId, "004")
+        let changed = try decoded(PlanAction.self, #"{"kind":"alreadyImported","songId":"004","fileChanged":true}"#)
+        XCTAssertEqual(changed.fileChanged, true)
+        XCTAssertNil(try decoded(PlanAction.self, #"{"kind":"alreadyImported","songId":"004"}"#).fileChanged, "老后端没有这一项")
+        XCTAssertFalse(PlanSummary(total:1,new:0,alreadyImported:1,possibleDuplicates:0,duplicatesInBatch:0,skipped:0).hasWork)
+        XCTAssertTrue(PlanSummary(total:1,new:0,alreadyImported:1,possibleDuplicates:0,duplicatesInBatch:0,skipped:0,filesChanged:1).hasWork)
+    }
 }

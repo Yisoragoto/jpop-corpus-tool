@@ -254,6 +254,42 @@ public struct SongLineage: Decodable, Hashable, Sendable {
     public var tokenStatus: [String: Int]?
     public var tokenizers: [LyricTokenizerRun]?
     public var revisions: [LyricRevision]?
+    /// 音频文件记录（现在用的排最前）。老后端没有这一项
+    public var audioFiles: [AudioFileRow]?
+}
+
+/// 一个音频文件（Rust `jp_corpus::audio_files`）：文件本身的信息，和曲目元数据分开记
+public struct AudioFileRow: Decodable, Hashable, Identifiable, Sendable {
+    public var id: Int64
+    public var songId: String
+    public var path: String
+    public var size: Int64?
+    public var mtime: Double?
+    public var durationSec: Double?
+    public var format: String
+    public var sampleRate: Int?
+    public var channels: Int?
+    public var bitDepth: Int?
+    public var bitrateKbps: Int?
+    public var fingerprint: String?
+    /// 这首在文件里从哪儿开始（毫秒）；整轨 + CUE 时不为 0，现在恒为 0
+    public var trackStartMs: Int64
+    /// present / missing / replaced
+    public var status: String
+    public var firstSeen: String
+    public var checkedAt: String
+
+    /// 「FLAC · 44.1 kHz · 16 bit · 2 ch · 912 kbps · 24.3 MB」
+    public var summary: String {
+        var parts: [String] = []
+        if !format.isEmpty { parts.append(format.uppercased()) }
+        if let sampleRate { parts.append(String(format: "%g kHz", Double(sampleRate) / 1000)) }
+        if let bitDepth { parts.append("\(bitDepth) bit") }
+        if let channels { parts.append("\(channels) ch") }
+        if let bitrateKbps { parts.append("\(bitrateKbps) kbps") }
+        if let size { parts.append(String(format: "%.1f MB", Double(size) / 1_048_576)) }
+        return parts.joined(separator: " · ")
+    }
 }
 
 public struct SongQuality: Decodable, Hashable, Identifiable, Sendable {

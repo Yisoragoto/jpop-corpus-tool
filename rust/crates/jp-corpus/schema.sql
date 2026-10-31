@@ -521,3 +521,27 @@ CREATE TABLE IF NOT EXISTS lyric_timeline_cache (
     timeline_json  TEXT    NOT NULL,
     built_at       TEXT    NOT NULL DEFAULT ''
 );
+
+-- 音频文件记录：曲目（songs）和它的文件分开记（jp_corpus::audio_files）。
+-- songs.audio_path 仍是现在用的那个文件；这里同路径那一行 status='present'，
+-- 换掉的旧路径 'replaced'，找不到的 'missing'。track_start_ms 给将来的 CUE 整轨留着，现在恒为 0。
+CREATE TABLE IF NOT EXISTS audio_files (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    song_id        TEXT    NOT NULL,
+    path           TEXT    NOT NULL,
+    size           INTEGER,
+    mtime          REAL,
+    duration_sec   REAL,
+    format         TEXT    NOT NULL DEFAULT '',
+    sample_rate    INTEGER,
+    channels       INTEGER,
+    bit_depth      INTEGER,
+    bitrate_kbps   INTEGER,
+    fingerprint    TEXT,
+    track_start_ms INTEGER NOT NULL DEFAULT 0,
+    status         TEXT    NOT NULL DEFAULT 'present',
+    first_seen     TEXT    NOT NULL DEFAULT '',
+    checked_at     TEXT    NOT NULL DEFAULT '',
+    UNIQUE (song_id, path)
+);
+CREATE INDEX IF NOT EXISTS idx_audio_files_song ON audio_files(song_id);

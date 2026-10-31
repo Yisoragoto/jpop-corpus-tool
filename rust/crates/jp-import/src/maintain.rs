@@ -375,6 +375,9 @@ pub fn relink_audio(conn: &Connection, song_id: &str, new_path: &str) -> Result<
     if let Err(err) = jp_corpus::fingerprint::refresh(conn, song_id, Path::new(new_path)) {
         eprintln!("重新链接后指纹未写入 {song_id}: {err:#}");
     }
+    // 新文件记成现在用的，旧路径那一行留着（replaced），找回、比对时还用得上
+    let fingerprint: Option<String> = conn.query_row("SELECT audio_fingerprint FROM songs WHERE id=?1", params![song_id], |r| r.get(0))?;
+    jp_corpus::audio_files::record(conn, song_id, &crate::scan::file_facts(Path::new(new_path)), fingerprint.as_deref())?;
     Ok(old)
 }
 
