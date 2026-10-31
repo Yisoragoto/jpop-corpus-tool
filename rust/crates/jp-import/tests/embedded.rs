@@ -110,25 +110,27 @@ fn a_file_without_embedded_data_reads_as_none() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 内嵌的优先于旁边的 .lrc；只有内嵌的没时间轴时让给 .lrc
+/// 旁边的同名文件优先于内嵌歌词，内嵌的有没有时间轴都一样；没有外挂文件时才用内嵌的
 #[test]
-fn embedded_lyrics_win_over_a_sibling_lrc_unless_they_lack_timestamps() {
-    let sibling = "[00:02.00]旁边の歌詞\n";
+fn a_sibling_lrc_wins_over_embedded_lyrics() {
+    let sibling = "[00:02.00]旁边の歌詞
+";
 
-    let dir = scratch("pick-synced");
+    for (name, embedded) in [("pick-synced", SYNCED), ("pick-plain", PLAIN)] {
+        let dir = scratch(name);
+        let audio = fixture(&dir, "flac", ItemKey::Lyrics, Some(embedded), false);
+        let lrc = audio.with_extension("lrc");
+        std::fs::write(&lrc, sibling).unwrap();
+        let scanned = scan_file(&audio);
+        assert!(scanned.embedded_lyrics.is_some(), "前提：内嵌歌词也读到了");
+        assert_eq!(scanned.lyrics_pick(), Some(LyricsPick::File(&lrc.display().to_string())));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    let dir = scratch("pick-embedded-only");
     let audio = fixture(&dir, "flac", ItemKey::Lyrics, Some(SYNCED), false);
-    std::fs::write(audio.with_extension("lrc"), sibling).unwrap();
     let scanned = scan_file(&audio);
-    assert!(scanned.lyrics_path.is_some(), "前提：旁边的 .lrc 也找到了");
     assert!(matches!(scanned.lyrics_pick(), Some(LyricsPick::Embedded(t)) if t.contains("夜が明ける")));
-    let _ = std::fs::remove_dir_all(&dir);
-
-    let dir = scratch("pick-plain");
-    let audio = fixture(&dir, "flac", ItemKey::Lyrics, Some(PLAIN), false);
-    let lrc = audio.with_extension("lrc");
-    std::fs::write(&lrc, sibling).unwrap();
-    let scanned = scan_file(&audio);
-    assert_eq!(scanned.lyrics_pick(), Some(LyricsPick::File(&lrc.display().to_string())));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

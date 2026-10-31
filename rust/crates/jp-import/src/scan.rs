@@ -159,16 +159,13 @@ impl ScannedTrack {
         }
     }
 
-    /// 歌词用哪一份：**内嵌的优先**，其次外挂 .lrc。
+    /// 歌词用哪一份：**音频旁边的同名文件优先**，其次内嵌歌词。
     ///
-    /// 内嵌的是文件自己带的，不会配错歌；外挂的 .lrc 只是名字对上了。
-    /// 唯一的例外：内嵌的没有时间轴、外挂的 .lrc 又存在时用 .lrc——
-    /// 没时间轴的歌词跟不上播放、也切不出 Anki 片段，丢掉时间轴比换个来源亏得多。
+    /// 两份都在时另一份不会丢：「歌词来源」里能看到、能换（`jp_lyrics::sources`）。
     pub fn lyrics_pick(&self) -> Option<LyricsPick<'_>> {
         match (&self.embedded_lyrics, &self.lyrics_path) {
-            (Some(e), None) => Some(LyricsPick::Embedded(&e.text)),
-            (Some(e), Some(_)) if e.synced => Some(LyricsPick::Embedded(&e.text)),
             (_, Some(path)) => Some(LyricsPick::File(path)),
+            (Some(e), None) => Some(LyricsPick::Embedded(&e.text)),
             (None, None) => None,
         }
     }

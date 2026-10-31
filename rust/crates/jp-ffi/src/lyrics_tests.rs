@@ -160,3 +160,33 @@ fn timing_save_and_local_import_use_the_shared_version_path() {
     drop(s);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn lyric_sources_offset_and_timeline_round_trip_through_the_ffi() {
+    let (s, dir) = fixture();
+    let view = s.call("lyricSourceView", json!({"songId":"001"})).unwrap();
+    // 示例库的歌词是升级前就在的：登记成来源，选择方式是 legacy，自动流程不换
+    assert_eq!(view["selection"]["chosenBy"], "legacy");
+    let source = view["selection"]["sourceId"].as_i64().unwrap();
+    assert!(view["sources"].as_array().unwrap().iter().any(|r| r["id"] == source));
+
+    let before = s.call("lyricSongTimeline", json!({"songId":"001"})).unwrap();
+    let first = before["lines"].as_array().unwrap().iter().find(|l| l["startMs"].is_i64()).unwrap().clone();
+    let utterances = s.call("lyrics", json!({"songId":"001"})).unwrap();
+    let track_before = utterances.as_array().unwrap().iter().find(|l| l["utteranceId"] == first["utteranceId"]).unwrap()["timeSec"].as_f64().unwrap();
+
+    s.call("lyricOffsetSet", json!({"songId":"001","offsetMs":300})).unwrap();
+    let after = s.call("lyricSongTimeline", json!({"songId":"001"})).unwrap();
+    assert_eq!(after["offsetMs"], 300);
+    let same = after["lines"].as_array().unwrap().iter().find(|l| l["id"] == first["id"]).unwrap();
+    assert_eq!(same["startMs"], first["startMs"], "歌词时间不变，偏移另记");
+    let utterances = s.call("lyrics", json!({"songId":"001"})).unwrap();
+    let track_after = utterances.as_array().unwrap().iter().find(|l| l["utteranceId"] == first["utteranceId"]).unwrap()["timeSec"].as_f64().unwrap();
+    assert!((track_after - track_before - 0.3).abs() < 1e-6, "曲目时间（跳转用的）跟着偏移走");
+
+    s.call("lyricOffsetSet", json!({"songId":"001","offsetMs":0})).unwrap();
+    assert!(s.call("lyricOffsetSet", json!({"songId":"001","offsetMs":99999})).is_err());
+    assert!(s.call("lyricSourceRaw", json!({"sourceId":source})).is_ok());
+    drop(s);
+    let _ = std::fs::remove_dir_all(dir);
+}

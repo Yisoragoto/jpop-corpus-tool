@@ -76,7 +76,7 @@ function LyricsFillForSong({ songId, hasLyrics, onAttached, onError }: Props) {
       const picked = await openDialog({
         multiple: false,
         title: tr("选择歌词文件"),
-        filters: [{ name: tr("歌词"), extensions: ["lrc", "txt", "yrc", "qrc", "krc", "ttml"] }],
+        filters: [{ name: tr("歌词"), extensions: ["lrc", "srt", "txt", "yrc", "qrc", "krc", "ttml"] }],
       });
       if (!alive.current || typeof picked !== "string") return;
       setNote("");

@@ -37,6 +37,9 @@ public final class LyricsModel {
     public var tapMode: TimingTapMode = .hold
     public private(set) var rawPreview: String?
     public private(set) var previewingVersion: Int64?
+    /// 歌词来源与同步：这首歌有哪几份、用的哪份、译文、整体偏移
+    public private(set) var sourceView: LyricSourcesView?
+    public private(set) var sourcePreview: (id: Int64, timeline: SongLyricTimeline)?
     private var savedEdits: [LyricDraft] = []
     private var undoStack: [[TimingDraftLine]] = []
     private var redoStack: [[TimingDraftLine]] = []
@@ -273,6 +276,80 @@ public final class LyricsModel {
             if clear { try await client.wordTimeClear(utteranceId: line.utteranceId, charStart: unit.charStart) }
             else { try await client.wordTimeSet(utteranceId: line.utteranceId, charStart: unit.charStart, charEnd: unit.charEnd, startSec: max(0, position)) }
             revision += 1; message = clear ? "已清除定位校准" : "已校准定位起点；逐字动画仍需完整起止时间"
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    // MARK: 歌词来源与同步
+
+    public var currentSource: LyricSourceRow? {
+        guard let view = sourceView, let id = view.selection?.sourceId else { return nil }
+        return view.sources.first { $0.id == id && $0.isOriginal }
+    }
+    /// 按优先级默认该用、但现在没在用的那份
+    public var recommendedSource: LyricSourceRow? {
+        guard let view = sourceView, let id = view.recommended, id != view.selection?.sourceId else { return nil }
+        return view.sources.first { $0.id == id && $0.isOriginal }
+    }
+    public var offsetMs: Int { sourceView?.selection?.offsetMs ?? 0 }
+    /// 没有时间轴：偏移、跟随播放、点行跳转都用不了
+    public var sourceUntimed: Bool { currentSource.map { $0.precision == "none" } ?? true }
+
+    public func loadSources(_ client: any LyricsCalling) async {
+        do { sourceView = try await client.lyricSourceView(songId) }
+        catch { errorMessage = error.localizedDescription }
+    }
+    public func previewSource(_ sourceId: Int64, client: any LyricsCalling) async {
+        if sourcePreview?.id == sourceId { sourcePreview = nil; return }
+        do { sourcePreview = (sourceId, try await client.lyricSourceTimeline(sourceId)) }
+        catch { errorMessage = error.localizedDescription }
+    }
+    public func useSource(_ sourceId: Int64, client: any LyricsCalling) async {
+        await sourceChange(client, lyricsChanged: true) {
+            let attached = try await client.lyricSourceApply(self.songId, sourceId: sourceId)
+            return "已换成这一份：\(attached.lyricLines) 行；之后自动流程不会换掉它"
+        }
+    }
+    public func returnToAutomatic(_ client: any LyricsCalling) async {
+        await sourceChange(client, lyricsChanged: true) {
+            let attached = try await client.lyricSourceAuto(self.songId)
+            return attached.map { "已按优先级换成「\($0.source)」：\($0.lyricLines) 行" } ?? "已交还自动选择，现在这份就是优先级最高的"
+        }
+    }
+    public func selectTranslation(_ sourceId: Int64?, client: any LyricsCalling) async {
+        await sourceChange(client, lyricsChanged: false) {
+            try await client.lyricTranslationSelect(self.songId, sourceId: sourceId)
+            return sourceId == nil ? "不再显示译文" : "已换译文"
+        }
+    }
+    public func setOffset(_ milliseconds: Int, client: any LyricsCalling) async {
+        let clamped = max(-lyricMaxOffsetMs, min(lyricMaxOffsetMs, milliseconds))
+        guard clamped != offsetMs else { return }
+        await sourceChange(client, lyricsChanged: true) {
+            let applied = try await client.lyricOffsetSet(self.songId, offsetMs: clamped)
+            return "整体偏移现在是 \(LyricsModel.formatOffset(applied))"
+        }
+    }
+    public static func formatOffset(_ milliseconds: Int) -> String {
+        let sec = Double(milliseconds) / 1000
+        let text = String(format: milliseconds % 100 == 0 ? "%.1f" : "%.2f", sec)
+        let signed = (milliseconds > 0 ? "+" : "") + text
+        return "\(signed) 秒"
+    }
+
+    private func sourceChange(_ client: any LyricsCalling, lyricsChanged: Bool, action: () async throws -> String) async {
+        guard !busy else { return }
+        if dirty { errorMessage = "先保存或放弃草稿，再换来源或调偏移"; return }
+        busy = true; errorMessage = nil; message = nil
+        defer { busy = false }
+        do {
+            let note = try await action()
+            sourcePreview = nil
+            if lyricsChanged {
+                revision += 1
+                try await loadContent(client)
+            }
+            sourceView = try await client.lyricSourceView(songId)
+            message = note
         } catch { errorMessage = error.localizedDescription }
     }
 

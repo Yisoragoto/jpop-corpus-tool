@@ -27,6 +27,7 @@ pub mod metadata_csv;
 pub mod plan;
 pub mod review;
 pub mod scan;
+pub mod srt;
 pub mod watch;
 
 pub use lrc::{ParsedLrc, parse_file as parse_lrc_file};

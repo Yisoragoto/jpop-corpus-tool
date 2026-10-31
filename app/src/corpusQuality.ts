@@ -119,6 +119,7 @@ export const REVISION_LABELS: Record<string, string> = {
   metadata_edited: tr("改曲目信息"),
   song_deleted: tr("删除"),
   legacy_registered: tr("老库补登记"),
+  lyrics_offset: tr("调整歌词偏移"),
 };
 
 export const issueLabel = (code: string) => ISSUE_LABELS[code] ?? code;

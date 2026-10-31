@@ -26,6 +26,12 @@ public protocol LyricsCalling: AnyObject, Sendable {
     func lyricsTimedApply(_ songId: String, candidateId: String) async throws -> LyricsAttached
     func wordTimeSet(utteranceId: Int64, charStart: Int, charEnd: Int, startSec: Double) async throws
     func wordTimeClear(utteranceId: Int64, charStart: Int) async throws
+    func lyricSourceView(_ songId: String) async throws -> LyricSourcesView
+    func lyricSourceTimeline(_ sourceId: Int64) async throws -> SongLyricTimeline
+    func lyricSourceApply(_ songId: String, sourceId: Int64) async throws -> LyricsAttached
+    func lyricSourceAuto(_ songId: String) async throws -> LyricsAttached?
+    func lyricTranslationSelect(_ songId: String, sourceId: Int64?) async throws
+    func lyricOffsetSet(_ songId: String, offsetMs: Int) async throws -> Int
 }
 
 extension CorpusClient: LyricsCalling {}

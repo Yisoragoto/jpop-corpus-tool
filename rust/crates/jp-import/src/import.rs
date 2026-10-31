@@ -398,7 +398,7 @@ pub fn attach_lines(
     artist: &str,
     title: &str,
 ) -> Result<Stats> {
-    let parsed = crate::lrc::ParsedLrc { lines, credits: Vec::new() };
+    let parsed = crate::lrc::ParsedLrc { lines, ..Default::default() };
     attach_parsed(tx, song_id, raw_text, &parsed, source, analyzer, artist, title)
 }
 
@@ -490,6 +490,13 @@ fn attach_parsed(
         let mode = if units>0 { "unit" } else if synced>0 { "line" } else { "plain" };
         let report = serde_json::json!({"status":"parsed", "algorithmGenerated":false, "unitCount":units, "timedLines":synced});
         tx.execute("UPDATE lyric_versions SET raw_format=?2,source_raw=?3,sync_granularity=?4,timing_origin='source',timing_validation_json=?5 WHERE id=?1",params![v.id,if units>0 {"enhanced_lrc"}else if synced>0 {"lrc"}else{"text"},raw_text,mode,report.to_string()])?;
+        jp_corpus::lyric_sources::update_current_format(
+            tx,
+            song_id,
+            if units > 0 { "enhanced_lrc" } else if synced > 0 { "lrc" } else { "text" },
+            if units > 0 { "word" } else if synced > 0 { "line" } else { "none" },
+            None,
+        )?;
     }
 
     for (line_idx, line) in parsed.lines.iter().enumerate() {

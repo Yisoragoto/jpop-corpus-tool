@@ -56,6 +56,10 @@ pub struct Credit {
 pub struct ParsedLrc {
     pub lines: Vec<LyricLine>,
     pub credits: Vec<Credit>,
+    /// 和原文挤在同一时间戳下、被认成译文拿掉的那些行（见 [`split_translation_lines`]）。
+    /// 不进语料，但留给时间轴当译文用
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub translations: Vec<LyricLine>,
 }
 
 /// 信用标签 → 角色。简繁日三种写法都收。
@@ -231,7 +235,9 @@ pub fn parse(text: &str) -> ParsedLrc {
         }
     }
 
-    out.lines = drop_translation_lines(out.lines);
+    let (kept, dropped) = split_translation_lines(out.lines);
+    out.lines = kept;
+    out.translations = dropped;
 
     // 按时间排序，没有时间戳的保持原顺序排在最后
     out.lines.sort_by(|a, b| match (a.time_sec, b.time_sec) {
@@ -280,7 +286,7 @@ fn find_offset_sec(text: &str) -> f64 {
 /// **宁可漏删、不可错删**：规则只在 [`looks_like_translation`] 那三个条件同时满足时
 /// 才动，其余一律保留。纯汉字的日文短句（「春夏秋冬」）单独一行、或者同一时间戳下
 /// 没有带假名的行可对照时，都不会被删。没有时间戳的行不分组。
-fn drop_translation_lines(lines: Vec<LyricLine>) -> Vec<LyricLine> {
+fn split_translation_lines(lines: Vec<LyricLine>) -> (Vec<LyricLine>, Vec<LyricLine>) {
     let siblings_of = |time: f64| -> Vec<&str> {
         lines
             .iter()
@@ -295,11 +301,8 @@ fn drop_translation_lines(lines: Vec<LyricLine>) -> Vec<LyricLine> {
             None => true,
         })
         .collect();
-    lines
-        .into_iter()
-        .zip(keep)
-        .filter_map(|(line, keep)| keep.then_some(line))
-        .collect()
+    let (kept, dropped): (Vec<_>, Vec<_>) = lines.into_iter().zip(keep).partition(|(_, keep)| *keep);
+    (kept.into_iter().map(|(l, _)| l).collect(), dropped.into_iter().map(|(l, _)| l).collect())
 }
 
 /// `text` 是不是挤在原文旁边的中文翻译。`siblings` 是同一时间戳下的所有行（含它自己）。
