@@ -6,24 +6,50 @@
 [![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20%C2%B7%20macOS%2014%2B-lightgrey)](https://github.com/Yisoragoto/jpop-corpus-tool/releases)
 [![built with](https://img.shields.io/badge/built%20with-Tauri%202%20%C2%B7%20React%2019%20%C2%B7%20Rust%20%C2%B7%20SwiftUI-orange)](#development)
 
-A local J-pop corpus for Japanese learners. Import songs and lyrics you own, follow the lyrics word by word as the
+A local music corpus. Import songs and lyrics you own, follow the lyrics word by word as the
 audio plays, look words up Yomitan-style, search a word across your whole library and hear the line it is sung
 in, run corpus analyses — frequency, collocations, sub-corpus comparison — and turn the lines you just heard into
 Anki cards.
 
 [简体中文](README.md) · **English**
 
+[Download](#download) · [Features](#features) · [First run](#first-run) · [Development](#development) · [Methods](#methods-corpus-linguistics)
+
 <table>
 <tr>
 <td colspan="2"><img src="docs/screenshots/lyrics-lookup.webp" alt="Looking a word up in full-screen lyrics"></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/karaoke.webp" alt="Karaoke"></td>
-<td><img src="docs/screenshots/lyrics-info.webp" alt="Full-screen lyrics with credits"></td>
+<td colspan="2" align="center"><sub>Windows · click a word in full-screen lyrics and the side panel turns into the dictionary</sub></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/artist.webp" alt="Artist profile"></td>
-<td><img src="docs/screenshots/wordcloud.webp" alt="Word cloud"></td>
+<td width="50%"><img src="docs/screenshots/karaoke.webp" alt="Karaoke"></td>
+<td width="50%"><img src="docs/screenshots/lyrics-info.webp" alt="Full-screen lyrics with credits"></td>
+</tr>
+<tr>
+<td align="center"><sub>Windows · Karaoke</sub></td>
+<td align="center"><sub>Windows · Full-screen lyrics with credits</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/artist.webp" alt="Artist profile"></td>
+<td width="50%"><img src="docs/screenshots/wordcloud.webp" alt="Word cloud"></td>
+</tr>
+<tr>
+<td align="center"><sub>Windows · Artist profile</sub></td>
+<td align="center"><sub>Windows · Word cloud</sub></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="33%"><img src="docs/screenshots/macos-lyrics-lookup.webp" alt="Looking a word up in full-screen lyrics"></td>
+<td width="33%"><img src="docs/screenshots/macos-karaoke.webp" alt="Karaoke subtitle style"></td>
+<td width="33%"><img src="docs/screenshots/macos-kwic.webp" alt="CQL search with lyrics following playback"></td>
+</tr>
+<tr>
+<td align="center"><sub>macOS · Looking a word up in full-screen lyrics</sub></td>
+<td align="center"><sub>macOS · Karaoke subtitle style</sub></td>
+<td align="center"><sub>macOS · CQL search with lyrics following playback</sub></td>
 </tr>
 </table>
 
@@ -91,7 +117,7 @@ search box at the top searches titles, artists, albums, lyrics and words across 
 - The **timeline** lays out every album and single by release date, with covers and track lists, vertical or
   horizontal; where a band split, it leads on to the members' solo lanes.
 
-<p align="center"><img src="docs/screenshots/timeline.webp" alt="Timeline" width="760"></p>
+<p align="center"><img src="docs/screenshots/timeline.webp" alt="Timeline" width="720"></p>
 
 ### Playback and lyrics
 
@@ -151,7 +177,7 @@ directly:
 collects download links for the usual ones (JMdict, 三省堂, 明鏡, JPDB frequency, pitch-accent dictionaries…).
 Each dictionary's licence and redistribution terms are its author's; check them yourself.
 
-![Dictionaries page](docs/screenshots/dictionary.webp)
+<p align="center"><img src="docs/screenshots/dictionary.webp" alt="Dictionaries page" width="640"></p>
 
 ### Search: from a word to the line it is sung in
 
@@ -166,7 +192,7 @@ Each dictionary's licence and redistribution terms are its author's; check them 
 - A collocation panel lists words within 3 words of the keyword; pick one to narrow the concordance to lines where
   it occurs nearby.
 
-![KWIC search](docs/screenshots/kwic.webp)
+<p align="center"><img src="docs/screenshots/kwic.webp" alt="KWIC search" width="640"></p>
 
 ### Word cloud
 
@@ -225,7 +251,7 @@ item by item, with an explanation of why the result changed — the library chan
 
 The statistics used, and where they come from, are described under [Methods: corpus linguistics](#methods-corpus-linguistics).
 
-![Analytics page](docs/screenshots/analytics.webp)
+<p align="center"><img src="docs/screenshots/analytics.webp" alt="Analytics page" width="640"></p>
 
 ### Corpus quality and provenance
 
@@ -260,7 +286,7 @@ to add cards through. That is how cards get made here — **local only, nothing 
 - The Anki page selects, previews and exports words in bulk; a mining report (HTML) lists, by JLPT level, the words
   in your corpus that have no card yet.
 
-![The back of a Lyrics card](docs/screenshots/anki-lyrics-card.webp)
+<p align="center"><img src="docs/screenshots/anki-lyrics-card.webp" alt="The back of a Lyrics card" width="720"></p>
 
 ### Importing, scraping and library maintenance
 
