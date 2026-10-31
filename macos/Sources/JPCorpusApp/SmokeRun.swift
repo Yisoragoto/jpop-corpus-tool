@@ -38,6 +38,12 @@ enum SmokeRun {
         trace("init，输出到 \(out.path)")
     }
 
+    /// 程序真的退到 willTerminate 了：CI 凭这个文件判断退出没卡住
+    static func markQuit() {
+        guard let out = outputDirectory else { return }
+        try? ("quit \(Date())" + newline).write(to: out.appendingPathComponent("quit.txt"), atomically: true, encoding: .utf8)
+    }
+
     private static var started = false
     static var playerBarHeight: CGFloat = 0
 
@@ -338,7 +344,8 @@ enum SmokeRun {
             let screenshot = FileManager.default.fileExists(atPath: out.appendingPathComponent("09-imported-library.png").path)
             try require(screenshot, "imported-library", "screenshot=\(screenshot)")
             note("[step] complete status=pass")
-            NSApplication.shared.terminate(nil)
+            // 和应用内更新一样从 Task 里请求退出（见 AppQuit）
+            AppQuit.request()
         } catch {
             note("[step] complete status=fail error=\(error.localizedDescription.replacingOccurrences(of: newline, with: " "))")
             exit(EXIT_FAILURE)
