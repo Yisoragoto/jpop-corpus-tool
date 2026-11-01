@@ -36,6 +36,8 @@ public final class VisualizationModel {
     @ObservationIgnored private var cloudRequest = UUID()
     @ObservationIgnored private var loadedKey = ""
     @ObservationIgnored private var loadRequest = UUID()
+    @ObservationIgnored private var liveGraph: GraphSimulation?
+    @ObservationIgnored private var liveTask: Task<Void, Never>?
     public init() {}
     public var directory: LibraryDirectory { LibraryIndex.buildDirectory(entries,memberships) }
     public var timeline: TimelineLayout { ReleaseTimeline.buildTimeline(directory,releases,query: timelineQuery) }
@@ -56,25 +58,45 @@ public final class VisualizationModel {
     }
     public func rebuildGraph() async {
         let request = UUID(); graphRequest = request; graphBusy = true
+        stopLiveGraph()
         let entries = entries, edges = edges, memberships = memberships
         let options = GraphOptions(focus: around,depth: 2,roles: roles,minShared: minShared)
         let task = Task.detached(priority: .userInitiated) { () -> RelationGraph in
-            var sim = GraphSimulation(GraphLayout.buildGraph(entries,edges,memberships,options))
+            var sim = GraphSimulation(GraphLayout.buildGraph(entries,edges,memberships,options),forces: .roomy)
             for _ in 0..<400 { if Task.isCancelled || !sim.running { break }; sim.tick() }
             return sim.graph
         }
         let result = await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
         guard request == graphRequest, !Task.isCancelled else { return }; graph = result; graphBusy = false
     }
-    public func moveNode(_ index: Int,x: Double,y: Double) { guard graph.nodes.indices.contains(index) else { return }; graphRequest = UUID(); graph.nodes[index].x = x; graph.nodes[index].y = y; graph.nodes[index].fx = x; graph.nodes[index].fy = y }
-    public func relaxGraph() async {
-        let request = UUID(); graphRequest = request; let current = graph
-        let task = Task.detached(priority: .userInitiated) { () -> RelationGraph in
-            var sim = GraphSimulation(current,alpha: 0.25); sim.settle(); return sim.graph
+    /// 拖一个人：钉在手指下，整张图边拖边演算（相连的人被拉着走、挨着的被推开），
+    /// 而不是只挪这一个点、松手后整张图一下跳到算好的位置
+    public func dragNode(_ index: Int,x: Double,y: Double) {
+        guard graph.nodes.indices.contains(index) else { return }
+        if liveGraph == nil {
+            graphRequest = UUID()
+            liveGraph = GraphSimulation(graph,forces: .roomy,alpha: 0)
         }
-        let result = await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
-        if request == graphRequest && !Task.isCancelled { graph = result }
+        liveGraph?.graph.nodes[index].x = x; liveGraph?.graph.nodes[index].y = y
+        liveGraph?.graph.nodes[index].fx = x; liveGraph?.graph.nodes[index].fy = y
+        liveGraph?.reheat(0.3)
+        if let sim = liveGraph { graph = sim.graph }
+        if liveTask == nil { liveTask = Task { @MainActor [weak self] in await self?.runLiveGraph() } }
     }
+
+    /// 松手：放下的人留在原地，其余的继续动，慢慢停稳
+    public func endDrag() { liveGraph?.reheat(0.12) }
+
+    private func runLiveGraph() async {
+        while !Task.isCancelled, var sim = liveGraph, sim.running {
+            sim.tick(); liveGraph = sim; graph = sim.graph
+            try? await Task.sleep(for: .milliseconds(16))
+        }
+        // 被 stopLiveGraph 取消时那边已经清过了，这里再清会把新开的那一轮也清掉
+        if !Task.isCancelled { liveGraph = nil; liveTask = nil }
+    }
+
+    private func stopLiveGraph() { liveTask?.cancel(); liveTask = nil; liveGraph = nil }
     public func loadCloud(_ client: CorpusClient,scope: ActiveScope?,count: Int,hideFunctionWords: Bool,hidden: Set<String>) async {
         let request = UUID(); cloudRequest = request; cloudBusy = true
         var filter = SubcorpusScope.withScope(cloudFilter,scope)

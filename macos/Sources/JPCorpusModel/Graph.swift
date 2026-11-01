@@ -20,7 +20,16 @@ public struct GraphOptions: Sendable {
 }
 public struct GraphForces: Sendable {
     public var repel = 900.0, linkDistance = 70.0, center = 0.035
+    /// 两个圆之间至少留的空
+    public var gap = 18.0
     public init() {}
+    public init(repel: Double, linkDistance: Double, center: Double, gap: Double) {
+        self.repel = repel; self.linkDistance = linkDistance; self.center = center; self.gap = gap
+    }
+
+    /// Mac 版用的：圆画得比 Windows 大（带头像、描边、光晕），默认参数排出来挤成一团。
+    /// 斥力和间隙加大、连线拉长、向心力减小，图摊得开一些
+    public static let roomy = GraphForces(repel: 2400, linkDistance: 105, center: 0.018, gap: 36)
 }
 /// graph.ts：数组保留 JS Map 插入顺序，力参数与运算顺序一致。
 public enum GraphLayout {
@@ -114,7 +123,7 @@ public struct GraphSimulation: Sendable {
             for gx in (cx-1)...(cx+1) { for gy in (cy-1)...(cy+1) { for j in grid[Cell(x: gx,y: gy)] ?? [] where j > i {
                 var dx = nodes[j].x-nodes[i].x, dy = nodes[j].y-nodes[i].y, d2 = dx*dx+dy*dy
                 if d2 == 0 { dx = Double((i*7919)%13-6); dy = Double((j*104729)%13-6); if dx == 0 { dx = 1 }; if dy == 0 { dy = 1 }; d2 = dx*dx+dy*dy }
-                let minD = nodes[i].r+nodes[j].r+18
+                let minD = nodes[i].r+nodes[j].r+forces.gap
                 let f = repel*a/max(d2,minD*minD*0.25)+max(0,minD-sqrt(d2))*0.9, d = sqrt(d2)
                 let fx = dx/d*f, fy = dy/d*f
                 nodes[i].vx -= fx; nodes[i].vy -= fy; nodes[j].vx += fx; nodes[j].vy += fy
