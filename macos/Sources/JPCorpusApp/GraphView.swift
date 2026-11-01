@@ -89,11 +89,11 @@ struct GraphView: View {
                 .gesture(DragGesture(minimumDistance: 3).onChanged { value in
                     if dragOrigin == nil { dragOrigin = offset; let i = hit(value.startLocation); dragging = i >= 0 ? i : nil }
                     if let i = dragging {
-                        model.moveNode(i,x: (value.location.x-offset.x)/scale,y: (value.location.y-offset.y)/scale)
+                        model.dragNode(i,x: (value.location.x-offset.x)/scale,y: (value.location.y-offset.y)/scale)
                     } else if let origin = dragOrigin { offset = CGPoint(x: origin.x+value.translation.width,y: origin.y+value.translation.height) }
                 }.onEnded { _ in
                     let moved = dragging != nil; dragOrigin = nil; dragging = nil
-                    if moved { Task { await model.relaxGraph() } }
+                    if moved { model.endDrag() }
                 })
                 .simultaneousGesture(SpatialTapGesture(count: 2).onEnded { value in let i = hit(value.location); if i >= 0 { app.show(.person(model.graph.nodes[i].id)) } })
                 .simultaneousGesture(SpatialTapGesture().onEnded { value in let i = hit(value.location); model.selected = i >= 0 ? model.graph.nodes[i].id : nil })
