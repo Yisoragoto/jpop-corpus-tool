@@ -35,7 +35,7 @@ struct MediaHealthBanner: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "externaldrive.badge.questionmark").foregroundStyle(.orange)
-                Text("这个库里有些文件在这台电脑上找不到").font(.callout.weight(.semibold))
+                Text("这个库里有些文件在这台电脑上找不到").font(.app(.callout).weight(.semibold))
                 Spacer()
                 Button { dismissed = libraryKey } label: { Image(systemName: "xmark") }
                     .buttonStyle(.borderless)
@@ -43,10 +43,10 @@ struct MediaHealthBanner: View {
             }
             if status.audioMissing > 0 {
                 Text("\(status.audioMissing) / \(status.songs) 首歌找不到音频，原来在：")
-                    .font(.callout)
+                    .font(.app(.callout))
                 ForEach(status.missingAudioFolders, id: \.folder) { folder in
                     Text(verbatim: "· \(folder.folder)（\(folder.songs)）")
-                        .font(.caption.monospaced())
+                        .font(.app(.caption).monospaced())
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -56,10 +56,10 @@ struct MediaHealthBanner: View {
             let images = status.coversMissing + status.albumsMissing + status.artistsMissing
             if images > 0 {
                 Text("\(status.coversMissing) 张歌曲封面、\(status.albumsMissing) 张专辑封面、\(status.artistsMissing) 张音乐人照片找不到。")
-                    .font(.callout)
+                    .font(.app(.callout))
             }
             Text("封面和照片在库文件夹的 raw 子文件夹里：把 Windows 上整个「JPOP Corpus Tool」文件夹拷过来就能找到。音乐文件拷到这台 Mac 后，点「添加音乐文件夹」，按文件名自动找，不用改库。")
-                .font(.caption)
+                .font(.app(.caption))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
@@ -75,7 +75,7 @@ struct MediaHealthBanner: View {
                     if let url = app.libraryURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                 }
                 if busy { ProgressView().controlSize(.small) }
-                if !result.isEmpty { Text(result).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                if !result.isEmpty { Text(result).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(2) }
             }
             .disabled(busy)
         }

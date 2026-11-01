@@ -41,7 +41,7 @@ private struct InflectionSection: View {
         VStack(alignment: .leading, spacing: 14) {
             heading
             Text("动词、形容词、助动词按活用形数。歌词里命令形、意志形往往比书面语多。点例词去检索。活用形的名字照 UniDic（Sudachi）的写法。")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.app(.callout)).foregroundStyle(.secondary)
             if let result {
                 MorphologyPending(count: result.unannotated)
                 coarseBar
@@ -55,9 +55,9 @@ private struct InflectionSection: View {
 
     private var heading: some View {
         HStack(spacing: 12) {
-            Text("活用形").font(.title2.bold())
+            Text("活用形").font(.app(.title2).bold())
             if busy { ProgressView().controlSize(.small) }
-            if let result { Text("\(grouped(result.total)) 个有活用的词").font(.caption).foregroundStyle(.secondary) }
+            if let result { Text("\(grouped(result.total)) 个有活用的词").font(.app(.caption)).foregroundStyle(.secondary) }
             Spacer()
             Picker("词性", selection: $pos) {
                 Text("全部").tag("")
@@ -81,7 +81,7 @@ private struct InflectionSection: View {
                 }
             }.frame(height: 14).clipShape(RoundedRectangle(cornerRadius: 3))
             Text(coarse.map { "\($0.id) \(String(format: "%.1f%%", $0.share * 100))" }.joined(separator: " · "))
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.app(.caption)).foregroundStyle(.secondary)
         }
     }
 
@@ -94,7 +94,7 @@ private struct InflectionSection: View {
                     Text("比例").frame(width: 150, alignment: .trailing)
                     Text("出现曲数").frame(width: 65, alignment: .trailing)
                     Text("常见的词")
-                }.font(.caption).foregroundStyle(.secondary)
+                }.font(.app(.caption)).foregroundStyle(.secondary)
                 ForEach(result?.forms ?? []) { form in
                     GridRow {
                         Text(form.cform)
@@ -104,7 +104,7 @@ private struct InflectionSection: View {
                         examples(form)
                     }
                 }
-            }.font(.callout)
+            }.font(.app(.callout))
         }
     }
 
@@ -165,7 +165,7 @@ private struct OrthographySection: View {
         VStack(alignment: .leading, spacing: 14) {
             heading
             Text("同一个词在歌词里的不同写法，按 Sudachi 的正规化表记归组；全是假名的写法按读音并到同词性的汉字写法（只对不活用的词）。只看实词。点写法看是哪几句。")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.app(.callout)).foregroundStyle(.secondary)
             if let result {
                 MorphologyPending(count: result.unannotated)
                 legend
@@ -179,9 +179,9 @@ private struct OrthographySection: View {
 
     private var heading: some View {
         HStack(spacing: 12) {
-            Text("表记变体").font(.title2.bold())
+            Text("表记变体").font(.app(.title2).bold())
             if busy { ProgressView().controlSize(.small) }
-            if let result { Text("\(groups.count) / \(result.totalGroups) 组").font(.caption).foregroundStyle(.secondary) }
+            if let result { Text("\(groups.count) / \(result.totalGroups) 组").font(.app(.caption)).foregroundStyle(.secondary) }
             Spacer()
             Picker("写法", selection: $mixedOnly) {
                 Text("汉字与假名混用").tag(true)
@@ -199,7 +199,7 @@ private struct OrthographySection: View {
                     Text(label(writing))
                 }
             }
-        }.font(.caption).foregroundStyle(.secondary)
+        }.font(.app(.caption)).foregroundStyle(.secondary)
     }
 
     private var variants: some View {
@@ -210,7 +210,7 @@ private struct OrthographySection: View {
                 Text("词性").frame(width: 55, alignment: .leading)
                 Text("合计").frame(width: 55, alignment: .trailing)
                 Text("写法（次数）")
-            }.font(.caption).foregroundStyle(.secondary)
+            }.font(.app(.caption)).foregroundStyle(.secondary)
             ForEach(groups) { group in
                 OrthographyRow(group: group, scope: scope.subcorpus)
                 Divider()
@@ -265,7 +265,7 @@ private struct OrthographyRow: View {
                     }
                 }
             }.frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
-        }.font(.callout)
+        }.font(.app(.callout))
     }
 
     private var variantBar: some View {
@@ -285,7 +285,7 @@ private struct MorphologyPending: View {
     var body: some View {
         if count > 0 {
             Text("还有 \(grouped(count)) 个词的形态信息在后台补，补完之前这张表不全。")
-                .font(.caption).foregroundStyle(.orange)
+                .font(.app(.caption)).foregroundStyle(.orange)
         }
     }
 }

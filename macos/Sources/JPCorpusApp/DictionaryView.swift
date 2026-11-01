@@ -30,7 +30,7 @@ struct DictionaryView: View {
                 let importable = legacy.filter { !$0.imported && $0.exists }
                 if !importable.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("从旧版迁移词典").font(.headline)
+                        Text("从旧版迁移词典").font(.app(.headline))
                         ForEach(importable) { source in
                             HStack {
                                 Text(source.name); Spacer()
@@ -84,12 +84,12 @@ struct DictionaryView: View {
                     } else {
                         ProgressView().controlSize(.small)
                     }
-                    Text(job.stage).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(job.stage).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
                     Button("停止") { Task { try? await app.core?.dictImportCancel() } }
                         .controlSize(.small)
                 }
                 Text("大词典要几分钟。导入时照样能查词、检索；停止的话正在导的那本整本不留。")
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(.tertiary)
             }
             if let batch = lastBatch {
@@ -103,11 +103,11 @@ struct DictionaryView: View {
                         }
                     }
                 }
-                .font(.callout)
+                .font(.app(.callout))
             }
             if dictionaries.isEmpty {
                 Text("还没有词典。导入 Yomitan 格式的词典包（.zip，比如 JMdict、大辞林、JPDB 频率表），可以一次选好几个。也可以把 Windows 版语料库目录里的 dictionaries.db 拷过来。")
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(.secondary)
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -124,13 +124,13 @@ struct DictionaryView: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(d.title).foregroundStyle(d.enabled ? .primary : .secondary)
                                 Text([d.summary, d.author ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.caption)
+                                    .font(.app(.caption))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
                             Spacer()
                             if d.frequencyMode != nil {
-                                Text("频率").font(.caption2).padding(.horizontal, 6).padding(.vertical, 1)
+                                Text("频率").font(.app(.caption2)).padding(.horizontal, 6).padding(.vertical, 1)
                                     .background(.quaternary, in: Capsule())
                             }
                             Button(role: .destructive) {

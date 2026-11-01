@@ -108,7 +108,7 @@ struct AppShell<Detail: View>: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Self.groups) { group in
                 Text(group.title)
-                    .font(.caption.weight(.semibold))
+                    .font(.app(.caption).weight(.semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
                     .padding(.top, 14)
@@ -136,7 +136,7 @@ struct AppShell<Detail: View>: View {
         return Button { select(item) } label: {
             HStack(spacing: 9) {
                 Image(systemName: item.symbol)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.appSystem(size: 14, weight: .medium))
                     .frame(width: 20)
                 Text(item.title)
                     .lineLimit(1)
@@ -197,7 +197,7 @@ struct AppShell<Detail: View>: View {
         return Button { select(item) } label: {
             HStack(spacing: 6) {
                 Image(systemName: item.symbol)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.appSystem(size: 13, weight: .medium))
                 if label {
                     Text(item.title)
                         .lineLimit(1)
@@ -231,15 +231,15 @@ struct LibraryBadge: View {
         HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.isDemo ? "示例语料库" : (app.libraryURL?.lastPathComponent ?? ""))
-                    .font(.caption.weight(.medium))
+                    .font(.app(.caption).weight(.medium))
                     .lineLimit(1)
                 Text("\(app.tracks.count) 首")
-                    .font(.caption2)
+                    .font(.app(.caption2))
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             Image(systemName: "arrow.left.arrow.right")
-                .font(.caption2)
+                .font(.app(.caption2))
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

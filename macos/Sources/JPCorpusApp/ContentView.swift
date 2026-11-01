@@ -35,7 +35,7 @@ struct ContentView: View {
                     .safeAreaInset(edge: .top) {
                         MediaHealthBanner()
                         if let notice = app.notice {
-                            HStack { Text(notice).font(.callout); Spacer(); Button { app.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless) }.padding(10).glassCard().padding(.horizontal,12)
+                            HStack { Text(notice).font(.app(.callout)); Spacer(); Button { app.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless) }.padding(10).glassCard().padding(.horizontal,12)
                         }
                     }
                     // 播放条是浮在正文下方的一张玻璃卡片。只挂在正文这一栏：
@@ -113,6 +113,8 @@ struct ContentView: View {
         .onChange(of: app.player.track?.id) { old, new in
             if old == nil, new != nil, !app.showLyrics { app.showLyrics = true }
         }
+        // 界面字体选的是自带或导入的字体：启动时先注册，名字才认得出来
+        .task(id: app.core != nil) { await AppFontLoader.registerIfNeeded(app) }
         .task(id: "\(app.player.track?.id ?? "")|\(app.showFurigana)|\(app.furiganaMode.rawValue)") {
             await app.loadFurigana()
         }
@@ -132,10 +134,10 @@ struct WelcomeView: View {
     var body: some View {
         VStack(spacing: 18) {
             Image(systemName: "music.quarternote.3")
-                .font(.system(size: 44, weight: .light))
+                .font(.appSystem(size: 44, weight: .light))
                 .foregroundStyle(.tint)
             Text("JPOP Corpus")
-                .font(.largeTitle.weight(.semibold))
+                .font(.app(.largeTitle).weight(.semibold))
             Text("新建一个语料库，从音乐文件夹（音频 + 同名 .lrc）导入；\n或者打开已有的语料库（选文件夹或里面的 corpus.db），Windows 版的库目录整个拷过来就能用。")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -151,7 +153,7 @@ struct WelcomeView: View {
                     .controlSize(.large)
             }
             Text("默认位置：\(AppModel.defaultLibraryFolder.path)")
-                .font(.caption)
+                .font(.app(.caption))
                 .foregroundStyle(.tertiary)
                 .textSelection(.enabled)
         }

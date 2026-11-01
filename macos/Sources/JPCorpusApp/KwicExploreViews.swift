@@ -82,7 +82,7 @@ struct CqlExamplesView: View {
                     .lineLimit(1)
             }
         }
-        .font(.caption)
+        .font(.app(.caption))
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -99,7 +99,7 @@ struct KwicBreakdownView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("频率分解").font(.headline)
+                    Text("频率分解").font(.app(.headline))
                     Picker("分组", selection: $by) {
                         Text("按年份").tag(BreakdownGroup.year)
                         Text("按演唱者").tag(BreakdownGroup.performer)
@@ -124,14 +124,14 @@ struct KwicBreakdownView: View {
         let maximum = max(0.0001, max(result.per10k, result.rows.map(\.per10k).max() ?? 0))
         return VStack(alignment: .leading, spacing: 10) {
             Text("\(result.hits) 次 · 整体每万词 \(String(format: "%.2f", result.per10k))（不去重，分母不含标点）")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.app(.caption)).foregroundStyle(.secondary)
             HStack {
                 Text(by == .year ? "年份" : "演唱者").frame(width: 110, alignment: .leading)
                 Text("每万词").frame(maxWidth: .infinity, alignment: .trailing)
                 Text("次数").frame(width: 56, alignment: .trailing)
                 Text("命中歌 / 歌数").frame(width: 95, alignment: .trailing)
             }
-            .font(.caption).foregroundStyle(.secondary)
+            .font(.app(.caption)).foregroundStyle(.secondary)
             LazyVStack(spacing: 10) {
                 ForEach(result.rows) { row in
                     BreakdownFrequencyRow(row: row, maximum: maximum, mean: result.per10k)
@@ -140,7 +140,7 @@ struct KwicBreakdownView: View {
             Text("条形是每万词，竖线是整体水平。右边两列：次数、有这个词的歌 / 这一组的歌数。")
             Text("* 这一组不到 1,000 个词，每万词很不稳，一两次出现就能翻倍。")
         }
-        .font(.caption)
+        .font(.app(.caption))
     }
 
     private func load() async {
@@ -210,9 +210,9 @@ struct KwicContextBreakdownView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("语境分解").font(.headline)
+                Text("语境分解").font(.app(.headline))
                 Text("按当前列表的完整左／右语境分组；每条命中计一次，沿用去重与跨行设置。最多统计 5,000 条命中。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.app(.caption)).foregroundStyle(.secondary)
                 HStack(alignment: .top, spacing: 28) {
                     contextColumn("左语境（关键词之前）", groups: left)
                     contextColumn("右语境（关键词之后）", groups: right)
@@ -233,14 +233,14 @@ struct KwicContextBreakdownView: View {
 
     private func contextColumn(_ title: String, groups: [ContextCount]) -> some View {
         LazyVStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.subheadline).fontWeight(.semibold)
+            Text(title).font(.app(.subheadline)).fontWeight(.semibold)
             ForEach(groups) { group in
                 HStack(alignment: .top) {
                     Text(group.context.isEmpty ? "（无语境）" : group.context).textSelection(.enabled)
                     Spacer(minLength: 8)
                     Text("\(group.count)").monospacedDigit().foregroundStyle(.secondary)
                 }
-                .font(.caption)
+                .font(.app(.caption))
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)

@@ -100,8 +100,8 @@ struct PlayerBar: View {
             VStack(spacing: 0) {
                 Button { app.showStage = true } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(app.player.track?.title ?? "未在播放").font(.callout.weight(.semibold)).lineLimit(1)
-                        Text(app.player.track?.artist ?? "选择一首歌开始播放").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        Text(app.player.track?.title ?? "未在播放").font(.app(.callout).weight(.semibold)).lineLimit(1)
+                        Text(app.player.track?.artist ?? "选择一首歌开始播放").font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .id(app.player.track?.id)
@@ -133,7 +133,7 @@ struct PlayerCover: View {
                 else {
                     ZStack {
                         Color.white.opacity(0.08)
-                        Image(systemName: "music.note").font(.system(size: geo.size.width * 0.3)).foregroundStyle(.secondary)
+                        Image(systemName: "music.note").font(.appSystem(size: geo.size.width * 0.3)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -164,7 +164,7 @@ struct PlayerTransport: View {
                     Image(systemName: "pause.fill").opacity(app.player.isPlaying ? 1 : 0)
                         .scaleEffect(app.player.isPlaying ? 1 : 0.7)
                 }
-                .font(.system(size: large ? 32 : 22, weight: .bold))
+                .font(.appSystem(size: large ? 32 : 22, weight: .bold))
                 .shadow(color: tint.opacity(app.player.isPlaying ? 0.65 : 0), radius: 12)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: app.player.isPlaying)
             }
@@ -178,7 +178,7 @@ struct PlayerTransport: View {
                 .help("下一首（⌥⌘→）").accessibilityLabel("下一首")
                 .disabled(!app.player.hasNext)
         }
-        .font(.system(size: large ? 23 : 18, weight: .semibold))
+        .font(.appSystem(size: large ? 23 : 18, weight: .semibold))
         .buttonStyle(PlayerGlyphStyle(diameter: large ? 48 : 32))
     }
 }
@@ -239,7 +239,7 @@ struct PlayerProgress: View {
                 .help(player.showRemaining ? "显示总时长" : "显示剩余时长")
                 .disabled(player.duration <= 0)
             }
-            .font(.system(size: 10).monospacedDigit()).foregroundStyle(.secondary)
+            .font(.appSystem(size: 10).monospacedDigit()).foregroundStyle(.secondary)
             .opacity(alwaysShowTime || hover || scrubbing != nil ? 1 : 0)
         }
         .onHover { hover = $0 }
@@ -275,7 +275,7 @@ struct PlayerTools: View {
             Button { app.showStage.toggle() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
                 .disabled(app.player.track == nil).help("全屏歌词（⇧⌘F）").accessibilityLabel("全屏歌词")
         }
-        .buttonStyle(PlayerGlyphStyle()).font(.system(size: 15, weight: .semibold))
+        .buttonStyle(PlayerGlyphStyle()).font(.appSystem(size: 15, weight: .semibold))
     }
 }
 
@@ -288,7 +288,7 @@ struct PlayerTune: View {
             Image(systemName: "slider.horizontal.3")
                 .overlay(alignment: .bottom) {
                     if !app.player.tuneBadge.isEmpty {
-                        Text(app.player.tuneBadge).font(.system(size: 8, weight: .medium)).fixedSize()
+                        Text(app.player.tuneBadge).font(.appSystem(size: 8, weight: .medium)).fixedSize()
                             .padding(.horizontal, 3).background(.regularMaterial, in: Capsule()).offset(y: 12)
                     }
                 }

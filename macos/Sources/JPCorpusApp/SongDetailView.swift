@@ -79,7 +79,7 @@ struct SongDetailView: View {
                     imagePath: t.coverPath) {
             VStack(alignment: .leading, spacing: 10) {
                 Text([t.durationSec.map(formatTime), t.lineCount > 0 ? "\(t.lineCount) 行歌词" : "没有歌词"].compactMap { $0 }.joined(separator: " · "))
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(.tertiary)
                 ScrollView(.horizontal) {
                   HStack(spacing: 10) {
@@ -127,7 +127,7 @@ struct SongDetailView: View {
 
     private var creditsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("制作人员").font(.headline)
+            Text("制作人员").font(.app(.headline))
             if credits.isEmpty {
                 Text("没有记录").foregroundStyle(.secondary)
             } else {
@@ -155,7 +155,7 @@ struct SongDetailView: View {
 
     private func profileCard(_ p: SongProfile) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("语料画像").font(.headline)
+            Text("语料画像").font(.app(.headline))
             HStack(spacing: 22) {
                 StatBlock(value: "\(p.lines)", label: "行")
                 StatBlock(value: p.lines > 0 ? "\(Int(Double(p.repeatedLines) / Double(p.lines) * 100))%" : "—", label: "是重复行")
@@ -163,7 +163,7 @@ struct SongDetailView: View {
             }
             if !p.keywords.isEmpty {
                 Text("相对其余的歌，这首歌偏爱的词（双击去检索）")
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
                 WrapChips(words: p.keywords.map(\.lemma)) { app.search($0) }
             }
@@ -178,9 +178,9 @@ struct SongDetailView: View {
 
     private func lineageCard(_ l: SongLineage, track: Track) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("歌词来源").font(.headline)
+            Text("歌词来源").font(.app(.headline))
             if let lang = l.language {
-                Text("语言：\(codeLabel(languageLabels, lang))").font(.caption).foregroundStyle(.secondary)
+                Text("语言：\(codeLabel(languageLabels, lang))").font(.app(.caption)).foregroundStyle(.secondary)
             }
             if l.versions.isEmpty {
                 Text("没有版本记录").foregroundStyle(.secondary)
@@ -188,26 +188,26 @@ struct SongDetailView: View {
             ForEach(l.versions) { v in
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
-                        Text("版本 \(v.versionNo)").font(.callout.weight(.medium))
+                        Text("版本 \(v.versionNo)").font(.app(.callout).weight(.medium))
                         if v.isCurrent {
-                            Text("当前").font(.caption2.weight(.semibold))
+                            Text("当前").font(.app(.caption2).weight(.semibold))
                                 .padding(.horizontal, 6).padding(.vertical, 1)
                                 .background(.tint.opacity(0.2), in: Capsule())
                         }
                         Spacer()
                         if let c = v.completeness {
-                            Text("完整度 \(Int(c * 100))%").font(.caption.monospacedDigit())
+                            Text("完整度 \(Int(c * 100))%").font(.app(.caption).monospacedDigit())
                                 .foregroundStyle(c < 0.8 ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
                         }
                     }
                     Text([sourceLabel(v.sourceType), v.sourceName].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption)
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                     Text(["\(v.lineCount) 行，\(v.timedLineCount) 行有时间轴", relativeTime(v.importedAt)].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption)
+                        .font(.app(.caption))
                         .foregroundStyle(.tertiary)
                     if !v.note.isEmpty {
-                        Text(v.note).font(.caption).foregroundStyle(.secondary)
+                        Text(v.note).font(.app(.caption)).foregroundStyle(.secondary)
                     }
                 }
                 .padding(.vertical, 4)
@@ -215,7 +215,7 @@ struct SongDetailView: View {
             }
             if !l.provenance.isEmpty {
                 Divider().padding(.vertical, 4)
-                Text("元数据从哪来").font(.subheadline.weight(.medium))
+                Text("元数据从哪来").font(.app(.subheadline).weight(.medium))
                 ForEach(l.provenance, id: \.field) { f in
                     HStack {
                         Text(codeLabel(fieldLabels, f.field)).foregroundStyle(.secondary)
@@ -225,11 +225,11 @@ struct SongDetailView: View {
                             Text("\(Int(c * 100))%").foregroundStyle(.tertiary).monospacedDigit()
                         }
                     }
-                    .font(.caption)
+                    .font(.app(.caption))
                 }
             }
             Text("歌词管理可编辑、导入、校验及恢复旧版歌词。")
-                .font(.caption2)
+                .font(.app(.caption2))
                 .foregroundStyle(.tertiary)
                 .padding(.top, 4)
         }
@@ -270,7 +270,7 @@ struct WrapChips: View {
         FlowLayout(spacing: 6) {
             ForEach(words, id: \.self) { w in
                 Text(w)
-                    .font(.callout)
+                    .font(.app(.callout))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(.quaternary.opacity(0.6), in: Capsule())

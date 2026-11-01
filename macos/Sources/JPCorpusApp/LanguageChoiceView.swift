@@ -8,10 +8,10 @@ struct LanguageChoiceView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "globe").font(.system(size: 34)).foregroundStyle(.tint)
-            Text(verbatim: "选择界面语言 · Choose a language").font(.title2.weight(.semibold))
+            Image(systemName: "globe").font(.appSystem(size: 34)).foregroundStyle(.tint)
+            Text(verbatim: "选择界面语言 · Choose a language").font(.app(.title2).weight(.semibold))
             Text(verbatim: "之后可以在「设置 → 外观」里更改。\nYou can change this later in Settings → Appearance.")
-                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                .font(.app(.callout)).foregroundStyle(.secondary).multilineTextAlignment(.center)
             HStack(spacing: 12) {
                 Button { choose("zh") } label: { Text(verbatim: "中文").frame(minWidth: 110) }
                 Button { choose("en") } label: { Text(verbatim: "English").frame(minWidth: 110) }

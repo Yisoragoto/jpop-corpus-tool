@@ -57,9 +57,9 @@ struct LookupPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(word?.lemma ?? request.corpusLemma).font(.system(size: 26, weight: .bold)).lineLimit(1)
+                Text(word?.lemma ?? request.corpusLemma).font(.appSystem(size: 26, weight: .bold)).lineLimit(1)
                 Spacer()
-                Button(action: close) { Image(systemName: "xmark.circle.fill").font(.title3) }
+                Button(action: close) { Image(systemName: "xmark.circle.fill").font(.app(.title3)) }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .help("收起查词")
@@ -105,11 +105,11 @@ struct LookupPane: View {
                 HStack(spacing: 6) {
                     if !years.isEmpty {
                         Text(years.count == 2 && years[0] != years[1] ? "\(years[0]) — \(years[1])" : years[0])
-                            .font(.caption).foregroundStyle(.secondary).padding(.trailing, 4)
+                            .font(.app(.caption)).foregroundStyle(.secondary).padding(.trailing, 4)
                     }
                     ForEach(Array(word.posDistribution.prefix(4).enumerated()), id: \.offset) { _, p in
                         Text("\(posLabels[p.pos] ?? p.pos) \(p.count)")
-                            .font(.caption)
+                            .font(.app(.caption))
                             .padding(.horizontal, 7).padding(.vertical, 2)
                             .background(Capsule().fill(.quaternary))
                     }
@@ -120,23 +120,23 @@ struct LookupPane: View {
 
     private func summaryNumber(_ value: Int64, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(grouped(value)).font(.title3.weight(.semibold)).monospacedDigit()
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(grouped(value)).font(.app(.title3).weight(.semibold)).monospacedDigit()
+            Text(label).font(.app(.caption)).foregroundStyle(.secondary)
         }
     }
 
     private var dictionary: some View {
                 VStack(alignment: .leading, spacing: 10) {
                     if let result, result.originalTextLength > 0, String(request.text.prefix(result.originalTextLength)) != request.corpusLemma {
-                        Text("按「\(String(request.text.prefix(result.originalTextLength)))」查到").font(.caption).foregroundStyle(.secondary)
+                        Text("按「\(String(request.text.prefix(result.originalTextLength)))」查到").font(.app(.caption)).foregroundStyle(.secondary)
                     }
                     if noDictionaries {
                         Text("这个语料库还没有词典。到「词典」页导入 Yomitan 格式的词典包（zip），或者把 Windows 版的 dictionaries.db 拷过来。")
-                            .font(.callout)
+                            .font(.app(.callout))
                             .foregroundStyle(.secondary)
                         Button("去词典页") { app.section = .dictionaries }
                     } else if let error {
-                        Text(error).font(.callout).foregroundStyle(.orange)
+                        Text(error).font(.app(.callout)).foregroundStyle(.orange)
                     } else if let result {
                         if result.entries.isEmpty {
                             Text("没查到").foregroundStyle(.secondary)
@@ -167,7 +167,7 @@ struct LookupPane: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
                 ForEach(Array(entry.headwords.enumerated()), id: \.offset) { _, h in
-                    Text(h.term).font(.title3.weight(.semibold))
+                    Text(h.term).font(.app(.title3).weight(.semibold))
                     if !h.reading.isEmpty && h.reading != h.term {
                         Text(h.reading).foregroundStyle(.secondary)
                     }
@@ -176,12 +176,12 @@ struct LookupPane: View {
                 if let first = entry.headwords.first {
                     Button("检索") { app.search(first.term) }
                         .buttonStyle(.borderless)
-                        .font(.caption)
+                        .font(.app(.caption))
                     mineButton(first, key: key)
                 }
             }
             if let message = outcome[key] {
-                Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Text(message).font(.app(.caption)).foregroundStyle(.secondary).textSelection(.enabled)
             }
             ForEach(Array(entry.definitions.enumerated()), id: \.offset) { _, d in
                 VStack(alignment: .leading, spacing: 2) {
@@ -189,7 +189,7 @@ struct LookupPane: View {
                         var names = collapsed
                         if names.contains(d.dictionary) { names.remove(d.dictionary) } else { names.insert(d.dictionary) }
                         if let data = try? JSONEncoder().encode(names.sorted()) { collapsedJSON = String(decoding: data, as: UTF8.self) }
-                    } label: { Label(d.dictionary, systemImage: collapsed.contains(d.dictionary) ? "chevron.right" : "chevron.down").font(.caption2) }.buttonStyle(.plain)
+                    } label: { Label(d.dictionary, systemImage: collapsed.contains(d.dictionary) ? "chevron.right" : "chevron.down").font(.app(.caption2)) }.buttonStyle(.plain)
                     if !collapsed.contains(d.dictionary), let core = app.core { DictionaryDefinitionView(definition: d, client: core) }
                 }
             }
@@ -215,7 +215,7 @@ struct LookupPane: View {
             }
         }
         .buttonStyle(.borderless)
-        .font(.caption)
+        .font(.app(.caption))
         .disabled(mining != nil)
         .help(has ? "Anki 里已经有这个词的卡，点击打开" : "加进 Anki「\(targetDeck)」牌组（\(kind.label)）。例句是这一行，音频切这一句")
     }

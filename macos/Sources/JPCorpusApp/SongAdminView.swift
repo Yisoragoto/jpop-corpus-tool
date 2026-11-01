@@ -45,13 +45,13 @@ struct SongEditorView: View {
     private var valid: Bool { !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !draft.artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var body: some View {
         Form {
-            Text("编辑曲目信息").font(.title2.bold())
+            Text("编辑曲目信息").font(.app(.title2).bold())
             TextField("歌名", text: $draft.title)
             TextField("歌手（多人用 / 隔开）", text: $draft.artist)
             TextField("专辑", text: $draft.album)
             TextField("年份", text: $draft.year)
             TextField("流派", text: $draft.genre)
-            Text("只改曲库，不写音频标签。演唱署名和专辑归属会跟着更新。").font(.caption).foregroundStyle(.secondary)
+            Text("只改曲库，不写音频标签。演唱署名和专辑归属会跟着更新。").font(.app(.caption)).foregroundStyle(.secondary)
             if let error = app.library.errorMessage { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
                 Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)

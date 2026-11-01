@@ -112,13 +112,13 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 4) {
                 Text("设置")
-                    .font(.title2.weight(.semibold))
+                    .font(.app(.title2).weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.bottom, 16)
                 ForEach(SettingsCategory.allCases) { item in
                     Button { selectedCategory = item.rawValue } label: {
                         Label(item.title, systemImage: item.icon)
-                            .font(.body.weight(category == item ? .semibold : .regular))
+                            .font(.app(.body).weight(category == item ? .semibold : .regular))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 10)
@@ -143,18 +143,18 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 24) {
                 HStack(spacing: 12) {
                     Image(systemName: category.icon)
-                        .font(.title2)
+                        .font(.app(.title2))
                         .foregroundStyle(.tint)
                         .frame(width: 44, height: 44)
                         .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(category.title).font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
-                        Text(category.description).font(.callout).foregroundStyle(.secondary)
+                        Text(category.title).font(.app(.title2).weight(.semibold)).accessibilityAddTraits(.isHeader)
+                        Text(category.description).font(.app(.callout)).foregroundStyle(.secondary)
                     }
                 }
                 selectedContent
                 if let error = app.errorMessage {
-                    Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                    Text(error).font(.app(.caption)).foregroundStyle(.orange).textSelection(.enabled)
                 }
             }
             .frame(maxWidth: 900, alignment: .leading)
@@ -340,7 +340,7 @@ private struct LyricsPreferencesView: View {
             layoutSettings
             KaraokeStyleControls(families: families.map(\.family))
             if !problems.isEmpty {
-                ForEach(problems, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                ForEach(problems, id: \.self) { Text($0).font(.app(.caption)).foregroundStyle(.orange).textSelection(.enabled) }
             }
         }
         .task(id: app.libraryURL) {
@@ -389,6 +389,10 @@ private struct LyricsPreferencesView: View {
     private var fontSettings: some View {
         @Bindable var app = app
         return SettingGroup("字体") {
+            SettingRow(icon: "textformat.size", title: "界面字体", description: "菜单、按钮、列表这些界面文字。选的字体里没有的字，仍由系统字体补上") {
+                fontPicker("界面字体", selection: Binding(get: { AppFont.shared.family }, set: { AppFont.shared.family = $0 }))
+            }
+            SettingDivider()
             SettingRow(icon: "textformat", title: "歌词字体", description: "本机字体、自带字体与导入的字体") {
                 fontPicker("歌词字体", selection: $app.lyricsDisplay.fontFamily)
             }
@@ -487,6 +491,7 @@ private struct LyricsPreferencesView: View {
                 CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: path) as CFURL, .process, nil)
             }
             resetLyricFontCache()
+            AppFont.shared.refresh()
             let display = app.lyricsDisplay
             app.lyricsDisplay = display
         } catch { app.errorMessage = error.localizedDescription }

@@ -15,19 +15,19 @@ struct LyricsLibraryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("歌词管理").font(.title2.bold())
+                Text("歌词管理").font(.app(.title2).bold())
                 Spacer()
                 Button("刷新名单") { Task { await refresh() } }.disabled(loading)
                 Button("关闭") { dismiss() }
             }
             Button("来源设置与全库后台任务") { selected = nil; open = true }
-            Text("缺失歌词 \(missing.count) 首；以下歌曲缺歌词或逐字时间不完整，可逐首预览更换。").font(.caption)
+            Text("缺失歌词 \(missing.count) 首；以下歌曲缺歌词或逐字时间不完整，可逐首预览更换。").font(.app(.caption))
             if let error { Text(error).foregroundStyle(.orange) }
             List(targets) { song in
                 HStack {
                     VStack(alignment: .leading) {
                         Text("\(song.title) — \(song.artist)")
-                        Text("现有 \(song.lyricLines) 行，真实逐字 \(song.timedLines) 行").font(.caption).foregroundStyle(.secondary)
+                        Text("现有 \(song.lyricLines) 行，真实逐字 \(song.timedLines) 行").font(.app(.caption)).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button("预览与更换") { selected = song.songId; open = true }

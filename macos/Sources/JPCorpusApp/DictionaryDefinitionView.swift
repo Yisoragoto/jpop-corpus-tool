@@ -15,7 +15,7 @@ struct DictionaryDefinitionView: View {
         Group {
             if let html { DefinitionWebView(html: html, core: client.core, dark: colorScheme == .dark).frame(minHeight: 120, idealHeight: 180, maxHeight: 260) }
             else { ForEach(Array(definition.text.enumerated()), id: \.offset) { Text($0.element).textSelection(.enabled) } }
-            if let failure { Text(failure).font(.caption).foregroundStyle(.orange) }
+            if let failure { Text(failure).font(.app(.caption)).foregroundStyle(.orange) }
         }.task(id: definition) {
             guard definition.entries != nil else { return }
             do { html = try await client.dictDefinitionHtml(definition) }

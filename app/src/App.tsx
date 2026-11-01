@@ -26,7 +26,7 @@ import { NowCaption } from "./components/NowCaption";
 import type { WordPanelLinks } from "./components/WordWhere";
 import { Player } from "./components/Player";
 import { SudachiBanner } from "./components/SudachiBanner";
-import { warmFontOptions } from "./fonts";
+import { useUiFont, warmFontOptions } from "./fonts";
 import { useTheme } from "./theme";
 import { useAppSettings } from "./settings";
 import { Stat } from "./components/Stat";
@@ -88,6 +88,7 @@ export default function App() {
 
   const settings = useAppSettings();
   useTheme(settings.theme);
+  useUiFont(settings.uiFont, useCallback((message: string) => setNotice(message), []));
   const audioReady = health?.audioReady ?? false;
   const playback = usePlaybackState(audioReady);
   /** 「进全屏歌词」的请求。曲库页收到之后自己清掉（和跨页跳转同一个路子） */

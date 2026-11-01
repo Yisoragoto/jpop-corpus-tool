@@ -25,12 +25,12 @@ struct NgramPane: View {
         VStack(alignment: .leading, spacing: 14) {
             heading
             Text("连续几个词的固定组合，按次数排。不跨行、不跨标点；至少出现在几首歌里可调——只在一首歌里反复出现的多半是那首歌的副歌。点「检索」看具体是哪几句。")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.app(.callout)).foregroundStyle(.secondary)
             controls
             table
             if let result {
                 if result.items.count > 100 {
-                    Text("只显示前 100 个；导出 CSV 有全部 \(result.items.count) 个").font(.caption).foregroundStyle(.secondary)
+                    Text("只显示前 100 个；导出 CSV 有全部 \(result.items.count) 个").font(.app(.caption)).foregroundStyle(.secondary)
                 }
                 ProvenanceFooter(p: result.provenance)
             }
@@ -41,10 +41,10 @@ struct NgramPane: View {
 
     private var heading: some View {
         HStack {
-            Text("N-gram（词簇）").font(.title2.bold())
+            Text("N-gram（词簇）").font(.app(.title2).bold())
             Spacer()
             if busy { ProgressView().controlSize(.small) }
-            if let result { Text("\(result.items.count) / \(result.types) 种").font(.caption).foregroundStyle(.secondary) }
+            if let result { Text("\(result.items.count) / \(result.types) 种").font(.app(.caption)).foregroundStyle(.secondary) }
             AnalysisExtrasExportButton(name: "ngram_\(n).csv", disabled: busy || shown.isEmpty, content: csv)
         }
     }

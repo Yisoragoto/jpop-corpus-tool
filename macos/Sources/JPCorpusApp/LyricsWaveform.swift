@@ -47,7 +47,7 @@ struct LyricsWaveform: View {
                         context.fill(Path(CGRect(x: x0, y: 0, width: max(2, x1 - x0), height: height)), with: .color(.accentColor.opacity(ui == selectedUnit ? 0.4 : 0.2)))
                         context.fill(Path(CGRect(x: x0, y: 0, width: 1.5, height: height)), with: .color(.accentColor))
                         if unit.end != nil { context.fill(Path(CGRect(x: x1 - 1.5, y: 0, width: 1.5, height: height)), with: .color(.accentColor)) }
-                        context.draw(Text(Karaoke.unitText(visibleLine, unit)).font(.system(size: 14)), at: CGPoint(x: x0 + 4, y: 4), anchor: .topLeading)
+                        context.draw(Text(Karaoke.unitText(visibleLine, unit)).font(.appSystem(size: 14)), at: CGPoint(x: x0 + 4, y: 4), anchor: .topLeading)
                     }
                     if isReady && position >= visibleRange.from && position <= visibleRange.to {
                         context.fill(Path(CGRect(x: x(position) - 1, y: 0, width: 2, height: height)), with: .color(.red))
@@ -75,7 +75,7 @@ struct LyricsWaveform: View {
                 }
             }.onEnded { _ in pressed = false; drag = nil })
             .overlay(alignment: .bottomTrailing) {
-                if model.peaks == nil { Text("正在读取波形…").font(.caption).padding(6) }
+                if model.peaks == nil { Text("正在读取波形…").font(.app(.caption)).padding(6) }
             }
         }
         .frame(height: 120)

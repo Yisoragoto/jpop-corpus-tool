@@ -17,7 +17,7 @@ struct TokenCorrectionView: View {
     var body: some View {
         @Bindable var m = model
         VStack(alignment: .leading, spacing: 14) {
-            Text(model.correction?.text ?? "加载中…").font(.title2)
+            Text(model.correction?.text ?? "加载中…").font(.app(.title2))
             Text([model.correction?.artist, model.correction?.title].compactMap { $0 }.joined(separator: " · ")).foregroundStyle(.secondary)
             ScrollView {
                 ForEach(model.tokens.indices, id: \.self) { i in
@@ -39,7 +39,7 @@ struct TokenCorrectionView: View {
                 Button("拆开") { if let i = model.selected.first { model.tokens = Corrections.splitToken(model.tokens, i, splitAt); model.selected = [] } }.disabled(splitLength < 2 || splitAt >= splitLength)
             }.disabled(model.busy)
             if let c = model.correction, !Corrections.matchesLine(Corrections.cleanTokens(model.tokens), c.text) {
-                Text("词拼起来和原句对不上。可以保存，但 KWIC 的左右语境会退回按词拼接。").font(.caption).foregroundStyle(.orange)
+                Text("词拼起来和原句对不上。可以保存，但 KWIC 的左右语境会退回按词拼接。").font(.app(.caption)).foregroundStyle(.orange)
             }
             if let error = model.errorMessage { Text(error).foregroundStyle(.orange) }
             HStack {

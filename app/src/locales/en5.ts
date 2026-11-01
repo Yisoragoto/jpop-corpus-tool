@@ -758,4 +758,7 @@ export const en5: Record<string, string> = {
   "去资料库，滚到这一句": "Open in Library at this line",
   "回到这一行": "Go to this line",
   "全屏歌词（退出后回到这里）": "Full-screen lyrics (returns here when you exit)",
+  "系统默认": "System default",
+  "{uiFont}（本机没有）": "{uiFont} (not installed)",
+  "菜单、按钮、列表这些界面文字。选的字体里没有的字，仍由系统字体补上": "Menus, buttons and lists. Characters the chosen font lacks still come from the system font.",
 };

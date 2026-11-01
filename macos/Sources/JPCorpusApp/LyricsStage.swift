@@ -154,8 +154,8 @@ struct LyricsStage: View {
         HStack(spacing: 14) {
             if let track = app.player.track {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(track.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
-                    Text(track.artist).font(.caption).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    Text(track.title).font(.appSystem(size: 16, weight: .semibold)).lineLimit(1)
+                    Text(track.artist).font(.app(.caption)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 }
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
@@ -183,12 +183,12 @@ struct LyricsStage: View {
                 close()
             } label: {
                 Image(systemName: "arrow.down.right.and.arrow.up.left")
-                    .font(.title3)
+                    .font(.app(.title3))
             }
             .help("退出全屏歌词（Esc）")
             .accessibilityLabel("退出全屏歌词")
         }
-        .buttonStyle(PlayerGlyphStyle()).font(.system(size: 15, weight: .semibold))
+        .buttonStyle(PlayerGlyphStyle()).font(.appSystem(size: 15, weight: .semibold))
         .foregroundStyle(.white.opacity(0.8))
         .padding(.horizontal, 24)
         .padding(.top, 18)
@@ -217,7 +217,7 @@ struct LyricsStage: View {
                 } else {
                     ZStack {
                         Rectangle().fill(.white.opacity(0.08))
-                        Image(systemName: "music.note").font(.system(size: width * 0.25)).foregroundStyle(.white.opacity(0.4))
+                        Image(systemName: "music.note").font(.appSystem(size: width * 0.25)).foregroundStyle(.white.opacity(0.4))
                     }
                 }
             }
@@ -227,22 +227,22 @@ struct LyricsStage: View {
             .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
             .padding(.bottom, 4)
             Text(track.title)
-                .font(.system(size: 22, weight: .bold))
+                .font(.appSystem(size: 22, weight: .bold))
                 .foregroundStyle(.white)
                 .lineLimit(2)
             Text([track.artist, track.album, track.year].filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.callout)
+                .font(.app(.callout))
                 .foregroundStyle(.white.opacity(0.65))
                 .lineLimit(2)
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(["performer", "lyricist", "composer", "arranger"], id: \.self) { role in
                     let names = credits.filter { $0.role == role }.map(\.name)
                     if !names.isEmpty {
-                        Text("\(roleLabels[role] ?? role)：\(names.joined(separator: " / "))").font(.caption)
+                        Text("\(roleLabels[role] ?? role)：\(names.joined(separator: " / "))").font(.app(.caption))
                     }
                 }
-                if !track.genre.isEmpty { Text("流派：\(track.genre)").font(.caption) }
-                Text("\(app.player.lines.count) 行歌词 · \(formatTime(app.player.duration))").font(.caption)
+                if !track.genre.isEmpty { Text("流派：\(track.genre)").font(.app(.caption)) }
+                Text("\(app.player.lines.count) 行歌词 · \(formatTime(app.player.duration))").font(.app(.caption))
             }.foregroundStyle(.white.opacity(0.55)).padding(.top, 6)
         }
         .frame(width: width, alignment: .leading)
@@ -307,7 +307,7 @@ struct LyricsStage: View {
             }
             .overlay {
                 if player.lines.isEmpty {
-                    Text("这首歌没有歌词").font(.title2).foregroundStyle(.white.opacity(0.5))
+                    Text("这首歌没有歌词").font(.app(.title2)).foregroundStyle(.white.opacity(0.5))
                 }
             }
         }
@@ -429,7 +429,7 @@ struct LyricsStage: View {
                             Text(player.lines.isEmpty ? "这首歌还没有歌词" : "这首歌的歌词没有时间轴，卡拉 OK 跟不上")
                             if let track = player.track, !player.lines.isEmpty { LyricsToolsButton(songId: track.id, timing: true) }
                         }
-                        .font(.title3).foregroundStyle(.white)
+                        .font(.app(.title3)).foregroundStyle(.white)
                         .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
                     }
                     VStack(alignment: .leading, spacing: 6) {
@@ -452,7 +452,7 @@ struct LyricsStage: View {
             if let index = layout.slots[slot], app.player.lines.indices.contains(index) {
                 if layout.active == index && layout.countdown > 0 {
                     Text(String(repeating: "●", count: layout.countdown))
-                        .font(.system(size: size * 0.5))
+                        .font(.appSystem(size: size * 0.5))
                         .foregroundStyle(Color(hex: app.karaokeStyle.sungFill))
                         .accessibilityLabel("倒数 \(layout.countdown)")
                 }
@@ -469,13 +469,13 @@ struct LyricsStage: View {
 
     private func karaokeIntro(_ track: Track) -> some View {
         VStack(spacing: 8) {
-            Text(track.title).font(.system(size: 52, weight: .bold)).multilineTextAlignment(.center)
-            Text(track.artist).font(.system(size: 22)).padding(.bottom, 10)
+            Text(track.title).font(.appSystem(size: 52, weight: .bold)).multilineTextAlignment(.center)
+            Text(track.artist).font(.appSystem(size: 22)).padding(.bottom, 10)
             ForEach(["lyricist", "composer", "arranger"], id: \.self) { role in
                 let names = credits.filter { $0.role == role }.map(\.name)
                 if !names.isEmpty {
                     (Text(roleLabels[role] ?? role).foregroundColor(.white.opacity(0.7)) + Text("  " + names.joined(separator: " / ")))
-                        .font(.system(size: 15))
+                        .font(.appSystem(size: 15))
                 }
             }
         }

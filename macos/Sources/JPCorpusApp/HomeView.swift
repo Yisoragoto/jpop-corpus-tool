@@ -84,7 +84,7 @@ struct HomeView: View {
                 Image(systemName: "magnifyingglass")
                 Text("搜歌、专辑、歌手、词、歌词…").foregroundStyle(.secondary)
                 Spacer()
-                Text("⌘K").font(.caption.monospaced()).foregroundStyle(.tertiary)
+                Text("⌘K").font(.app(.caption).monospaced()).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -97,17 +97,17 @@ struct HomeView: View {
     @ViewBuilder
     private func continueCard(_ c: ContinueTrack?) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(c?.completed == true ? "再听一遍" : "继续听").font(.headline).foregroundStyle(.secondary)
+            Text(c?.completed == true ? "再听一遍" : "继续听").font(.app(.headline)).foregroundStyle(.secondary)
             if let c {
                 HStack(alignment: .top, spacing: 18) {
                     CoverImage(path: c.coverPath, size: 150, cornerRadius: 12)
                         .shadow(color: .black.opacity(0.22), radius: 12, y: 5)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(c.title).font(.title2.weight(.semibold)).lineLimit(2)
+                        Text(c.title).font(.app(.title2).weight(.semibold)).lineLimit(2)
                         Text(c.artist).foregroundStyle(.secondary)
                         if !c.stoppedLine.isEmpty {
                             Text("「\(c.stoppedLine)」")
-                                .font(.callout)
+                                .font(.app(.callout))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                                 .help("上次停在这一行")
@@ -117,7 +117,7 @@ struct HomeView: View {
                             ProgressView(value: min(c.positionSec, d), total: d)
                                 .controlSize(.small)
                             Text("\(formatTime(c.positionSec)) / \(formatTime(d)) · \(relativeTime(c.lastPlayed)) · 听过 \(c.playCount) 次")
-                                .font(.caption.monospacedDigit())
+                                .font(.app(.caption).monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
                         HStack {
@@ -144,8 +144,8 @@ struct HomeView: View {
 
     private func todayCard(_ t: DayListening, reach: Reach) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("今天").font(.headline).foregroundStyle(.secondary)
-            if let cardsToday { Text("今天制卡 \(cardsToday) 张").font(.caption).foregroundStyle(.secondary) }
+            Text("今天").font(.app(.headline)).foregroundStyle(.secondary)
+            if let cardsToday { Text("今天制卡 \(cardsToday) 张").font(.app(.caption)).foregroundStyle(.secondary) }
             ProgressView(value: min(1, t.listenedSec / (app.dailyGoalMinutes * 60)))
                 .help("每日目标 \(Int(app.dailyGoalMinutes)) 分钟")
             HStack(spacing: 18) {
@@ -159,7 +159,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ProgressView(value: share).controlSize(.small)
                     Text("听过的 \(reach.heardSongs) 首歌覆盖了 \(grouped(reach.heardLemmas)) / \(grouped(reach.totalLemmas)) 个词（\(Int(share * 100))%）")
-                        .font(.caption)
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                 }
                 .help("听满 30 秒的歌才算听过")
@@ -175,7 +175,7 @@ struct HomeView: View {
             app.section = .analysis
         } label: {
             VStack(alignment: .leading, spacing: 10) {
-                Text("语料库").font(.headline).foregroundStyle(.secondary)
+                Text("语料库").font(.app(.headline)).foregroundStyle(.secondary)
                 Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
                     GridRow {
                         StatBlock(value: grouped(o.tracks), label: "首歌")
@@ -220,10 +220,10 @@ struct HomeView: View {
                             CoverImage(path: t.coverPath, size: 36, cornerRadius: 6)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(t.title).lineLimit(1)
-                                Text(t.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                Text(t.artist).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
                             }
                             Spacer()
-                            Text(relativeTime(t.addedAt)).font(.caption).foregroundStyle(.tertiary)
+                            Text(relativeTime(t.addedAt)).font(.app(.caption)).foregroundStyle(.tertiary)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)

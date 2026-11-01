@@ -245,6 +245,14 @@ enum SmokeRun {
             }
             app.libraryMode = .songs; app.showLyrics = lyricsWereVisible
 
+            // 界面字体：换成 Georgia（macOS 自带）后整窗跟着变，再换回系统字体
+            let savedFont = AppFont.shared.family
+            AppFont.shared.family = "Georgia"
+            await settle(0.8); shot("04k-ui-font-georgia",into: out,note: note)
+            try require(AppFont.shared.resolved == "Georgia","ui-font","resolved=\(AppFont.shared.resolved ?? "nil")")
+            AppFont.shared.family = savedFont
+            await settle(0.3)
+
             // 歌手详情、歌曲详情
             if let person = try? await app.core?.peopleDirectory().first(where: { $0.performer > 0 }) {
                 app.show(.person(person.id))

@@ -67,7 +67,7 @@ struct ReleaseTimelineView: View {
                     .stroke(.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])).frame(width: 18, height: 12)
                 Text("之后单飞")
             }
-        }.font(.caption).foregroundStyle(.secondary).fixedSize()
+        }.font(.app(.caption)).foregroundStyle(.secondary).fixedSize()
     }
     private func coverSize(_ r: TimelineRelease) -> Double { r.albumId == nil ? 24 : min(44,26+Double(r.tracks)*1.6) }
     private func axis(_ layout: TimelineLayout, perYear: Double) -> WarpedYears {
@@ -228,7 +228,7 @@ struct ReleaseTimelineView: View {
             for year in frame.years {
                 let x = inset+frame.axis.x(Double(year))-offsetX
                 guard x > -40, x < canvas.width+40 else { continue }
-                context.draw(Text(String(year)).font(.caption.monospacedDigit()).foregroundColor(.secondary), at: CGPoint(x: x, y: headerHeight/2))
+                context.draw(Text(String(year)).font(.app(.caption).monospacedDigit()).foregroundColor(.secondary), at: CGPoint(x: x, y: headerHeight/2))
             }
         }
     }
@@ -250,7 +250,7 @@ struct ReleaseTimelineView: View {
                 CoverImage(path: row.imagePath, size: row.under == nil ? 32 : 26, circle: true, identity: row.name)
                 VStack(alignment: .leading) {
                     Text(row.name).lineLimit(1)
-                    Text("\(row.isBand ? "乐队" : "个人") · \(row.releases.count) 次发行").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(row.isBand ? "乐队" : "个人") · \(row.releases.count) 次发行").font(.app(.caption2)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
             }
@@ -334,7 +334,7 @@ struct TimelineTree: View {
         VStack(alignment: .leading,spacing: 12) {
             BackBar(title: "全部音乐人") { model.treePerson = nil; model.treeFocus = nil }
             HStack {
-                Text(model.directory.byId[personId]?.name ?? "").font(.title2.bold())
+                Text(model.directory.byId[personId]?.name ?? "").font(.app(.title2).bold())
                 Spacer()
                 Picker("方向",selection: $horizontal) { Text("竖向").tag(false); Text("横向").tag(true) }.pickerStyle(.segmented).frame(width: 130)
                 Button("打开档案") { app.show(.person(personId)) }
@@ -362,7 +362,7 @@ struct TimelineTree: View {
         ForEach(Array(parts.enumerated()),id: \.element.personId) { _,part in
             VStack(alignment: .leading,spacing: 16) {
                 if let after = part.after {
-                    VStack(alignment: .leading) { Text("\(LibraryIndex.yearOf(after.ended)) 年 \(after.bandName) 解散").font(.headline); Text("\(part.name) 的个人作品从这里接着长").foregroundStyle(.secondary) }.padding(16).glassCard()
+                    VStack(alignment: .leading) { Text("\(LibraryIndex.yearOf(after.ended)) 年 \(after.bandName) 解散").font(.app(.headline)); Text("\(part.name) 的个人作品从这里接着长").foregroundStyle(.secondary) }.padding(16).glassCard()
                 }
                 let cols = ReleaseTimeline.buildAxisColumns(part.items,endYear: model.directory.byId[part.personId].flatMap { ReleaseTimeline.yearValue($0.ended).map { Int(floor($0)) } },year: { Int(floor($0.release.at)) })
                 if horizontal { HStack(alignment: .top,spacing: 24) { yearColumns(cols,part: part) } }
@@ -373,10 +373,10 @@ struct TimelineTree: View {
     @ViewBuilder private func yearColumns(_ columns: [AxisColumn<TreeRelease>],part: TreePart) -> some View {
         ForEach(Array(columns.enumerated()),id: \.offset) { _,col in
             switch col {
-            case let .gap(from,to): Text("\(from) … \(to)").font(.caption).foregroundStyle(.secondary)
+            case let .gap(from,to): Text("\(from) … \(to)").font(.app(.caption)).foregroundStyle(.secondary)
             case let .year(year,items,ended):
                 VStack(spacing: 14) {
-                    Text(verbatim: "\(year)\(ended ? " · 解散" : "")").font(.headline).foregroundStyle(ended ? .orange : .secondary)
+                    Text(verbatim: "\(year)\(ended ? " · 解散" : "")").font(.app(.headline)).foregroundStyle(ended ? .orange : .secondary)
                     ForEach(items,id: \.release.release.id) { item in
                         if horizontal { releaseCard(item).frame(width: 300) }
                         else {
@@ -400,7 +400,7 @@ struct TimelineTree: View {
         return VStack(alignment: .leading,spacing: 10) {
             HStack(alignment: .top) {
                 Button { openRelease(r) } label: { CoverImage(path: r.coverPath,size: 64,cornerRadius: 7) }.buttonStyle(.plain)
-                VStack(alignment: .leading,spacing: 4) { Button(r.title) { openRelease(r) }.buttonStyle(.plain).font(.headline); Text("\(r.date) · \(r.tracks) 首").font(.caption).foregroundStyle(.secondary) }
+                VStack(alignment: .leading,spacing: 4) { Button(r.title) { openRelease(r) }.buttonStyle(.plain).font(.app(.headline)); Text("\(r.date) · \(r.tracks) 首").font(.app(.caption)).foregroundStyle(.secondary) }
             }
             ForEach(songs) { song in
                 Button { Task { await app.play(songId: song.id) } } label: {

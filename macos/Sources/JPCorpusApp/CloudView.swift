@@ -94,7 +94,7 @@ struct CloudView: View {
         return HStack(spacing: 14) {
             HStack(spacing: -12) {
                 if faces.isEmpty {
-                    Text("全").font(.system(size: 22, weight: .semibold))
+                    Text("全").font(.appSystem(size: 22, weight: .semibold))
                         .frame(width: 52, height: 52)
                         .background(Circle().fill(.white.opacity(0.12)))
                 } else {
@@ -107,9 +107,9 @@ struct CloudView: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(chosen.isEmpty ? "歌词里的词" : chosen.map(\.name).joined(separator: "、"))
-                    .font(.title2.bold()).lineLimit(1)
+                    .font(.app(.title2).bold()).lineLimit(1)
                 Text("\(songs) 首 · 前 \(model.words.count) 个词 · 点词看出现在哪些歌")
-                    .font(.caption).monospacedDigit().foregroundStyle(.white.opacity(0.72))
+                    .font(.app(.caption)).monospacedDigit().foregroundStyle(.white.opacity(0.72))
             }
             Spacer(minLength: 12)
             tools
@@ -188,15 +188,15 @@ struct CloudView: View {
                 }
             }
             Spacer(minLength: 0)
-        }.font(.caption)
+        }.font(.app(.caption))
     }
 
     /// 正在唱的那一句当字幕，选中的词标亮
     @ViewBuilder private var nowSinging: some View {
         if let line = app.player.lines.first(where: { $0.utteranceId == app.player.currentUtterance }) {
             VStack(spacing: 4) {
-                Text("♪ \(app.player.track?.title ?? "") · \(app.player.track?.artist ?? "")").font(.caption).foregroundStyle(.white.opacity(0.6))
-                caption(line.text).font(.title3.weight(.medium))
+                Text("♪ \(app.player.track?.title ?? "") · \(app.player.track?.artist ?? "")").font(.app(.caption)).foregroundStyle(.white.opacity(0.6))
+                caption(line.text).font(.app(.title3).weight(.medium))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
@@ -241,7 +241,7 @@ struct CloudView: View {
         guard panel.runModal() == .OK,let url = panel.url else { return }
         let who = chosen.isEmpty ? "全部歌手" : chosen.prefix(3).map(\.name).joined(separator: "、") + (chosen.count > 3 ? " 等 \(chosen.count) 位" : "")
         let content = VStack(alignment: .leading, spacing: 0) {
-            HStack { Text(who).font(.system(size: 22, weight: .semibold)); Spacer(); Text("JPOP Corpus Tool").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6)) }.frame(height: 64, alignment: .top)
+            HStack { Text(who).font(.appSystem(size: 22, weight: .semibold)); Spacer(); Text("JPOP Corpus Tool").font(.appSystem(size: 12)).foregroundStyle(.white.opacity(0.6)) }.frame(height: 64, alignment: .top)
             WordCloudPainting(placed: model.placed,family: family,tint: tint,colorByPos: colorByPos,hovered: nil).frame(width: canvasSize.width,height: canvasSize.height)
                 .padding(10).background { CloudGlass(material: false) }
         }.padding(28).foregroundStyle(.white).background { CloudBackdrop(photos: photos, blurred: blurredBackdrop) }.environment(\.colorScheme, .dark)

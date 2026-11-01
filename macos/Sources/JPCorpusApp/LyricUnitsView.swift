@@ -165,7 +165,7 @@ struct LyricSelectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("选择原文查词").font(.headline)
+            Text("选择原文查词").font(.app(.headline))
             SelectableLyricText(text: text, selection: $selected)
                 .frame(height: 110)
             HStack {

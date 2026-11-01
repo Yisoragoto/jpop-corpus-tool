@@ -94,7 +94,7 @@ struct UpdateSettingsView: View {
         if let at = updates.lastCheckedAt {
             let when = at.formatted(date: .abbreviated, time: .shortened)
             Text(updates.lastCheckError.map { "上次检查 \(when) 失败：\($0)" } ?? "上次检查 \(when)")
-                .font(.caption)
+                .font(.app(.caption))
                 .foregroundStyle(updates.lastCheckError == nil ? Color.secondary : Color.orange)
                 .textSelection(.enabled)
         }
@@ -104,7 +104,7 @@ struct UpdateSettingsView: View {
             let prefix = updates.statusIsStale
                 ? "上次成功检查（\(updates.statusCheckedAt?.formatted(date: .abbreviated, time: .shortened) ?? "更早")）的结果："
                 : ""
-            Text(prefix + text).font(.caption).foregroundStyle(updates.statusIsStale ? Color.secondary : Color.primary)
+            Text(prefix + text).font(.app(.caption)).foregroundStyle(updates.statusIsStale ? Color.secondary : Color.primary)
         }
         SettingNote("从本项目的 GitHub 发布下载并校验 SHA-256；安装时会退出应用。也可前往发布页手动下载。")
         if let error = updates.errorMessage { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
@@ -133,7 +133,7 @@ private struct UpdateDialogView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let release = app.updates.status?.latest {
-                Text("有新版本 \(release.identity)").font(.title2.bold())
+                Text("有新版本 \(release.identity)").font(.app(.title2).bold())
                 Text("当前 \(app.updates.status?.current ?? "") · \(release.publishedAt)").foregroundStyle(.secondary)
                 ScrollView { Text(release.notes).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                 if app.updates.downloading || app.updates.installing {
@@ -162,12 +162,12 @@ private struct UpdateChangelogView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading) {
-            Text("更新日志").font(.title2.bold())
+            Text("更新日志").font(.app(.title2).bold())
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(app.updates.releases) { release in
-                        Text(release.name).font(.headline)
-                        Text(release.publishedAt).font(.caption).foregroundStyle(.secondary)
+                        Text(release.name).font(.app(.headline))
+                        Text(release.publishedAt).font(.app(.caption)).foregroundStyle(.secondary)
                         Text(release.notes).textSelection(.enabled)
                         Button("前往发布页") { Task { await openRelease(release.url, app: app) } }
                         Divider()
@@ -204,10 +204,10 @@ private struct UpdateDownloadProgress: View {
         VStack(alignment: .leading, spacing: 4) {
             if installing {
                 ProgressView().progressViewStyle(.linear)
-                Text("下载好了，正在退出并替换为新版…").font(.caption).foregroundStyle(.secondary)
+                Text("下载好了，正在退出并替换为新版…").font(.app(.caption)).foregroundStyle(.secondary)
             } else {
                 if let fraction { ProgressView(value: fraction) } else { ProgressView().progressViewStyle(.linear) }
-                Text(fraction.map { "正在下载 \(Int($0 * 100))%" } ?? "正在下载…").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                Text(fraction.map { "正在下载 \(Int($0 * 100))%" } ?? "正在下载…").font(.app(.caption)).foregroundStyle(.secondary).monospacedDigit()
             }
         }
     }

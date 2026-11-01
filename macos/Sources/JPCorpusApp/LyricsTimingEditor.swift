@@ -34,7 +34,7 @@ struct LyricsTimingEditor: View {
                 Button("重做") { model.redo() }.disabled(!model.canRedo)
             } }.frame(height: 34)
             Text("\(statuses.filter { $0.status == "done" }.count) / \(model.timing.filter { !$0.units.isEmpty }.count) 行已逐字")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.app(.caption)).foregroundStyle(.secondary)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
@@ -44,13 +44,13 @@ struct LyricsTimingEditor: View {
                                     select(line: li, unit: 0); replay(li)
                                 } label: {
                                     VStack { Text("第 \(li + 1) 行"); Text(LyricEdit.formatStamp(Karaoke.lineStart(line))) }
-                                        .font(.caption.monospacedDigit())
+                                        .font(.app(.caption).monospacedDigit())
                                 }.frame(width: 90)
                                 ScrollView(.horizontal) {
                                     HStack(spacing: 4) {
                                         ForEach(Array(line.units.enumerated()), id: \.offset) { ui, unit in
                                             Button { select(line: li, unit: ui) } label: {
-                                                Text(Karaoke.unitText(line, unit)).font(.title3).padding(5)
+                                                Text(Karaoke.unitText(line, unit)).font(.app(.title3)).padding(5)
                                             }
                                             .tint(li == model.selectedLine && ui == model.selectedUnit ? Color.accentColor : Color.secondary)
                                             .opacity(unit.start == nil ? 0.5 : 1)
@@ -59,7 +59,7 @@ struct LyricsTimingEditor: View {
                                     }
                                 }
                                 Text(statusLabel(statuses[li].status))
-                                    .font(.caption).foregroundStyle(statuses[li].status == "error" ? Color.orange : Color.secondary)
+                                    .font(.app(.caption)).foregroundStyle(statuses[li].status == "error" ? Color.orange : Color.secondary)
                                     .help(reasonLabel(statuses[li].reason))
                                     .frame(width: 65)
                             }
@@ -84,7 +84,7 @@ struct LyricsTimingEditor: View {
                 Button("清空这一行") { model.clearLine() }.disabled(!model.validCursor)
             } }.frame(height: 34)
             Text("空格 打点 · Enter/P 播放暂停 · R 本行重放 · ←→ 选字 · ↑↓ 选行 · [ ] 开始 ±10ms · , . 结尾 ±10ms（Shift ±100ms）· ⌘Z/⇧⌘Z/⌘Y 撤销重做 · ⌘S 保存 · Esc 返回")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.app(.caption)).foregroundStyle(.secondary)
         }
         .disabled(model.busy)
         .background(LyricsKeyboard(action: key))
@@ -183,7 +183,7 @@ private struct TimingEdgeControl: View {
     }
     var body: some View {
         HStack(spacing: 3) {
-            Text(label).font(.caption)
+            Text(label).font(.app(.caption))
             ForEach([-0.1, -0.01], id: \.self) { delta in Button("\(Int(delta * 1000))") { onNudge(delta) } }
             TextField(label, text: Binding(get: { draft ?? formatted }, set: { draft = $0 }))
                 .frame(width: 80).focused($focused)
