@@ -116,11 +116,13 @@ export function SettingSlider({
   limits: [min, max],
   onChange,
   unit = "px",
+  step = 1,
 }: {
   value: number;
   limits: readonly [number, number];
   onChange: (value: number) => void;
   unit?: string;
+  step?: number;
 }) {
   const name = useRowLabel();
   return (
@@ -130,7 +132,7 @@ export function SettingSlider({
         style={{ "--range-progress": `${((value - min) / (max - min)) * 100}%` } as CSSProperties}
         min={min}
         max={max}
-        step={1}
+        step={step}
         value={value}
         aria-valuetext={`${value}${unit}`}
         onChange={(event) => onChange(Number(event.target.value))}

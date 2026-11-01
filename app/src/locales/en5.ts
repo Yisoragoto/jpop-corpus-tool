@@ -759,6 +759,8 @@ export const en5: Record<string, string> = {
   "回到这一行": "Go to this line",
   "全屏歌词（退出后回到这里）": "Full-screen lyrics (returns here when you exit)",
   "系统默认": "System default",
+  "界面大小": "Interface size",
+  "整体缩放应用界面（文字、图标、控件一起放大缩小），范围 30% 到 300%。也可以按 Ctrl + = / - / 0": "Scale the whole interface (text, icons and controls together), from 30% to 300%. Ctrl + = / - / 0 also work.",
   "{uiFont}（本机没有）": "{uiFont} (not installed)",
   "菜单、按钮、列表这些界面文字。选的字体里没有的字，仍由系统字体补上": "Menus, buttons and lists. Characters the chosen font lacks still come from the system font.",
 };

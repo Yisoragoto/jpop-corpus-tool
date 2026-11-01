@@ -40,7 +40,7 @@ import {
   useLyricsDisplay,
   type FuriganaMode,
 } from "../lyricsDisplay";
-import { DAILY_GOAL_LIMITS, DEFAULT_SETTINGS, STAGE_BLUR_LIMITS, updateSettings, useAppSettings } from "../settings";
+import { DAILY_GOAL_LIMITS, DEFAULT_SETTINGS, STAGE_BLUR_LIMITS, UI_SCALE_LIMITS, UI_SCALE_STEP, updateSettings, useAppSettings } from "../settings";
 import { language, LANGUAGES, setLanguage, tr, type Lang } from "../i18n";
 
 interface Props {
@@ -407,6 +407,9 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             </SettingCard>
               </Group>
               <Group title={tr("字体与排版")}>
+            <SettingCard icon={Icons.font} title={tr("界面大小")} description={tr("整体缩放应用界面（文字、图标、控件一起放大缩小），范围 30% 到 300%。也可以按 Ctrl + = / - / 0")}>
+              <SettingSlider value={settings.uiScale} limits={UI_SCALE_LIMITS} step={UI_SCALE_STEP} unit="%" onChange={(uiScale) => updateSettings({ uiScale })} />
+            </SettingCard>
             <SettingCard icon={Icons.font} title={tr("界面字体")} description={tr("菜单、按钮、列表这些界面文字。选的字体里没有的字，仍由系统字体补上")}>
               <SettingSelect value={settings.uiFont} options={uiFontOptions} onChange={(uiFont) => updateSettings({ uiFont })} />
             </SettingCard>
