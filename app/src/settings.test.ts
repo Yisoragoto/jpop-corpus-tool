@@ -61,3 +61,12 @@ describe("词云词数", () => {
     expect(parseSettings(JSON.stringify({ wordCloudHidden: "つ" })).wordCloudHidden).toEqual([]);
   });
 });
+
+describe("界面大小", () => {
+  it("读回来夹在 30–300 之间，坏值用 100", () => {
+    expect(parseSettings(JSON.stringify({ uiScale: 500 })).uiScale).toBe(300);
+    expect(parseSettings(JSON.stringify({ uiScale: 5 })).uiScale).toBe(30);
+    expect(parseSettings(JSON.stringify({ uiScale: "big" })).uiScale).toBe(100);
+    expect(parseSettings(null).uiScale).toBe(100);
+  });
+});

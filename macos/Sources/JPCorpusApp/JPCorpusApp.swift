@@ -125,6 +125,13 @@ struct JPCorpusApp: App {
                     Button(item.title) { app.section = item }
                         .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command])
                 }
+                Divider()
+                Button("放大界面") { AppFont.shared.step(1) }
+                    .keyboardShortcut("=", modifiers: [.command])
+                Button("缩小界面") { AppFont.shared.step(-1) }
+                    .keyboardShortcut("-", modifiers: [.command])
+                Button("界面实际大小") { AppFont.shared.step(0) }
+                    .keyboardShortcut("0", modifiers: [.command])
             }
         }
 

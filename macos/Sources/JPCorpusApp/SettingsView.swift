@@ -389,6 +389,11 @@ private struct LyricsPreferencesView: View {
     private var fontSettings: some View {
         @Bindable var app = app
         return SettingGroup("字体") {
+            SettingRow(icon: "textformat.size.larger", title: "界面大小", description: "整体缩放应用界面（文字、图标、控件一起放大缩小），范围 30% 到 300%。也可以按 ⌘= / ⌘- / ⌘0") {
+                SettingSlider(title: "界面大小", value: Binding(get: { AppFont.shared.scale }, set: { AppFont.shared.scale = $0 }),
+                              range: AppFont.scaleRange, unit: "%", step: AppFont.scaleStep)
+            }
+            SettingDivider()
             SettingRow(icon: "textformat.size", title: "界面字体", description: "菜单、按钮、列表这些界面文字。选的字体里没有的字，仍由系统字体补上") {
                 fontPicker("界面字体", selection: Binding(get: { AppFont.shared.family }, set: { AppFont.shared.family = $0 }))
             }

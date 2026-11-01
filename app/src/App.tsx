@@ -27,7 +27,7 @@ import type { WordPanelLinks } from "./components/WordWhere";
 import { Player } from "./components/Player";
 import { SudachiBanner } from "./components/SudachiBanner";
 import { useUiFont, warmFontOptions } from "./fonts";
-import { useTheme } from "./theme";
+import { useTheme, useUiScale } from "./theme";
 import { useAppSettings } from "./settings";
 import { Stat } from "./components/Stat";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
@@ -88,6 +88,7 @@ export default function App() {
 
   const settings = useAppSettings();
   useTheme(settings.theme);
+  useUiScale(settings.uiScale);
   useUiFont(settings.uiFont, useCallback((message: string) => setNotice(message), []));
   const audioReady = health?.audioReady ?? false;
   const playback = usePlaybackState(audioReady);

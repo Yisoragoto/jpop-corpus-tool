@@ -31,6 +31,8 @@ export interface AppSettings {
   autoCheckNewSongs: boolean;
   /** 首页「今日」那个环的目标：每天听多少分钟 */
   dailyGoalMinutes: number;
+  /** 整个界面的缩放，百分比。文字、图标、控件一起放大缩小（WebView 缩放，和浏览器的 Ctrl+加号一样） */
+  uiScale: number;
   /** 整个界面的字体（CSS 字体名）。空串 = 系统界面字体（Segoe UI Variable 那一套）。歌词、词云、卡拉 OK 各有各的设置 */
   uiFont: string;
   /** 统计页词云的字体（CSS 字体名）。可以是自带、导入或本机的任何一种；空串用界面字体 */
@@ -50,6 +52,9 @@ export interface AppSettings {
 export const STAGE_BLUR_LIMITS = [20, 120] as const;
 export const DAILY_GOAL_LIMITS = [5, 180] as const;
 export const WORD_CLOUD_COUNT_LIMITS = [30, 250] as const;
+export const UI_SCALE_LIMITS = [30, 300] as const;
+/** 快捷键和滑块一格走多少 */
+export const UI_SCALE_STEP = 10;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "system",
@@ -62,6 +67,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoCheckNewSongs: true,
   dailyGoalMinutes: 30,
   uiFont: "",
+  uiScale: 100,
   // 自带的手写风格字体，装好就有
   wordCloudFont: "Klee One",
   wordCloudCount: 120,
@@ -98,6 +104,7 @@ export function parseSettings(raw: string | null): AppSettings {
       autoCheckNewSongs:
         typeof parsed.autoCheckNewSongs === "boolean" ? parsed.autoCheckNewSongs : d.autoCheckNewSongs,
       dailyGoalMinutes: clamp(parsed.dailyGoalMinutes, DAILY_GOAL_LIMITS, d.dailyGoalMinutes),
+      uiScale: clamp(parsed.uiScale, UI_SCALE_LIMITS, d.uiScale),
       uiFont: typeof parsed.uiFont === "string" && parsed.uiFont.length <= 200 ? parsed.uiFont.trim() : d.uiFont,
       wordCloudFont:
         typeof parsed.wordCloudFont === "string" && parsed.wordCloudFont.length <= 200

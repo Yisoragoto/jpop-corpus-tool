@@ -117,10 +117,11 @@ struct SettingSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var unit = ""
+    var step = 1.0
 
     var body: some View {
         HStack(spacing: 10) {
-            Slider(value: $value, in: range, step: 1) { Text(title) }
+            Slider(value: $value, in: range, step: step) { Text(title) }
                 .labelsHidden()
                 .frame(width: 130)
             Text("\(Int(value))\(unit)")

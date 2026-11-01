@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseSettings } from "./settings";
-import { resolveTheme, useTheme } from "./theme";
+import { resolveTheme, stepUiScale, useTheme } from "./theme";
 
 const native = vi.hoisted(() => ({ setTheme: vi.fn().mockResolvedValue(undefined), accent: vi.fn().mockResolvedValue(null) }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
@@ -55,4 +55,15 @@ it("syncs CSS and the native window, responds to system changes, and removes lis
   expect(remove).toHaveBeenCalledWith("change", expect.any(Function));
   expect(native.accent).toHaveBeenCalledTimes(1);
   host.remove();
+});
+
+describe("界面缩放快捷键", () => {
+  it("按 10% 一格走，夹在范围里，0 回到 100%", () => {
+    expect(stepUiScale(100, 1)).toBe(110);
+    expect(stepUiScale(100, -1)).toBe(90);
+    expect(stepUiScale(300, 1)).toBe(300);
+    expect(stepUiScale(30, -1)).toBe(30);
+    expect(stepUiScale(147, 1)).toBe(160);
+    expect(stepUiScale(250, 0)).toBe(100);
+  });
 });

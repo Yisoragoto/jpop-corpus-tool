@@ -253,6 +253,13 @@ enum SmokeRun {
             AppFont.shared.family = savedFont
             await settle(0.3)
 
+            // 界面大小：150% 时字号和控件跟着放大，⌘0 回到 100%
+            AppFont.shared.scale = 150
+            await settle(0.8); shot("04l-ui-scale-150",into: out,note: note)
+            AppFont.shared.step(0)
+            try require(AppFont.shared.scale == 100 && AppFont.shared.controlSize == .regular,"ui-scale","reset=\(AppFont.shared.scale)")
+            await settle(0.3)
+
             // 歌手详情、歌曲详情
             if let person = try? await app.core?.peopleDirectory().first(where: { $0.performer > 0 }) {
                 app.show(.person(person.id))
