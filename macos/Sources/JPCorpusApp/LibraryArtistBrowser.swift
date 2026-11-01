@@ -113,8 +113,8 @@ private struct LibraryMusicianItem: View {
                                 CoverImage(path: member.entry?.imagePath.isEmpty == false ? (member.entry?.imagePath ?? "") : member.membership.memberImage,
                                            size: 28, circle: true, placeholder: "person.fill", identity: member.membership.memberName)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(member.membership.memberName).font(.callout).lineLimit(1)
-                                    Text(LibraryIndex.memberSubtitle(member)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(member.membership.memberName).font(.app(.callout)).lineLimit(1)
+                                    Text(LibraryIndex.memberSubtitle(member)).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                             }.padding(.vertical, 4).contentShape(Rectangle())
@@ -130,7 +130,7 @@ private struct LibraryMusicianItem: View {
         if !hit.row.members.isEmpty {
             Button { open = !expanded } label: {
                 Label("\(hit.row.members.count) 人", systemImage: expanded ? "chevron.down" : "chevron.right")
-                    .font(.caption).padding(.horizontal, 8).padding(.vertical, 5)
+                    .font(.app(.caption)).padding(.horizontal, 8).padding(.vertical, 5)
                     .background(.quaternary, in: Capsule())
             }
             .buttonStyle(.plain).help(expanded ? "收起成员" : "展开成员")
@@ -150,8 +150,8 @@ private struct LibraryDirectoryPerson: View {
             HStack(spacing: 12) {
                 CoverImage(path: entry.imagePath, size: 38, circle: true, placeholder: "person.fill", identity: entry.name)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(entry.name).font(.system(size: 14, weight: .medium)).lineLimit(1)
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(entry.name).font(.appSystem(size: 14, weight: .medium)).lineLimit(1)
+                    Text(subtitle).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 HStack(spacing: 4) {

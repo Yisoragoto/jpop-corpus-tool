@@ -29,9 +29,9 @@ struct MineSettingsView: View {
             SettingNote("例句使用点选的歌词行，查的词加粗；同歌的其他例句接在后面，每句都从歌里切一段音频。")
             if connection?.connected == true {
                 if !models.isEmpty && !models.contains(model) {
-                    Text(model == lyricsNoteType ? "Anki 里还没有「Lyrics」笔记类型，第一次制卡时会自动建。" : "Anki 里没有「\(model)」笔记类型，换一个。").font(.caption).foregroundStyle(.secondary)
+                    Text(model == lyricsNoteType ? "Anki 里还没有「Lyrics」笔记类型，第一次制卡时会自动建。" : "Anki 里没有「\(model)」笔记类型，换一个。").font(.app(.caption)).foregroundStyle(.secondary)
                 }
-                if let actual = connection?.decks, !actual.isEmpty && !actual.contains(deck) { Text("Anki 里没有「\(deck)」牌组，制卡会失败。").font(.caption).foregroundStyle(.orange) }
+                if let actual = connection?.decks, !actual.isEmpty && !actual.contains(deck) { Text("Anki 里没有「\(deck)」牌组，制卡会失败。").font(.app(.caption)).foregroundStyle(.orange) }
             }
         }
         .task(id: "\(app.libraryURL?.path ?? "")|\(app.dictionaryVersion)|\(status?.connected == true)") {

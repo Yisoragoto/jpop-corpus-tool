@@ -37,7 +37,7 @@ struct LyricsDisplayButton: View {
     private var controls: some View {
         @Bindable var app = app
         return VStack(alignment: .leading, spacing: 10) {
-            Text("歌词显示").font(.headline)
+            Text("歌词显示").font(.app(.headline))
             fontPicker("主字体", selection: $app.lyricsDisplay.fontFamily)
             fontPicker("备用字体", selection: $app.lyricsDisplay.fallbackFamily)
             HStack {
@@ -57,8 +57,8 @@ struct LyricsDisplayButton: View {
             }
             FuriganaDictionaryNotice(compact: true)
             Button("恢复默认") { app.lyricsDisplay = LyricsDisplay(); app.furiganaMode = .kanji }
-            ForEach(problems, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
-            if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+            ForEach(problems, id: \.self) { Text($0).font(.app(.caption)).foregroundStyle(.orange) }
+            if let error { Text(error).font(.app(.caption)).foregroundStyle(.orange) }
         }.buttonStyle(.automatic)
     }
     private func fontPicker(_ title: String, selection: Binding<String>) -> some View {

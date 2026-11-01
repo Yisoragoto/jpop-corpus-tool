@@ -52,11 +52,11 @@ struct LyricSourcesSection: View {
                         .help("不再算你选定的：按优先级（你导入或编辑的 → 旁边的文件 → 内嵌 → 在线）挑最好的一份")
                 }
             }
-            .font(.callout)
+            .font(.app(.callout))
         }
         if let recommended = model.recommendedSource {
             HStack {
-                Text("按优先级默认会用「\(name(recommended))」（\(kindLabel(recommended.kind))）。").font(.callout)
+                Text("按优先级默认会用「\(name(recommended))」（\(kindLabel(recommended.kind))）。").font(.app(.callout))
                 Button("用这一份") { run { await model.useSource(recommended.id, client: $0) } }
             }
         }
@@ -64,10 +64,10 @@ struct LyricSourcesSection: View {
 
     @ViewBuilder private func originals(_ view: LyricSourcesView) -> some View {
         let rows = view.sources.filter(\.isOriginal)
-        Text("原文").font(.headline)
+        Text("原文").font(.app(.headline))
         if rows.isEmpty {
             Text("没有找到任何歌词来源。可以在音频旁边放一份同名的 .lrc / .srt / .txt，或者在线补齐、自己导入。")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.app(.caption)).foregroundStyle(.secondary)
         }
         ForEach(rows) { row in
             let isCurrent = row.id == view.selection?.sourceId
@@ -77,12 +77,12 @@ struct LyricSourcesSection: View {
                         HStack(spacing: 6) {
                             Text(kindLabel(row.kind)).bold()
                             if !row.provider.isEmpty { Text(row.provider).foregroundStyle(.secondary) }
-                            if isCurrent { Text("当前").font(.caption).foregroundStyle(.tint) }
-                            if row.userModified { Text("你改过").font(.caption).foregroundStyle(.secondary) }
+                            if isCurrent { Text("当前").font(.app(.caption)).foregroundStyle(.tint) }
+                            if row.userModified { Text("你改过").font(.app(.caption)).foregroundStyle(.secondary) }
                         }
-                        Text(describe(row)).font(.caption).foregroundStyle(.secondary)
+                        Text(describe(row)).font(.app(.caption)).foregroundStyle(.secondary)
                         if !row.sourceRef.isEmpty {
-                            Text(row.sourceRef).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                            Text(row.sourceRef).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
                     }
                     Spacer()
@@ -108,10 +108,10 @@ struct LyricSourcesSection: View {
 
     @ViewBuilder private func translations(_ view: LyricSourcesView) -> some View {
         let rows = view.sources.filter { !$0.isOriginal }
-        Text("译文").font(.headline)
+        Text("译文").font(.app(.headline))
         if rows.isEmpty {
             Text("没有单独的译文文件（同名加语言后缀，例如 song.zh-Hans.lrc）。歌词文件里和原文同一时间戳的译文行会自动认出来。")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.app(.caption)).foregroundStyle(.secondary)
         } else {
             Picker("译文", selection: Binding(
                 get: { view.translationSourceId },
@@ -128,9 +128,9 @@ struct LyricSourcesSection: View {
     }
 
     @ViewBuilder private var offset: some View {
-        Text("整体偏移").font(.headline)
+        Text("整体偏移").font(.app(.headline))
         if model.sourceUntimed {
-            Text("这份歌词没有时间轴，偏移、跟随播放、点行跳转都用不了。").font(.caption).foregroundStyle(.secondary)
+            Text("这份歌词没有时间轴，偏移、跟随播放、点行跳转都用不了。").font(.app(.caption)).foregroundStyle(.secondary)
         } else {
             HStack {
                 ForEach(steps, id: \.self) { step in
@@ -147,13 +147,13 @@ struct LyricSourcesSection: View {
                 Button("归零") { setOffset(0) }.disabled(model.offsetMs == 0)
             }
             Text("现在 \(LyricsModel.formatOffset(model.offsetMs))。正值让歌词晚一点出现。改的是这首歌的时间，原文不动；单句循环、制卡截音频也跟着对齐。")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.app(.caption)).foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder private func lookups(_ view: LyricSourcesView) -> some View {
         if !view.lookups.isEmpty {
-            Text("在线查询").font(.headline)
+            Text("在线查询").font(.app(.headline))
             ForEach(view.lookups, id: \.provider) { lookup in
                 HStack(alignment: .firstTextBaseline) {
                     Text(lookupLabel(lookup.status))
@@ -165,7 +165,7 @@ struct LyricSourcesSection: View {
                     Spacer()
                     Text(when(lookup.checkedAt)).foregroundStyle(.secondary)
                 }
-                .font(.caption)
+                .font(.app(.caption))
             }
         }
     }
@@ -225,9 +225,9 @@ private struct TimelinePreview: View {
     let timeline: SongLyricTimeline
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(timeline.warnings ?? [], id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
+            ForEach(timeline.warnings ?? [], id: \.self) { Text($0).font(.app(.caption)).foregroundStyle(.orange) }
             if timeline.translation.state == "unaligned" {
-                Text("译文和原文的时间对不上，没有合并显示（不按行号硬拼）。").font(.caption).foregroundStyle(.orange)
+                Text("译文和原文的时间对不上，没有合并显示（不按行号硬拼）。").font(.app(.caption)).foregroundStyle(.orange)
             }
             ForEach(timeline.lines.prefix(40)) { line in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -235,9 +235,9 @@ private struct TimelinePreview: View {
                     Text(line.text)
                     if let translation = line.translation { Text(translation).foregroundStyle(.secondary) }
                 }
-                .font(.caption)
+                .font(.app(.caption))
             }
-            if timeline.lines.count > 40 { Text("…共 \(timeline.lines.count) 行").font(.caption).foregroundStyle(.secondary) }
+            if timeline.lines.count > 40 { Text("…共 \(timeline.lines.count) 行").font(.app(.caption)).foregroundStyle(.secondary) }
         }
         .textSelection(.enabled)
         .padding(8)

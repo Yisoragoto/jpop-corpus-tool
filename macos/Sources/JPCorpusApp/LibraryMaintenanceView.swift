@@ -20,7 +20,7 @@ struct LibraryMaintenanceView: View {
     private var model: LibraryModel { app.library }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("资料库管理").font(.title2.bold()); Spacer(); Button("完成") { dismiss() } }
+            HStack { Text("资料库管理").font(.app(.title2).bold()); Spacer(); Button("完成") { dismiss() } }
             Picker("", selection: $tab) {
                 Text("找回音频").tag(0); Text("新歌与文件夹").tag(1); Text("维护与迁移").tag(2); Text("收听记录").tag(3)
             }.pickerStyle(.segmented)
@@ -32,7 +32,7 @@ struct LibraryMaintenanceView: View {
                 default: ListeningHistoryView()
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            if !model.note.isEmpty { Text(model.note).font(.caption).textSelection(.enabled) }
+            if !model.note.isEmpty { Text(model.note).font(.app(.caption)).textSelection(.enabled) }
             if let error = model.errorMessage { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
         }.padding(24).frame(width: 760, height: 580).glass(.sidebar)
     }
@@ -55,11 +55,11 @@ struct AudioRepairView: View {
             List(model.missing, id: \.songId) { song in
                 VStack(alignment: .leading, spacing: 5) {
                     HStack { Text("\(song.title) · \(song.artist)").bold(); Spacer(); Button("选择文件…") { isFolder = false; pick.present(.song(song.songId)) } }
-                    Text("原路径：\(song.audioPath)").font(.caption).foregroundStyle(.secondary)
+                    Text("原路径：\(song.audioPath)").font(.app(.caption)).foregroundStyle(.secondary)
                     if let path = model.picks[song.songId] {
-                        HStack { Text("→ \(path)").font(.caption); Spacer(); Button("不改") { model.picks.removeValue(forKey: song.songId) } }
+                        HStack { Text("→ \(path)").font(.app(.caption)); Spacer(); Button("不改") { model.picks.removeValue(forKey: song.songId) } }
                     }
-                    if let error = model.repairErrors[song.songId] { Text(error).font(.caption).foregroundStyle(.orange) }
+                    if let error = model.repairErrors[song.songId] { Text(error).font(.app(.caption)).foregroundStyle(.orange) }
                 }.textSelection(.enabled)
             }.scrollContentBackground(.hidden)
             Button("确认更新 \(model.picks.count) 首") { Task { if await model.applyRelinks() { await app.reloadTracks() } } }.disabled(model.picks.isEmpty)
@@ -104,7 +104,7 @@ struct WatchedFoldersView: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(folder.path).textSelection(.enabled)
-                                Text("\(why(folder.reason)) · 深度 \(folder.depth) · 库中 \(folder.songs) 首 · 未知 \(folder.unknown) 个 · 新歌 \(folder.new) 首").font(.caption).foregroundStyle(.secondary)
+                                Text("\(why(folder.reason)) · 深度 \(folder.depth) · 库中 \(folder.songs) 首 · 未知 \(folder.unknown) 个 · 新歌 \(folder.new) 首").font(.app(.caption)).foregroundStyle(.secondary)
                             }
                             Spacer(); Button("别再看") { Task { await model.ignoreFolder(folder.path) } }
                         }
@@ -114,7 +114,7 @@ struct WatchedFoldersView: View {
                     HStack { Text(path).foregroundStyle(.secondary); Spacer(); Button("恢复检查") { Task { await model.restoreFolder(path) } } }
                 }
                 if !model.ignores.files.isEmpty {
-                    Text("已忽略 \(model.ignores.files.count) 个文件").font(.caption)
+                    Text("已忽略 \(model.ignores.files.count) 个文件").font(.app(.caption))
                     Button("清除文件忽略清单") { model.ignores.files = []; Task { await model.checkNewAudio() } }
                 }
             }
@@ -136,10 +136,10 @@ struct NewSongsNotice: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !items.isEmpty && !dismissed {
-                Text("发现 \(items.count) 首新歌").font(.headline)
-                Text(NewSongs.describeNewSongs(items)).font(.callout)
-                if let found = model.found { Text(NewSongs.foldersOf(found, items).joined(separator: "、")).font(.caption).foregroundStyle(.secondary) }
-                if let reason = NewSongs.reviewReason(items) { Text(reason).font(.caption).foregroundStyle(.secondary) }
+                Text("发现 \(items.count) 首新歌").font(.app(.headline))
+                Text(NewSongs.describeNewSongs(items)).font(.app(.callout))
+                if let found = model.found { Text(NewSongs.foldersOf(found, items).joined(separator: "、")).font(.app(.caption)).foregroundStyle(.secondary) }
+                if let reason = NewSongs.reviewReason(items) { Text(reason).font(.app(.caption)).foregroundStyle(.secondary) }
                 HStack {
                     Button("查看计划") { Task { await review() } }
                     if NewSongs.reviewReason(items) == nil {
@@ -149,12 +149,12 @@ struct NewSongsNotice: View {
                     Button("稍后") { dismissed = true }
                 }.disabled(model.busy || app.importer.importing || app.importer.scanning)
             }
-            if !summary.isEmpty { HStack { Text(summary).font(.callout); Button("关闭") { summary = ""; missingLyrics = []; lyricsNote = "" } }.disabled(filling) }
+            if !summary.isEmpty { HStack { Text(summary).font(.app(.callout)); Button("关闭") { summary = ""; missingLyrics = []; lyricsNote = "" } }.disabled(filling) }
             if !missingLyrics.isEmpty && lyricsNote.isEmpty {
                 Button("在线补缺失歌词") { Task { await fillLyrics() } }.disabled(filling)
             }
-            if !lyricsNote.isEmpty { Text(lyricsNote).font(.caption) }
-            if let error = app.importer.errorMessage { Text(error).font(.caption).foregroundStyle(.orange) }
+            if !lyricsNote.isEmpty { Text(lyricsNote).font(.app(.caption)) }
+            if let error = app.importer.errorMessage { Text(error).font(.app(.caption)).foregroundStyle(.orange) }
         }
         .onChange(of: model.found?.scan.summary.new) { _, _ in dismissed = false }
     }
@@ -212,18 +212,18 @@ struct MaintenanceJobsView: View {
                     Button("回填缺失时长") { Task { _ = await model.backfillDurations() } }
                     Button("补专辑封面") { Task { _ = await model.fillAlbumArtwork() } }
                 }
-                Text("只回填空时长；专辑封面使用库里已有的曲目图片。").font(.caption).foregroundStyle(.secondary)
+                Text("只回填空时长；专辑封面使用库里已有的曲目图片。").font(.app(.caption)).foregroundStyle(.secondary)
                 Divider()
-                Text("从另一个库迁移").font(.headline)
+                Text("从另一个库迁移").font(.app(.headline))
                 Button("选择源语料库…") { picking = true }
                 if let plan = model.migrationPlan {
                     Text(model.migrationSource).textSelection(.enabled)
                     Text("源库 \(plan.sourceSongs) 首 · 新增 \(plan.newSongs) 首 · 重复 \(plan.duplicateSongs) 首\n\(plan.lyricLines) 行歌词 · \(plan.tokens) 词 · \(plan.people) 人 · \(plan.albums) 张专辑\n\(plan.plays) 条播放 · \(plan.favorites) 条收藏 · \(plan.corrections) 条校正 · \(plan.dictTerms) 条词典词条")
-                    ForEach(plan.samples, id: \.self) { Text($0).font(.caption) }
+                    ForEach(plan.samples, id: \.self) { Text($0).font(.app(.caption)) }
                     Toggle("迁移收听记录和收藏", isOn: $m.migrationOptions.history)
                     Toggle("迁移词典", isOn: $m.migrationOptions.dictionaries)
-                    if plan.targetHasDictionaries { Text("当前库已有词典表，不会覆盖。").font(.caption) }
-                    Text("音频文件不复制，仍指向原处。封面、照片、歌词和分词词典会复制；已有曲目跳过。").font(.caption).foregroundStyle(.secondary)
+                    if plan.targetHasDictionaries { Text("当前库已有词典表，不会覆盖。").font(.app(.caption)) }
+                    Text("音频文件不复制，仍指向原处。封面、照片、歌词和分词词典会复制；已有曲目跳过。").font(.app(.caption)).foregroundStyle(.secondary)
                     Button("确认迁移") { Task { _ = await model.migrateConfirmed() } }
                 }
                 if let job = model.job, job.running { ProgressView(); Text(job.stage) }

@@ -27,7 +27,7 @@ struct LibraryChip: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
-                Text(title).font(.system(size: 12, weight: selected ? .semibold : .regular))
+                Text(title).font(.appSystem(size: 12, weight: selected ? .semibold : .regular))
             }
             .padding(.horizontal, 10).padding(.vertical, 6)
             .foregroundStyle(selected ? Color.accentColor : Color.primary.opacity(0.75))
@@ -101,10 +101,10 @@ struct LibraryHero<Actions: View>: View {
 
     private var information: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(kind).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-            Text(title).font(.system(size: 28, weight: .bold)).lineLimit(2)
+            Text(kind).font(.appSystem(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            Text(title).font(.appSystem(size: 28, weight: .bold)).lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            Text(subtitle).font(.callout).foregroundStyle(.secondary)
+            Text(subtitle).font(.app(.callout)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             actions()
         }
@@ -155,7 +155,7 @@ struct LibrarySongSortChips: View {
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
-                Text("排序").font(.caption).foregroundStyle(.secondary).padding(.trailing, 4)
+                Text("排序").font(.app(.caption)).foregroundStyle(.secondary).padding(.trailing, 4)
                 ForEach(LibrarySongSort.allCases, id: \.self) { value in
                     LibraryChip(title: value.rawValue, selected: sort == value) { sort = value }
                 }
@@ -214,7 +214,7 @@ struct TrackList: View {
             }
             Text("时长").frame(width: 52, alignment: .trailing)
         }
-        .font(.caption).foregroundStyle(.secondary)
+        .font(.app(.caption)).foregroundStyle(.secondary)
         .padding(.horizontal, 12).padding(.vertical, 10)
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityHidden(true)
@@ -237,7 +237,7 @@ private struct LibrarySongRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(current ? "♪" : "\(number)")
-                .font(.callout.monospacedDigit()).foregroundStyle(current ? Color.accentColor : Color.secondary)
+                .font(.app(.callout).monospacedDigit()).foregroundStyle(current ? Color.accentColor : Color.secondary)
                 .frame(width: 24, alignment: .trailing)
             playCover
             Button { app.show(.song(track.id)) } label: { metadata }
@@ -260,7 +260,7 @@ private struct LibrarySongRow: View {
                 .overlay {
                     ZStack {
                         RoundedRectangle(cornerRadius: 6).fill(.black.opacity(0.55))
-                        Image(systemName: "play.fill").font(.system(size: 15)).foregroundStyle(.white)
+                        Image(systemName: "play.fill").font(.appSystem(size: 15)).foregroundStyle(.white)
                     }
                     .opacity(hovering || playFocused || current ? 1 : 0)
                 }
@@ -272,25 +272,25 @@ private struct LibrarySongRow: View {
     private var metadata: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(track.title).font(.system(size: 14, weight: .medium))
+                Text(track.title).font(.appSystem(size: 14, weight: .medium))
                     .foregroundStyle(current ? Color.accentColor : Color.primary).lineLimit(1)
-                if showArtist { Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                if showArtist { Text(track.artist).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1) }
                 if !wide {
                     Text([track.album, String(track.year.prefix(4))].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 }
-                if track.lineCount == 0 { Text("无歌词").font(.caption2).foregroundStyle(.orange) }
+                if track.lineCount == 0 { Text("无歌词").font(.app(.caption2)).foregroundStyle(.orange) }
                 if let annotation, !annotation.isEmpty {
-                    Text(annotation).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Text(annotation).font(.app(.caption2)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
             if wide {
-                Text(track.album.isEmpty ? "—" : track.album).font(.caption).foregroundStyle(.secondary)
+                Text(track.album.isEmpty ? "—" : track.album).font(.app(.caption)).foregroundStyle(.secondary)
                     .lineLimit(1).frame(width: 160, alignment: .leading)
                 Text(track.year.isEmpty ? "—" : String(track.year.prefix(4)))
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 54, alignment: .leading)
+                    .font(.app(.caption).monospacedDigit()).foregroundStyle(.secondary).frame(width: 54, alignment: .leading)
             }
-            Text(track.durationSec.map(formatTime) ?? "—").font(.callout.monospacedDigit())
+            Text(track.durationSec.map(formatTime) ?? "—").font(.app(.callout).monospacedDigit())
                 .foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
         }
         .contentShape(Rectangle())

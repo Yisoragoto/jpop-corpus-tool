@@ -319,6 +319,39 @@ export function useLyricFontFiles(families: string[], onError: (message: string)
 }
 
 /** 「显示」面板打开时取可选字体 */
+/** 界面字体的三档（小字、正文、标题）。在 styles.css 的 :root 里定义，选了字体就把它排到最前面 */
+const UI_FONT_VARS = ["--font-small", "--font-text", "--font-display"] as const;
+
+/**
+ * 换整个界面的字体：选中的字体排在三档系统字体前面，它缺的字（比如英文字体没有日文）照样由原来的那一串补上。
+ * 自带和导入的字体要先登记 @font-face 才认得出来，所以也走一遍 useLyricFontFiles
+ */
+export function useUiFont(family: string, onError: (message: string) => void) {
+  useLyricFontFiles([family], onError);
+  useEffect(() => {
+    const root = document.documentElement;
+    const name = family.trim();
+    for (const v of UI_FONT_VARS) {
+      if (name === "") {
+        root.style.removeProperty(v);
+      } else {
+        const base = getComputedStyleBase(v);
+        root.style.setProperty(v, `${quoteFamily(name)}, ${base}`);
+      }
+    }
+  }, [family]);
+}
+
+/** styles.css 里原本的那一串：先把内联覆盖拿掉再读，免得越叠越长 */
+function getComputedStyleBase(variable: string): string {
+  const root = document.documentElement;
+  const inline = root.style.getPropertyValue(variable);
+  root.style.removeProperty(variable);
+  const base = getComputedStyle(root).getPropertyValue(variable).trim() || DEFAULT_FONT_STACK;
+  if (inline !== "") root.style.setProperty(variable, inline);
+  return base;
+}
+
 export function useFontOptions(enabled: boolean, onError: (message: string) => void) {
   const [imported, setImported] = useState(loadImportedFonts);
   const [state, setState] = useState<{ options: FontOption[]; problems: string[] } | null>(null);

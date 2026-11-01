@@ -21,7 +21,7 @@ struct ScrapeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text("从 MusicBrainz、iTunes、Deezer 查这首歌是哪张专辑、哪一年、什么流派，顺便下封面；歌手查资料和照片。只补空着的字段，本地原有的值不动。拿不准的不会自动写，放在下面的复核队列里等你选。")
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 completenessCard
@@ -68,7 +68,7 @@ struct ScrapeView: View {
         GridRow {
             Text(label).foregroundStyle(.secondary)
             ProgressView(value: count.fraction).frame(maxWidth: 360)
-            Text("\(count.done) / \(count.total)").monospacedDigit().font(.callout)
+            Text("\(count.done) / \(count.total)").monospacedDigit().font(.app(.callout))
         }
     }
 
@@ -129,12 +129,12 @@ struct ScrapeView: View {
             }
             if let stage = ScrapeStage(job.stage) {
                 // 一键刮削：「第 2/4 步 · 歌手照片  3 / 12  ヨルシカ」
-                Text("第 \(stage.step)/\(stage.steps) 步").font(.callout.weight(.semibold))
-                Text(verbatim: L10n.t(stage.label)).font(.callout.weight(.semibold))
+                Text("第 \(stage.step)/\(stage.steps) 步").font(.app(.callout).weight(.semibold))
+                Text(verbatim: L10n.t(stage.label)).font(.app(.callout).weight(.semibold))
                 Text(verbatim: stage.kind == "cover" ? L10n.t(stage.title) : "\(job.done) / \(job.total)  \(stage.title)")
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.app(.caption).monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
             } else {
-                Text("\(job.done) / \(job.total)  \(job.stage)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
+                Text("\(job.done) / \(job.total)  \(job.stage)").font(.app(.caption).monospacedDigit()).foregroundStyle(.secondary).lineLimit(1)
             }
             Button("停止") { Task { try? await app.core?.scrapeCancel() } }
                 .controlSize(.small)
@@ -143,7 +143,7 @@ struct ScrapeView: View {
 
     private func results(_ batch: ScrapeBatch) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let message { Text(message).font(.callout) }
+            if let message { Text(message).font(.app(.callout)) }
             ForEach(Array(batch.items.suffix(30).enumerated()), id: \.offset) { _, item in
                 HStack(spacing: 8) {
                     statusIcon(item.status)
@@ -154,7 +154,7 @@ struct ScrapeView: View {
                     Spacer()
                     if item.coverSaved { Image(systemName: "photo").foregroundStyle(.secondary).help("下到了图") }
                 }
-                .font(.callout)
+                .font(.app(.callout))
             }
         }
         .padding(14)
@@ -322,9 +322,9 @@ private struct ReviewCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.localTitle.isEmpty ? item.filePath : item.localTitle).font(.headline)
+                    Text(item.localTitle.isEmpty ? item.filePath : item.localTitle).font(.app(.headline))
                     Text([item.localArtist, item.localAlbum].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption)
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -344,22 +344,22 @@ private struct ReviewCard: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("\(c.title) — \(c.artist)").lineLimit(1)
                         Text([c.album, c.year, c.genre, c.provider].filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.caption)
+                            .font(.app(.caption))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                     Spacer()
                     Text(String(format: "%.2f", c.score))
-                        .font(.caption.monospacedDigit())
+                        .font(.app(.caption).monospacedDigit())
                         .foregroundStyle(c.score >= 0.85 ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
                     Button("采用") { accept(index) }
                         .controlSize(.small)
                 }
             }
             DisclosureGroup("尝试历史", isExpanded: $historyOpen) {
-                if history.isEmpty { Text("没有历史记录").font(.caption) }
+                if history.isEmpty { Text("没有历史记录").font(.app(.caption)) }
                 ForEach(history) { attempt in
-                    Text([attempt.attemptedAt, attempt.status, attempt.provider, attempt.errorMessage].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).textSelection(.enabled)
+                    Text([attempt.attemptedAt, attempt.status, attempt.provider, attempt.errorMessage].filter { !$0.isEmpty }.joined(separator: " · ")).font(.app(.caption)).textSelection(.enabled)
                 }
             }.onChange(of: historyOpen) { _, open in
                 if open { Task {
@@ -368,7 +368,7 @@ private struct ReviewCard: View {
                 } }
             }
             if !item.explain.isEmpty {
-                Text(item.explain).font(.caption2).foregroundStyle(.tertiary).lineLimit(2)
+                Text(item.explain).font(.app(.caption2)).foregroundStyle(.tertiary).lineLimit(2)
             }
         }
         .padding(14)
@@ -393,7 +393,7 @@ private struct ScrapeSourcesView: View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 10) {
                 Text("MusicBrainz、iTunes、Deezer 每次都会查。Apple Music 要你自己的开发者令牌，打开后排在最前面先问。")
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let binding = Binding($sources) {
@@ -405,11 +405,11 @@ private struct ScrapeSourcesView: View {
                     }
                     .disabled(!binding.wrappedValue.apple)
                     if binding.wrappedValue.apple && !binding.wrappedValue.appleDeveloperTokenSet && token.isEmpty {
-                        Text("没有开发者令牌时 Apple Music 不会被查。").font(.caption).foregroundStyle(.orange)
+                        Text("没有开发者令牌时 Apple Music 不会被查。").font(.app(.caption)).foregroundStyle(.orange)
                     }
                     HStack {
                         Button("保存") { Task { await save() } }.disabled(saving)
-                        if let note { Text(L10n.t(note)).font(.caption).foregroundStyle(.secondary) }
+                        if let note { Text(L10n.t(note)).font(.app(.caption)).foregroundStyle(.secondary) }
                     }
                 } else {
                     ProgressView().controlSize(.small)
@@ -417,8 +417,8 @@ private struct ScrapeSourcesView: View {
             }
             .padding(.top, 6)
         } label: {
-            Text("刮削来源").font(.headline)
-            Text(summary).font(.caption).foregroundStyle(.secondary)
+            Text("刮削来源").font(.app(.headline))
+            Text(summary).font(.app(.caption)).foregroundStyle(.secondary)
         }
         .task { await load() }
     }

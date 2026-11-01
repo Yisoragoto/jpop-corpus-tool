@@ -15,7 +15,7 @@ struct BackBar: View {
         HStack {
             Button(action: action) {
                 Label(title, systemImage: "chevron.left")
-                    .font(.callout.weight(.semibold))
+                    .font(.app(.callout).weight(.semibold))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(.regularMaterial, in: Capsule())

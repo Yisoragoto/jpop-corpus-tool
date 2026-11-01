@@ -54,7 +54,7 @@ struct GraphView: View {
                         if let image = photos[n.id] {
                             var clipped = c; clipped.clip(to: Path(ellipseIn: rect)); clipped.draw(image,in: rect)
                         } else {
-                            c.draw(Text(String(n.name.prefix(1))).font(.system(size: max(9,r*0.7),weight: .semibold,design: .rounded)).foregroundColor(.primary.opacity(0.85)),at: p)
+                            c.draw(Text(String(n.name.prefix(1))).font(.appSystem(size: max(9,r*0.7),weight: .semibold,design: .rounded)).foregroundColor(.primary.opacity(0.85)),at: p)
                         }
                         c.stroke(Path(ellipseIn: rect.insetBy(dx: -1.5,dy: -1.5)),with: .color(color.opacity(focused ? 1 : 0.85)),lineWidth: n.isBand || focused ? 2.5 : 1.2)
                     }
@@ -67,7 +67,7 @@ struct GraphView: View {
                         let n = graph.nodes[i], priority = n.id == selected || i == hover
                         if !priority && n.r*k < 10 && k < 1.6 { continue }
                         var name = n.name
-                        func textWidth(_ name: String) -> Double { context.resolve(Text(name).font(.system(size: 12,weight: .medium))).measure(in: CGSize(width: 10000,height: 100)).width }
+                        func textWidth(_ name: String) -> Double { context.resolve(Text(name).font(.appSystem(size: 12,weight: .medium))).measure(in: CGSize(width: 10000,height: 100)).width }
                         while textWidth(name) > 144 && name.unicodeScalars.count > 2 { name = String(String.UnicodeScalarView(name.unicodeScalars.dropLast(2)))+"…" }
                         let width = textWidth(name)+12, cx = max(width/2+4,min(size.width-width/2-4,n.x*k+translation.x))
                         let top = n.y*k+min(n.r*k,21)+translation.y+7
@@ -81,7 +81,7 @@ struct GraphView: View {
                         let match = query.isEmpty || n.name.lowercased().contains(query)
                         c.opacity = priority ? 1 : match && (neighbors == nil || neighbors!.contains(i)) ? 0.9 : 0.18
                         c.fill(Path(roundedRect: box,cornerRadius: 10),with: .color(Color(nsColor: .windowBackgroundColor).opacity(priority ? 0.92 : 0.7)))
-                        c.draw(Text(name).font(.system(size: 12,weight: .medium)).foregroundColor(.primary),at: CGPoint(x: cx,y: top+2),anchor: .top)
+                        c.draw(Text(name).font(.appSystem(size: 12,weight: .medium)).foregroundColor(.primary),at: CGPoint(x: cx,y: top+2),anchor: .top)
                     }
                 }
                 .background(WheelZoom { point, delta in zoom(at: point,delta: delta) })
@@ -107,7 +107,7 @@ struct GraphView: View {
                         Button { if on { if model.roles.count > 1 { model.roles.remove(role) } } else { model.roles.insert(role) } } label: {
                             HStack(spacing: 4) {
                                 Circle().fill(on ? graphRoleColor(role) : .secondary.opacity(0.4)).frame(width: 7,height: 7)
-                                Text(roleLabels[role] ?? role).font(.caption).foregroundStyle(on ? .primary : .secondary)
+                                Text(roleLabels[role] ?? role).font(.app(.caption)).foregroundStyle(on ? .primary : .secondary)
                             }
                             .padding(.horizontal,7).padding(.vertical,3)
                             .background(Capsule().fill(on ? graphRoleColor(role).opacity(0.16) : .clear))
@@ -115,9 +115,9 @@ struct GraphView: View {
                             .contentShape(Capsule())
                         }.buttonStyle(.plain)
                     } }
-                    Text("至少一起 \(model.minShared) 首").font(.caption)
+                    Text("至少一起 \(model.minShared) 首").font(.app(.caption))
                     Slider(value: Binding(get: { Double(model.minShared) },set: { model.minShared = Int64($0) }),in: 1...6,step: 1)
-                    Text("\(graph.nodes.count) 人 · \(graph.links.count) 条关系").font(.caption).foregroundStyle(.secondary)
+                    Text("\(graph.nodes.count) 人 · \(graph.links.count) 条关系").font(.app(.caption)).foregroundStyle(.secondary)
                     if model.around != nil { Button("返回全图") { model.around = nil } }
                     Button { fit(geometry.size) } label: { Label("适合窗口",systemImage: "arrow.up.left.and.arrow.down.right") }.buttonStyle(.borderless)
                     if model.graphBusy { ProgressView().controlSize(.small) }
@@ -128,9 +128,9 @@ struct GraphView: View {
                     HStack(spacing: 12) {
                         CoverImage(path: person.imagePath,size: 44,circle: true,identity: person.name)
                         VStack(alignment: .leading) {
-                            Text(person.name).font(.headline); Text(person.roleSummary).font(.caption).foregroundStyle(.secondary)
+                            Text(person.name).font(.app(.headline)); Text(person.roleSummary).font(.app(.caption)).foregroundStyle(.secondary)
                             let bands = model.memberships.filter { $0.memberId == id }
-                            Text(bands.map { $0.leftAt.isEmpty ? "\($0.bandName) 成员" : "曾属 \($0.bandName)" }.joined(separator: " · ")).font(.caption)
+                            Text(bands.map { $0.leftAt.isEmpty ? "\($0.bandName) 成员" : "曾属 \($0.bandName)" }.joined(separator: " · ")).font(.app(.caption))
                             HStack { Button("打开档案") { app.show(.person(id)) }; Button("只看附近") { model.around = id } }.buttonStyle(.borderless)
                         }
                     }.padding(14).glassCard().padding(16)

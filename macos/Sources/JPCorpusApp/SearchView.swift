@@ -151,7 +151,7 @@ struct SearchView: View {
             }
             if mode == .cql {
                 if !cqlError.isEmpty {
-                    Text(cqlError).font(.caption).foregroundStyle(.red).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                    Text(cqlError).font(.app(.caption)).foregroundStyle(.red).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 }
                 CqlExamplesView { text = $0 }
             }
@@ -189,7 +189,7 @@ struct SearchView: View {
                 }
             }
             .controlSize(.small)
-            if !exportNote.isEmpty { Text(exportNote).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+            if !exportNote.isEmpty { Text(exportNote).font(.app(.caption)).foregroundStyle(.secondary).textSelection(.enabled) }
         }
         .padding(12)
     }
@@ -476,7 +476,7 @@ private struct PlayingMark: View {
         let player = app.player
         let playing = InterfaceLogic.isPlayingSpan(currentSong: player.track?.id,playing: player.isPlaying,position: player.coarsePosition,songId: hit.songId,startSec: hit.timeSec,endSec: hit.endSec)
         Image(systemName: playing ? "speaker.wave.2.fill" : "play.fill")
-            .font(.system(size: 9))
+            .font(.appSystem(size: 9))
             .foregroundStyle(playing ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
             .opacity(hit.timeSec == nil ? 0 : 1)
             .help(hit.timeSec == nil ? "这一行没有时间戳" : "空格试听")

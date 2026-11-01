@@ -107,8 +107,8 @@ struct AnalyticsOverview: View {
                     (grouped(o.composers), "位作曲"), (grouped(o.lyricists), "位作词"), (formatListening(o.totalDurationSec), "总时长"),
                 ].enumerated()), id: \.offset) { _, item in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(item.0).font(.title3.weight(.semibold)).monospacedDigit()
-                        Text(item.1).font(.caption).foregroundStyle(.secondary)
+                        Text(item.0).font(.app(.title3).weight(.semibold)).monospacedDigit()
+                        Text(item.1).font(.app(.caption)).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -119,10 +119,10 @@ struct AnalyticsOverview: View {
     private func entry(icon: String, title: String, detail: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: icon).font(.title2).foregroundStyle(.tint).frame(width: 28)
+                Image(systemName: icon).font(.app(.title2)).foregroundStyle(.tint).frame(width: 28)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline)
-                    Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Text(title).font(.app(.headline))
+                    Text(detail).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right").foregroundStyle(.tertiary)
@@ -143,8 +143,8 @@ private struct Kpi: View {
     var hint: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(value).font(.system(size: 24, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.appSystem(size: 24, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            Text(label).font(.app(.caption)).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -163,10 +163,10 @@ private struct OverviewBlock<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(title).font(.headline)
-                if let hint { Text(hint).font(.caption).foregroundStyle(.secondary) }
+                Text(title).font(.app(.headline))
+                if let hint { Text(hint).font(.app(.caption)).foregroundStyle(.secondary) }
                 Spacer(minLength: 0)
-                if let link, let onLink { Button(link, action: onLink).buttonStyle(.link).font(.caption) }
+                if let link, let onLink { Button(link, action: onLink).buttonStyle(.link).font(.app(.caption)) }
             }
             content
         }
@@ -216,12 +216,12 @@ private struct ScriptBlock: View {
                             Spacer(minLength: 4)
                             Text(String(format: "%.1f%%", share(scripts, kind.0) * 100)).fontWeight(.semibold).monospacedDigit()
                         }
-                        .font(.callout)
+                        .font(.app(.callout))
                     }
                 }
             }
         } else {
-            Text("计算中…").font(.caption).foregroundStyle(.secondary)
+            Text("计算中…").font(.app(.caption)).foregroundStyle(.secondary)
         }
     }
 }
@@ -231,7 +231,7 @@ private struct YearBars: View {
     let years: [YearStats]
     var body: some View {
         if years.isEmpty {
-            Text("没有带年份的曲目").font(.caption).foregroundStyle(.secondary)
+            Text("没有带年份的曲目").font(.app(.caption)).foregroundStyle(.secondary)
         } else {
             Chart(years) { y in
                 BarMark(x: .value("年份", String(y.year.suffix(2))), y: .value("歌曲", y.trackCount))
@@ -240,7 +240,7 @@ private struct YearBars: View {
             }
             .chartYAxis(.hidden)
             .chartXAxis {
-                AxisMarks { _ in AxisValueLabel().font(.caption2) }
+                AxisMarks { _ in AxisValueLabel().font(.app(.caption2)) }
             }
             .frame(height: 120)
         }
@@ -260,15 +260,15 @@ private struct WordBars: View {
         let top = items.map(value).max() ?? 1
         let scale = warn ? 1 : max(top, 1)
         if items.isEmpty {
-            Text("计算中…").font(.caption).foregroundStyle(.secondary)
+            Text("计算中…").font(.app(.caption)).foregroundStyle(.secondary)
         } else {
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 0) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     GridRow {
-                        Text("\(index + 1)").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                        Text("\(index + 1)").font(.app(.caption2)).foregroundStyle(.secondary).monospacedDigit()
                             .gridColumnAlignment(.trailing)
                         Button(item.lemma) { open(item) }.buttonStyle(.plain).lineLimit(1).help("检索「\(item.lemma)」")
-                        Text(posLabels[item.pos] ?? item.pos).font(.caption).foregroundStyle(.secondary)
+                        Text(posLabels[item.pos] ?? item.pos).font(.app(.caption)).foregroundStyle(.secondary)
                         Capsule().fill(.quaternary)
                             .overlay(alignment: .leading) {
                                 GeometryReader { geo in
@@ -279,13 +279,13 @@ private struct WordBars: View {
                             .frame(minWidth: 60, maxWidth: .infinity)
                             .frame(height: 6)
                         Text(label(item)).monospacedDigit().gridColumnAlignment(.trailing)
-                        Text(detail(item)).font(.caption).foregroundStyle(.secondary).monospacedDigit().help(detailHelp)
+                        Text(detail(item)).font(.app(.caption)).foregroundStyle(.secondary).monospacedDigit().help(detailHelp)
                             .gridColumnAlignment(.trailing)
                     }
                     .frame(height: 30)
                 }
             }
-            .font(.callout)
+            .font(.app(.callout))
         }
     }
 }
@@ -297,17 +297,17 @@ private struct CloudEntry: View {
         Button(action: open) {
             HStack(spacing: 18) {
                 ZStack {
-                    Text("夢").font(.system(size: 30, weight: .bold)).foregroundStyle(Color(red: 159 / 255, green: 216 / 255, blue: 1)).offset(x: -16, y: -4)
-                    Text("君").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).offset(x: 18, y: -12)
-                    Text("世界").font(.system(size: 14)).foregroundStyle(.white.opacity(0.6)).offset(x: 14, y: 14)
+                    Text("夢").font(.appSystem(size: 30, weight: .bold)).foregroundStyle(Color(red: 159 / 255, green: 216 / 255, blue: 1)).offset(x: -16, y: -4)
+                    Text("君").font(.appSystem(size: 18, weight: .semibold)).foregroundStyle(.white.opacity(0.85)).offset(x: 18, y: -12)
+                    Text("世界").font(.appSystem(size: 14)).foregroundStyle(.white.opacity(0.6)).offset(x: 14, y: 14)
                 }
                 .frame(width: 96, height: 64)
                 .background(
                     LinearGradient(colors: [Color(red: 0.16, green: 0.2, blue: 0.32), Color(red: 0.24, green: 0.16, blue: 0.34)], startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("词云在「资料库」里").font(.headline)
-                    Text("可以选词性（默认名词）、换字体，点词看出现在哪些歌、点歌从那一句开始放，还能全屏").font(.caption).foregroundStyle(.secondary)
+                    Text("词云在「资料库」里").font(.app(.headline))
+                    Text("可以选词性（默认名词）、换字体，点词看出现在哪些歌、点歌从那一句开始放，还能全屏").font(.app(.caption)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 Text("打开 →").foregroundStyle(.tint)
@@ -331,10 +331,10 @@ struct StatsReportPane: View {
         ScrollView {
             if let result {
                 VStack(alignment: .leading,spacing: 16) {
-                    Text("语料统计报告").font(.title2.bold())
+                    Text("语料统计报告").font(.app(.title2).bold())
                     HStack {
                         Button { Task { await export(result.text) } } label: { Label("导出 TXT", systemImage: "square.and.arrow.up") }.buttonStyle(.borderless).disabled(loading)
-                        Text(exportNote).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        Text(exportNote).font(.app(.caption)).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                     Text(result.text).font(.system(.body,design: .monospaced)).textSelection(.enabled)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))],alignment: .leading) { ForEach(result.report.topWords) { w in Button("\(w.value) · \(w.count)") { app.searchRequest = SearchRequest(keyword: w.value,field: .lemma,scope: SubcorpusScope.subcorpus(filter)); app.section = .search }.buttonStyle(.borderless) } }

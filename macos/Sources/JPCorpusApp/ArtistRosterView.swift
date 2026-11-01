@@ -17,13 +17,13 @@ struct ArtistRosterView: View {
                         CoverImage(path: artist.hasImage ? artist.imagePath : "", size: 40, circle: true, placeholder: "person.fill", identity: artist.name)
                         VStack(alignment: .leading) {
                             Button(artist.name) { if let id = people.first(where: { $0.name == artist.name })?.id { app.show(.person(id)) } }.buttonStyle(.plain)
-                            Text(["\(artist.trackCount) 首", artist.artistType, artist.country, artist.formed].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            Text(["\(artist.trackCount) 首", artist.artistType, artist.country, artist.formed].filter { !$0.isEmpty }.joined(separator: " · ")).font(.app(.caption)).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Button(busy == artist.name ? "正在查…" : "刮削资料与照片") { Task { await scrape(artist.name) } }.disabled(busy != nil)
                     }
                 }
-                if !note.isEmpty { Text(note).font(.caption) }
+                if !note.isEmpty { Text(note).font(.app(.caption)) }
             }.padding(.top, 10)
         }
         .task(id: app.library.version) {

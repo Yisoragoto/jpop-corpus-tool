@@ -44,7 +44,7 @@ struct CollocationNetworkView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("搭配网络").font(.headline)
+            Text("搭配网络").font(.app(.headline))
             HStack {
                 Picker("搭配强度", selection: $measure) {
                     Text("logDice").tag(CollocationMeasure.logDice)
@@ -62,12 +62,12 @@ struct CollocationNetworkView: View {
     private func graph(_ result: NetworkResult, layout: CollocationNetworkLayout) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("「\(result.node)」（\(result.nodeFreq) 次）和它最强的 \(result.nodes.count) 个搭配词：越靠中间越强，圆点大小是总频次；灰线是搭配词彼此之间常一起出现（左右 3 词内）。点一个词检索该词。")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.app(.caption)).foregroundStyle(.secondary)
             CollocationNetworkCanvas(result: result, layout: layout, onPick: onPick)
                 .aspectRatio(760.0 / 560.0, contentMode: .fit)
                 .frame(minHeight: 340)
             Text("\(result.provenance.scope) · \(result.provenance.songs) 首 / \(result.provenance.tokens) 词（\(result.provenance.unit == .distinctLines ? "重复行只算一次" : "全部词次")）")
-                .font(.caption2).foregroundStyle(.secondary)
+                .font(.app(.caption2)).foregroundStyle(.secondary)
         }
     }
 
@@ -187,13 +187,13 @@ private struct CollocationNetworkCanvas: View {
     private func drawNodes(in context: inout GraphicsContext) {
         context.fill(Path(ellipseIn: CGRect(x: 358, y: 258, width: 44, height: 44)),
                      with: .color(.accentColor.opacity(0.25)))
-        context.draw(Text(result.node).font(.headline), at: CGPoint(x: 380, y: 280))
+        context.draw(Text(result.node).font(.app(.headline)), at: CGPoint(x: 380, y: 280))
         for index in layout.points.indices {
             let point = layout.points[index]
             let circle = CGRect(x: point.x - point.radius, y: point.y - point.radius,
                                 width: point.radius * 2, height: point.radius * 2)
             context.fill(Path(ellipseIn: circle), with: .color(.accentColor.opacity(0.8)))
-            context.draw(Text(result.nodes[index].lemma).font(.system(size: 13)),
+            context.draw(Text(result.nodes[index].lemma).font(.appSystem(size: 13)),
                          at: CGPoint(x: point.x, y: point.y - point.radius - 12))
         }
     }

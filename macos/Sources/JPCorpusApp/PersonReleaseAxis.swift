@@ -22,7 +22,7 @@ struct PersonReleaseAxis: View {
                     case let .gap(from,to): Text("…").foregroundStyle(.secondary).help(Text(verbatim: "\(from)–\(to) 没有发行"))
                     case let .year(y,items,ended):
                         VStack(spacing: 7) {
-                            Text(verbatim: "\(y)\(ended ? " 解散" : "")").font(.caption).foregroundStyle(ended ? .orange : .secondary)
+                            Text(verbatim: "\(y)\(ended ? " 解散" : "")").font(.app(.caption)).foregroundStyle(ended ? .orange : .secondary)
                             ForEach(items,id: \.group.id) { item in
                                 Button { open(item.group) } label: {
                                     CoverImage(path: item.group.coverPath,size: item.kind == "credit" ? 26 : 34,cornerRadius: 4)

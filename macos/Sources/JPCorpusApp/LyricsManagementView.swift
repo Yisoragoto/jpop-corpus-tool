@@ -44,8 +44,8 @@ struct LyricsManagementView: View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("歌词管理").font(.title2.bold())
-                if model.dirty { Text("有未保存的改动").font(.caption).foregroundStyle(.orange) }
+                Text("歌词管理").font(.app(.title2).bold())
+                if model.dirty { Text("有未保存的改动").font(.app(.caption)).foregroundStyle(.orange) }
                 Spacer()
                 if model.busy { ProgressView().controlSize(.small) }
                 Button("关闭", action: requestClose)
@@ -62,14 +62,14 @@ struct LyricsManagementView: View {
             .disabled(model.dirty || model.busy || model.songId.isEmpty)
             if model.dirty {
                 HStack {
-                    Text("保存或放弃草稿后可切换功能。旧版保留在版本列表中。").font(.caption).foregroundStyle(.secondary)
+                    Text("保存或放弃草稿后可切换功能。旧版保留在版本列表中。").font(.app(.caption)).foregroundStyle(.secondary)
                     Spacer()
                     Button("放弃草稿") { Task { if let client = app.core { await model.load(client) } } }
                         .disabled(model.busy)
                 }
             }
             if let error = model.errorMessage { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
-            if let message = model.message { Text(message).font(.callout).foregroundStyle(.secondary) }
+            if let message = model.message { Text(message).font(.app(.callout)).foregroundStyle(.secondary) }
             Group {
                 switch tab {
                 case 0: lineEditor
@@ -143,12 +143,12 @@ struct LyricsManagementView: View {
         @Bindable var model = model
         return VStack(alignment: .leading) {
             HStack {
-                Text("时间写成 1:02.50；留空表示无时间，正文空白的行保存时去掉。").font(.caption).foregroundStyle(.secondary)
+                Text("时间写成 1:02.50；留空表示无时间，正文空白的行保存时去掉。").font(.app(.caption)).foregroundStyle(.secondary)
                 Spacer()
                 Button("导入 .lrc 文件") { importing = true }.disabled(model.busy || model.dirty)
                 Button("添加一行") { model.edits.append(LyricDraft()) }.disabled(model.busy)
             }
-            Text(model.editSummary).font(.caption).foregroundStyle(.secondary)
+            Text(model.editSummary).font(.app(.caption)).foregroundStyle(.secondary)
             if !model.invalidEditRows.isEmpty {
                 Text("第 \(model.invalidEditRows.map { String($0 + 1) }.joined(separator: "、")) 行的时间认不出来").foregroundStyle(.orange)
             }
@@ -182,9 +182,9 @@ struct LyricsManagementView: View {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("第 \(version.versionNo) 版\(version.isCurrent ? " · 当前" : "")").bold()
-                                Text("\(version.sourceType) · \(version.sourceName) · \(version.lineCount) 行 · \(version.importedAt)").font(.caption).foregroundStyle(.secondary)
-                                Text("完整度 \(version.completeness.map { String(format: "%.0f%%", $0 * 100) } ?? "—")").font(.caption)
-                                if !version.note.isEmpty { Text(version.note).font(.caption) }
+                                Text("\(version.sourceType) · \(version.sourceName) · \(version.lineCount) 行 · \(version.importedAt)").font(.app(.caption)).foregroundStyle(.secondary)
+                                Text("完整度 \(version.completeness.map { String(format: "%.0f%%", $0 * 100) } ?? "—")").font(.app(.caption))
+                                if !version.note.isEmpty { Text(version.note).font(.app(.caption)) }
                             }
                             Spacer()
                             Button(model.previewingVersion == version.id ? "收起原文" : "原文") { Task { if let client = app.core { await model.preview(version.id, client: client) } } }
@@ -194,7 +194,7 @@ struct LyricsManagementView: View {
                         }
                         Divider()
                     }
-                    if let raw = model.rawPreview { Text(raw).font(.body.monospaced()).textSelection(.enabled) }
+                    if let raw = model.rawPreview { Text(raw).font(.app(.body).monospaced()).textSelection(.enabled) }
                 }
             }
         }
@@ -204,7 +204,7 @@ struct LyricsManagementView: View {
         @Bindable var model = model
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text("批量处理保留人工修改；已有歌词可搜索候选后逐首采用。没有真实逐字数据时保持逐行。").font(.callout).foregroundStyle(.secondary)
+                Text("批量处理保留人工修改；已有歌词可搜索候选后逐首采用。没有真实逐字数据时保持逐行。").font(.app(.callout)).foregroundStyle(.secondary)
                 HStack {
                     Toggle("网易", isOn: $model.sources.netease)
                     Toggle("QQ", isOn: $model.sources.qq)
@@ -235,9 +235,9 @@ struct LyricsManagementView: View {
                     if let error = job.error { Text(error).foregroundStyle(.orange) }
                     if let result = job.result {
                         if !result.error.isEmpty { Text(result.error).foregroundStyle(.orange) }
-                        Text("升级 \(result.upgraded) · 补逐行 \(result.lineFilled) · 跳过 \(result.skipped) · 未找到 \(result.notFound) · 失败 \(result.failed)").font(.caption)
+                        Text("升级 \(result.upgraded) · 补逐行 \(result.lineFilled) · 跳过 \(result.skipped) · 未找到 \(result.notFound) · 失败 \(result.failed)").font(.app(.caption))
                         ForEach(Array(result.results.enumerated()), id: \.offset) { _, item in
-                            Text("\(item.title) · \(statusLabel(item.status)) \(item.message)").font(.caption).textSelection(.enabled)
+                            Text("\(item.title) · \(statusLabel(item.status)) \(item.message)").font(.app(.caption)).textSelection(.enabled)
                         }
                     }
                 }
@@ -247,7 +247,7 @@ struct LyricsManagementView: View {
                 if let result = model.searchResult {
                     if result.candidates.isEmpty { Text("没有找到可采用的候选").foregroundStyle(.secondary) }
                     ForEach(result.warnings, id: \.self) { warning in
-                        Text("\(warning.source)：\(warning.message)").font(.caption).foregroundStyle(.orange)
+                        Text("\(warning.source)：\(warning.message)").font(.app(.caption)).foregroundStyle(.orange)
                     }
                     ForEach(result.candidates) { candidate in
                         VStack(alignment: .leading, spacing: 6) {
@@ -257,9 +257,9 @@ struct LyricsManagementView: View {
                                 Button("采用") { Task { if let client = app.core { await model.apply(candidate.id, client: client) } } }.disabled(model.busy)
                             }
                             Text("\(candidate.title) · \(candidate.artist)")
-                            Text(candidate.precisionLabel).font(.caption)
-                            if candidate.precisionLabel != "含真实逐字时间" { Text("此候选没有真实逐字时间；采用后按逐行或纯文本显示。").font(.caption).foregroundStyle(.secondary) }
-                            Text(candidate.matchNote).font(.caption).foregroundStyle(.secondary)
+                            Text(candidate.precisionLabel).font(.app(.caption))
+                            if candidate.precisionLabel != "含真实逐字时间" { Text("此候选没有真实逐字时间；采用后按逐行或纯文本显示。").font(.app(.caption)).foregroundStyle(.secondary) }
+                            Text(candidate.matchNote).font(.app(.caption)).foregroundStyle(.secondary)
                             Text(candidate.preview.prefix(5).joined(separator: "\n")).textSelection(.enabled)
                         }.padding(12).background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                     }
@@ -273,17 +273,17 @@ struct LyricsManagementView: View {
         return DisclosureGroup("Apple Music 来源设置") {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Apple Music（默认关闭）", isOn: $model.sources.apple)
-                Text("Apple Music 官方 API 不提供歌词正文或逐字时间；此开关仅用于普通元数据刮削，不作为歌词来源。").font(.caption).foregroundStyle(.secondary)
+                Text("Apple Music 官方 API 不提供歌词正文或逐字时间；此开关仅用于普通元数据刮削，不作为歌词来源。").font(.app(.caption)).foregroundStyle(.secondary)
                 TextField("商店地区（jp / cn / us）", text: $model.sources.appleStorefront)
-                Text("Developer Token · \(model.clearDeveloperToken ? "保存时清除" : model.sources.appleDeveloperTokenSet ? "已设置" : "未设置")").font(.caption)
+                Text("Developer Token · \(model.clearDeveloperToken ? "保存时清除" : model.sources.appleDeveloperTokenSet ? "已设置" : "未设置")").font(.app(.caption))
                 SecureField("Developer Token（留空保留）", text: $model.developerToken)
                     .onChange(of: model.developerToken) { _, value in if !value.isEmpty { model.clearDeveloperToken = false } }
                 Button("清除 Developer Token") { model.developerToken = ""; model.clearDeveloperToken = true }
-                Text("Music User Token · \(model.clearMusicUserToken ? "保存时清除" : model.sources.appleMusicUserTokenSet ? "已设置" : "未设置")").font(.caption)
+                Text("Music User Token · \(model.clearMusicUserToken ? "保存时清除" : model.sources.appleMusicUserTokenSet ? "已设置" : "未设置")").font(.app(.caption))
                 SecureField("Music User Token（留空保留）", text: $model.musicUserToken)
                     .onChange(of: model.musicUserToken) { _, value in if !value.isEmpty { model.clearMusicUserToken = false } }
                 Button("清除 Music User Token") { model.musicUserToken = ""; model.clearMusicUserToken = true }
-                Text("令牌仅保存在后端内存，重启后需重新配置；清除需保存，输入框不回显。").font(.caption).foregroundStyle(.secondary)
+                Text("令牌仅保存在后端内存，重启后需重新配置；清除需保存，输入框不回显。").font(.app(.caption)).foregroundStyle(.secondary)
                 Button("保存来源设置") { Task { if let client = app.core { await model.saveSources(client) } } }
             }.padding(8).disabled(model.busy || model.running)
         }

@@ -35,15 +35,15 @@ struct RichnessPane: View {
         VStack(alignment: .leading, spacing: 14) {
             heading
             Text("TTR 会随文本变长一路下降，不同长度的文本没法比；MATTR（50 词窗口的平均 TTR）和 MTLD 基本不受长度影响，越大越丰富；Yule's K 越大越重复。都按词元算。词次不到 100 的演唱者、歌不列出。")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.app(.callout)).foregroundStyle(.secondary)
             if scope.unit == .tokens {
                 Text("现在按全部词次算，副歌唱几遍算几遍；勾上筛选里的「副歌只算一遍」更接近「写了什么」。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.app(.caption)).foregroundStyle(.secondary)
             }
             AnalysisScriptLegend()
             table
             if let result {
-                Text("\(result.rows.count) 组 · 点表头换排序").font(.caption).foregroundStyle(.secondary)
+                Text("\(result.rows.count) 组 · 点表头换排序").font(.app(.caption)).foregroundStyle(.secondary)
                 ProvenanceFooter(p: result.provenance)
             }
         }
@@ -53,7 +53,7 @@ struct RichnessPane: View {
 
     private var heading: some View {
         HStack(spacing: 14) {
-            Text("词汇丰富度与文字").font(.title2.bold())
+            Text("词汇丰富度与文字").font(.app(.title2).bold())
             if busy { ProgressView().controlSize(.small) }
             Spacer()
             Picker("分组", selection: $group) {
@@ -99,7 +99,7 @@ struct RichnessPane: View {
                 }.buttonStyle(.plain).help(column.hint)
             }
             Text("文字构成").frame(width: 150, alignment: .leading)
-        }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8)
+        }.font(.app(.caption)).foregroundStyle(.secondary).padding(.horizontal, 8)
     }
 
     private func csv() -> String {
@@ -140,7 +140,7 @@ private struct RichnessTableRow: View {
             }
             AnalysisScriptBar(shares: row.scripts).frame(width: 150)
         }
-        .font(.callout).textSelection(.enabled).padding(.horizontal, 8).padding(.vertical, 10)
+        .font(.app(.callout)).textSelection(.enabled).padding(.horizontal, 8).padding(.vertical, 10)
     }
 }
 

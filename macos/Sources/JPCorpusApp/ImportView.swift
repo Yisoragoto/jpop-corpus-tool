@@ -72,7 +72,7 @@ struct ImportView: View {
             Spacer(minLength: 8)
             Button("打开已有语料库…") { app.showLibraryPicker = true }
         }
-        .font(.callout)
+        .font(.app(.callout))
     }
 
     private var sourceBar: some View {
@@ -131,7 +131,7 @@ private struct TokenizerCard: View {
                     if status.ready {
                         Label("分词词典已就绪", systemImage: "checkmark.seal")
                             .foregroundStyle(.green)
-                        Text(status.dictPath ?? "").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        Text(status.dictPath ?? "").font(.app(.caption)).foregroundStyle(.secondary).textSelection(.enabled)
                         if model.untokenized > 0 {
                             HStack {
                                 Text("有 \(model.untokenized) 首歌还没有分词（查不到、也不进统计）")
@@ -144,7 +144,7 @@ private struct TokenizerCard: View {
                         Label("还没有分词词典（Sudachi）", systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.orange)
                         Text("没有它也能导入，但歌词不会分词：检索、词频、搭配都查不到这些歌。词典约 43 MB，下载后解开 207 MB，放在 \(status.bundledDir)。")
-                            .font(.callout)
+                            .font(.app(.callout))
                             .foregroundStyle(.secondary)
                         HStack {
                             Button("下载词典（43 MB）") { Task { await model.downloadDictionary(app: app) } }
@@ -160,11 +160,11 @@ private struct TokenizerCard: View {
                 if let job = model.dictionaryJob, job.running {
                     HStack {
                         ProgressView(value: job.fraction ?? 0).frame(maxWidth: 320)
-                        Text(Self.stage(job)).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                        Text(Self.stage(job)).font(.app(.caption)).monospacedDigit().foregroundStyle(.secondary)
                     }
                 }
                 if let message = model.dictionaryMessage {
-                    Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(message).font(.app(.caption)).foregroundStyle(.secondary).textSelection(.enabled)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -191,7 +191,7 @@ private struct PlanTable: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(summary)
-                .font(.callout)
+                .font(.app(.callout))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -286,12 +286,12 @@ private struct ImportResultView: View {
             )
             if result.imported > 0 && result.tokens == 0 {
                 Text("这批没有分词：装好分词词典后点「补上分词」，检索和分析才看得到它们。")
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(.orange)
             }
             ForEach(result.tracks.filter { $0.outcome.kind == "failed" }, id: \.path) { track in
                 Text("\(track.title)：\(track.outcome.error ?? "")")
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }

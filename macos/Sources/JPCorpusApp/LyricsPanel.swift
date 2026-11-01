@@ -39,7 +39,7 @@ struct LyricsPanel: View {
                         Button { app.stageKaraoke = true; app.showStage = true } label: { Image(systemName: "music.mic") }
                             .help("打开卡拉 OK").accessibilityLabel("打开卡拉 OK")
                     }
-                    .buttonStyle(PlayerGlyphStyle()).font(.system(size: 15, weight: .semibold))
+                    .buttonStyle(PlayerGlyphStyle()).font(.appSystem(size: 15, weight: .semibold))
                 }
                 .scrollIndicators(.never)
                 .frame(height: 34)
@@ -111,14 +111,14 @@ struct LyricsPanel: View {
                     .padding(.bottom, 8)
             } else if app.showFurigana, let error = app.furiganaError {
                 Text("振假名：\(error)")
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 14)
                     .padding(.bottom, 6)
             }
             if let error = player.lastError {
                 Text(error)
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(.orange)
                     .padding(10)
                     .textSelection(.enabled)
@@ -180,9 +180,9 @@ struct LyricsPanel: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
             VStack(alignment: .leading, spacing: 2) {
-                Text(track.title).font(.headline).lineLimit(2)
+                Text(track.title).font(.app(.headline)).lineLimit(2)
                 Text([track.artist, track.year].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.subheadline)
+                    .font(.app(.subheadline))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -248,7 +248,7 @@ struct LyricsPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if looping {
-                Image(systemName: "repeat").font(.callout.weight(.semibold)).foregroundStyle(.tint)
+                Image(systemName: "repeat").font(.app(.callout).weight(.semibold)).foregroundStyle(.tint)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -298,27 +298,27 @@ struct ProfileView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let p = profile {
-                Text("语料画像").font(.headline)
+                Text("语料画像").font(.app(.headline))
                 Text("\(p.lines) 行，其中 \(p.repeatedLines) 行是重复（副歌等）；\(p.tokens) 词，去掉重复行后 \(p.distinctTokens) 词。")
-                    .font(.callout)
-                Text("相对其余歌的特征词").font(.subheadline.weight(.medium)).padding(.top, 4)
+                    .font(.app(.callout))
+                Text("相对其余歌的特征词").font(.app(.subheadline).weight(.medium)).padding(.top, 4)
                 ForEach(p.keywords.prefix(10)) { k in
                     Button {
                         app.search(k.lemma)
                     } label: {
                         HStack {
                             Text(k.lemma)
-                            Text(posLabels[k.pos] ?? k.pos).font(.caption).foregroundStyle(.secondary)
+                            Text(posLabels[k.pos] ?? k.pos).font(.app(.caption)).foregroundStyle(.secondary)
                             Spacer()
                             Text("\(k.targetFreq) 次 · LL \(String(format: "%.1f", k.logLikelihood))")
-                                .font(.caption.monospacedDigit())
+                                .font(.app(.caption).monospacedDigit())
                                 .foregroundStyle(.secondary)
                         }
                     }
                     .buttonStyle(.plain)
                 }
                 Text("指纹 \(String(p.provenance.snapshot.fingerprint.prefix(8))) · \(p.provenance.rules)")
-                    .font(.caption2)
+                    .font(.app(.caption2))
                     .foregroundStyle(.tertiary)
             } else {
                 ProgressView()
@@ -348,7 +348,7 @@ struct FuriganaMenu: View {
             .pickerStyle(.inline)
         } label: {
             Image(systemName: app.showFurigana ? "character.bubble.fill" : "character.bubble")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.appSystem(size: 13, weight: .semibold))
                 .foregroundStyle(.primary.opacity(app.showFurigana ? 1 : 0.6))
                 .modifier(PlayerGlyphSurface())
         }

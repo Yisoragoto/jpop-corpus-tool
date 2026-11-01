@@ -55,7 +55,7 @@ struct QuickSearchView: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField(commandMode ? "输入命令…" : "搜歌、专辑、人物、词、歌词（> 切到命令）", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.title3)
+                    .font(.app(.title3))
                     .focused($focused)
                     .onSubmit {
                         execute(active)
@@ -69,7 +69,7 @@ struct QuickSearchView: View {
                     if commandMode {
                         ForEach(Array(visibleCommands.enumerated()),id: \.element.id) { i,c in
                             Button { execute(i) } label: {
-                                HStack { Text(c.label); Spacer(); Text(c.disabled ?? c.hint).font(.caption).foregroundStyle(.secondary) }.padding(.vertical,4)
+                                HStack { Text(c.label); Spacer(); Text(c.disabled ?? c.hint).font(.app(.caption)).foregroundStyle(.secondary) }.padding(.vertical,4)
                             }.buttonStyle(QuickRowStyle()).disabled(c.disabled != nil)
                                 .background(i == active ? Color.accentColor.opacity(0.16) : Color.clear).id(i)
                                 .onHover { if $0 { active = i } }
@@ -95,7 +95,7 @@ struct QuickSearchView: View {
             .frame(height: 380)
             .onChange(of: active) { _, value in proxy.scrollTo(value,anchor: .center) }
             }
-            HStack { Text("↑↓ 选择 · Enter 执行 · Esc 关闭"); Spacer(); if busy { ProgressView().controlSize(.mini) } }.font(.caption).foregroundStyle(.secondary).padding(12)
+            HStack { Text("↑↓ 选择 · Enter 执行 · Esc 关闭"); Spacer(); if busy { ProgressView().controlSize(.mini) } }.font(.app(.caption)).foregroundStyle(.secondary).padding(12)
         }
         .frame(width: 560)
         .background(GlassBackground(material: .popover))
@@ -157,12 +157,12 @@ struct QuickSearchView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).lineLimit(1)
                 if !subtitle.isEmpty {
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(subtitle).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer()
             if let trailing {
-                Text(trailing).font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                Text(trailing).font(.app(.caption).monospacedDigit()).foregroundStyle(.tertiary)
             }
         }
     }

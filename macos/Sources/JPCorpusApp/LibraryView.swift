@@ -130,7 +130,7 @@ private struct SongTable: View {
                     LibraryChip(title: "全部", selected: !lyricsOnly) { lyricsOnly = false }
                     LibraryChip(title: "有歌词", selected: lyricsOnly) { lyricsOnly = true }
                     Spacer()
-                    Text("\(songs.count) 首").font(.caption).foregroundStyle(.secondary)
+                    Text("\(songs.count) 首").font(.app(.caption)).foregroundStyle(.secondary)
                 }.padding(.horizontal, 28)
                 LibrarySongSortChips(sort: $sort, descending: $descending).padding(.horizontal, 28)
                 if songs.isEmpty {
@@ -202,7 +202,7 @@ private struct AlbumGrid: View {
                                 LibraryChip(title: order.rawValue, selected: sort == order) { sort = order }
                             }
                             Spacer()
-                            Text("\(items.count) 张").font(.caption).foregroundStyle(.secondary)
+                            Text("\(items.count) 张").font(.app(.caption)).foregroundStyle(.secondary)
                         }
                         LazyVGrid(columns: LibraryAppearance.columns, alignment: .leading, spacing: 22) {
                             ForEach(items) { album in albumTile(album) }

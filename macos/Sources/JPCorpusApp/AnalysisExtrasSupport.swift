@@ -26,7 +26,7 @@ struct AnalysisExtrasExportButton: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if !note.isEmpty { Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(note) }
+            if !note.isEmpty { Text(note).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1).help(note) }
             Button("导出 CSV") { Task { await save() } }.disabled(disabled || busy)
         }
     }
@@ -80,6 +80,6 @@ struct AnalysisScriptLegend: View {
                     Text(AnalysisScriptBar.labels[i])
                 }
             }
-        }.font(.caption).foregroundStyle(.secondary)
+        }.font(.app(.caption)).foregroundStyle(.secondary)
     }
 }

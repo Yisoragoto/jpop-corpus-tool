@@ -21,7 +21,7 @@ struct CollocationPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("「\(node)」的搭配").font(.headline)
+                Text("「\(node)」的搭配").font(.app(.headline))
                 Spacer()
                 if busy { ProgressView().controlSize(.small) }
             }
@@ -42,7 +42,7 @@ struct CollocationPanel: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(c.lemma).fontWeight(selected == c.lemma ? .bold : .regular)
                             Text("\(posLabels[c.pos] ?? c.pos) · \(c.freq) 次（左 \(c.freqLeft) / 右 \(c.freqRight)）· \(c.songs) 首")
-                                .font(.caption2)
+                                .font(.app(.caption2))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -62,7 +62,7 @@ struct CollocationPanel: View {
                 .listStyle(.plain)
                 .clearScrollBackground()
                 Text("节点 \(result.nodeFreq) 次 · \(result.provenance.scope) · \(result.provenance.songs) 首 / \(result.provenance.tokens) 词（\(result.provenance.unit == .distinctLines ? "重复行只算一次" : "全部词次")）· 指纹 \(String(result.provenance.snapshot.fingerprint.prefix(8)))")
-                    .font(.caption2)
+                    .font(.app(.caption2))
                     .foregroundStyle(.tertiary)
                     .textSelection(.enabled)
             } else {

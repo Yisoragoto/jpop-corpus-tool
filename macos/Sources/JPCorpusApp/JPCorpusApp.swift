@@ -33,6 +33,7 @@ struct JPCorpusApp: App {
         // 不会开出第二个窗口；播放、库都在 AppModel 里，窗口关了也不停
         Window("JPOP Corpus", id: MainWindow.id) {
             ContentView()
+                .modifier(AppFontRoot())
                 .id(app.languageRevision)
                 .environment(app)
                 .frame(minWidth: 960, minHeight: 600)
@@ -130,6 +131,7 @@ struct JPCorpusApp: App {
 
         Settings {
             SettingsView()
+                .modifier(AppFontRoot())
                 .environment(app)
         }
     }

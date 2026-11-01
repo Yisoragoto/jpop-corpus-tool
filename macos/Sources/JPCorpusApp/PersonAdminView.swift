@@ -50,7 +50,7 @@ struct PersonAdminView: View {
             }
             if canEditMembers {
             if !model.members.isEmpty || !model.suggestions.isEmpty || editing {
-                HStack { Text("成员").font(.headline); Spacer(); Button(editing ? "完成" : "编辑") { editing.toggle() } }
+                HStack { Text("成员").font(.app(.headline)); Spacer(); Button(editing ? "完成" : "编辑") { editing.toggle() } }
                 ForEach(model.members, id: \.memberId) { m in
                     if editing {
                         MemberEditRow(bandId: personId, initial: m, model: model)
@@ -62,18 +62,18 @@ struct PersonAdminView: View {
                 }
                 if editing {
                     MemberEditRow(bandId: personId, initial: nil, model: model).id(model.members.count)
-                    Text("日期写年份就行（2019，或 2019-05-27）；现在还在的，离开空着。改过的都记成手动，以后刮削不会盖掉。").font(.caption).foregroundStyle(.secondary)
+                    Text("日期写年份就行（2019，或 2019-05-27）；现在还在的，离开空着。改过的都记成手动，以后刮削不会盖掉。").font(.app(.caption)).foregroundStyle(.secondary)
                 }
                 ForEach(model.suggestions, id: \.memberId) { s in
                     HStack {
-                        Text("\(s.memberName) 可能是成员：写的 \(s.written) 首里 \(s.shared) 首给这个乐队").font(.caption)
+                        Text("\(s.memberName) 可能是成员：写的 \(s.written) 首里 \(s.shared) 首给这个乐队").font(.app(.caption))
                         Button("是成员") { Task { if let c = app.library.client { await model.confirm(personId, member: s.memberId, client: c); app.library.version += 1 } } }
                         Button("不是") { Task { if let c = app.library.client { await model.rejectSuggestion(personId, member: s.memberId, client: c); app.library.version += 1 } } }
                     }
                 }
             } else { Button("添加成员") { editing = true } }
             }
-            if !model.note.isEmpty { Text(model.note).font(.caption) }
+            if !model.note.isEmpty { Text(model.note).font(.app(.caption)) }
             if let error = model.errorMessage { Text(error).foregroundStyle(.orange) }
             if let error = app.library.errorMessage { Text(error).foregroundStyle(.orange) }
         }.disabled(model.busy)
@@ -121,7 +121,7 @@ struct MemberEditRow: View {
             }.disabled(!changed || model.busy || !LibraryIndex.validDate(joined.trimmingCharacters(in: .whitespacesAndNewlines)) || !LibraryIndex.validDate(leftAt.trimmingCharacters(in: .whitespacesAndNewlines)))
             if let initial {
                 if model.removal == initial.memberId {
-                    Text("不是成员？").font(.caption)
+                    Text("不是成员？").font(.app(.caption))
                     Button("确认", role: .destructive) { Task { if let c = app.library.client { await model.removeConfirmed(bandId, client: c); app.library.version += 1 } } }
                     Button("取消") { model.removal = nil }
                 } else { Button("移除", role: .destructive) { model.removal = initial.memberId } }

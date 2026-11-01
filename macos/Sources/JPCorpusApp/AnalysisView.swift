@@ -25,8 +25,8 @@ struct AnalysisView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("分析").font(.largeTitle.bold())
-                    if scoped { Text(scopeName).font(.callout).foregroundStyle(.secondary).lineLimit(1) }
+                    Text("分析").font(.app(.largeTitle).bold())
+                    if scoped { Text(scopeName).font(.app(.callout)).foregroundStyle(.secondary).lineLimit(1) }
                 }
                 if scoped { SubcorpusFilters(filter: $filter) }
                 AnalysisTabBar(tabs: Self.tabs, selection: $tab)
@@ -74,7 +74,7 @@ private struct AnalysisTabBar: View {
                     Button { withAnimation(.snappy(duration: 0.22)) { selection = item.tag } } label: {
                         VStack(spacing: 6) {
                             Text(item.title).fixedSize()
-                                .font(.system(size: 13, weight: on ? .semibold : .regular))
+                                .font(.appSystem(size: 13, weight: on ? .semibold : .regular))
                                 .foregroundStyle(on ? .primary : .secondary)
                             ZStack {
                                 Capsule().fill(.clear).frame(height: 3)
@@ -198,7 +198,7 @@ private struct ArchiveButton: View {
     var body: some View {
         HStack(spacing: 6) {
             if let archived {
-                Text(archived).font(.caption).foregroundStyle(.secondary)
+                Text(archived).font(.app(.caption)).foregroundStyle(.secondary)
             }
             Button {
                 Task {
@@ -276,7 +276,7 @@ private struct KeynessPane: View {
             Text(scope.isAll
                  ? "目标是上面那条「范围」：填一个年份段，或者从歌手页点「分析这个人的歌」带一位歌手过来。"
                  : "参照留空 = 语料库里其余的歌。按对数似然排序，两边合计少于 5 次的词不列出。双击一个词去检索。")
-                .font(.caption)
+                .font(.app(.caption))
                 .foregroundStyle(.secondary)
 
             if let result {
@@ -303,14 +303,14 @@ private struct KeynessPane: View {
     }
     private func keyList(_ title: String, _ items: [KeyItem]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.headline)
+            Text(title).font(.app(.headline))
             List(items) { k in
                 HStack {
                     Text(k.lemma)
-                    Text(posLabels[k.pos] ?? k.pos).font(.caption).foregroundStyle(.secondary)
+                    Text(posLabels[k.pos] ?? k.pos).font(.app(.caption)).foregroundStyle(.secondary)
                     Spacer()
                     Text(String(format: "%.1f vs %.1f /万词 · LL %.1f", k.targetPer10k, k.referencePer10k, abs(k.logLikelihood)))
-                        .font(.caption.monospacedDigit())
+                        .font(.app(.caption).monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
                 .contentShape(Rectangle())
@@ -351,7 +351,7 @@ private struct ArchivePane: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("每条存档记着当时的范围（精确到每首歌的歌词版本）、分词器、参数和库指纹。库变了之后重跑，会逐项说明结果为什么不同。")
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("详情") { Task { await showDetail() } }
@@ -370,15 +370,15 @@ private struct ArchivePane: View {
                 TableColumn("种类") { Text($0.kindLabel) }.width(110)
                 TableColumn("标签") { r in
                     HStack(spacing: 4) {
-                        if r.rerunOf != nil { Image(systemName: "arrow.clockwise").font(.caption).foregroundStyle(.secondary) }
+                        if r.rerunOf != nil { Image(systemName: "arrow.clockwise").font(.app(.caption)).foregroundStyle(.secondary) }
                         Text(r.label.isEmpty ? "—" : r.label)
                     }
                 }
                 TableColumn("范围") { Text(SubcorpusScope.describeFilter($0.filter)).foregroundStyle(.secondary) }
                 TableColumn("曲数") { Text("\($0.songCount)").monospacedDigit() }.width(44)
-                TableColumn("结果") { Text(String($0.resultHash.prefix(8))).font(.caption.monospaced()).foregroundStyle(.secondary) }.width(72)
+                TableColumn("结果") { Text(String($0.resultHash.prefix(8))).font(.app(.caption).monospaced()).foregroundStyle(.secondary) }.width(72)
                 TableColumn("时间") { Text(relativeTime($0.createdAt)).foregroundStyle(.secondary) }.width(90)
-                TableColumn("程序") { Text($0.appVersion).font(.caption).foregroundStyle(.tertiary) }.width(90)
+                TableColumn("程序") { Text($0.appVersion).font(.app(.caption)).foregroundStyle(.tertiary) }.width(90)
             }
             .clearScrollBackground()
             .alternatingRowBackgrounds(.disabled)
@@ -461,7 +461,7 @@ private struct RunDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("#\(run.id) \(Self.kinds[run.spec.kind] ?? run.spec.kind)\(run.label.isEmpty ? "" : " · \(run.label)")").font(.headline)
+                Text("#\(run.id) \(Self.kinds[run.spec.kind] ?? run.spec.kind)\(run.label.isEmpty ? "" : " · \(run.label)")").font(.app(.headline))
                 Spacer()
                 Button("收起", action: close).buttonStyle(.link)
             }
@@ -480,7 +480,7 @@ private struct RunDetailView: View {
                     Text("口径").foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(run.method.keys.sorted(), id: \.self) { key in
-                            Text("\(key) ").font(.caption.monospaced()) + Text(Self.methodText(run.method[key] ?? .null))
+                            Text("\(key) ").font(.app(.caption).monospaced()) + Text(Self.methodText(run.method[key] ?? .null))
                         }
                     }
                 }
@@ -490,7 +490,7 @@ private struct RunDetailView: View {
                 row("结果指纹", run.resultHash)
             }
         }
-        .font(.caption)
+        .font(.app(.caption))
         .textSelection(.enabled)
         .padding(12)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
@@ -542,11 +542,11 @@ private struct ComparisonView: View {
             HStack {
                 Image(systemName: c.resultIdentical ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .foregroundStyle(c.resultIdentical ? .green : .orange)
-                    .font(.title2)
+                    .font(.app(.title2))
                 VStack(alignment: .leading) {
-                    Text(c.resultIdentical ? "结果完全相同" : "结果不一样").font(.title3.weight(.semibold))
+                    Text(c.resultIdentical ? "结果完全相同" : "结果不一样").font(.app(.title3).weight(.semibold))
                     Text("#\(c.before.id)（\(relativeTime(c.before.createdAt))）→ #\(c.after.id)（\(relativeTime(c.after.createdAt))）")
-                        .font(.caption)
+                        .font(.app(.caption))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -562,7 +562,7 @@ private struct ComparisonView: View {
             }
             if !(c.scope.added.isEmpty && c.scope.removed.isEmpty && c.scope.lyricsChanged.isEmpty) {
                 Text("范围：新增 \(c.scope.added.count) 首，移出 \(c.scope.removed.count) 首，换了歌词 \(c.scope.lyricsChanged.count) 首")
-                    .font(.callout)
+                    .font(.app(.callout))
             }
             if !c.metrics.isEmpty {
                 Table(c.metrics) {
@@ -573,7 +573,7 @@ private struct ComparisonView: View {
                 .frame(height: 140)
             }
             if !c.words.isEmpty {
-                Text("词频有变化的词（\(c.words.count)）").font(.headline)
+                Text("词频有变化的词（\(c.words.count)）").font(.app(.headline))
                 Table(c.words) {
                     TableColumn("词元") { Text($0.lemma) }
                     TableColumn("词性") { Text(posLabels[$0.pos] ?? $0.pos).foregroundStyle(.secondary) }.width(60)
@@ -620,12 +620,12 @@ private struct QualityPane: View {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(s.title).lineLimit(1)
-                                            Text(s.artist).font(.caption).foregroundStyle(.secondary)
+                                            Text(s.artist).font(.app(.caption)).foregroundStyle(.secondary)
                                         }
                                         Spacer()
-                                        Text(s.codes.map { codeLabel(issueLabels, $0) }.joined(separator: "、")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                        if s.errors > 0 { Text("\(s.errors) 错").foregroundStyle(.red).font(.caption) }
-                                        if s.warnings > 0 { Text("\(s.warnings) 警告").foregroundStyle(.orange).font(.caption) }
+                                        Text(s.codes.map { codeLabel(issueLabels, $0) }.joined(separator: "、")).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
+                                        if s.errors > 0 { Text("\(s.errors) 错").foregroundStyle(.red).font(.app(.caption)) }
+                                        if s.warnings > 0 { Text("\(s.warnings) 警告").foregroundStyle(.orange).font(.app(.caption)) }
                                         Text(CorpusQuality.percent(s.completeness)).help(CorpusQuality.completenessLabel(s.completeness)).monospacedDigit().frame(width: 44, alignment: .trailing)
                                     }
                                     .padding(.horizontal, 12)
@@ -643,7 +643,7 @@ private struct QualityPane: View {
                         ForEach(tokenizers) { t in
                             VStack(alignment: .leading,spacing: 4) {
                                 Text(CorpusQuality.tokenizerLabel(t))
-                                Text("\(t.lineCount) 行 · \(t.fingerprint.prefix(12))").font(.caption).foregroundStyle(.secondary)
+                                Text("\(t.lineCount) 行 · \(t.fingerprint.prefix(12))").font(.app(.caption)).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -665,7 +665,7 @@ private struct QualityPane: View {
 
     private func counts(_ title: String, _ rows: [LabelCount], _ names: [String: String]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.headline)
+            Text(title).font(.app(.headline))
             if rows.isEmpty {
                 Text("—").foregroundStyle(.secondary)
             }
@@ -675,7 +675,7 @@ private struct QualityPane: View {
                     Spacer()
                     Text(grouped(r.count)).monospacedDigit().foregroundStyle(.secondary)
                 }
-                .font(.callout)
+                .font(.app(.callout))
             }
         }
         .padding(12)
@@ -694,7 +694,7 @@ struct ProvenanceFooter: View {
         // 前缀单独一段：和后面的范围名连在一起时，英文模板分不清两个值的边界（「全部歌曲」被切成「全」+「部歌曲」）
         (Text(label.map { "\($0)：" } ?? "")
             + Text("\(p.scope) · \(p.songs) 首 / \(p.tokens) 词（\(p.unit == .distinctLines ? "重复行只算一次" : "全部词次")）· 规则 \(p.rules) · 指纹 \(String(p.snapshot.fingerprint.prefix(8)))"))
-            .font(.caption2)
+            .font(.app(.caption2))
             .foregroundStyle(.tertiary)
             .textSelection(.enabled)
             .padding(.horizontal, 10)

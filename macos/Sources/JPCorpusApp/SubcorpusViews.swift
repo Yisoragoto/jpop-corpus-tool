@@ -41,7 +41,7 @@ private struct SubcorpusEditor: View {
     private var active: SavedSubcorpus? { app.scopes.saved.first { SubcorpusScope.sameFilter($0.filter,filter) } }
     var body: some View {
         VStack(alignment: .leading,spacing: 14) {
-            Text("子语料").font(.title2.bold())
+            Text("子语料").font(.app(.title2).bold())
             Picker("存过的条件",selection: Binding<Int64?>(get: { active?.id },set: { id in
                 if let saved = app.scopes.saved.first(where: { $0.id == id }) { filter = saved.filter }
                 else { let jpOnly = filter.jpOnly; filter = StatsFilter(); filter.jpOnly = jpOnly }
@@ -66,8 +66,8 @@ private struct SubcorpusEditor: View {
             }
             Toggle("仅日文",isOn: $filter.jpOnly)
             Toggle("副歌只算一遍",isOn: $filter.distinctLines)
-            Text(SubcorpusScope.describeFilter(filter)).font(.caption).foregroundStyle(.secondary)
-            if let preview { Text("\(preview.songCount) 首 / \(preview.lineCount) 行").font(.caption).foregroundStyle(.secondary) }
+            Text(SubcorpusScope.describeFilter(filter)).font(.app(.caption)).foregroundStyle(.secondary)
+            if let preview { Text("\(preview.songCount) 首 / \(preview.lineCount) 行").font(.app(.caption)).foregroundStyle(.secondary) }
             if naming != nil {
                 HStack {
                     TextField("名字，比如「2010 年代」",text: Binding(get: { naming ?? "" },set: { naming = $0 })).onSubmit { save() }

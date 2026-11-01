@@ -39,12 +39,12 @@ struct SettingRow<Control: View>: View {
     private var rowLabel: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 17))
+                .font(.appSystem(size: 17))
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.body.weight(.medium))
+                Text(title).font(.app(.body).weight(.medium))
                 if !description.isEmpty {
                     if selectableDescription { detail.textSelection(.enabled) }
                     else { detail }
@@ -62,7 +62,7 @@ struct SettingRow<Control: View>: View {
 
     private var detail: some View {
         Text(description)
-            .font(.caption)
+            .font(.app(.caption))
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -82,7 +82,7 @@ struct SettingGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.app(.subheadline).weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.leading, 16)
                 .accessibilityAddTraits(.isHeader)
@@ -104,7 +104,7 @@ struct SettingNote: View {
 
     var body: some View {
         Text(text)
-            .font(.caption)
+            .font(.app(.caption))
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -124,7 +124,7 @@ struct SettingSlider: View {
                 .labelsHidden()
                 .frame(width: 130)
             Text("\(Int(value))\(unit)")
-                .font(.callout)
+                .font(.app(.callout))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
                 .frame(minWidth: 45, alignment: .trailing)

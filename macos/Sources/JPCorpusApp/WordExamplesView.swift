@@ -13,12 +13,12 @@ struct WordExamplesView: View {
         LazyVStack(alignment: .leading,spacing: 8) {
             SubcorpusPicker()
             if let result {
-                Text("语料例句 · \(result.occurrences) 次 / \(result.songCount) 首").font(.headline)
+                Text("语料例句 · \(result.occurrences) 次 / \(result.songCount) 首").font(.app(.headline))
                 ForEach(result.examples) { e in
                     Button {
                         Task { await app.player.playFrom(songId: e.songId,utteranceId: e.utteranceId,timeSec: e.timeSec) }
                     } label: {
-                        VStack(alignment: .leading,spacing: 2) { Text(e.text); Text("\(e.title) · \(e.artist)").font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity,alignment: .leading)
+                        VStack(alignment: .leading,spacing: 2) { Text(e.text); Text("\(e.title) · \(e.artist)").font(.app(.caption)).foregroundStyle(.secondary) }.frame(maxWidth: .infinity,alignment: .leading)
                     }.buttonStyle(.plain).help(e.timeSec == nil ? "定位这一句歌词" : "从这一句接着播放")
                 }
             }

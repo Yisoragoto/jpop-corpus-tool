@@ -112,7 +112,7 @@ struct KaraokeStyleControls: View {
                 guard let c = NSColor(color).usingColorSpace(.sRGB) else { return }
                 app.karaokeStyle[keyPath: key] = KaraokeStyle.hex(r: c.redComponent, g: c.greenComponent, b: c.blueComponent)
             }), supportsOpacity: false) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(title).font(.app(.caption)).foregroundStyle(.secondary)
         }
         .fixedSize()
     }

@@ -12,14 +12,14 @@ struct LyricsLineageDetails: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let current = data.versions.first(where: \.isCurrent) {
                     Text("完整度 \(percent(current.completeness)) · \(current.lineCount) 行，\(current.timedLineCount) 行有时间").bold()
-                    Text("来源：\(codeLabel(lyricSourceLabels, current.sourceType)) · \(current.sourceName) · \(current.sourceRef)").font(.caption).textSelection(.enabled)
+                    Text("来源：\(codeLabel(lyricSourceLabels, current.sourceType)) · \(current.sourceName) · \(current.sourceRef)").font(.app(.caption)).textSelection(.enabled)
                     let low = (data.lines ?? []).filter { ($0.timeConfidence ?? 1) < 0.5 }.count
                     if low > 0 { Text("\(low) 行时间戳不可靠").foregroundStyle(.orange) }
                     if let validation = current.validation {
-                        Text("重复行占比 \(percent(validation.repeatedLineRatio))").font(.caption)
+                        Text("重复行占比 \(percent(validation.repeatedLineRatio))").font(.app(.caption))
                         let serious = validation.issues.filter { $0.severity != "info" }
                         let minor = validation.issues.filter { $0.severity == "info" }
-                        if serious.isEmpty { Text("校验没有发现需要注意的问题。").font(.caption) }
+                        if serious.isEmpty { Text("校验没有发现需要注意的问题。").font(.app(.caption)) }
                         issues(serious)
                         if !minor.isEmpty {
                             Toggle("另有 \(minor.count) 条提示", isOn: $showInfo).toggleStyle(.button)
@@ -36,33 +36,33 @@ struct LyricsLineageDetails: View {
                         }
                     }.frame(width: 210).disabled(model.busy)
                     if data.provenance.contains(where: { $0.field == "language" && $0.source == "manual" }) {
-                        Text("你定的").font(.caption)
+                        Text("你定的").font(.app(.caption))
                     } else if let guess = data.versions.first(where: \.isCurrent)?.validation?.language {
-                        Text("推断（\(percent(guess.confidence))）").font(.caption)
+                        Text("推断（\(percent(guess.confidence))）").font(.app(.caption))
                     }
                 }
                 Text("分词：\((data.tokenStatus ?? [:]).keys.sorted().map { "\(tokenLabel($0)) \(data.tokenStatus?[$0] ?? 0)" }.joined(separator: " · "))")
-                    .font(.caption)
+                    .font(.app(.caption))
                 ForEach(data.tokenizers ?? []) { run in
                     Text("\(run.engine) \(run.engineVersion) · \(run.dictDescription) · \(run.splitMode) · \(run.lineCount) 行")
-                        .font(.caption).help("指纹 \(run.fingerprint) · 配置 \(run.configHash)")
+                        .font(.app(.caption)).help("指纹 \(run.fingerprint) · 配置 \(run.configHash)")
                 }
                 if let files = data.audioFiles, !files.isEmpty {
                     DisclosureGroup("音频文件") {
                         ForEach(files) { file in
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(audioStatus(file.status)) · \(file.summary.isEmpty ? "—" : file.summary)").font(.caption)
-                                Text(file.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                                Text("\(audioStatus(file.status)) · \(file.summary.isEmpty ? "—" : file.summary)").font(.app(.caption))
+                                Text(file.path).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                             }
                         }
                         Text("曲目的身份不跟文件走：文件挪了、换了音源，收藏、播放记录、歌词都还在。程序只读音频文件，从不往里写。")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.app(.caption)).foregroundStyle(.secondary)
                     }
                 }
                 if !data.provenance.isEmpty {
                     DisclosureGroup("字段来源") {
                         ForEach(data.provenance, id: \.field) { p in
-                            Text("\(codeLabel(fieldLabels, p.field)) · \(codeLabel(fieldSourceLabels, p.source)) · \(percent(p.confidence)) · \(p.updatedAt)").font(.caption)
+                            Text("\(codeLabel(fieldLabels, p.field)) · \(codeLabel(fieldSourceLabels, p.source)) · \(percent(p.confidence)) · \(p.updatedAt)").font(.app(.caption))
                         }
                     }
                 }
@@ -70,7 +70,7 @@ struct LyricsLineageDetails: View {
                     DisclosureGroup("修订历史") {
                         ForEach(revisions) { r in
                             Text("\(r.createdAt) · \(revisionLabel(r.kind))\(r.lineIdx.map { " · 第 \($0 + 1) 行" } ?? "") · \(revisionDetail(r))")
-                                .font(.caption).textSelection(.enabled)
+                                .font(.app(.caption)).textSelection(.enabled)
                         }
                     }
                 }
@@ -81,7 +81,7 @@ struct LyricsLineageDetails: View {
     private func issues(_ items: [LyricsIssue]) -> some View {
         ForEach(Array(items.enumerated()), id: \.offset) { _, item in
             Text("\(item.lineIdx.map { "第 \($0 + 1) 行 · " } ?? "")\(codeLabel(issueLabels, item.code)) · \(item.message)")
-                .font(.caption).foregroundStyle(item.severity == "info" ? Color.secondary : .orange)
+                .font(.app(.caption)).foregroundStyle(item.severity == "info" ? Color.secondary : .orange)
         }
     }
     private func audioStatus(_ status: String) -> String { ["present": "在用", "missing": "找不到", "replaced": "已换掉"][status] ?? status }

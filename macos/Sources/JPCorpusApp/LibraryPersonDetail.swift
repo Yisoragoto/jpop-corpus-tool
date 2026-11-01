@@ -87,7 +87,7 @@ struct PersonDetailView: View {
                                 HStack(spacing: 7) {
                                     CoverImage(path: band.bandImage, size: 20, circle: true, placeholder: "person.fill", identity: band.bandName)
                                     Text(band.leftAt.isEmpty ? "\(band.bandName) 成员" : "曾属 \(band.bandName)")
-                                }.font(.caption).padding(4).padding(.trailing, 6).background(.ultraThinMaterial, in: Capsule())
+                                }.font(.app(.caption)).padding(4).padding(.trailing, 6).background(.ultraThinMaterial, in: Capsule())
                             }.buttonStyle(.plain)
                         }
                     }
@@ -101,7 +101,7 @@ struct PersonDetailView: View {
                     }
                 } label: {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.appSystem(size: 20, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 48, height: 48)
                         .background(Circle().fill(Color.accentColor))
@@ -129,7 +129,7 @@ struct PersonDetailView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.appSystem(size: 15, weight: .semibold))
                         .frame(width: 36, height: 36)
                         .background(.ultraThinMaterial, in: Circle())
                 }
@@ -278,18 +278,18 @@ private struct LibraryPersonWorkSection: View {
             if !section.title.isEmpty {
                 Button { expanded.toggle() } label: {
                     Label("\(section.title) · \(section.works.count) 首", systemImage: expanded ? "chevron.down" : "chevron.right")
-                }.buttonStyle(.plain).font(.headline)
+                }.buttonStyle(.plain).font(.app(.headline))
             }
             if expanded || section.title.isEmpty {
-                if !section.note.isEmpty { Text(section.note).font(.caption).foregroundStyle(.secondary) }
+                if !section.note.isEmpty { Text(section.note).font(.app(.caption)).foregroundStyle(.secondary) }
                 ForEach(PersonReleases.groupByAlbum(section.works.map(\.track))) { group in
                     HStack(alignment: .bottom, spacing: 18) {
                         CoverImage(path: group.coverPath, size: 96, cornerRadius: 8)
                             .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(group.title).font(.headline)
+                            Text(group.title).font(.app(.headline))
                             Text([String(group.year.prefix(4)), "\(group.tracks.count) 首"].filter { !$0.isEmpty }.joined(separator: " · "))
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.app(.caption)).foregroundStyle(.secondary)
                         }
                     }.padding(.top, 8)
                     TrackList(tracks: group.tracks, showArtist: true, queue: queue)
@@ -314,13 +314,13 @@ private struct LibrarySongCoverTile: View {
                     .overlay {
                         ZStack {
                             RoundedRectangle(cornerRadius: 8).fill(.black.opacity(0.4))
-                            Image(systemName: "play.fill").font(.largeTitle).foregroundStyle(.white)
+                            Image(systemName: "play.fill").font(.app(.largeTitle)).foregroundStyle(.white)
                         }.opacity(hovering || current ? 1 : 0)
                     }
                     .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
-                Text(track.title).font(.callout.weight(.medium)).foregroundStyle(current ? Color.accentColor : Color.primary).lineLimit(1)
+                Text(track.title).font(.app(.callout).weight(.medium)).foregroundStyle(current ? Color.accentColor : Color.primary).lineLimit(1)
                 Text([String(track.year.prefix(4)), track.durationSec.map(formatTime) ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
             }.frame(width: 140).contentShape(Rectangle())
         }
         .buttonStyle(.plain).onHover { hovering = $0 }.help("播放「\(track.title)」")
@@ -353,14 +353,14 @@ private struct LibraryArtistHero<Actions: View>: View {
                                startPoint: .top, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(name.isEmpty ? "加载中…" : name)
-                        .font(.system(size: titleSize(width: proxy.size.width), weight: .heavy))
+                        .font(.appSystem(size: titleSize(width: proxy.size.width), weight: .heavy))
                         .foregroundStyle(.white)
                         .lineLimit(2).minimumScaleFactor(0.6)
                         .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
                         .textSelection(.enabled)
                     if !summary.isEmpty {
                         Text(verbatim: summary)
-                            .font(.callout.weight(.medium))
+                            .font(.app(.callout).weight(.medium))
                             .foregroundStyle(.white.opacity(0.78))
                     }
                     actions().padding(.top, 12)
@@ -382,7 +382,7 @@ private struct LibraryArtistHero<Actions: View>: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay(alignment: .trailing) {
                     Image(systemName: isBand ? "person.3.fill" : "person.fill")
-                        .font(.system(size: 160)).foregroundStyle(.white.opacity(0.12)).padding(.trailing, 60)
+                        .font(.appSystem(size: 160)).foregroundStyle(.white.opacity(0.12)).padding(.trailing, 60)
                 }
         } else {
             // 按人脸裁（见 HeroFraming）：以前固定靠上裁正方形，合照、人在下半部的照片只剩背景

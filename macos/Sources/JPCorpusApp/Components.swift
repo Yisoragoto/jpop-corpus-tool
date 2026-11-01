@@ -25,9 +25,9 @@ struct CoverImage: View {
                     if circle && !identity.isEmpty {
                         let tones: [Color] = [.indigo, .teal, .orange, .pink]
                         tones[AvatarIdentity.avatarTone(identity)].opacity(0.18)
-                        Text(AvatarIdentity.monogram(identity)).font(.system(size: size * 0.32, weight: .semibold))
+                        Text(AvatarIdentity.monogram(identity)).font(.appSystem(size: size * 0.32, weight: .semibold))
                     } else {
-                        Image(systemName: placeholder).font(.system(size: size * 0.32)).foregroundStyle(.secondary)
+                        Image(systemName: placeholder).font(.appSystem(size: size * 0.32)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -53,9 +53,9 @@ struct SectionHeader: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.title3.weight(.semibold))
+            Text(title).font(.app(.title3).weight(.semibold))
             if let detail {
-                Text(detail).font(.callout).foregroundStyle(.secondary)
+                Text(detail).font(.app(.callout)).foregroundStyle(.secondary)
             }
             Spacer()
         }
@@ -80,8 +80,8 @@ struct CoverTile: View {
                 CoverImage(path: coverPath, size: size, cornerRadius: 10, circle: circle, placeholder: placeholder, identity: title)
                     .shadow(color: .black.opacity(hovering ? 0.28 : 0.16), radius: hovering ? 10 : 6, y: 3)
                     .scaleEffect(hovering ? 1.03 : 1)
-                Text(title).font(.callout.weight(.medium)).lineLimit(1)
-                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(title).font(.app(.callout).weight(.medium)).lineLimit(1)
+                Text(subtitle).font(.app(.caption)).foregroundStyle(.secondary).lineLimit(1)
             }
             .frame(width: size)
             .contentShape(Rectangle())
@@ -98,8 +98,8 @@ struct StatBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.title2.weight(.semibold)).monospacedDigit()
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.app(.title2).weight(.semibold)).monospacedDigit()
+            Text(label).font(.app(.caption)).foregroundStyle(.secondary)
         }
     }
 }

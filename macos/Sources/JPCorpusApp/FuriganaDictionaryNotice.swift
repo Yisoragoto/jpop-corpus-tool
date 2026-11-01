@@ -37,24 +37,24 @@ struct FuriganaDictionaryNotice: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("振假名需要分词词典（Sudachi），这台电脑上还没有", systemImage: "character.phonetic")
-                .font(.callout.weight(.semibold))
+                .font(.app(.callout).weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
             if !compact {
                 Text("词典放在语料库文件夹的 sudachi 里。从别的电脑拷 corpus.db 时把整个文件夹一起拷过来就有；也可以在这里直接下载，只要下一次。")
-                    .font(.caption)
+                    .font(.app(.caption))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if app.furiganaDictionaryDownloading {
                 ProgressView(value: app.furiganaDictionaryProgress) {
-                    Text(stageText).font(.caption)
+                    Text(stageText).font(.app(.caption))
                 }
             } else {
                 Button("下载词典（43 MB）") { Task { await app.downloadFuriganaDictionary() } }
                     .buttonStyle(.borderedProminent)
             }
             if let error = app.furiganaDictionaryError {
-                Text(error).font(.caption).foregroundStyle(.orange)
+                Text(error).font(.app(.caption)).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

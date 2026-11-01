@@ -18,14 +18,14 @@ struct RepeatEffectPane: View {
     var body: some View {
         VStack(alignment: .leading,spacing: 12) {
             HStack {
-                Text("副歌对词频的影响").font(.title2.bold()); Spacer()
+                Text("副歌对词频的影响").font(.app(.title2).bold()); Spacer()
                 Button(archived ? "已存档" : "存档") {
                     Task { do { _ = try await app.core?.archiveFrequency(FrequencyQuery(scope: AnalysisScope(subcorpus: scope,unit: .distinctLines,jpOnly: jpOnly),limit: 500),label: "副歌效应（去重词频）"); archived = true } catch { app.errorMessage = error.localizedDescription } }
                 }.disabled(archived || raw == nil)
             }
             if let raw,let distinct {
                 let share = raw.provenance.tokens > 0 ? 1-Double(distinct.provenance.tokens)/Double(raw.provenance.tokens) : 0
-                Text("同一首歌里重复出现的行占了全部词次的 \(String(format: "%.1f%%",share*100))（\(raw.provenance.tokens) → \(distinct.provenance.tokens) 词）。以下词至少出现于两首歌、全部词次至少 10 次。").font(.callout).foregroundStyle(.secondary)
+                Text("同一首歌里重复出现的行占了全部词次的 \(String(format: "%.1f%%",share*100))（\(raw.provenance.tokens) → \(distinct.provenance.tokens) 词）。以下词至少出现于两首歌、全部词次至少 10 次。").font(.app(.callout)).foregroundStyle(.secondary)
                 Table(inflated) {
                     TableColumn("词元") { w in Button(w.lemma) { search(w.lemma) }.buttonStyle(.borderless) }
                     TableColumn("词性") { Text(posLabels[$0.pos] ?? $0.pos) }

@@ -128,7 +128,7 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
   const display = useLyricsDisplay();
   const fonts = useFontOptions(true, onError);
   // 预览要真用上选的字体：导入的、自带的字体是按文件加载的
-  useLyricFontFiles([settings.wordCloudFont, display.fontFamily, display.fallbackFamily], onError);
+  useLyricFontFiles([settings.wordCloudFont, display.fontFamily, display.fallbackFamily, settings.uiFont], onError);
   const [anki, setAnki] = useState<AnkiStatus | null>(null);
   const [root, setRoot] = useState<LibraryRootInfo | null>(null);
   const [rootNote, setRootNote] = useState("");
@@ -263,6 +263,10 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
   const cloudFontOptions = [...fontOptions];
   if (settings.wordCloudFont !== "" && !cloudFontOptions.some((o) => o.value === settings.wordCloudFont)) {
     cloudFontOptions.push({ value: settings.wordCloudFont, label: tr("{wordCloudFont}（本机没有）", { wordCloudFont: settings.wordCloudFont }) });
+  }
+  const uiFontOptions = [{ value: "", label: tr("系统默认") }, ...fontOptions.slice(1)];
+  if (settings.uiFont !== "" && !uiFontOptions.some((o) => o.value === settings.uiFont)) {
+    uiFontOptions.push({ value: settings.uiFont, label: tr("{uiFont}（本机没有）", { uiFont: settings.uiFont }) });
   }
   const fallbackOptions = [{ value: "", label: tr("不设") }, ...fontOptions.slice(1)];
   if (display.fallbackFamily !== "" && !fallbackOptions.some((o) => o.value === display.fallbackFamily)) {
@@ -403,6 +407,9 @@ export function SettingsPage({ health, onError, onNavigate, onChanged }: Props) 
             </SettingCard>
               </Group>
               <Group title={tr("字体与排版")}>
+            <SettingCard icon={Icons.font} title={tr("界面字体")} description={tr("菜单、按钮、列表这些界面文字。选的字体里没有的字，仍由系统字体补上")}>
+              <SettingSelect value={settings.uiFont} options={uiFontOptions} onChange={(uiFont) => updateSettings({ uiFont })} />
+            </SettingCard>
             <SettingCard
               icon={Icons.font}
               title={tr("歌词字体")}

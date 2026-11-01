@@ -17,10 +17,10 @@ struct CloudSongPanel: View {
     var body: some View {
         VStack(alignment: .leading,spacing: 10) {
             HStack {
-                Text(word.lemma).font(.largeTitle.bold()); Spacer()
+                Text(word.lemma).font(.app(.largeTitle).bold()); Spacer()
                 Button { model.picked = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless)
             }
-            Text("出现 \(model.cloudSongs.reduce(0) { $0+$1.count }) 次 · \(model.cloudSongs.count) 首\(model.cloudTruncated ? "（只查了前 3,000 行）" : "")").font(.caption).foregroundStyle(.secondary)
+            Text("出现 \(model.cloudSongs.reduce(0) { $0+$1.count }) 次 · \(model.cloudSongs.count) 首\(model.cloudTruncated ? "（只查了前 3,000 行）" : "")").font(.app(.caption)).foregroundStyle(.secondary)
             Button("不在词云里显示",action: hide).buttonStyle(.borderless)
             ScrollView {
                 LazyVStack(alignment: .leading,spacing: 14) {
@@ -32,7 +32,7 @@ struct CloudSongPanel: View {
                 Button("例句和释义") { lookup.toggle() }.popover(isPresented: $lookup) {
                     LookupPane(request: LookupRequest(text: word.lemma,scope: scope),close: { lookup = false }).frame(width: 400,height: 400)
                 }
-            }.buttonStyle(.borderless).font(.caption)
+            }.buttonStyle(.borderless).font(.app(.caption))
         }.padding(16).glassCard()
         .task(id: "\(word)|\(scope)|\(app.library.version)") {
             if let core = app.core { await model.loadSongs(core,scope: app.scopes.active); await loadTimings() }
@@ -45,9 +45,9 @@ struct CloudSongPanel: View {
                 Button { play(s,fullscreen: true) } label: { CoverImage(path: app.tracks.first { $0.id == s.songId }?.coverPath ?? "",size: 40,cornerRadius: 6) }.buttonStyle(.plain).help("播放并进入全屏歌词")
                 Button { play(s) } label: {
                     VStack(alignment: .leading,spacing: 3) {
-                        Text(s.title).fontWeight(.medium); Text("\(s.artist) · \(s.count) 次 · \(WordTimingLogic.startLabel(start))").font(.caption).foregroundStyle(.secondary)
+                        Text(s.title).fontWeight(.medium); Text("\(s.artist) · \(s.count) 次 · \(WordTimingLogic.startLabel(start))").font(.app(.caption)).foregroundStyle(.secondary)
                             .help(start?.kind == "line" ? "这一行没有这个词的时间，从行首开始放。可以校准词首" : "")
-                        (Text(s.atStart ? "句首 · " : "")+Text(s.first.left)+Text(s.first.keyword).bold().foregroundColor(.accentColor)+Text(s.first.right)).font(.caption).lineLimit(3)
+                        (Text(s.atStart ? "句首 · " : "")+Text(s.first.left)+Text(s.first.keyword).bold().foregroundColor(.accentColor)+Text(s.first.right)).font(.app(.caption)).lineLimit(3)
                     }.frame(maxWidth: .infinity,alignment: .leading)
                 }.buttonStyle(.plain)
                 Button { play(s) } label: { CloudPlayingIcon(songId: s.songId,startSec: start?.sec,endSec: s.first.endSec) }.buttonStyle(.borderless)
@@ -56,7 +56,7 @@ struct CloudSongPanel: View {
                 Button("歌曲详情") { app.show(.song(s.songId)) }
             }
             if calibrating != s.songId, start?.kind == "line", WordTimingLogic.validLyricTime(s.first.timeSec) {
-                Button("校准词首") { beginCalibration(s) }.buttonStyle(.borderless).font(.caption)
+                Button("校准词首") { beginCalibration(s) }.buttonStyle(.borderless).font(.app(.caption))
             }
             if calibrating == s.songId {
                 Button("听到「\(s.first.keyword)」时点这里") { calibrate(s) }
@@ -66,7 +66,7 @@ struct CloudSongPanel: View {
                         Button("撤销") { Task { do { try await app.core?.wordTimeClear(utteranceId: s.first.utteranceId,charStart: WordTimingLogic.keywordSpan(s.first).start); await loadTimings() } catch { app.errorMessage = error.localizedDescription } } }
                     }
                     Button("完成") { calibrating = nil }
-                }.buttonStyle(.borderless).font(.caption)
+                }.buttonStyle(.borderless).font(.app(.caption))
             }
         }
     }
