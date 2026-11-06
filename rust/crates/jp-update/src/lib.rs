@@ -262,10 +262,45 @@ fn get(url: &str) -> Result<Vec<u8>> {
     get_optional(url)?.context("发布不存在，请稍后重试")
 }
 
-fn get_optional(url: &str) -> Result<Option<Vec<u8>>> {
+/// GitHub 发布资产（`github.com/.../releases/download/...`）的公共镜像，直连失败才用。
+///
+/// 资产下载会 302 到 `release-assets.githubusercontent.com`，国内这一跳时断时续：
+/// 实测连拿 15 次 `latest.json`，直连断了 3 次（`unexpected end of file` 或连接超时），
+/// `api.github.com` 偶尔也断（都是卡满 5 秒后断开）——所以直连失败先重试一次。
+/// 镜像只代理下载路径，对 `api.github.com` 一律 403（Fushi BUG-292 实测），所以 API 只直连。
+/// **镜像给的内容不可信**：`channels::debug` 用 API 返回的 sha256 逐字节核对。
+const GITHUB_MIRRORS: [&str; 3] = ["https://ghfast.top/", "https://gh-proxy.com/", "https://ghproxy.net/"];
+
+/// 先直连，是发布资产再接上各个镜像
+fn candidates(url: &str) -> Vec<String> {
+    let mut list = vec![url.to_string()];
+    if url.starts_with(DOWNLOAD_PREFIX) {
+        list.extend(GITHUB_MIRRORS.iter().map(|mirror| format!("{mirror}{url}")));
+    }
+    list
+}
+
+/// 连接这一层坏了（断开、超时、握手失败）：重试或换镜像可能就好。
+/// 服务器已经答复的（404、403、内容太大）换一个也是同样的答复，不算
+fn is_transport_failure(err: &ureq::Error) -> bool {
+    matches!(
+        err,
+        ureq::Error::Io(_)
+            | ureq::Error::Timeout(_)
+            | ureq::Error::HostNotFound
+            | ureq::Error::ConnectionFailed
+            | ureq::Error::Protocol(_)
+            | ureq::Error::Tls(_)
+            | ureq::Error::BodyStalled
+            | ureq::Error::RedirectFailed
+            | ureq::Error::ConnectProxyFailed(_)
+    )
+}
+
+fn fetch_once(url: &str, connect_secs: u64) -> std::result::Result<Option<Vec<u8>>, ureq::Error> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_connect(Some(std::time::Duration::from_secs(10)))
-        .timeout_global(Some(std::time::Duration::from_secs(30)))
+        .timeout_connect(Some(std::time::Duration::from_secs(connect_secs)))
+        .timeout_global(Some(std::time::Duration::from_secs(20)))
         .build()
         .into();
     let response = agent
@@ -276,15 +311,38 @@ fn get_optional(url: &str) -> Result<Option<Vec<u8>>> {
     let mut response = match response {
         Ok(response) => response,
         Err(ureq::Error::StatusCode(404)) => return Ok(None),
-        Err(err) => return Err(err).with_context(|| format!("连不上 {url}")),
+        Err(err) => return Err(err),
     };
-    let body = response
-        .body_mut()
-        .with_config()
-        .limit(4 * 1024 * 1024)
-        .read_to_vec()
-        .context("读取更新信息失败")?;
-    Ok(Some(body))
+    response.body_mut().with_config().limit(4 * 1024 * 1024).read_to_vec().map(Some)
+}
+
+fn get_optional(url: &str) -> Result<Option<Vec<u8>>> {
+    let mut last: Option<ureq::Error> = None;
+    for (index, candidate) in candidates(url).iter().enumerate() {
+        let mirror = index > 0;
+        // 直连断一次常见，紧接着再试一次多半就通；镜像只给一次机会
+        for attempt in 0..if mirror { 1 } else { 2 } {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            match fetch_once(candidate, if mirror { 6 } else { 10 }) {
+                Ok(Some(body)) => return Ok(Some(body)),
+                // 直连说没有就是没有；镜像的 404 不作数
+                Ok(None) if !mirror => return Ok(None),
+                Ok(None) => break,
+                Err(err) if is_transport_failure(&err) => last = Some(err),
+                Err(err) if mirror => {
+                    last = Some(err);
+                    break;
+                }
+                Err(err) => return Err(err).with_context(|| format!("连不上 {url}")),
+            }
+        }
+    }
+    match last {
+        Some(err) => Err(err).with_context(|| format!("连不上 {url}")),
+        None => Ok(None),
+    }
 }
 
 /// 最近几次发布。「查看更新日志」用。
@@ -586,6 +644,19 @@ pub fn launch_mac_installer(dmg: &Path, app: &Path, pid: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_release_downloads_fall_back_to_mirrors() {
+        let api = format!("{API_BASE}/tags/debug");
+        assert_eq!(candidates(&api), vec![api.clone()], "镜像对 API 一律 403，API 只直连");
+        let asset = format!("{DOWNLOAD_PREFIX}debug/latest.json");
+        let list = candidates(&asset);
+        assert_eq!(list[0], asset, "直连永远排第一");
+        assert_eq!(list.len(), 1 + GITHUB_MIRRORS.len());
+        assert!(list[1..].iter().all(|url| url.ends_with(&asset)));
+        assert!(!is_transport_failure(&ureq::Error::StatusCode(403)), "已经答复的不重试");
+        assert!(is_transport_failure(&ureq::Error::ConnectionFailed));
+    }
     use sha2::{Digest, Sha256};
 
     #[test]
