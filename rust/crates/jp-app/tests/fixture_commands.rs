@@ -1515,3 +1515,20 @@ fn the_analysis_and_locating_commands_link_results_to_audio_positions() {
     let profile = ok(w, "song_profile", json!({ "songId": fixture::RICH_SONG }));
     assert!(profile["repeatedLines"].as_i64().unwrap() >= 1);
 }
+
+// ────────────────────────── 共用命令表 ──────────────────────────
+
+/// jp-api 表里的每条命令，Tauri 名字都要真的注册了。
+///
+/// 名字写错（或忘了加进 `generate_handler!`）编译期不报错，运行时前端才收到「找不到命令」。
+/// 这里不带参数调一次：要参数的命令会因为缺参数报错，那没关系，只要不是「找不到」
+#[test]
+fn every_jp_api_command_is_registered_with_tauri() {
+    let f = Fixture::new("jp-api");
+    for entry in jp_api::COMMANDS {
+        if let Err(err) = invoke(f.w(), entry.tauri, json!({})) {
+            let text = err.to_string();
+            assert!(!text.contains("not found"), "{} 没注册到 Tauri：{text}", entry.tauri);
+        }
+    }
+}

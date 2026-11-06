@@ -61,6 +61,8 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 jp-tokenizer = { path = "../jp-tokenizer" }
 
 jp-library = { path = "../jp-library" }
+# 两个客户端共用的命令表：搬进去的命令在这里只剩一行转发
+jp-api = { path = "../jp-api" }
 
 [target.'cfg(windows)'.dependencies]
 # 列本机字体用 DirectWrite：WebView2 就是用它按名字找字体的，列出来的名字 CSS 一定认。

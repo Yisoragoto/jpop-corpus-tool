@@ -4,34 +4,49 @@
  * 这些类型和 `rust/crates/jp-corpus/src/models.rs` 一一对应——那边用了
  * `#[serde(rename_all = "camelCase")]`，所以这里直接是 camelCase。
  *
- * 手写而不是自动生成：类型总共二十来个，生成器（ts-rs / specta）会在构建
- * 链路里多一环，而且它生成的注释不如手写的说得清楚。等类型多到手写会漂移
- * 的时候再上工具。
+ * 正在从手写换成生成：已经搬进 `rust/crates/jp-api` 的命令，参数和返回类型由
+ * Rust 类型生成在 `./generated/jp-api.ts`（不要手改），这里用 `command()` 调，
+ * 命令名、参数、返回值都由编译器检查。还没搬的命令仍是下面手写的类型 + `call()`。
+ * 加新命令的步骤见 `rust/crates/jp-api/src/lib.rs` 的文档。
  */
 
 import { invoke } from "@tauri-apps/api/core";
+
+import type {
+  AddedTrack,
+  Commands,
+  ContinueTrack,
+  DayListening,
+  HomeSummary,
+  Overview,
+  PlayedTrack,
+  QuickHit,
+  QuickSearchResults,
+  Reach,
+  Track,
+  YearStats,
+} from "./generated/jp-api";
 
 import type { LemmaForm } from "./wordCloud";
 import type { WordTiming } from "./wordTiming";
 import { tr, trBackend, trPayload } from "./i18n";
 
-// ────────────────────────────── 曲库 ──────────────────────────────
+// 这些类型由 Rust 生成（见文件头）。照旧从 "./api" 导出，别处的 import 不用改
+export type {
+  AddedTrack,
+  ContinueTrack,
+  DayListening,
+  HomeSummary,
+  Overview,
+  PlayedTrack,
+  QuickHit,
+  QuickSearchResults,
+  Reach,
+  Track,
+  YearStats,
+};
 
-export interface Track {
-  id: string;
-  title: string;
-  /** 原始歌手串。合作曲是「A/B」这种形态——结构化版本在 credits 里。 */
-  artist: string;
-  album: string;
-  albumId: number | null;
-  year: string;
-  genre: string;
-  audioPath: string;
-  coverPath: string;
-  durationSec: number | null;
-  /** 0 表示还没有歌词。UI 要据此降级，而不是当成错误。 */
-  lineCount: number;
-}
+// ────────────────────────────── 曲库 ──────────────────────────────
 
 export interface Album {
   id: number;
@@ -672,53 +687,7 @@ export interface LyricHit {
 
 // ────────────────────────────── 全局搜索 ──────────────────────────────
 
-/**
- * 一条全局搜索结果。带标签的联合类型——每种结果的字段和点击行为都不同，
- * 用一个宽表会让每种都带一堆空字段。
- */
-export type QuickHit =
-  | { kind: "track"; songId: string; title: string; artist: string; album: string; durationSec: number | null }
-  | { kind: "album"; albumId: number; title: string; albumArtist: string; trackCount: number }
-  | { kind: "person"; personId: number; name: string; roles: string[]; trackCount: number }
-  | { kind: "lyric"; songId: string; title: string; artist: string; utteranceId: number; timeSec: number | null; text: string }
-  | { kind: "word"; lemma: string; pos: string; freq: number; songCount: number };
-
-/**
- * 按类型分组的搜索结果。
- *
- * 分组而不是混排：跨类型的相关性分数没有可比性（曲名的 LIKE 匹配和歌词的
- * bm25 不是一个量纲），硬凑出的全局排序是假的。
- */
-export interface QuickSearchResults {
-  tracks: QuickHit[];
-  albums: QuickHit[];
-  people: QuickHit[];
-  words: QuickHit[];
-  lyrics: QuickHit[];
-}
-
 // ────────────────────────────── 语料 ──────────────────────────────
-
-export interface Overview {
-  tracks: number;
-  albums: number;
-  people: number;
-  performers: number;
-  composers: number;
-  lyricists: number;
-  arrangers: number;
-  lyricLines: number;
-  tokens: number;
-  vocabulary: number;
-  totalDurationSec: number;
-}
-
-export interface YearStats {
-  year: string;
-  trackCount: number;
-  albumCount: number;
-  vocabulary: number;
-}
 
 export interface WordFrequency {
   lemma: string;
@@ -830,22 +799,6 @@ export interface PlayEvent {
   source: string;
 }
 
-export interface PlayedTrack {
-  songId: string;
-  title: string;
-  artist: string;
-  album: string;
-  coverPath: string;
-  playCount: number;
-  lastPlayed: string;
-  totalListenedSec: number;
-  durationSec: number | null;
-  /** 最后一次播放停在哪（秒） */
-  lastPositionSec: number;
-  /** 最后一次是不是听完了 */
-  lastCompleted: boolean;
-}
-
 /** 现在用的是哪个语料库目录，以及是怎么找到的 */
 export interface LibraryRootInfo {
   path: string;
@@ -909,57 +862,6 @@ export interface FacetCount {
   label: string;
   trackCount: number;
   totalDurationSec: number;
-}
-
-/** 上次听的那首，以及停在哪。和 `jp_corpus::home::ContinueTrack` 对应 */
-export interface ContinueTrack {
-  songId: string;
-  title: string;
-  artist: string;
-  coverPath: string;
-  durationSec: number | null;
-  positionSec: number;
-  completed: boolean;
-  lastPlayed: string;
-  playCount: number;
-  /** 停下的位置正在唱的那一行；没有时间轴或停在第一行之前时是空串 */
-  stoppedLine: string;
-}
-
-/** 今天（本地日期）听了多少 */
-export interface DayListening {
-  listenedSec: number;
-  songs: number;
-  /** 听到的歌词行数（同一首听两遍算两遍） */
-  linesHeard: number;
-  /** 连续有收听的天数；今天还没听时从昨天往回数 */
-  streakDays: number;
-}
-
-/** 听过的歌（听满 30 秒）覆盖了语料里多少实词（名/动/形/副） */
-export interface Reach {
-  heardSongs: number;
-  heardLemmas: number;
-  totalLemmas: number;
-}
-
-export interface AddedTrack {
-  songId: string;
-  title: string;
-  artist: string;
-  coverPath: string;
-  addedAt: string;
-}
-
-/** 首页要的一切。一次拿全，避免六次往返和不一致的快照。 */
-export interface HomeSummary {
-  overview: Overview;
-  continueTrack: ContinueTrack | null;
-  recentlyPlayed: PlayedTrack[];
-  favorites: Track[];
-  today: DayListening;
-  reach: Reach;
-  recentlyAdded: AddedTrack[];
 }
 
 /** 时长回填的结果。每一种失败单独计数——笼统的「成功 N 个」用户无从修。 */
@@ -1026,6 +928,26 @@ export async function call<T>(cmd: string, args?: Record<string, unknown>): Prom
   }
 }
 
+/**
+ * 可选参数也接受显式的 `undefined`：包装函数常写 `{ query, perKind }`，`perKind` 没给时是 undefined。
+ * 开着 `exactOptionalPropertyTypes` 时 `perKind?: number` 不收 undefined；invoke 序列化时它会被丢掉，
+ * 和不传是一回事，所以这里放宽
+ */
+type LooseArgs<T> = { [P in keyof T]: T[P] | ({} extends Pick<T, P> ? undefined : never) };
+
+/** 没有必填参数的命令，参数可以整个省掉 */
+type ArgsParam<K extends keyof Commands> = {} extends Commands[K]["args"]
+  ? [args?: LooseArgs<Commands[K]["args"]>]
+  : [args: LooseArgs<Commands[K]["args"]>];
+
+/**
+ * 调一条已经搬进 jp-api 的命令。命令名、参数、返回值都按 Rust 生成的 `Commands` 检查；
+ * 报错处理和 `call()` 一样
+ */
+export function command<K extends keyof Commands>(cmd: K, ...args: ArgsParam<K>): Promise<Commands[K]["output"]> {
+  return call<Commands[K]["output"]>(cmd, args[0] as Record<string, unknown> | undefined);
+}
+
 export const api = {
   systemAccent: () => call<Record<"accent" | "light1" | "light2" | "light3" | "dark1" | "dark2" | "dark3", string> | null>("system_accent"),
   health: () => call<HealthReport>("health"),
@@ -1036,7 +958,7 @@ export const api = {
 
   // 曲库
   listTracks: (limit?: number) => call<Track[]>("list_tracks", { limit }),
-  getTrack: (songId: string) => call<Track | null>("get_track", { songId }),
+  getTrack: (songId: string) => command("get_track", { songId }),
   listAlbums: (artistKey?: string, limit?: number) =>
     call<Album[]>("list_albums", { artistKey, limit }),
   albumTracks: (albumId: number) => call<Track[]>("album_tracks", { albumId }),
@@ -1098,11 +1020,11 @@ export const api = {
     call<LyricHit[]>("search_lyrics", { text, limit }),
   /** Cmd+K 全局搜索。跨曲目/专辑/人物/词汇/歌词。 */
   quickSearch: (query: string, perKind?: number) =>
-    call<QuickSearchResults>("quick_search", { query, perKind }),
+    command("quick_search", { query, perKind }),
 
   // 语料
-  overview: () => call<Overview>("overview"),
-  timeline: () => call<YearStats[]>("timeline"),
+  overview: () => command("overview"),
+  timeline: () => command("timeline"),
   wordFrequency: (pos?: string, limit?: number) =>
     call<WordFrequency[]>("word_frequency", { pos, limit }),
   /** scope：只在这块子语料里看（不给就是整个库） */
@@ -1152,7 +1074,7 @@ export const api = {
 
   // 首页 / 收藏
   /** 「今天」按本地日期算，所以把本地相对 UTC 的分钟数带过去（东八区 +480） */
-  homeSummary: () => call<HomeSummary>("home_summary", { utcOffsetMinutes: -new Date().getTimezoneOffset() }),
+  homeSummary: () => command("home_summary", { utcOffsetMinutes: -new Date().getTimezoneOffset() }),
   /** 从本地今天零点起新建了几条制卡笔记；没装 Anki 是 null */
   ankiNotesToday: () => {
     const midnight = new Date();

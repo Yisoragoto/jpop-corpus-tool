@@ -1,0 +1,163 @@
+// 由 rust/crates/jp-api 生成（ts-rs），不要手改。
+// 改了 Rust 类型之后跑 `JP_API_BLESS=1 cargo test -p jp-api` 重新生成，连同这个文件一起提交。
+// 不重新生成的话 `cargo test --workspace` 会失败。
+
+/**
+ * 最近添加的一首。
+ */
+export type AddedTrack = { songId: string, title: string, artist: string, coverPath: string, addedAt: string, };
+
+/**
+ * 上次听的那首，以及停在哪。
+ */
+export type ContinueTrack = { songId: string, title: string, artist: string, coverPath: string, durationSec: number | null, 
+/**
+ * 最后一次播放停下的位置（秒）
+ */
+positionSec: number, 
+/**
+ * 最后一次是不是听完了。听完了界面给「再听一遍」，没听完给「从 x:xx 继续」
+ */
+completed: boolean, lastPlayed: string, playCount: number, 
+/**
+ * 停下的位置正在唱的那一行（时间戳不晚于停下位置的最后一行）。
+ * 没有带时间戳的歌词、或者停在第一行之前时是空串
+ */
+stoppedLine: string, };
+
+/**
+ * 某一天（本地日期）听了多少。
+ */
+export type DayListening = { listenedSec: number, 
+/**
+ * 听了几首（去重）
+ */
+songs: number, 
+/**
+ * 听到的歌词行数。每次播放算 `[停下位置 - 听了多久, 停下位置]` 这段时间里唱到的行；
+ * 同一首听两遍算两遍——这是「听了多少」，不是「听过多少种」
+ */
+linesHeard: number, 
+/**
+ * 连续有收听的天数。今天还没听的话从昨天往回数（今天还没过完，不算断）
+ */
+streakDays: number, };
+
+/**
+ * 首页要的一切。
+ *
+ * 打成一个命令而不是让前端发六次：首页一进来就要全部数据，
+ * 分开发不仅多五次往返，还可能拿到互相不一致的快照
+ * （比如统计已经更新、最近播放还是旧的）。
+ */
+export type HomeSummary = { overview: Overview, 
+/**
+ * 上次听的那首和停在哪；没有收听记录时是 null
+ */
+continueTrack: ContinueTrack | null, recentlyPlayed: Array<PlayedTrack>, favorites: Array<Track>, today: DayListening, reach: Reach, recentlyAdded: Array<AddedTrack>, };
+
+export type HomeSummaryArgs = { 
+/**
+ * 本地相对 UTC 的分钟数（东八区 +480），「今天」按它算。不传按 UTC
+ */
+utcOffsetMinutes?: number, 
+/**
+ * 「最近添加」要几首
+ */
+addedLimit?: number, };
+
+/**
+ * 没有参数的命令用它。TS 里是 `Record<symbol, never>`，传 `{}` 或不传都行
+ */
+export type NoArgs = Record<symbol, never>;
+
+/**
+ * Corpus Overview 卡片。
+ */
+export type Overview = { tracks: number, albums: number, people: number, performers: number, composers: number, lyricists: number, arrangers: number, lyricLines: number, tokens: number, vocabulary: number, totalDurationSec: number, };
+
+/**
+ * 最近播放 / 播放排行的一行。
+ */
+export type PlayedTrack = { songId: string, title: string, artist: string, album: string, coverPath: string, playCount: number, lastPlayed: string, totalListenedSec: number, durationSec: number | null, 
+/**
+ * 最后一次播放停在哪（秒）
+ */
+lastPositionSec: number, 
+/**
+ * 最后一次是不是听完了
+ */
+lastCompleted: boolean, };
+
+/**
+ * 全局搜索的一条结果。
+ *
+ * 用带标签的枚举而不是「一个宽表 + kind 字段」，是因为前端要按类型
+ * 分组显示、点击行为也各不相同；宽表会让每种类型都带一堆用不上的空字段。
+ */
+export type QuickHit = { "kind": "track", songId: string, title: string, artist: string, album: string, durationSec: number | null, } | { "kind": "album", albumId: number, title: string, albumArtist: string, trackCount: number, } | { "kind": "person", personId: number, name: string, 
+/**
+ * 这个人担任过的角色，按作品数排序
+ */
+roles: Array<string>, trackCount: number, } | { "kind": "lyric", songId: string, title: string, artist: string, utteranceId: number, timeSec: number | null, text: string, } | { "kind": "word", lemma: string, pos: string, freq: number, songCount: number, };
+
+export type QuickSearchArgs = { query: string, 
+/**
+ * 每种结果最多几条；不传用 jp-corpus 的默认
+ */
+perKind?: number, };
+
+/**
+ * 全局搜索结果，按类型分组。
+ *
+ * 分组而不是混在一起排序：跨类型的相关性分数没有可比性
+ * （曲名匹配的 0.9 和歌词 bm25 的 -8.3 不是一个量纲），
+ * 硬排出来的顺序是假的。分组让用户自己按类型找。
+ */
+export type QuickSearchResults = { tracks: Array<QuickHit>, albums: Array<QuickHit>, people: Array<QuickHit>, words: Array<QuickHit>, lyrics: Array<QuickHit>, };
+
+/**
+ * 听过的歌覆盖了语料里多少实词。
+ */
+export type Reach = { 
+/**
+ * 听满 [`HEARD_MIN_SEC`] 秒的歌有几首
+ */
+heardSongs: number, 
+/**
+ * 这些歌里出现过的实词词元数（去重）
+ */
+heardLemmas: number, 
+/**
+ * 全语料的实词词元数（去重）
+ */
+totalLemmas: number, };
+
+/**
+ * 一首曲目。对应 `songs` 表。
+ */
+export type Track = { id: string, title: string, 
+/**
+ * 原始歌手串。合作曲是「A/B」这种形态——结构化的版本在 `credits` 里。
+ */
+artist: string, album: string, albumId: number | null, year: string, genre: string, audioPath: string, coverPath: string, durationSec: number | null, 
+/**
+ * 歌词行数。0 表示还没有歌词，UI 要据此降级而不是当成错误。
+ */
+lineCount: number, };
+
+export type TrackArgs = { songId: string, };
+
+/**
+ * Analytics 页的 Timeline 一格。
+ */
+export type YearStats = { year: string, trackCount: number, albumCount: number, vocabulary: number, };
+
+/** Tauri 命令名 → 参数和返回值。`api.ts` 的 `command()` 按它做类型检查 */
+export interface Commands {
+  overview: { args: NoArgs; output: Overview };
+  timeline: { args: NoArgs; output: Array<YearStats> };
+  get_track: { args: TrackArgs; output: Track | null };
+  quick_search: { args: QuickSearchArgs; output: QuickSearchResults };
+  home_summary: { args: HomeSummaryArgs; output: HomeSummary };
+}

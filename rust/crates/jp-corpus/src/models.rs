@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 /// 一首曲目。对应 `songs` 表。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Track {
     pub id: String,
     pub title: String,
@@ -361,6 +362,7 @@ pub struct LyricHit {
 /// Corpus Overview 卡片。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Overview {
     pub tracks: i64,
     pub albums: i64,
@@ -378,6 +380,7 @@ pub struct Overview {
 /// Analytics 页的 Timeline 一格。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct YearStats {
     pub year: String,
     pub track_count: i64,
@@ -462,6 +465,7 @@ impl Default for PlayEvent {
 /// 最近播放 / 播放排行的一行。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PlayedTrack {
     pub song_id: String,
     pub title: String,
@@ -496,6 +500,7 @@ pub struct FacetCount {
 /// 分组显示、点击行为也各不相同；宽表会让每种类型都带一堆用不上的空字段。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum QuickHit {
     #[serde(rename_all = "camelCase")]
     Track {
@@ -546,6 +551,7 @@ pub enum QuickHit {
 /// 硬排出来的顺序是假的。分组让用户自己按类型找。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct QuickSearchResults {
     pub tracks: Vec<QuickHit>,
     pub albums: Vec<QuickHit>,
