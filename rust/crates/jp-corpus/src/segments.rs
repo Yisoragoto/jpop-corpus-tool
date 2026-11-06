@@ -126,7 +126,7 @@ pub fn context_window(
     preroll_sec: f64,
 ) -> Result<Option<ListenWindow>> {
     let song_id: Option<String> = conn
-        .query_row("SELECT song_id FROM utterances WHERE id = ?1", params![utterance_id], |r| r.get(0))
+        .query_row("SELECT song_id FROM live_utterances WHERE id = ?1", params![utterance_id], |r| r.get(0))
         .ok();
     let Some(song_id) = song_id else { return Ok(None) };
     let spans = line_spans(conn, &song_id)?;
@@ -149,7 +149,7 @@ pub fn context_window(
 
 pub(crate) fn song_lines(conn: &Connection, song_id: &str) -> Result<Vec<TimedLine>> {
     let mut stmt = conn.prepare(
-        "SELECT id, line_idx, time_sec, text FROM utterances WHERE song_id = ?1 ORDER BY line_idx, id",
+        "SELECT id, line_idx, time_sec, text FROM live_utterances WHERE song_id = ?1 ORDER BY line_idx, id",
     )?;
     let rows = stmt.query_map(params![song_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -157,7 +157,7 @@ pub(crate) fn song_lines(conn: &Connection, song_id: &str) -> Result<Vec<TimedLi
 
 pub(crate) fn song_duration(conn: &Connection, song_id: &str) -> Result<Option<f64>> {
     Ok(conn
-        .query_row("SELECT duration_sec FROM songs WHERE id = ?1", params![song_id], |r| {
+        .query_row("SELECT duration_sec FROM live_songs WHERE id = ?1", params![song_id], |r| {
             r.get::<_, Option<f64>>(0)
         })
         .unwrap_or(None))

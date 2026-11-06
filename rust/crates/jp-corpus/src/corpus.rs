@@ -13,24 +13,24 @@ pub(crate) fn overview(conn: &Connection) -> Result<Overview> {
     };
     let by_role = |role: &str| -> Result<i64> {
         Ok(conn.query_row(
-            "SELECT COUNT(DISTINCT person_id) FROM track_credits WHERE role = ?1",
+            "SELECT COUNT(DISTINCT person_id) FROM live_credits WHERE role = ?1",
             params![role],
             |row| row.get(0),
         )?)
     };
     Ok(Overview {
-        tracks: scalar("SELECT COUNT(*) FROM songs")?,
-        albums: scalar("SELECT COUNT(*) FROM albums")?,
-        people: scalar("SELECT COUNT(*) FROM people")?,
+        tracks: scalar("SELECT COUNT(*) FROM live_songs")?,
+        albums: scalar("SELECT COUNT(*) FROM live_albums")?,
+        people: scalar("SELECT COUNT(*) FROM live_people")?,
         performers: by_role("performer")?,
         composers: by_role("composer")?,
         lyricists: by_role("lyricist")?,
         arrangers: by_role("arranger")?,
-        lyric_lines: scalar("SELECT COUNT(*) FROM utterances")?,
-        tokens: scalar("SELECT COUNT(*) FROM tokens")?,
-        vocabulary: scalar("SELECT COUNT(DISTINCT lemma) FROM tokens")?,
+        lyric_lines: scalar("SELECT COUNT(*) FROM live_utterances")?,
+        tokens: scalar("SELECT COUNT(*) FROM live_tokens")?,
+        vocabulary: scalar("SELECT COUNT(DISTINCT lemma) FROM live_tokens")?,
         total_duration_sec: conn.query_row(
-            "SELECT COALESCE(SUM(duration_sec), 0) FROM songs",
+            "SELECT COALESCE(SUM(duration_sec), 0) FROM live_songs",
             [],
             |row| row.get(0),
         )?,
@@ -41,8 +41,8 @@ pub(crate) fn timeline(conn: &Connection) -> Result<Vec<YearStats>> {
     let mut stmt = conn.prepare(
         "SELECT s.year, COUNT(DISTINCT s.id), COUNT(DISTINCT s.album_id), \
                 COUNT(DISTINCT t.lemma) \
-         FROM songs s \
-         LEFT JOIN utterances u ON u.song_id = s.id \
+         FROM live_songs s \
+         LEFT JOIN live_utterances u ON u.song_id = s.id \
          LEFT JOIN tokens t ON t.utterance_id = u.id \
          WHERE s.year IS NOT NULL AND trim(s.year) <> '' \
          GROUP BY s.year ORDER BY s.year",
@@ -68,7 +68,7 @@ pub(crate) fn word_frequency(
     let sql = format!(
         "SELECT t.lemma, t.pos, COUNT(*) AS freq, COUNT(DISTINCT u.song_id), \
                 GROUP_CONCAT(DISTINCT t.surface) \
-         FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
+         FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id \
          WHERE t.pos NOT IN ('PUNCT','SYM','SPACE','X') {filter} \
          GROUP BY t.lemma, t.pos ORDER BY freq DESC LIMIT ?{}",
         if pos.is_some() { 2 } else { 1 }
@@ -116,8 +116,8 @@ pub(crate) fn word_in_corpus(
     let (occurrences, song_count, artist_count) = conn.query_row(
         &format!(
             "SELECT COUNT(*), COUNT(DISTINCT u.song_id), COUNT(DISTINCT s.artist) \
-             FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
-             JOIN songs s ON s.id = u.song_id WHERE t.lemma = ?{clause}"
+             FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id \
+             JOIN live_songs s ON s.id = u.song_id WHERE t.lemma = ?{clause}"
         ),
         params_from_iter(with(vec![lemma_v()])),
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -126,15 +126,15 @@ pub(crate) fn word_in_corpus(
     let (first_year, last_year) = conn.query_row(
         &format!(
             "SELECT MIN(NULLIF(trim(s.year),'')), MAX(NULLIF(trim(s.year),'')) \
-             FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
-             JOIN songs s ON s.id = u.song_id WHERE t.lemma = ?{clause}"
+             FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id \
+             JOIN live_songs s ON s.id = u.song_id WHERE t.lemma = ?{clause}"
         ),
         params_from_iter(with(vec![lemma_v()])),
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
 
     let mut stmt = conn.prepare(&format!(
-        "SELECT COALESCE(t.pos,''), COUNT(*) FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
+        "SELECT COALESCE(t.pos,''), COUNT(*) FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id \
          WHERE t.lemma = ?{clause} GROUP BY t.pos ORDER BY COUNT(*) DESC"
     ))?;
     let pos_distribution = stmt
@@ -150,8 +150,8 @@ pub(crate) fn word_in_corpus(
     let current = current_song_id.unwrap_or("");
     let mut stmt = conn.prepare(&format!(
         "SELECT u.song_id, s.artist, s.title, u.id, u.time_sec, u.text \
-         FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
-         JOIN songs s ON s.id = u.song_id \
+         FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id \
+         JOIN live_songs s ON s.id = u.song_id \
          WHERE t.lemma = ?{clause} GROUP BY u.id \
          ORDER BY CASE WHEN u.song_id = ? THEN 0 ELSE 1 END, s.artist, s.title, u.time_sec \
          LIMIT ?"
@@ -203,9 +203,9 @@ pub(crate) fn record_play(conn: &Connection, event: &PlayEvent) -> Result<()> {
 }
 
 /// 每首歌最后一次播放停在哪、听完没有。首页给封面打「听完 / 62%」角标用
-const LAST_PLAY: &str = "COALESCE((SELECT l.position_sec FROM play_history l WHERE l.song_id = s.id \
+const LAST_PLAY: &str = "COALESCE((SELECT l.position_sec FROM live_play_history l WHERE l.song_id = s.id \
                                    ORDER BY l.played_at DESC, l.id DESC LIMIT 1), 0), \
-                         COALESCE((SELECT l.completed FROM play_history l WHERE l.song_id = s.id \
+                         COALESCE((SELECT l.completed FROM live_play_history l WHERE l.song_id = s.id \
                                    ORDER BY l.played_at DESC, l.id DESC LIMIT 1), 0)";
 
 pub(crate) fn recently_played(conn: &Connection, limit: i64) -> Result<Vec<PlayedTrack>> {
@@ -213,7 +213,7 @@ pub(crate) fn recently_played(conn: &Connection, limit: i64) -> Result<Vec<Playe
         "SELECT s.id, s.title, s.artist, COALESCE(s.album,''), COALESCE(s.cover_path,''), \
                 COUNT(*), MAX(h.played_at), COALESCE(SUM(h.listened_sec),0), \
                 s.duration_sec, {LAST_PLAY} \
-         FROM play_history h JOIN songs s ON s.id = h.song_id \
+         FROM live_play_history h JOIN live_songs s ON s.id = h.song_id \
          GROUP BY s.id ORDER BY MAX(h.played_at) DESC LIMIT ?1"
     ))?;
     collect_played(stmt.query_map(params![limit], played_from_row)?)
@@ -229,7 +229,7 @@ pub(crate) fn most_played(
         "SELECT s.id, s.title, s.artist, COALESCE(s.album,''), COALESCE(s.cover_path,''), \
                 COUNT(*), MAX(h.played_at), COALESCE(SUM(h.listened_sec),0), \
                 s.duration_sec, {LAST_PLAY} \
-         FROM play_history h JOIN songs s ON s.id = h.song_id \
+         FROM live_play_history h JOIN live_songs s ON s.id = h.song_id \
          WHERE h.listened_sec >= ?1 \
          GROUP BY s.id ORDER BY COUNT(*) DESC, SUM(h.listened_sec) DESC LIMIT ?2"
     ))?;

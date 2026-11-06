@@ -15,7 +15,7 @@ use crate::search::placeholders;
 const TRACK_COLUMNS: &str = "s.id, s.title, s.artist, COALESCE(s.album,''), s.album_id, \
      COALESCE(s.year,''), COALESCE(s.genre,''), COALESCE(s.audio_path,''), \
      COALESCE(s.cover_path,''), s.duration_sec, \
-     (SELECT COUNT(*) FROM utterances u WHERE u.song_id = s.id)";
+     (SELECT COUNT(*) FROM live_utterances u WHERE u.song_id = s.id)";
 
 fn track_from_row(row: &rusqlite::Row) -> rusqlite::Result<Track> {
     Ok(Track {
@@ -36,14 +36,14 @@ fn track_from_row(row: &rusqlite::Row) -> rusqlite::Result<Track> {
 // ────────────────────────────── 曲目 ──────────────────────────────
 
 pub(crate) fn tracks(conn: &Connection, limit: i64) -> Result<Vec<Track>> {
-    let sql = format!("SELECT {TRACK_COLUMNS} FROM songs s ORDER BY s.id LIMIT ?1");
+    let sql = format!("SELECT {TRACK_COLUMNS} FROM live_songs s ORDER BY s.id LIMIT ?1");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![limit], track_from_row)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 pub(crate) fn track(conn: &Connection, song_id: &str) -> Result<Option<Track>> {
-    let sql = format!("SELECT {TRACK_COLUMNS} FROM songs s WHERE s.id = ?1");
+    let sql = format!("SELECT {TRACK_COLUMNS} FROM live_songs s WHERE s.id = ?1");
     let mut stmt = conn.prepare(&sql)?;
     Ok(stmt.query_row(params![song_id], track_from_row).optional()?)
 }
@@ -67,7 +67,7 @@ pub(crate) fn albums(conn: &Connection, artist_key: Option<&str>, limit: i64) ->
                 CASE WHEN COALESCE(al.artwork_path,'') <> '' THEN al.artwork_path \
                      ELSE COALESCE(MIN(NULLIF(s.cover_path,'')), '') END, \
                 COUNT(s.id), COALESCE(SUM(s.duration_sec), 0), COALESCE(al.album_type, ''), al.track_count \
-         FROM albums al LEFT JOIN songs s ON s.album_id = al.id \
+         FROM live_albums al LEFT JOIN live_songs s ON s.album_id = al.id \
          {filter} GROUP BY al.id ORDER BY al.year DESC, al.title \
          LIMIT ?{}",
         params.len()
@@ -90,7 +90,7 @@ pub(crate) fn albums(conn: &Connection, artist_key: Option<&str>, limit: i64) ->
 }
 
 pub(crate) fn album_tracks(conn: &Connection, album_id: i64) -> Result<Vec<Track>> {
-    let sql = format!("SELECT {TRACK_COLUMNS} FROM songs s WHERE s.album_id = ?1 ORDER BY s.id");
+    let sql = format!("SELECT {TRACK_COLUMNS} FROM live_songs s WHERE s.album_id = ?1 ORDER BY s.id");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![album_id], track_from_row)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -100,7 +100,7 @@ pub(crate) fn album_tracks(conn: &Connection, album_id: i64) -> Result<Vec<Track
 
 pub(crate) fn find_person(conn: &Connection, normalized: &str) -> Result<Option<Person>> {
     let mut stmt =
-        conn.prepare("SELECT id, name, normalized_name FROM people WHERE normalized_name = ?1")?;
+        conn.prepare("SELECT id, name, normalized_name FROM live_people WHERE normalized_name = ?1")?;
     Ok(stmt
         .query_row(params![normalized], |row| {
             Ok(Person {
@@ -116,7 +116,7 @@ pub(crate) fn credits_for_track(conn: &Connection, song_id: &str) -> Result<Vec<
     // 角色按展示顺序排，和 library/credits.py 的 ROLE_ORDER 一致
     let mut stmt = conn.prepare(
         "SELECT c.person_id, p.name, c.role, c.position, c.source \
-         FROM track_credits c JOIN people p ON p.id = c.person_id \
+         FROM live_credits c JOIN live_people p ON p.id = c.person_id \
          WHERE c.song_id = ?1 \
          ORDER BY CASE c.role \
              WHEN 'lyricist' THEN 0 WHEN 'composer' THEN 1 WHEN 'arranger' THEN 2 \
@@ -164,7 +164,7 @@ pub(crate) fn people_by_role(conn: &Connection, role: &str, limit: i64) -> Resul
     let image = artist_image_expr(conn, "p.name")?;
     let sql = format!(
         "SELECT p.id, p.name, COUNT(DISTINCT c.song_id) AS n, {image} \
-         FROM track_credits c JOIN people p ON p.id = c.person_id \
+         FROM live_credits c JOIN live_people p ON p.id = c.person_id \
          WHERE c.role = ?1 GROUP BY p.id, p.name \
          ORDER BY n DESC, p.name LIMIT ?2"
     );
@@ -208,8 +208,8 @@ pub(crate) fn people_directory(conn: &Connection) -> Result<Vec<DirectoryEntry>>
                 COUNT(DISTINCT CASE WHEN c.role = 'arranger' THEN c.song_id END), \
                 COUNT(DISTINCT c.song_id), \
                 COALESCE(MIN(NULLIF(s.year, '')), ''), COALESCE(MAX(NULLIF(s.year, '')), ''), {manual} \
-         FROM people p JOIN track_credits c ON c.person_id = p.id \
-         LEFT JOIN songs s ON s.id = c.song_id {join} \
+         FROM live_people p JOIN live_credits c ON c.person_id = p.id \
+         LEFT JOIN live_songs s ON s.id = c.song_id {join} \
          GROUP BY p.id ORDER BY p.name"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -243,20 +243,20 @@ pub(crate) fn person_works(conn: &Connection, person_id: i64) -> Result<Vec<Pers
         |row| row.get(0),
     )?;
     let band_songs = if has_members {
-        "UNION SELECT c.song_id FROM track_credits c \
+        "UNION SELECT c.song_id FROM live_credits c \
          JOIN band_members m ON m.band_id = c.person_id \
          WHERE m.member_id = ?1 AND m.status = 'active' AND c.role = 'performer'"
     } else {
         ""
     };
     let sql = format!(
-        "WITH ids AS (SELECT song_id FROM track_credits WHERE person_id = ?1 {band_songs}) \
+        "WITH ids AS (SELECT song_id FROM live_credits WHERE person_id = ?1 {band_songs}) \
          SELECT {TRACK_COLUMNS}, \
-                (SELECT GROUP_CONCAT(DISTINCT x.role) FROM track_credits x \
+                (SELECT GROUP_CONCAT(DISTINCT x.role) FROM live_credits x \
                  WHERE x.song_id = s.id AND x.person_id = ?1), \
-                (SELECT GROUP_CONCAT(DISTINCT x.person_id) FROM track_credits x \
+                (SELECT GROUP_CONCAT(DISTINCT x.person_id) FROM live_credits x \
                  WHERE x.song_id = s.id AND x.role = 'performer') \
-         FROM songs s JOIN ids ON ids.song_id = s.id \
+         FROM live_songs s JOIN ids ON ids.song_id = s.id \
          ORDER BY s.year, s.artist, s.title"
     );
     // TRACK_COLUMNS 占前 11 列（见 track_from_row）
@@ -285,8 +285,8 @@ pub(crate) fn person_works(conn: &Connection, person_id: i64) -> Result<Vec<Pers
 
 pub(crate) fn works_by_person(conn: &Connection, person_id: i64) -> Result<Vec<Track>> {
     let sql = format!(
-        "SELECT DISTINCT {TRACK_COLUMNS} FROM track_credits c \
-         JOIN songs s ON s.id = c.song_id WHERE c.person_id = ?1 \
+        "SELECT DISTINCT {TRACK_COLUMNS} FROM live_credits c \
+         JOIN live_songs s ON s.id = c.song_id WHERE c.person_id = ?1 \
          ORDER BY s.year, s.artist, s.title"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -302,7 +302,7 @@ pub(crate) fn timeline_releases(conn: &Connection) -> Result<Vec<TimelineRelease
                 CASE WHEN s.album_id IS NULL THEN s.title ELSE COALESCE(NULLIF(MIN(s.album), ''), MIN(s.title)) END, \
                 COALESCE(MIN(NULLIF(s.release_date, '')), MIN(NULLIF(s.year, ''))), \
                 COUNT(DISTINCT s.id), COALESCE(MAX(s.cover_path), ''), MIN(s.id) \
-         FROM track_credits c JOIN songs s ON s.id = c.song_id \
+         FROM live_credits c JOIN live_songs s ON s.id = c.song_id \
          WHERE c.role = 'performer' \
            AND COALESCE(NULLIF(s.release_date, ''), NULLIF(s.year, '')) IS NOT NULL \
          GROUP BY c.person_id, COALESCE(CAST(s.album_id AS TEXT), 'song:' || s.id) \
@@ -326,8 +326,8 @@ pub(crate) fn timeline_releases(conn: &Connection) -> Result<Vec<TimelineRelease
 pub(crate) fn collaboration_edges(conn: &Connection) -> Result<Vec<CollabEdge>> {
     let mut stmt = conn.prepare(
         "SELECT a.person_id, b.person_id, COUNT(DISTINCT a.song_id) \
-         FROM track_credits a \
-         JOIN track_credits b ON b.song_id = a.song_id AND b.person_id > a.person_id \
+         FROM live_credits a \
+         JOIN live_credits b ON b.song_id = a.song_id AND b.person_id > a.person_id \
          GROUP BY a.person_id, b.person_id",
     )?;
     let rows = stmt.query_map([], |row| {
@@ -349,9 +349,9 @@ pub(crate) fn collaborators(conn: &Connection, person_id: i64, limit: i64) -> Re
     let sql = format!(
         "SELECT p.id, p.name, COUNT(DISTINCT a.song_id) AS shared, \
                 GROUP_CONCAT(DISTINCT b.role), {image} \
-         FROM track_credits a \
-         JOIN track_credits b ON b.song_id = a.song_id AND b.person_id <> a.person_id \
-         JOIN people p ON p.id = b.person_id \
+         FROM live_credits a \
+         JOIN live_credits b ON b.song_id = a.song_id AND b.person_id <> a.person_id \
+         JOIN live_people p ON p.id = b.person_id \
          WHERE a.person_id = ?1 \
          GROUP BY p.id, p.name ORDER BY shared DESC, p.name LIMIT ?2"
     );
@@ -380,7 +380,7 @@ pub(crate) fn collaborators(conn: &Connection, person_id: i64, limit: i64) -> Re
 /// 逐行查就是 61 次往返。
 pub(crate) fn lyrics(conn: &Connection, song_id: &str) -> Result<Vec<LyricLine>> {
     let mut stmt = conn.prepare(
-        "SELECT id, line_idx, time_sec, text FROM utterances \
+        "SELECT id, line_idx, time_sec, text FROM live_utterances \
          WHERE song_id = ?1 ORDER BY line_idx",
     )?;
     let mut lines: Vec<LyricLine> = stmt
@@ -457,7 +457,7 @@ pub(crate) fn tokens_for_lines(
 pub(crate) fn person_by_id(conn: &Connection, person_id: i64) -> Result<Option<PersonSummary>> {
     let image = artist_image_expr(conn, "p.name")?;
     let sql = format!(
-        "SELECT p.id, p.name,                 COALESCE((SELECT c.role FROM track_credits c                           WHERE c.person_id = p.id                           GROUP BY c.role ORDER BY COUNT(*) DESC LIMIT 1), ''),                 (SELECT COUNT(DISTINCT c.song_id) FROM track_credits c WHERE c.person_id = p.id), {image}          FROM people p WHERE p.id = ?1"
+        "SELECT p.id, p.name,                 COALESCE((SELECT c.role FROM live_credits c                           WHERE c.person_id = p.id                           GROUP BY c.role ORDER BY COUNT(*) DESC LIMIT 1), ''),                 (SELECT COUNT(DISTINCT c.song_id) FROM live_credits c WHERE c.person_id = p.id), {image}          FROM live_people p WHERE p.id = ?1"
     );
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query_map(params![person_id], |row| {
@@ -511,7 +511,7 @@ pub(crate) fn toggle_favorite(
 /// 收藏的曲目，最近收藏的在前。
 pub(crate) fn favorite_tracks(conn: &Connection, limit: i64) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT s.id, s.title, s.artist, COALESCE(s.album,''), s.album_id,                 COALESCE(s.year,''), COALESCE(s.genre,''), COALESCE(s.audio_path,''),                 COALESCE(s.cover_path,''), s.duration_sec,                 (SELECT COUNT(*) FROM utterances u WHERE u.song_id = s.id)          FROM favorites f JOIN songs s ON s.id = f.entity_id          WHERE f.entity_type = 'song'          ORDER BY f.created_at DESC LIMIT ?1",
+        "SELECT s.id, s.title, s.artist, COALESCE(s.album,''), s.album_id,                 COALESCE(s.year,''), COALESCE(s.genre,''), COALESCE(s.audio_path,''),                 COALESCE(s.cover_path,''), s.duration_sec,                 (SELECT COUNT(*) FROM live_utterances u WHERE u.song_id = s.id)          FROM favorites f JOIN live_songs s ON s.id = f.entity_id          WHERE f.entity_type = 'song'          ORDER BY f.created_at DESC LIMIT ?1",
     )?;
     let rows = stmt
         .query_map(params![limit], track_from_row)?
@@ -526,7 +526,7 @@ pub(crate) fn favorite_tracks(conn: &Connection, limit: i64) -> Result<Vec<Track
 pub(crate) fn genres(conn: &Connection, limit: i64) -> Result<Vec<FacetCount>> {
     facet(
         conn,
-        "SELECT CASE WHEN genre IS NULL OR trim(genre) = '' THEN '未分类' ELSE genre END,                 COUNT(*), COALESCE(SUM(duration_sec), 0)          FROM songs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?1",
+        "SELECT CASE WHEN genre IS NULL OR trim(genre) = '' THEN '未分类' ELSE genre END,                 COUNT(*), COALESCE(SUM(duration_sec), 0)          FROM live_songs GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?1",
         limit,
     )
 }
@@ -535,7 +535,7 @@ pub(crate) fn genres(conn: &Connection, limit: i64) -> Result<Vec<FacetCount>> {
 pub(crate) fn decades(conn: &Connection, limit: i64) -> Result<Vec<FacetCount>> {
     facet(
         conn,
-        "SELECT CASE                   WHEN year IS NULL OR length(trim(year)) < 4 THEN '年代不详'                   ELSE substr(year, 1, 3) || '0s' END,                 COUNT(*), COALESCE(SUM(duration_sec), 0)          FROM songs GROUP BY 1 ORDER BY 1 LIMIT ?1",
+        "SELECT CASE                   WHEN year IS NULL OR length(trim(year)) < 4 THEN '年代不详'                   ELSE substr(year, 1, 3) || '0s' END,                 COUNT(*), COALESCE(SUM(duration_sec), 0)          FROM live_songs GROUP BY 1 ORDER BY 1 LIMIT ?1",
         limit,
     )
 }
@@ -565,12 +565,15 @@ mod tests {
                                   normalized_name TEXT NOT NULL DEFAULT '');
              CREATE TABLE track_credits (song_id TEXT, person_id INTEGER, role TEXT,
                                          position INTEGER DEFAULT 0, source TEXT DEFAULT '');
+             CREATE TABLE songs (id TEXT PRIMARY KEY, year TEXT);
              INSERT INTO people (id, name) VALUES (1, 'ヨルシカ'), (2, 'n-buna'), (3, '月村手毬');
              INSERT INTO track_credits (song_id, person_id, role) VALUES
                ('001', 1, 'performer'), ('001', 2, 'composer'),
                ('002', 1, 'performer'), ('003', 3, 'performer');",
         )
         .unwrap();
+        conn.execute_batch("ALTER TABLE songs ADD COLUMN deleted_at TEXT").unwrap();
+        conn.execute_batch(crate::LIVE_VIEWS).unwrap();
         if with_artists {
             conn.execute_batch(
                 "CREATE TABLE artists (name TEXT PRIMARY KEY, image_path TEXT, artist_type TEXT,
@@ -588,8 +591,7 @@ mod tests {
     fn directory_counts_each_role_once_per_song() {
         let conn = fixture(true);
         conn.execute_batch(
-            "CREATE TABLE songs (id TEXT PRIMARY KEY, year TEXT);
-             INSERT INTO songs VALUES ('001', '2019'), ('002', '2021'), ('003', '');
+            "INSERT INTO songs (id, year) VALUES ('001', '2019'), ('002', '2021'), ('003', '');
              UPDATE artists SET artist_type = 'Group' WHERE name = 'ヨルシカ';
              -- 同一首歌里既作曲又作词：作品总数只算一次
              INSERT INTO track_credits (song_id, person_id, role) VALUES ('001', 2, 'lyricist');",
@@ -610,7 +612,6 @@ mod tests {
     #[test]
     fn directory_works_without_the_artists_table() {
         let conn = fixture(false);
-        conn.execute_batch("CREATE TABLE songs (id TEXT PRIMARY KEY, year TEXT);").unwrap();
         let all = people_directory(&conn).unwrap();
         assert_eq!(all.len(), 3);
         assert!(all.iter().all(|p| p.artist_type.is_empty() && p.image_path.is_empty()));

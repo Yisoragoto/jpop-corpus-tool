@@ -173,8 +173,8 @@ pub fn reject(conn: &Connection, band_id: i64, member_id: i64) -> Result<()> {
 const SELECT: &str = "SELECT m.band_id, b.name, m.member_id, p.name, m.part, m.joined, m.left_at, m.source,
             COALESCE(ab.image_path, ''), COALESCE(ap.image_path, '')
      FROM band_members m
-     JOIN people b ON b.id = m.band_id
-     JOIN people p ON p.id = m.member_id
+     JOIN live_people b ON b.id = m.band_id
+     JOIN live_people p ON p.id = m.member_id
      LEFT JOIN artists ab ON ab.name = b.name
      LEFT JOIN artists ap ON ap.name = p.name
      WHERE m.status = 'active'";
@@ -234,24 +234,24 @@ pub fn suggestions(conn: &Connection, min_songs: i64, min_share: f64) -> Result<
         "WITH written AS (
              -- 每个人写过的歌（去掉他自己演唱的那些）
              SELECT DISTINCT c.person_id, c.song_id
-             FROM track_credits c
+             FROM live_credits c
              WHERE c.role <> 'performer'
-               AND NOT EXISTS (SELECT 1 FROM track_credits s
+               AND NOT EXISTS (SELECT 1 FROM live_credits s
                                WHERE s.song_id = c.song_id AND s.person_id = c.person_id AND s.role = 'performer')
          ),
          totals AS (SELECT person_id, COUNT(*) AS n FROM written GROUP BY person_id),
          pairs AS (
              SELECT w.person_id AS member_id, perf.person_id AS band_id, COUNT(DISTINCT w.song_id) AS shared
              FROM written w
-             JOIN track_credits perf ON perf.song_id = w.song_id AND perf.role = 'performer'
+             JOIN live_credits perf ON perf.song_id = w.song_id AND perf.role = 'performer'
              WHERE perf.person_id <> w.person_id
              GROUP BY w.person_id, perf.person_id
          )
          SELECT pr.band_id, b.name, pr.member_id, p.name, pr.shared, t.n
          FROM pairs pr
          JOIN totals t ON t.person_id = pr.member_id
-         JOIN people b ON b.id = pr.band_id
-         JOIN people p ON p.id = pr.member_id
+         JOIN live_people b ON b.id = pr.band_id
+         JOIN live_people p ON p.id = pr.member_id
          LEFT JOIN artists a ON a.name = b.name
          WHERE pr.shared >= ?1
            AND CAST(pr.shared AS REAL) / t.n >= ?2

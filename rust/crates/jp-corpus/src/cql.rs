@@ -404,7 +404,7 @@ pub(crate) fn search(conn: &Connection, query: &CqlQuery) -> Result<Vec<KwicHit>
         "SELECT u.song_id, s.artist, s.title, COALESCE(s.audio_path,''), u.id, u.line_idx, u.time_sec, u.text, \
                 t.surface, t.lemma, COALESCE(t.pos,''), COALESCE(t.pos_ja,''), COALESCE(t.ctype,''), COALESCE(t.cform,''), \
                 COALESCE(t.reading,''), COALESCE(t.normalized,'') \
-         FROM tokens t JOIN utterances u ON u.id = t.utterance_id JOIN songs s ON s.id = u.song_id \
+         FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id JOIN live_songs s ON s.id = u.song_id \
          WHERE 1{clause} \
          ORDER BY s.artist, s.title, u.song_id, u.time_sec, u.line_idx, u.id, t.token_idx"
     );

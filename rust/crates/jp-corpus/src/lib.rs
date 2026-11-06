@@ -35,6 +35,7 @@ mod quick;
 pub mod corrections;
 pub mod fixture;
 pub mod migrations;
+pub mod backup;
 pub mod quality;
 pub mod lineage;
 /// 存档的分析、存起来的子语料（可复现分析，见 docs/provenance.md）
@@ -62,6 +63,12 @@ use rusqlite::{Connection, OpenFlags};
 
 pub use models::*;
 pub use corrections::{CorrectionView, TokenEdit};
+
+/// 在库视图（`live_songs`、`live_utterances` 等）的建法，说明见文件头。
+///
+/// 建库时随 `schema.sql` 一起跑。公开出来是给手写建表的测试夹具用的：
+/// 那些夹具的 `songs` 要带 `deleted_at` 列，再跑一遍这个。
+pub const LIVE_VIEWS: &str = include_str!("../live_views.sql");
 
 /// 语料库句柄。
 ///
@@ -152,6 +159,7 @@ impl Corpus {
     pub(crate) fn create_tables_on(conn: &Connection) -> Result<()> {
         conn.execute_batch(include_str!("../schema.sql"))
             .context("建表失败")?;
+        conn.execute_batch(LIVE_VIEWS).context("建在库视图失败")?;
         Ok(())
     }
 

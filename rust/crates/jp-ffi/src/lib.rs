@@ -832,7 +832,7 @@ fn media_status(conn: &rusqlite::Connection, root: Option<&Path>, roots: &[PathB
     let column = |sql: &str| -> Result<Vec<String>> {
         Ok(conn.prepare(sql)?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
     };
-    let audio = column("SELECT COALESCE(audio_path,'') FROM songs")?;
+    let audio = column("SELECT COALESCE(audio_path,'') FROM live_songs")?;
     let mut folders: Vec<MissingFolder> = Vec::new();
     let mut audio_missing = 0;
     for stored in audio.iter().filter(|s| !found(s)) {
@@ -850,8 +850,8 @@ fn media_status(conn: &rusqlite::Connection, root: Option<&Path>, roots: &[PathB
     Ok(MediaStatus {
         songs: audio.len(),
         audio_missing,
-        covers_missing: missing("SELECT COALESCE(cover_path,'') FROM songs")?,
-        albums_missing: missing("SELECT COALESCE(artwork_path,'') FROM albums")?,
+        covers_missing: missing("SELECT COALESCE(cover_path,'') FROM live_songs")?,
+        albums_missing: missing("SELECT COALESCE(artwork_path,'') FROM live_albums")?,
         artists_missing: missing("SELECT COALESCE(image_path,'') FROM artists")?,
         missing_audio_folders: folders,
     })

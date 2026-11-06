@@ -76,7 +76,7 @@ pub(crate) fn quick_search(
 fn tracks(conn: &Connection, pattern: &str, limit: i64) -> Result<Vec<QuickHit>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, artist, COALESCE(album,''), duration_sec \
-         FROM songs \
+         FROM live_songs \
          WHERE title LIKE ?1 ESCAPE '\\' OR artist LIKE ?1 ESCAPE '\\' \
          ORDER BY \
            CASE WHEN title LIKE ?1 ESCAPE '\\' THEN 0 ELSE 1 END, \
@@ -105,7 +105,7 @@ fn albums(
 ) -> Result<Vec<QuickHit>> {
     let mut stmt = conn.prepare(
         "SELECT al.id, al.title, al.album_artist, COUNT(s.id) \
-         FROM albums al LEFT JOIN songs s ON s.album_id = al.id \
+         FROM live_albums al LEFT JOIN live_songs s ON s.album_id = al.id \
          WHERE al.title LIKE ?1 ESCAPE '\\' \
             OR al.normalized_title LIKE ?2 ESCAPE '\\' \
             OR al.album_artist LIKE ?1 ESCAPE '\\' \
@@ -129,7 +129,7 @@ fn people(conn: &Connection, pattern: &str, key_pattern: &str, limit: i64) -> Re
         "SELECT p.id, p.name, \
                 COUNT(DISTINCT c.song_id), \
                 GROUP_CONCAT(DISTINCT c.role) \
-         FROM people p LEFT JOIN track_credits c ON c.person_id = p.id \
+         FROM live_people p LEFT JOIN live_credits c ON c.person_id = p.id \
          WHERE p.name LIKE ?1 ESCAPE '\\' OR p.normalized_name LIKE ?2 ESCAPE '\\' \
          GROUP BY p.id \
          ORDER BY COUNT(DISTINCT c.song_id) DESC, length(p.name) \
@@ -157,7 +157,7 @@ fn people(conn: &Connection, pattern: &str, key_pattern: &str, limit: i64) -> Re
 fn words(conn: &Connection, pattern: &str, limit: i64) -> Result<Vec<QuickHit>> {
     let mut stmt = conn.prepare(
         "SELECT t.lemma, t.pos, COUNT(*), COUNT(DISTINCT u.song_id) \
-         FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
+         FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id \
          WHERE t.lemma LIKE ?1 ESCAPE '\\' \
            AND t.pos NOT IN ('PUNCT','SYM','SPACE','X') \
          GROUP BY t.lemma, t.pos \

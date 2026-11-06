@@ -83,7 +83,7 @@ fn scope_songs(conn: &Connection, subcorpus: &crate::subcorpus::Subcorpus, perso
     let mut songs = subcorpus.song_ids(conn)?;
     if !person_ids.is_empty() {
         let marks = vec!["?"; person_ids.len()].join(",");
-        let mut stmt = conn.prepare(&format!("SELECT DISTINCT song_id FROM track_credits WHERE person_id IN ({marks})"))?;
+        let mut stmt = conn.prepare(&format!("SELECT DISTINCT song_id FROM live_credits WHERE person_id IN ({marks})"))?;
         let with: HashSet<String> = stmt
             .query_map(params_from_iter(person_ids.iter().map(|id| Value::from(*id))), |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
@@ -110,7 +110,7 @@ pub fn breakdown(conn: &Connection, query: &BreakdownQuery) -> Result<BreakdownR
     let mut song_tokens: HashMap<String, i64> = HashMap::new();
     {
         let mut stmt = conn.prepare(
-            "SELECT u.song_id, COUNT(*) FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
+            "SELECT u.song_id, COUNT(*) FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id \
              WHERE COALESCE(t.pos,'') NOT IN ('PUNCT','SYM') GROUP BY u.song_id",
         )?;
         for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
@@ -126,7 +126,7 @@ pub fn breakdown(conn: &Connection, query: &BreakdownQuery) -> Result<BreakdownR
     let mut labels: HashMap<String, String> = HashMap::new();
     match query.by {
         GroupBy::Year => {
-            let mut stmt = conn.prepare("SELECT id, COALESCE(substr(year,1,4),'') FROM songs")?;
+            let mut stmt = conn.prepare("SELECT id, COALESCE(substr(year,1,4),'') FROM live_songs")?;
             for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
                 let (song, year) = row?;
                 let year = if year.len() == 4 && year.chars().all(|c| c.is_ascii_digit()) { year } else { String::new() };
@@ -136,7 +136,7 @@ pub fn breakdown(conn: &Connection, query: &BreakdownQuery) -> Result<BreakdownR
         }
         GroupBy::Performer => {
             let mut stmt = conn.prepare(
-                "SELECT c.song_id, p.id, p.name FROM track_credits c JOIN people p ON p.id = c.person_id \
+                "SELECT c.song_id, p.id, p.name FROM live_credits c JOIN live_people p ON p.id = c.person_id \
                  WHERE c.role = 'performer' ORDER BY c.song_id, c.position, p.id",
             )?;
             for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))? {

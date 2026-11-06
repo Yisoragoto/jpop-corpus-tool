@@ -87,8 +87,8 @@ pub(crate) fn continue_track(conn: &Connection) -> Result<Option<ContinueTrack>>
         .query_row(
             "SELECT h.song_id, s.title, s.artist, COALESCE(s.cover_path,''), s.duration_sec, \
                     h.position_sec, h.completed, h.played_at, \
-                    (SELECT COUNT(*) FROM play_history c WHERE c.song_id = h.song_id) \
-             FROM play_history h JOIN songs s ON s.id = h.song_id \
+                    (SELECT COUNT(*) FROM live_play_history c WHERE c.song_id = h.song_id) \
+             FROM live_play_history h JOIN live_songs s ON s.id = h.song_id \
              ORDER BY h.played_at DESC, h.id DESC LIMIT 1",
             [],
             |r| {
@@ -110,7 +110,7 @@ pub(crate) fn continue_track(conn: &Connection) -> Result<Option<ContinueTrack>>
     let Some(mut track) = row else { return Ok(None) };
     track.stopped_line = conn
         .query_row(
-            "SELECT text FROM utterances \
+            "SELECT text FROM live_utterances \
              WHERE song_id = ?1 AND time_sec IS NOT NULL AND time_sec <= ?2 AND trim(text) <> '' \
              ORDER BY time_sec DESC, line_idx DESC LIMIT 1",
             params![track.song_id, track.position_sec],
@@ -125,11 +125,11 @@ pub(crate) fn today(conn: &Connection, utc_offset_minutes: i32) -> Result<DayLis
     let offset = offset_modifier(utc_offset_minutes)?;
     let (listened_sec, songs, lines_heard): (f64, i64, i64) = conn.query_row(
         "SELECT COALESCE(SUM(h.listened_sec), 0), COUNT(DISTINCT h.song_id), \
-                COALESCE(SUM((SELECT COUNT(*) FROM utterances u \
+                COALESCE(SUM((SELECT COUNT(*) FROM live_utterances u \
                               WHERE u.song_id = h.song_id AND u.time_sec IS NOT NULL \
                                 AND u.time_sec <= h.position_sec \
                                 AND u.time_sec >= h.position_sec - h.listened_sec)), 0) \
-         FROM play_history h \
+         FROM live_play_history h \
          WHERE date(h.played_at, ?1) = date('now', ?1)",
         params![offset],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
@@ -143,7 +143,7 @@ pub(crate) fn today(conn: &Connection, utc_offset_minutes: i32) -> Result<DayLis
     )?;
     let mut stmt = conn.prepare(
         "SELECT DISTINCT CAST(julianday(played_at, ?1) + 0.5 AS INTEGER) AS d \
-         FROM play_history ORDER BY d DESC",
+         FROM live_play_history ORDER BY d DESC",
     )?;
     let days = stmt
         .query_map(params![offset], |r| r.get::<_, i64>(0))?
@@ -175,17 +175,17 @@ fn streak(days: &[i64], today: i64) -> i64 {
 pub(crate) fn reach(conn: &Connection) -> Result<Reach> {
     let (heard_songs, heard_lemmas): (i64, i64) = conn.query_row(
         &format!(
-            "WITH heard AS (SELECT DISTINCT song_id FROM play_history WHERE listened_sec >= ?1) \
+            "WITH heard AS (SELECT DISTINCT song_id FROM live_play_history WHERE listened_sec >= ?1) \
              SELECT (SELECT COUNT(*) FROM heard), \
                     (SELECT COUNT(DISTINCT t.lemma) FROM tokens t \
-                     JOIN utterances u ON u.id = t.utterance_id \
+                     JOIN live_utterances u ON u.id = t.utterance_id \
                      WHERE u.song_id IN (SELECT song_id FROM heard) AND t.pos IN {CONTENT_POS})"
         ),
         params![HEARD_MIN_SEC],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     let total_lemmas: i64 = conn.query_row(
-        &format!("SELECT COUNT(DISTINCT lemma) FROM tokens WHERE pos IN {CONTENT_POS}"),
+        &format!("SELECT COUNT(DISTINCT lemma) FROM live_tokens WHERE pos IN {CONTENT_POS}"),
         [],
         |r| r.get(0),
     )?;
@@ -198,7 +198,7 @@ pub(crate) fn reach(conn: &Connection) -> Result<Reach> {
 
 pub(crate) fn recently_added(conn: &Connection, limit: i64) -> Result<Vec<AddedTrack>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, artist, COALESCE(cover_path,''), added_at FROM songs \
+        "SELECT id, title, artist, COALESCE(cover_path,''), added_at FROM live_songs \
          WHERE added_at IS NOT NULL ORDER BY added_at DESC, id DESC LIMIT ?1",
     )?;
     let rows = stmt

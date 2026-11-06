@@ -100,7 +100,7 @@ impl StatsFilter {
     pub(crate) fn clause(&self) -> (String, Vec<rusqlite::types::Value>) {
         let (mut sql, values) = self.subcorpus().and_clause("u.song_id");
         if self.distinct_lines {
-            sql.push_str(" AND u.id IN (SELECT MIN(u2.id) FROM utterances u2 GROUP BY u2.song_id, u2.text)");
+            sql.push_str(" AND u.id IN (SELECT MIN(u2.id) FROM live_utterances u2 GROUP BY u2.song_id, u2.text)");
         }
         (sql, values)
     }
@@ -148,7 +148,7 @@ pub fn word_frequency_table(conn: &Connection, pos: Option<&str>, filter: &Stats
     let pos_clause = if pos.is_some() { " AND t.pos = ?" } else { "" };
     let sql = format!(
         "SELECT t.lemma, t.pos, COUNT(*) AS freq, COUNT(DISTINCT u.song_id), GROUP_CONCAT(DISTINCT t.surface) \
-         FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
+         FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id \
          WHERE t.pos NOT IN ('PUNCT','SYM'){pos_clause}{clause} \
          GROUP BY t.lemma, t.pos ORDER BY freq DESC, t.lemma, t.pos"
     );
@@ -235,7 +235,7 @@ pub fn stats_report(conn: &Connection, filter: &StatsFilter) -> anyhow::Result<S
     use rusqlite::OptionalExtension;
     let mut performers = Vec::new();
     for id in &filter.performer_ids {
-        let name: Option<String> = conn.query_row("SELECT name FROM people WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+        let name: Option<String> = conn.query_row("SELECT name FROM live_people WHERE id = ?1", [id], |r| r.get(0)).optional()?;
         performers.extend(name);
     }
     let report = corpus_report(conn, filter)?;
@@ -267,20 +267,20 @@ pub fn corpus_report(conn: &Connection, filter: &StatsFilter) -> anyhow::Result<
     let values = || params_from_iter(ids.iter().cloned());
 
     let song_count: i64 = conn.query_row(
-        &format!("SELECT COUNT(DISTINCT u.song_id) FROM utterances u JOIN songs s ON s.id = u.song_id WHERE 1=1{clause}"),
+        &format!("SELECT COUNT(DISTINCT u.song_id) FROM live_utterances u JOIN live_songs s ON s.id = u.song_id WHERE 1=1{clause}"),
         values(),
         |r| r.get(0),
     )?;
     let utterance_count: i64 = conn.query_row(
-        &format!("SELECT COUNT(u.id) FROM utterances u JOIN songs s ON s.id = u.song_id WHERE 1=1{clause}"),
+        &format!("SELECT COUNT(u.id) FROM live_utterances u JOIN live_songs s ON s.id = u.song_id WHERE 1=1{clause}"),
         values(),
         |r| r.get(0),
     )?;
 
     // 词次序列：统计报告里所有指标都从这一批词算，「只看日文」在这里过滤
     let mut stmt = conn.prepare(&format!(
-        "SELECT u.song_id, t.lemma, t.pos FROM tokens t JOIN utterances u ON u.id = t.utterance_id \
-         JOIN songs s ON s.id = u.song_id WHERE {EXCLUDED}{clause} ORDER BY s.id, u.line_idx, t.token_idx"
+        "SELECT u.song_id, t.lemma, t.pos FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id \
+         JOIN live_songs s ON s.id = u.song_id WHERE {EXCLUDED}{clause} ORDER BY s.id, u.line_idx, t.token_idx"
     ))?;
     let tokens: Vec<(String, String, String)> = stmt
         .query_map(values(), |r| {
