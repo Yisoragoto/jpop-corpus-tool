@@ -152,8 +152,14 @@ pub fn resolve_format(text: &str, hint_value: Option<&str>) -> Format {
 /// 照指定格式解析，不再判断。
 pub fn decode_as(text: &str, format: Format) -> Result<Decoded> {
     let original = text.trim_start_matches('\u{feff}').to_string();
+    // TTML head 里带的译文（Apple Music 的 iTunesMetadata）：不进 LRC 正文，直接当译文行
+    let mut side_translations = Vec::new();
     let timed = match format {
-        Format::Ttml => Some(timed::parse_ttml(&original)?),
+        Format::Ttml => {
+            let (lyrics, translations) = timed::parse_ttml_with_translations(&original)?;
+            side_translations = translations;
+            Some(lyrics)
+        }
         Format::Qrc => Some(timed::parse_qrc(&original)?),
         Format::Yrc => Some(timed::parse_yrc(&original)?),
         Format::Krc => Some(timed::parse_krc(&original)?),
@@ -179,7 +185,12 @@ pub fn decode_as(text: &str, format: Format) -> Result<Decoded> {
         Some(timed) => timed.to_enhanced_lrc(),
         None => original.clone(),
     };
-    let parsed = lrc::parse(&lrc);
+    let mut parsed = lrc::parse(&lrc);
+    parsed.translations.extend(side_translations.into_iter().map(|line| lrc::LyricLine {
+        time_sec: Some(line.start_ms as f64 / 1000.0),
+        text: line.text,
+        words: Vec::new(),
+    }));
     let ends = vec![None; parsed.lines.len()];
     Ok(Decoded { format, original, lrc, parsed, ends, timed })
 }
