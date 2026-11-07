@@ -183,7 +183,9 @@ export type LibraryView =
   | { kind: "graph"; focus?: number | null }
   | { kind: "timeline" }
   /** 词云（筛选记在 CloudView 的模块里） */
-  | { kind: "cloud" };
+  | { kind: "cloud" }
+  /** 音乐文件夹：来源、对账、已移出的歌 */
+  | { kind: "folders" };
 
 export function sameView(a: LibraryView, b: LibraryView): boolean {
   if (a.kind !== b.kind) return false;

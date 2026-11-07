@@ -41,7 +41,22 @@ pub fn new_audio(
         .query_map([], |r| r.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let folders = jp_import::watched_folders(root, &audio_paths, ignored_folders);
+    // 用户配过音乐文件夹，就只看启用的、现在在的那几个；一个都没配过才用推算
+    let sources = jp_corpus::library_sources::list(corpus.connection())?;
+    let folders = if sources.is_empty() {
+        jp_import::watched_folders(root, &audio_paths, ignored_folders)
+    } else {
+        sources
+            .into_iter()
+            .filter(|s| s.source.enabled && s.present)
+            .map(|s| jp_import::WatchedFolder {
+                depth: crate::sources::depth_of(s.source.recursive),
+                path: s.source.root_path.into(),
+                reason: jp_import::WatchReason::Source,
+                songs: s.songs,
+            })
+            .collect()
+    };
     let unknown = jp_import::unknown_audio(&folders, &index, ignored_files, ignored_folders);
 
     let mut tracks: Vec<jp_import::ScannedTrack> = unknown

@@ -115,6 +115,7 @@ interface Props {
   /** 没给就不显示时间轴按钮 */
   onOpenTimeline?: () => void;
   onOpenCloud: () => void;
+  onOpenFolders: () => void;
   /** 收起左栏 */
   onHide: () => void;
 }
@@ -132,6 +133,7 @@ export function LibraryBrowser({
   onOpenGraph,
   onOpenTimeline,
   onOpenCloud,
+  onOpenFolders,
   onHide,
 }: Props) {
   const [mode, setModeState] = useState<BrowseMode>(readMode);
@@ -241,6 +243,10 @@ export function LibraryBrowser({
         <button className={view.kind === "cloud" ? "on" : ""} onClick={onOpenCloud} title={tr("词云：歌词里最常出现的词")}>
           <Icon name="font" />
           {tr("词云")}
+        </button>
+        <button className={view.kind === "folders" ? "on" : ""} onClick={onOpenFolders} title={tr("音乐文件夹：歌从哪来、重新扫描对账、已移出的歌")}>
+          <Icon name="folder" />
+          {tr("音乐文件夹")}
         </button>
       </nav>
     </aside>

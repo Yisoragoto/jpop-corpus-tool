@@ -391,8 +391,9 @@ pub struct MissingAudio {
     pub audio_path: String,
 }
 
+/// 在库的歌里音频找不到的。已移出的不列：它们在「已移出的歌」里，那边能恢复
 pub fn missing_audio(conn: &Connection) -> Result<Vec<MissingAudio>> {
-    let mut stmt = conn.prepare("SELECT id, title, artist, COALESCE(audio_path,'') FROM songs ORDER BY id")?;
+    let mut stmt = conn.prepare("SELECT id, title, artist, COALESCE(audio_path,'') FROM live_songs ORDER BY id")?;
     let rows = stmt
         .query_map([], |r| {
             Ok(MissingAudio { song_id: r.get(0)?, title: r.get(1)?, artist: r.get(2)?, audio_path: r.get(3)? })

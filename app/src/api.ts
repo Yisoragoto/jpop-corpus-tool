@@ -1390,8 +1390,8 @@ export interface ScanResult {
 /** 查新歌时去看的一个文件夹（`library_new_audio`）。 */
 export interface WatchedFolder {
   path: string;
-  /** library：语料库目录自己；libraryAudio：库里有歌直接放在这儿；parent：它的子文件夹大多是库里的 */
-  reason: "library" | "libraryAudio" | "parent";
+  /** library：语料库目录自己；libraryAudio：库里有歌直接放在这儿；parent：它的子文件夹大多是库里的；source：用户设的音乐文件夹 */
+  reason: "library" | "libraryAudio" | "parent" | "source";
   /** 往下看几层。1 是只看直接放在这里的文件 */
   depth: number;
   /** 库里有多少首歌在它下面 */

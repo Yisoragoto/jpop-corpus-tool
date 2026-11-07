@@ -173,6 +173,7 @@ pub fn discover_local_at(conn: &Connection, song_id: &str, audio: Option<&Path>)
         if !before.iter().any(|r| r.id == id && r.content_hash == hash && !r.missing) {
             report.updated += 1;
         }
+        record_stamp(conn, id, &file.path)?;
         seen.push(id);
     }
     if audio.is_file()
@@ -202,6 +203,7 @@ pub fn discover_local_at(conn: &Connection, song_id: &str, audio: Option<&Path>)
             if !before.iter().any(|r| r.id == id && r.content_hash == hash && !r.missing) {
                 report.updated += 1;
             }
+            record_stamp(conn, id, audio)?;
             seen.push(id);
         }
     // 上次在、这次没找到的本地来源。只看这一轮确实去找过的类别；
@@ -221,6 +223,85 @@ pub fn discover_local_at(conn: &Connection, song_id: &str, audio: Option<&Path>)
         }
     }
     Ok(report)
+}
+
+/// 文件的大小和修改时间（秒，带小数）。读不到是 None
+fn file_stamp(path: &Path) -> Option<(i64, f64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs_f64();
+    Some((meta.len() as i64, mtime))
+}
+
+/// 记下来源文件这一刻的大小和修改时间，下次对账先比这两个，不用每次读文件
+fn record_stamp(conn: &Connection, source_id: i64, path: &Path) -> Result<()> {
+    let (size, mtime) = file_stamp(path).unzip();
+    conn.execute("UPDATE lyric_sources SET file_size=?2, file_mtime=?3 WHERE id=?1", params![source_id, size, mtime])?;
+    Ok(())
+}
+
+/// 音频旁边的歌词文件和上次登记的比，有没有新出现或改过的。返回第一个变了的文件；只读
+/// （例外：老来源还没记大小和修改时间、内容又没变的，顺手记上，下次就不用再读文件）。
+///
+/// 内嵌歌词不在这里看：它变了音频文件本身就变了，对账会把那首歌归进「文件变了」。
+/// 不见了的外挂文件不算变：当前歌词不会因为文件被挪走就消失（见 [`discover_local`]）。
+/// 你改过的来源不算：它不会被文件覆盖。
+pub fn local_changed(conn: &Connection, song_id: &str, audio: &Path) -> Result<Option<PathBuf>> {
+    struct Known {
+        id: i64,
+        source_ref: String,
+        hash: String,
+        user_modified: bool,
+        missing: bool,
+        stamp: Option<(i64, f64)>,
+    }
+    let mut stmt = conn.prepare_cached(
+        "SELECT id, source_ref, content_hash, user_modified, missing, file_size, file_mtime          FROM lyric_sources WHERE song_id=?1 AND kind='sibling'",
+    )?;
+    let known: Vec<Known> = stmt
+        .query_map([song_id], |r| {
+            let size: Option<i64> = r.get(5)?;
+            let mtime: Option<f64> = r.get(6)?;
+            Ok(Known {
+                id: r.get(0)?,
+                source_ref: r.get(1)?,
+                hash: r.get(2)?,
+                user_modified: r.get::<_, i64>(3)? != 0,
+                missing: r.get::<_, i64>(4)? != 0,
+                stamp: size.zip(mtime),
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    for file in local_files(audio) {
+        let Some(stamp) = file_stamp(&file.path) else { continue };
+        if stamp.0 as u64 > MAX_LOCAL_BYTES {
+            continue;
+        }
+        let path = file.path.display().to_string();
+        let Some(row) = known.iter().find(|k| k.source_ref == path) else {
+            // 新放进来的文件；空文件不算
+            let fresh = crate::lyrics::read_text(&file.path).is_ok_and(|raw| !raw.trim().is_empty());
+            if fresh {
+                return Ok(Some(file.path));
+            }
+            continue;
+        };
+        if row.user_modified {
+            continue;
+        }
+        if row.missing {
+            return Ok(Some(file.path));
+        }
+        match row.stamp {
+            Some(known) if known == stamp => continue,
+            _ => {}
+        }
+        let Ok(raw) = crate::lyrics::read_text(&file.path) else { continue };
+        if store::raw_hash(&raw) != row.hash {
+            return Ok(Some(file.path));
+        }
+        record_stamp(conn, row.id, &file.path)?;
+    }
+    Ok(None)
 }
 
 // ── 时间轴 ────────────────────────────────────────────────────────
@@ -410,6 +491,16 @@ pub fn reconcile(
     analyzer: Option<&jp_tokenizer::Analyzer>,
 ) -> Result<Option<Attached>> {
     discover_local_at(conn, song_id, audio)?;
+    switch_to_best(conn, lyrics_dir, song_id, analyzer)
+}
+
+/// 已经登记过本地来源之后：选择不是你定的，就按优先级换到最好的那份。
+fn switch_to_best(
+    conn: &mut Connection,
+    lyrics_dir: &Path,
+    song_id: &str,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+) -> Result<Option<Attached>> {
     if store::locked(conn, song_id)? {
         return Ok(None);
     }
@@ -428,6 +519,37 @@ pub fn reconcile(
     }
     let id = best.id;
     Ok(Some(apply_source(conn, lyrics_dir, song_id, id, false, analyzer)?))
+}
+
+/// 音频或旁边的歌词文件变了之后（曲库对账确认时）：重新登记本地来源，
+/// **当前选中的正是一份本地文件、而它的内容变了**——内嵌歌词从 LRC 升级成逐字、外挂文件改过——
+/// 就把新内容挂成新的一版（旧版本照常留在历史里）。你选定的那份文件也一样：你选的是「这个文件」。
+/// 别的情况照 [`reconcile`]：选择不是你定的才按优先级换。你改过的歌词不动。
+pub fn sync_local(
+    conn: &mut Connection,
+    lyrics_dir: &Path,
+    song_id: &str,
+    audio: Option<&Path>,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+) -> Result<Option<Attached>> {
+    let selection = store::selection(conn, song_id)?;
+    let before = match selection.as_ref().and_then(|s| s.source_id) {
+        Some(id) => store::get(conn, id)?,
+        None => None,
+    };
+    discover_local_at(conn, song_id, audio)?;
+    if let Some(before) = before
+        && matches!(before.kind.as_str(), "sibling" | "embedded")
+        && !before.user_modified
+        && let Some(after) = store::get(conn, before.id)?
+        && after.content_hash != before.content_hash
+        && !after.missing
+        && after.line_count > 0
+    {
+        let by_user = selection.is_some_and(|s| s.chosen_by == "user");
+        return Ok(Some(apply_source(conn, lyrics_dir, song_id, after.id, by_user, analyzer)?));
+    }
+    switch_to_best(conn, lyrics_dir, song_id, analyzer)
 }
 
 /// 「歌词来源」面板要的东西。
@@ -654,6 +776,58 @@ mod tests {
         let tl = song_timeline(conn, "s").unwrap();
         assert_eq!(tl.precision, timeline::Precision::None);
         assert!(tl.lines.iter().all(|l| l.start_ms.is_none()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_changed_lyrics_file_is_detected_and_synced_as_a_new_version_unless_you_picked_another_source() {
+        let dir = scratch("sync");
+        let audio = dir.join("song.flac");
+        std::fs::write(&audio, b"x").unwrap();
+        let mut corpus = db(&audio);
+        let conn = corpus.connection_mut();
+        let lyrics_dir = dir.join("lyrics");
+        let lrc = dir.join("song.lrc");
+
+        // 旁边一份逐行 LRC，自动挂上；挂上之后对账看不出变化
+        std::fs::write(&lrc, "[00:02.00]となり
+").unwrap();
+        assert!(sync_local(conn, &lyrics_dir, "s", None, None).unwrap().is_some());
+        assert_eq!(lines(conn), vec![(Some(2.0), "となり".to_string())]);
+        assert_eq!(local_changed(conn, "s", &audio).unwrap(), None);
+
+        // 文件升级成逐字（ESLyric 写法）：检出来，同步时挂成新的一版
+        std::fs::write(&lrc, "[00:02.00]と[00:02.40]な[00:02.80]り[00:03.20]
+").unwrap();
+        assert_eq!(local_changed(conn, "s", &audio).unwrap(), Some(lrc.clone()));
+        assert!(sync_local(conn, &lyrics_dir, "s", None, None).unwrap().is_some());
+        assert_eq!(lines(conn), vec![(Some(2.0), "となり".to_string())]);
+        let current = store::selection(conn, "s").unwrap().unwrap().source_id.unwrap();
+        assert_eq!(store::get(conn, current).unwrap().unwrap().precision, "word");
+        let versions: i64 = conn.query_row("SELECT COUNT(*) FROM lyric_versions WHERE song_id='s'", [], |r| r.get(0)).unwrap();
+        assert_eq!(versions, 2, "旧的一版留在历史里");
+        assert_eq!(local_changed(conn, "s", &audio).unwrap(), None);
+
+        // 你手动选了另一份：文件再变也不换过去，只是登记新内容
+        crate::lyrics::apply_lrc_text(conn, &lyrics_dir, SongRef { id: "s", artist: "歌手", title: "曲" }, "[00:01.00]オンライン
+", LyricsSource::Netease, "曲 — 歌手", None).unwrap();
+        let online = store::list(conn, "s").unwrap().into_iter().find(|r| r.kind == "online").unwrap();
+        apply_source(conn, &lyrics_dir, "s", online.id, true, None).unwrap();
+        std::fs::write(&lrc, "[00:05.00]かわった
+").unwrap();
+        assert!(local_changed(conn, "s", &audio).unwrap().is_some());
+        assert!(sync_local(conn, &lyrics_dir, "s", None, None).unwrap().is_none());
+        assert_eq!(lines(conn), vec![(Some(1.0), "オンライン".to_string())]);
+        assert_eq!(local_changed(conn, "s", &audio).unwrap(), None, "新内容已经登记了");
+
+        // 你选定的是这个文件：文件变了照样跟着换，选择仍算你的
+        let sibling = store::list(conn, "s").unwrap().into_iter().find(|r| r.kind == "sibling").unwrap();
+        apply_source(conn, &lyrics_dir, "s", sibling.id, true, None).unwrap();
+        std::fs::write(&lrc, "[00:06.00]またかわった
+").unwrap();
+        assert!(sync_local(conn, &lyrics_dir, "s", None, None).unwrap().is_some());
+        assert_eq!(lines(conn), vec![(Some(6.0), "またかわった".to_string())]);
+        assert_eq!(store::selection(conn, "s").unwrap().unwrap().chosen_by, "user");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

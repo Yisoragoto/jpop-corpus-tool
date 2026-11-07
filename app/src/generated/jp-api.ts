@@ -2,10 +2,39 @@
 // 改了 Rust 类型之后跑 `JP_API_BLESS=1 cargo test -p jp-api` 重新生成，连同这个文件一起提交。
 // 不重新生成的话 `cargo test --workspace` 会失败。
 
+export type AddArgs = { folders: Array<FolderArg>, };
+
 /**
  * 最近添加的一首。
  */
 export type AddedTrack = { songId: string, title: string, artist: string, coverPath: string, addedAt: string, };
+
+export type AppliedView = { refreshed: number, restored: number, relinked: number, movedOut: number, 
+/**
+ * 对账到确认之间情况变了、没有写的几项
+ */
+skipped: number, };
+
+/**
+ * 确认对账：界面显示的那几组、去掉用户勾掉的。每一项都会重新核对，对不上的跳过。
+ */
+export type ApplyArgs = { id: number, 
+/**
+ * 要刷新的文件路径（`changed` 里的 `path`）
+ */
+refresh?: Array<string>, 
+/**
+ * 要恢复的歌（`returned`）
+ */
+restore?: Array<string>, 
+/**
+ * 要改路径的歌（`moved`）
+ */
+relink?: Array<RelinkArg>, 
+/**
+ * 要移出的歌（`gone`）
+ */
+moveOut?: Array<string>, };
 
 /**
  * 上次听的那首，以及停在哪。
@@ -43,6 +72,12 @@ linesHeard: number,
  */
 streakDays: number, };
 
+export type FolderArg = { path: string, 
+/**
+ * 包括子文件夹。不传当作是
+ */
+recursive?: boolean, };
+
 /**
  * 首页要的一切。
  *
@@ -65,6 +100,19 @@ utcOffsetMinutes?: number,
  * 「最近添加」要几首
  */
 addedLimit?: number, };
+
+/**
+ * 挪了位置的歌。
+ */
+export type MovedSong = { songId: string, title: string, artist: string, from: string, to: string, 
+/**
+ * 凭什么认定是同一首（ISRC、录音 ID、曲名歌手时长……）
+ */
+reason: string, 
+/**
+ * 原来已经移出了，改路径的同时恢复
+ */
+wasRemoved: boolean, };
 
 /**
  * 没有参数的命令用它。TS 里是 `Record<symbol, never>`，传 `{}` 或不传都行
@@ -133,6 +181,89 @@ heardLemmas: number,
  */
 totalLemmas: number, };
 
+export type RelinkArg = { songId: string, to: string, };
+
+/**
+ * 已移出的一首。
+ */
+export type RemovedSong = { id: string, title: string, artist: string, audioPath: string, removedAt: string, 
+/**
+ * 它原来属于哪个文件夹（那个文件夹也移除了的话是空）
+ */
+source: string, 
+/**
+ * 音频文件现在还在不在
+ */
+audioPresent: boolean, };
+
+export type SetEnabledArgs = { id: number, enabled: boolean, };
+
+/**
+ * 一首歌和它的文件。
+ */
+export type SongFile = { songId: string, title: string, artist: string, path: string, };
+
+export type SongIdsArgs = { ids: Array<string>, };
+
+/**
+ * 一个音乐文件夹。
+ */
+export type Source = { id: number, rootPath: string, label: string, recursive: boolean, enabled: boolean, createdAt: string, lastScannedAt: string | null, lastScanError: string | null, };
+
+export type SourceIdArgs = { id: number, };
+
+/**
+ * 一个文件夹的对账。
+ */
+export type SourcePlanView = { source: Source, 
+/**
+ * 库里没有的文件（新歌、疑似重复、导入时会跳过的都在这里）。
+ * 不在这里导入：界面拿这些路径去走导入复核（`scan_files`）
+ */
+newFiles: Array<string>, 
+/**
+ * 其中确定是新歌的几首
+ */
+newSongs: number, 
+/**
+ * 文件变了（换了压制、改了标签）：刷新文件信息
+ */
+changed: Array<SongFile>, 
+/**
+ * 移出过、文件又回来了
+ */
+returned: Array<SongFile>, moved: Array<MovedSong>, 
+/**
+ * 文件不见了
+ */
+gone: Array<SongFile>, 
+/**
+ * 音频没变、旁边的歌词文件新放进来或改过（`path` 是歌词文件）。
+ * 确认后对这些歌（和 `changed` 里的歌）调歌词同步，挂成新的一版
+ */
+lyricsChanged: Array<SongFile>, unchanged: number, 
+/**
+ * 文件夹里一个音频都没扫到（可能是盘换了内容）
+ */
+nothingFound: boolean, };
+
+/**
+ * 界面上的一行：来源本身，加上它下面有几首歌。
+ */
+export type SourceView = { 
+/**
+ * 在库的歌
+ */
+songs: number, 
+/**
+ * 已移出（`deleted_at` 不空）的歌
+ */
+removed: number, 
+/**
+ * 文件夹现在在不在（盘没插、挪走了是 false）
+ */
+present: boolean, id: number, rootPath: string, label: string, recursive: boolean, enabled: boolean, createdAt: string, lastScannedAt: string | null, lastScanError: string | null, };
+
 /**
  * 一首曲目。对应 `songs` 表。
  */
@@ -160,4 +291,11 @@ export interface Commands {
   get_track: { args: TrackArgs; output: Track | null };
   quick_search: { args: QuickSearchArgs; output: QuickSearchResults };
   home_summary: { args: HomeSummaryArgs; output: HomeSummary };
+  library_sources: { args: NoArgs; output: Array<SourceView> };
+  library_sources_add: { args: AddArgs; output: Array<SourceView> };
+  library_source_set_enabled: { args: SetEnabledArgs; output: Array<SourceView> };
+  library_source_plan: { args: SourceIdArgs; output: SourcePlanView };
+  library_source_apply: { args: ApplyArgs; output: AppliedView };
+  library_removed_songs: { args: NoArgs; output: Array<RemovedSong> };
+  library_restore_songs: { args: SongIdsArgs; output: number };
 }

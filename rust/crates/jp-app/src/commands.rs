@@ -2040,6 +2040,132 @@ pub fn library_delete_song(
     Ok(crate::library_admin::delete_song(&state, &song_id)?)
 }
 
+// ── 曲库 › 来源：音乐文件夹（命令定义在 jp_api::sources） ──
+
+#[tauri::command(async)]
+pub fn library_sources(state: State<'_, AppState>) -> CmdResult<Vec<jp_corpus::library_sources::SourceView>> {
+    Ok(jp_api::sources::LibrarySources::run(&state.corpus(), jp_api::NoArgs {})?)
+}
+
+#[tauri::command(async)]
+pub fn library_sources_add(
+    state: State<'_, AppState>,
+    folders: Vec<jp_api::sources::FolderArg>,
+) -> CmdResult<Vec<jp_corpus::library_sources::SourceView>> {
+    Ok(jp_api::sources::LibrarySourcesAdd::run(&state.corpus(), jp_api::sources::AddArgs { folders })?)
+}
+
+#[tauri::command(async)]
+pub fn library_source_set_enabled(
+    state: State<'_, AppState>,
+    id: i64,
+    enabled: bool,
+) -> CmdResult<Vec<jp_corpus::library_sources::SourceView>> {
+    Ok(jp_api::sources::LibrarySourceSetEnabled::run(&state.corpus(), jp_api::sources::SetEnabledArgs { id, enabled })?)
+}
+
+/// 扫一个文件夹对账。要翻整个目录，放进阻塞线程池；用自己的连接，不占会话锁
+#[tauri::command]
+pub async fn library_source_plan<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    id: i64,
+) -> CmdResult<jp_api::sources::SourcePlanView> {
+    blocking(app, move |state| {
+        let corpus = jp_corpus::Corpus::open_writable(&state.db_path)?;
+        jp_api::sources::LibrarySourcePlan::run(&corpus, jp_api::sources::SourceIdArgs { id })
+    })
+    .await
+}
+
+/// 确认对账。刷新变了的文件要重读标签，放进阻塞线程池
+#[tauri::command]
+pub async fn library_source_apply<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    id: i64,
+    refresh: Option<Vec<String>>,
+    restore: Option<Vec<String>>,
+    relink: Option<Vec<jp_api::sources::RelinkArg>>,
+    move_out: Option<Vec<String>>,
+) -> CmdResult<jp_api::sources::AppliedView> {
+    blocking(app, move |state| {
+        state.flush_session();
+        let args = jp_api::sources::ApplyArgs { id, refresh, restore, relink, move_out };
+        jp_api::sources::LibrarySourceApply::run(&state.corpus(), args)
+    })
+    .await
+}
+
+#[tauri::command(async)]
+pub fn library_removed_songs(state: State<'_, AppState>) -> CmdResult<Vec<jp_corpus::library_sources::RemovedSong>> {
+    Ok(jp_api::sources::LibraryRemovedSongs::run(&state.corpus(), jp_api::NoArgs {})?)
+}
+
+#[tauri::command(async)]
+pub fn library_restore_songs(state: State<'_, AppState>, ids: Vec<String>) -> CmdResult<usize> {
+    Ok(jp_api::sources::LibraryRestoreSongs::run(&state.corpus(), jp_api::sources::SongIdsArgs { ids })?)
+}
+
+/// 一首歌的歌词同步失败
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricSyncFailure {
+    pub song_id: String,
+    pub error: String,
+}
+
+/// 歌词同步的结果
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricSyncReport {
+    /// 挂上了新的一版
+    pub updated: Vec<String>,
+    /// 看过了，不用换（你选了别的来源、或者内容没变）
+    pub unchanged: usize,
+    pub failed: Vec<LyricSyncFailure>,
+}
+
+/// 音频或旁边的歌词文件变了之后，逐首同步歌词（见 `jp_lyrics::sources::sync_local`）。
+/// 对账确认后界面对「文件变了」「歌词文件变了」的歌调它。要分词，放进阻塞线程池；一首一个事务，
+/// 一首出错不影响其余
+#[tauri::command]
+pub async fn library_sync_lyrics<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_ids: Vec<String>,
+) -> CmdResult<LyricSyncReport> {
+    blocking(app, move |state| {
+        state.flush_session();
+        let lyrics_dir = state.lyrics_dir.clone();
+        let analyzer = state.analyzer();
+        let mut report = LyricSyncReport::default();
+        for id in song_ids {
+            let mut corpus = state.corpus();
+            match jp_lyrics::sources::sync_local(corpus.connection_mut(), &lyrics_dir, &id, None, analyzer.as_deref()) {
+                Ok(Some(_)) => report.updated.push(id),
+                Ok(None) => report.unchanged += 1,
+                Err(err) => report.failed.push(LyricSyncFailure { song_id: id, error: format!("{err:#}") }),
+            }
+        }
+        Ok(report)
+    })
+    .await
+}
+
+/// 还没有音乐文件夹时，按库里歌的位置建议几个（要知道项目目录，所以不在 jp-api）
+#[tauri::command(async)]
+pub fn library_source_suggestions(state: State<'_, AppState>) -> CmdResult<jp_library::sources::Suggestions> {
+    Ok(jp_library::sources::suggestions(&state.corpus(), &state.project_root())?)
+}
+
+/// 移除一个音乐文件夹。歌移出（可恢复）或彻底删除；彻底删除要删封面和变调缓存，所以不在 jp-api
+#[tauri::command(async)]
+pub fn library_source_remove(
+    state: State<'_, AppState>,
+    id: i64,
+    mode: jp_library::sources::RemoveMode,
+) -> CmdResult<jp_library::sources::Removed> {
+    Ok(crate::library_admin::remove_source(&state, id, mode)?)
+}
+
 /// 音频文件找不到的曲目。
 #[tauri::command(async)]
 pub fn library_missing_audio(

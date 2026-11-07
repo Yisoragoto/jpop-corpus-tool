@@ -1917,6 +1917,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "jp-corpus",
+ "jp-import",
+ "jp-library",
  "serde",
  "serde_json",
  "ts-rs",
@@ -2076,6 +2078,7 @@ dependencies = [
  "jp-audio",
  "jp-corpus",
  "jp-import",
+ "jp-lyrics",
  "jp-scrape",
  "jp-setup",
  "rusqlite",

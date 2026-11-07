@@ -31,6 +31,7 @@ import { CloudView, focusCloudOn } from "../components/CloudView";
 import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
+import { LibrarySources } from "../components/LibrarySources";
 import { LyricsStage } from "../components/LyricsStage";
 import { KaraokeStage } from "../components/KaraokeStage";
 import { SongEditor } from "../components/SongEditor";
@@ -163,6 +164,10 @@ interface Props {
   /** 外面（别的页面上的「词的去处」）点「看例句和释义」：打开这个词的释义和例句 */
   examplesWanted?: { lemma: string; jump: WordJump } | null;
   onExamplesConsumed?: () => void;
+  /** 音乐文件夹里扫出的新文件：交给导入页复核 */
+  onReviewFiles: (paths: string[]) => void;
+  /** 移出、恢复、删了歌之后：曲目列表、总览都要重拉 */
+  onLibraryReload: () => void;
 }
 
 export function LibraryPage({
@@ -185,6 +190,8 @@ export function LibraryPage({
   onSongConsumed,
   examplesWanted = null,
   onExamplesConsumed,
+  onReviewFiles,
+  onLibraryReload,
 }: Props) {
   const { tracks, selected, lyrics, credits, lyricsLoading, word, wordJump, wordLoading, activeLemma } =
     library;
@@ -970,6 +977,7 @@ export function LibraryPage({
         onOpenGraph={() => go({ kind: "graph", focus: view?.kind === "person" ? view.id : null })}
         onOpenTimeline={() => go({ kind: "timeline" })}
         onOpenCloud={() => go({ kind: "cloud" })}
+        onOpenFolders={() => go({ kind: "folders" })}
         onHide={toggleBrowser}
         banner={
           missing.length > 0 && (
@@ -1016,6 +1024,13 @@ export function LibraryPage({
             }}
             onError={onAudioError}
           />
+        </main>
+      )}
+
+      {view?.kind === "folders" && (
+        <main className="pane profile-pane sources-pane">
+          {backButton}
+          <LibrarySources onReview={onReviewFiles} onChanged={() => { onLibraryReload(); refreshMissing(); void actions.reloadLyrics(); }} onError={onAudioError} version={libraryVersion} />
         </main>
       )}
 
