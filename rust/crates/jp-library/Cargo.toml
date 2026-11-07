@@ -10,6 +10,7 @@ anyhow.workspace = true
 serde.workspace = true
 jp-corpus = { path = "../jp-corpus" }
 jp-import = { path = "../jp-import" }
+jp-lyrics = { path = "../jp-lyrics" }
 jp-audio = { path = "../jp-audio" }
 jp-setup = { path = "../jp-setup" }
 jp-scrape = { path = "../jp-scrape" }

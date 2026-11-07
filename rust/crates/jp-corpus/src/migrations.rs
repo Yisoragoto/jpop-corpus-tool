@@ -36,7 +36,7 @@ use rusqlite::Connection;
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///
 /// 格式是 `YYYYMMDD`：单调递增，一眼看得出先后。
-pub const CURRENT: i64 = 20_261_106;
+pub const CURRENT: i64 = 20_261_107;
 
 /// 一步迁移里的一个改动。
 enum Change {
@@ -205,6 +205,17 @@ const STEPS: &[Step] = &[
         // 只加一个空列：存量的歌全是 NULL，也就是全部在库，所有统计数字不变。
         // 视图由随后的 schema.sql 建（它依赖这一列，所以必须先补列）
         changes: &[Change::AddColumn { table: "songs", column: "deleted_at", ddl: "TEXT" }],
+    },
+    Step {
+        version: 20_261_107,
+        what: "音乐文件夹（library_sources）、歌曲所属文件夹（songs.source_id）、歌词文件的大小和修改时间",
+        // 新表由 schema.sql 建；列全是空的。来源表一开始是空的：由界面列出推算的文件夹，
+        // 用户确认后才写进去（`library_sources::add`），再按路径给歌填 source_id——那是改数据，不归迁移管
+        changes: &[
+            Change::AddColumn { table: "songs", column: "source_id", ddl: "INTEGER" },
+            Change::AddColumn { table: "lyric_sources", column: "file_size", ddl: "INTEGER" },
+            Change::AddColumn { table: "lyric_sources", column: "file_mtime", ddl: "REAL" },
+        ],
     },
 ];
 
@@ -435,6 +446,7 @@ mod tests {
                 "歌词来源、来源选择与整体偏移、在线查询记录、时间轴缓存",
                 "音频文件记录（路径、大小、修改时间、时长、格式、指纹、曲目起点）",
                 "歌曲的移出标记（songs.deleted_at）和只看在库歌曲的视图（live_songs 等）",
+                "音乐文件夹（library_sources）、歌曲所属文件夹（songs.source_id）、歌词文件的大小和修改时间",
             ]
         );
 
@@ -523,6 +535,7 @@ mod tests {
                 "歌词来源、来源选择与整体偏移、在线查询记录、时间轴缓存",
                 "音频文件记录（路径、大小、修改时间、时长、格式、指纹、曲目起点）",
                 "歌曲的移出标记（songs.deleted_at）和只看在库歌曲的视图（live_songs 等）",
+                "音乐文件夹（library_sources）、歌曲所属文件夹（songs.source_id）、歌词文件的大小和修改时间",
             ],
             "没戳过就得把每一步都重跑一遍"
         );

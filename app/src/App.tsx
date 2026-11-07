@@ -560,6 +560,11 @@ export default function App() {
             onSongConsumed={consumeSong}
             examplesWanted={examplesWanted}
             onExamplesConsumed={consumeExamples}
+            onReviewFiles={(paths) => {
+              setImportRequest({ paths, nonce: Date.now() });
+              setRoute("import");
+            }}
+            onLibraryReload={onImported}
           />
         )}
         {route === "import" && (

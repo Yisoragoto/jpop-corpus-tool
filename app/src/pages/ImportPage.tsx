@@ -18,6 +18,7 @@ import { LyricsUpgradePanel } from "../components/LyricsUpgradePanel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "../events";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { CommandButton } from "../components/CommandButton";
 import { WatchedFolders } from "../components/WatchedFolders";
@@ -128,6 +129,42 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
     [onError],
   );
 
+  // 拖进窗口：一个文件夹就扫这个文件夹，几首音频就扫这几首。网页这边分不出是文件夹还是文件，
+  // 按扩展名分：不是音频扩展名的当文件夹（「Vol.2」这种带点的文件夹名也对）
+  const [dropping, setDropping] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const isAudio = (p: string) => AUDIO_EXTENSIONS.some((ext) => p.toLowerCase().endsWith(`.${ext}`));
+    const off = getCurrentWebview().onDragDropEvent((event) => {
+      if (!alive) return;
+      const kind = event.payload.type;
+      if (kind === "enter" || kind === "over") setDropping(true);
+      else if (kind === "leave") setDropping(false);
+      else if (kind === "drop") {
+        setDropping(false);
+        if (busy !== "") return;
+        const paths = event.payload.paths;
+        const audio = paths.filter(isAudio);
+        const folders = paths.filter((p) => !isAudio(p));
+        if (folders.length === 0 && audio.length > 0) {
+          setPath("");
+          setFiles(audio);
+          void scanTargets(audio, "");
+        } else if (folders.length === 1 && audio.length === 0) {
+          setFiles([]);
+          setPath(folders[0]!);
+          void scanTargets([], folders[0]!);
+        } else if (paths.length > 0) {
+          onError(tr("一次拖一个文件夹，或者只拖音频文件"));
+        }
+      }
+    });
+    return () => {
+      alive = false;
+      void off.then((f) => f());
+    };
+  }, [busy, scanTargets, onError]);
+
   const doScan = useCallback(async () => {
     const target = path.trim();
     if (files.length === 0 && target === "") {
@@ -209,8 +246,8 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
   const imported = report?.tracks.filter((t) => t.outcome.kind === "imported") ?? [];
 
   return (
-    <div className="page tools" data-scanning={busy === "scanning"} data-import-plan={scan !== null}>
-      <p className="page-lead">{tr("选一个装着音频的目录，或者直接选几首歌。扫描只读取，不写库；看过计划再决定导不导。")}</p>
+    <div className={`page tools ${dropping ? "dropping" : ""}`} data-scanning={busy === "scanning"} data-import-plan={scan !== null}>
+      <p className="page-lead">{tr("选一个装着音频的目录，或者直接选几首歌，也可以把文件夹、音频拖进窗口。扫描只读取，不写库；看过计划再决定导不导。")}</p>
 
       <label className="check import-lyrics-option"><input type="checkbox" checked={fetchLyrics} disabled={busy !== ""} onChange={event => setFetchLyrics(event.target.checked)} />{tr("导入后自动补歌词，优先逐字")}</label>
       <LyricsUpgradePanel allowStart={false} onChanged={onImported} onError={onError} />

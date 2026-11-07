@@ -33,6 +33,8 @@ pub enum WatchReason {
     LibraryAudio,
     /// 它的子文件夹过半是库里的文件夹（`raw/audio/` 这种「一个歌手一个文件夹」的上一级）
     Parent,
+    /// 用户在「曲库 › 来源」里加的音乐文件夹。有了来源之后只看这些，不再推算
+    Source,
 }
 
 /// 一个要去看的文件夹。

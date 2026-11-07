@@ -11,6 +11,8 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 jp-corpus = { path = "../jp-corpus" }
+jp-import = { path = "../jp-import" }
+jp-library = { path = "../jp-library" }
 
 [dev-dependencies]
 # 由 Rust 类型生成 `app/src/generated/jp-api.ts`，只在测试里用（见 src/ts.rs）。

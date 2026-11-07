@@ -10,6 +10,7 @@
 //! | `embedded` | 音频文件里内嵌的歌词、封面 | ✅（夹具写 tag） |
 //! | `plan` | 和现有曲库比对 → 每个文件打算怎么处置 | ✅ |
 //! | `watch` | 库里的歌都在哪些文件夹 → 那里还有哪些文件没导入 | ✅（临时目录） |
+//! | `sync` | 一个音乐文件夹扫完 → 新增、变了、回来了、挪了、消失 | ✅ |
 //! | `review` | 扫一批路径 + 计划 → 给人复核的那份（两个客户端共用） | ✅ |
 //! | `import` | 执行计划，写库 | ✅（内存库） |
 //!
@@ -28,6 +29,7 @@ pub mod metadata_csv;
 pub mod plan;
 pub mod review;
 pub mod scan;
+pub mod sync;
 pub mod version;
 pub mod watch;
 

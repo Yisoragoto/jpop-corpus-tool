@@ -32,6 +32,8 @@ function why(folder: WatchedFolder): string {
       return tr("库里有 {songs} 首歌在这里 · 只看这一层", { songs: folder.songs });
     case "parent":
       return tr("库里有 {songs} 首歌在这下面 · 连子文件夹一起看", { songs: folder.songs });
+    case "source":
+      return folder.depth <= 1 ? tr("音乐文件夹 · 只看这一层") : tr("音乐文件夹 · 连子文件夹一起看");
   }
 }
 
