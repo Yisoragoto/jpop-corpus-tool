@@ -1934,6 +1934,36 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 .watched-folders .link-btn { flex: 0 0 auto; margin-left: auto; }
 .watched-folders li.off .watched-path { color: var(--muted); text-decoration: line-through; }
 
+/* ── 曲库 › 音乐文件夹：行与行之间是分隔线，不套方框 ── */
+.library-sources { width: 100%; max-width: 960px; min-width: 0; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.sources-pane > .nav-back { margin-bottom: 8px; }
+.library-sources.dropping { outline: 2px dashed var(--accent); outline-offset: 8px; border-radius: 8px; }
+.folder-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
+.folder-list > li { min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.folder-list > li.off .folder-path { color: var(--muted); }
+.folder-row { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.folder-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.folder-path { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
+.inline-confirm, .sync-review { display: flex; flex-direction: column; gap: 10px; padding-left: 14px; border-left: 2px solid var(--accent); }
+.inline-confirm .toolbar, .sync-review .toolbar, .library-sources .toolbar { padding: 0; border: 0; }
+.sync-group { display: flex; flex-direction: column; gap: 4px; }
+.sync-group.off .sync-rows { opacity: .5; }
+.sync-group > .check .muted { white-space: normal; }
+.sync-rows { list-style: none; margin: 0; padding: 0 0 0 26px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.sync-rows li { display: flex; gap: 12px; align-items: baseline; min-width: 0; }
+.sync-rows li > span:first-child, .sync-rows li > .check { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.sync-rows li > .check > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sync-rows li > .muted { flex: 1 1 0; }
+.sync-rows li > .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sources-empty { display: flex; flex-direction: column; gap: 10px; }
+.sources-empty .sync-rows { padding-left: 0; }
+.drop-zone { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 36px 16px; border: 1px dashed var(--stroke-secondary); border-radius: 8px; color: var(--fg); }
+.drop-zone:hover { background: var(--control-hover); }
+.removed-songs { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.removed-songs .sync-rows { padding-left: 0; }
+.link-btn.danger { color: var(--danger); }
+
 /* ── 数据迁移：预览、两个勾选、一个开始 ── */
 .migrate-panel { display: flex; flex-direction: column; gap: 10px; padding: 4px 4px 10px; }
 .migrate-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

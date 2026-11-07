@@ -55,6 +55,7 @@ pub mod display_timeline;
 pub mod lyric_timeline;
 pub mod lyric_sources;
 pub mod audio_files;
+pub mod library_sources;
 
 use std::path::Path;
 

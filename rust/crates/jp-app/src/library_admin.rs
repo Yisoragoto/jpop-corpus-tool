@@ -31,6 +31,19 @@ pub fn delete_song(state: &AppState, id: &str) -> Result<Maintained<DeleteResult
     state.flush_session();
     with_library(state, |library| jp_library::admin::delete_song(library, id))
 }
+/// 移除音乐文件夹。正在放的歌属于它就先停下（歌要移出或删掉）
+pub fn remove_source(state: &AppState, id: i64, mode: jp_library::sources::RemoveMode) -> Result<jp_library::sources::Removed> {
+    if let Some(engine) = state.audio() {
+        let playing = engine.state().song_id;
+        let members = jp_corpus::library_sources::members(state.corpus().connection(), id)?;
+        if !playing.is_empty() && members.iter().any(|m| m.id == playing) {
+            state.pitch().stop();
+            engine.stop();
+        }
+    }
+    state.flush_session();
+    with_library(state, |library| jp_library::sources::remove(library, id, mode))
+}
 pub fn missing_audio(state: &AppState) -> Result<Vec<MissingAudio>> {
     with_library(state, |library| jp_library::admin::missing_audio(library))
 }

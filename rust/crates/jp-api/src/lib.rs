@@ -55,6 +55,7 @@ pub mod corpus;
 pub mod home;
 pub mod library;
 pub mod search;
+pub mod sources;
 
 #[cfg(test)]
 mod ts;
@@ -137,6 +138,13 @@ commands![
     library::GetTrack,
     search::QuickSearch,
     home::GetHomeSummary,
+    sources::LibrarySources,
+    sources::LibrarySourcesAdd,
+    sources::LibrarySourceSetEnabled,
+    sources::LibrarySourcePlan,
+    sources::LibrarySourceApply,
+    sources::LibraryRemovedSongs,
+    sources::LibraryRestoreSongs,
 ];
 
 #[cfg(test)]

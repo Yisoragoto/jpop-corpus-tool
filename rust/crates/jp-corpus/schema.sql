@@ -144,9 +144,24 @@ CREATE TABLE IF NOT EXISTS songs (
             album      TEXT,
             genre      TEXT,
             audio_path TEXT
-        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT, language TEXT, isrc TEXT, recording_mbid TEXT, audio_fingerprint TEXT, deleted_at TEXT);
+        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT, language TEXT, isrc TEXT, recording_mbid TEXT, audio_fingerprint TEXT, deleted_at TEXT, source_id INTEGER);
 -- 被移出曲库的歌通常很少：部分索引只收这几行，「排除移出的歌」那一步几乎不花时间
 CREATE INDEX IF NOT EXISTS idx_songs_removed ON songs(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_songs_source ON songs(source_id);
+
+-- 音乐文件夹（来源）。歌留在用户自己的文件夹里，这里记「哪些文件夹算曲库」。
+-- songs.source_id 指向这里；手动导入的单曲、不在任何来源下的歌是 NULL。
+-- recursive = 0 只看这一层；enabled = 0 是停用：不扫、启动时不看，歌照旧在库里。
+CREATE TABLE IF NOT EXISTS library_sources (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    root_path       TEXT    NOT NULL UNIQUE,
+    label           TEXT    NOT NULL DEFAULT '',
+    recursive       INTEGER NOT NULL DEFAULT 1,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT    NOT NULL DEFAULT '',
+    last_scanned_at TEXT,
+    last_scan_error TEXT
+);
 
 CREATE TABLE IF NOT EXISTS external_ids (
     entity_type TEXT, entity_id TEXT, provider TEXT, external_id TEXT, source TEXT, confidence REAL,
@@ -486,6 +501,9 @@ CREATE TABLE IF NOT EXISTS lyric_sources (
     -- 这个来源记住的整体偏移（毫秒）。重新挑它时照这个偏移落库
     offset_ms     INTEGER NOT NULL DEFAULT 0,
     updated_at    TEXT    NOT NULL DEFAULT '',
+    -- 来自文件的来源（外挂、内嵌）：那个文件当时的大小和修改时间，重扫时判断歌词变没变
+    file_size     INTEGER,
+    file_mtime    REAL,
     UNIQUE (song_id, kind, provider, role, language)
 );
 CREATE INDEX IF NOT EXISTS idx_lyric_sources_song ON lyric_sources(song_id);

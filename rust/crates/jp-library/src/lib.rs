@@ -4,3 +4,4 @@ pub mod discovery;
 pub mod maintenance;
 pub mod migrate;
 pub mod people;
+pub mod sources;

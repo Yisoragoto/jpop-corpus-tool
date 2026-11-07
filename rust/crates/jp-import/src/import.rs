@@ -223,6 +223,13 @@ pub fn execute_cancellable(
         on_progress(&track, index + 1, total);
         report.tracks.push(track);
     }
+    // 新导入的歌归到它所在的音乐文件夹（不在任何文件夹里的单曲是 NULL）。
+    // 出错不挡导入：歌已经进库了，下次加文件夹、对账时还会再算
+    if report.tracks.iter().any(|t| matches!(t.outcome, Outcome::Imported { .. }))
+        && let Err(err) = jp_corpus::library_sources::assign(conn)
+    {
+        eprintln!("给新歌填所属文件夹失败: {err:#}");
+    }
     Ok(report)
 }
 
