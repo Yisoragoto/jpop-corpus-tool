@@ -17,10 +17,10 @@ const RUST = import.meta.glob<string>(["../../rust/crates/*/src/**/*.rs"], { que
 /**
  * 不进界面的：macOS 桥（另有 Swift 界面）、分词和正规化的日文数据表、诊断报告和日志（给开发者看的，在 jp-diagnostics）、
  * LRC 里认署名行用的关键词、测试夹具、和 Python 版逐字节相同的日文统计报告、Anki 卡片内容和样式（日文学习材料）、
- * 挖词报告的 HTML（导出的文件，后续再做）
+ * 挖词报告的 HTML（导出的文件，后续再做）、生成 TS 类型的测试代码（jp-api/src/ts.rs，写的是生成文件的注释）
  */
 const SKIP_FILE =
-  /jp-cli\/|jp-ffi\/|jp-tokenizer\/|jp-normalize\/|jp-app\/src\/diagnostics\.rs|jp-app\/src\/log\.rs|jp-diagnostics\/src\/|\/bin\/|\/examples\/|jp-import\/src\/lrc\.rs|jp-corpus\/src\/fixture\.rs|jp-corpus\/src\/stats\.rs|jp-anki\/src\/(card|model|lyrics_model|mining_report|dict)\.rs/;
+  /jp-cli\/|jp-api\/src\/ts\.rs|jp-ffi\/|jp-tokenizer\/|jp-normalize\/|jp-app\/src\/diagnostics\.rs|jp-app\/src\/log\.rs|jp-diagnostics\/src\/|\/bin\/|\/examples\/|jp-import\/src\/lrc\.rs|jp-corpus\/src\/fixture\.rs|jp-corpus\/src\/stats\.rs|jp-anki\/src\/(card|model|lyrics_model|mining_report|dict)\.rs/;
 const HAN = /\p{Script=Han}/u;
 const KANA = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
 const ZH_ONLY = /[们这说里个么没为从词选择发应该时会对设导认点开关显单纯样号与查读写库]/;

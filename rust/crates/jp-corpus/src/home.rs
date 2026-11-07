@@ -15,6 +15,7 @@ const CONTENT_POS: &str = "('NOUN','VERB','ADJ','ADV')";
 /// 上次听的那首，以及停在哪。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ContinueTrack {
     pub song_id: String,
     pub title: String,
@@ -35,6 +36,7 @@ pub struct ContinueTrack {
 /// 某一天（本地日期）听了多少。
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DayListening {
     pub listened_sec: f64,
     /// 听了几首（去重）
@@ -49,6 +51,7 @@ pub struct DayListening {
 /// 听过的歌覆盖了语料里多少实词。
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Reach {
     /// 听满 [`HEARD_MIN_SEC`] 秒的歌有几首
     pub heard_songs: i64,
@@ -65,6 +68,7 @@ pub const HEARD_MIN_SEC: f64 = 30.0;
 /// 最近添加的一首。
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct AddedTrack {
     pub song_id: String,
     pub title: String,

@@ -33,5 +33,7 @@ jp-anki = { path = "../jp-anki" }
 jp-scrape = { path = "../jp-scrape" }
 
 jp-library = { path = "../jp-library" }
+# 两个客户端共用的命令表：搬进去的方法先在这里找（见 dispatch）
+jp-api = { path = "../jp-api" }
 
 jp-scraper = { path = "../jp-scraper" }

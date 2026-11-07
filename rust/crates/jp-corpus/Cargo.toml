@@ -22,3 +22,9 @@ regex = "1"
 rodio = { version = "0.22", default-features = false, features = ["flac", "mp3", "mp4", "vorbis", "wav"] }
 # 指纹需要标准 SHA-256，手写密码散列难以可靠验证；复用更新器已经使用的同一版本。
 sha2 = "0.10"
+# 给 jp-api 生成 TS 类型用（见 jp-api/src/ts.rs）。只有 jp-api 的测试打开 `ts` 特性，
+# 发布构建不带它
+ts-rs = { version = "12", optional = true, features = ["no-serde-warnings"] }
+
+[features]
+ts = ["dep:ts-rs"]

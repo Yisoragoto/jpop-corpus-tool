@@ -333,6 +333,10 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         return Ok(value);
     }
     let corpus = session.corpus.lock().map_err(|_| anyhow!("语料库连接已损坏"))?;
+    // 已经搬进共用命令表的方法（和 Tauri 同一份实现，见 jp-api）
+    if let Some(result) = jp_api::ffi::dispatch(&corpus, method, &args) {
+        return result;
+    }
     let v = match method {
         "version" => json!({ "core": env!("CARGO_PKG_VERSION"), "schema": jp_corpus::migrations::CURRENT }),
         "health" => {
@@ -347,12 +351,10 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
                 "root": session.root.as_ref().map(|p| p.display().to_string()),
             })
         }
-        "overview" => serde_json::to_value(corpus.overview()?)?,
         "snapshot" => serde_json::to_value(corpus.snapshot()?)?,
 
         // 曲库
         "tracks" => serde_json::to_value(corpus.tracks(arg_or(&args, "limit", 100_000)?)?)?,
-        "track" => serde_json::to_value(corpus.track(&arg::<String>(&args, "songId")?)?)?,
         "lyrics" => serde_json::to_value(corpus.lyrics(&arg::<String>(&args, "songId")?)?)?,
         "lyricTimeline" => serde_json::to_value(corpus.lyric_timeline(&arg::<String>(&args, "songId")?)?)?,
         "tokenizeMissingList" => serde_json::to_value(jp_import::maintain::untokenized_songs(corpus.connection())?)?,
@@ -366,21 +368,10 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         "peopleDirectory" => serde_json::to_value(corpus.people_directory()?)?,
         "collaborationEdges" => serde_json::to_value(corpus.collaboration_edges()?)?,
         "timelineReleases" => serde_json::to_value(corpus.timeline_releases()?)?,
-        "timeline" => serde_json::to_value(corpus.timeline()?)?,
         "personById" => serde_json::to_value(corpus.person_by_id(arg(&args, "personId")?)?)?,
         "personWorks" => serde_json::to_value(corpus.person_works(arg(&args, "personId")?)?)?,
         "collaborators" => serde_json::to_value(corpus.collaborators(arg(&args, "personId")?, arg_or(&args, "limit", 24)?)?)?,
 
-        // 首页（同 Tauri 的 home_summary）。utcOffsetMinutes：本地相对 UTC 的分钟数，「今天」按它算
-        "homeSummary" => json!({
-            "overview": corpus.overview()?,
-            "continueTrack": corpus.continue_track()?,
-            "recentlyPlayed": corpus.recently_played(12)?,
-            "favorites": corpus.favorite_tracks(12)?,
-            "today": corpus.today_listening(arg_or(&args, "utcOffsetMinutes", 0)?)?,
-            "reach": corpus.reach()?,
-            "recentlyAdded": corpus.recently_added(arg_or(&args, "addedLimit", 8)?)?,
-        }),
         "isFavorite" => json!(corpus.is_favorite(&arg::<String>(&args, "entityType")?, &arg::<String>(&args, "entityId")?)?),
         "toggleFavorite" => json!(corpus.toggle_favorite(&arg::<String>(&args, "entityType")?, &arg::<String>(&args, "entityId")?)?),
 
@@ -388,9 +379,6 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         "kwic" => serde_json::to_value(corpus.kwic(&arg(&args, "query")?)?)?,
         "searchLyrics" => serde_json::to_value(
             corpus.search_lyrics(&arg::<String>(&args, "text")?, arg_or(&args, "limit", 500)?)?,
-        )?,
-        "quickSearch" => serde_json::to_value(
-            corpus.quick_search(&arg::<String>(&args, "query")?, arg_or(&args, "perKind", None)?)?,
         )?,
         "wordInCorpus" => {
             let lemma = arg::<String>(&args, "lemma")?;

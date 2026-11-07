@@ -9,6 +9,7 @@ use jp_corpus::{
     CollabEdge, DirectoryEntry, PersonSummary, PersonWork, TimelineRelease, PlayEvent, PlayedTrack, QuickSearchResults, Track, WordFrequency, WordInCorpus,
     YearStats,
 };
+use jp_api::Command as _;
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 
@@ -55,7 +56,7 @@ pub fn list_tracks(state: State<'_, AppState>, limit: Option<i64>) -> CmdResult<
 
 #[tauri::command(async)]
 pub fn get_track(state: State<'_, AppState>, song_id: String) -> CmdResult<Option<Track>> {
-    Ok(state.corpus().track(&song_id)?)
+    Ok(jp_api::library::GetTrack::run(&state.corpus(), jp_api::library::TrackArgs { song_id })?)
 }
 
 #[tauri::command(async)]
@@ -474,12 +475,12 @@ pub fn search_lyrics(
 
 #[tauri::command(async)]
 pub fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
-    Ok(state.corpus().overview()?)
+    Ok(jp_api::corpus::GetOverview::run(&state.corpus(), jp_api::NoArgs {})?)
 }
 
 #[tauri::command(async)]
 pub fn timeline(state: State<'_, AppState>) -> CmdResult<Vec<YearStats>> {
-    Ok(state.corpus().timeline()?)
+    Ok(jp_api::corpus::GetTimeline::run(&state.corpus(), jp_api::NoArgs {})?)
 }
 
 #[tauri::command(async)]
@@ -1385,38 +1386,19 @@ pub fn is_favorite(
 
 // ────────────────────────────── 首页 ──────────────────────────────
 
-/// 首页要的一切。
+/// 首页要的一切（见 [`jp_api::home::HomeSummary`]）。
 ///
-/// 打成一个 command 而不是让前端发六次：首页一进来就要全部数据，
-/// 分开发不仅多五次往返，还可能拿到互相不一致的快照
-/// （比如统计已经更新、最近播放还是旧的）。
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HomeSummary {
-    pub overview: Overview,
-    /// 上次听的那首和停在哪；没有收听记录时是 null
-    pub continue_track: Option<jp_corpus::home::ContinueTrack>,
-    pub recently_played: Vec<PlayedTrack>,
-    pub favorites: Vec<Track>,
-    pub today: jp_corpus::home::DayListening,
-    pub reach: jp_corpus::home::Reach,
-    pub recently_added: Vec<jp_corpus::home::AddedTrack>,
-}
-
-/// `utc_offset_minutes`：本地相对 UTC 的分钟数（东八区 +480），「今天」按它算。
-/// 不传就按 UTC。
+/// `utc_offset_minutes`：本地相对 UTC 的分钟数（东八区 +480），「今天」按它算。不传就按 UTC。
+/// `added_limit`：「最近添加」要几首。Windows 首页只摆 5 首，前端不传时按 5；
+/// macOS 不传时是 8（[`jp_api::home::ADDED_LIMIT_DEFAULT`]）
 #[tauri::command(async)]
-pub fn home_summary(state: State<'_, AppState>, utc_offset_minutes: Option<i32>) -> CmdResult<HomeSummary> {
-    let corpus = state.corpus();
-    Ok(HomeSummary {
-        overview: corpus.overview()?,
-        continue_track: corpus.continue_track()?,
-        recently_played: corpus.recently_played(12)?,
-        favorites: corpus.favorite_tracks(12)?,
-        today: corpus.today_listening(utc_offset_minutes.unwrap_or(0))?,
-        reach: corpus.reach()?,
-        recently_added: corpus.recently_added(5)?,
-    })
+pub fn home_summary(
+    state: State<'_, AppState>,
+    utc_offset_minutes: Option<i32>,
+    added_limit: Option<i64>,
+) -> CmdResult<jp_api::home::HomeSummary> {
+    let args = jp_api::home::HomeSummaryArgs { utc_offset_minutes, added_limit: added_limit.or(Some(5)) };
+    Ok(jp_api::home::GetHomeSummary::run(&state.corpus(), args)?)
 }
 
 /// 现在用的是哪个语料库目录，以及是怎么找到的。设置页要如实显示
@@ -1491,7 +1473,7 @@ pub fn quick_search(
     query: String,
     per_kind: Option<i64>,
 ) -> CmdResult<QuickSearchResults> {
-    Ok(state.corpus().quick_search(&query, per_kind)?)
+    Ok(jp_api::search::QuickSearch::run(&state.corpus(), jp_api::search::QuickSearchArgs { query, per_kind })?)
 }
 
 /// 按 id 取人。命令面板点一条人物结果时用它定位。

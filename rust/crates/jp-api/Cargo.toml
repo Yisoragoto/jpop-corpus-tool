@@ -1,0 +1,19 @@
+[package]
+name = "jp-api"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The one command table both clients (Tauri and the macOS FFI) call into"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+jp-corpus = { path = "../jp-corpus" }
+
+[dev-dependencies]
+# 由 Rust 类型生成 `app/src/generated/jp-api.ts`，只在测试里用（见 src/ts.rs）。
+# 发布出去的 jp-app / jp-ffi 不带它
+ts-rs = { version = "12", features = ["no-serde-warnings"] }
+jp-corpus = { path = "../jp-corpus", features = ["ts"] }
