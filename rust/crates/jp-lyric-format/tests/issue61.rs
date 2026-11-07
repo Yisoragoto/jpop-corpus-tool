@@ -90,3 +90,52 @@ fn the_extension_hint_wins_over_the_content() {
     assert_eq!(decoded.format, Format::Qrc);
     assert!(decode(&fixture("embedded_a2.txt"), Some("yrc")).is_err());
 }
+
+// 下面两份是 #61 评论附的真实 `©lyr`，各裁到两三行（版权）：
+// - ruby_word.ttml：TTML 2.0（QRC 转来），`tts:ruby` 标振假名，时间写在注音上
+// - apple_music_word.ttml：Apple Music 原生 TTML，head 里有英文翻译和罗马音
+
+fn has_kana(text: &str) -> bool {
+    text.chars().any(|c| ('\u{3041}'..='\u{3096}').contains(&c))
+}
+
+#[test]
+fn ruby_readings_stay_out_of_the_text_but_keep_their_timing() {
+    let decoded = decode(&fixture("ruby_word.ttml"), None).unwrap();
+    assert_eq!(decoded.format, Format::Ttml);
+    let timed = decoded.timed.as_ref().unwrap();
+    assert_eq!(timed.lines.len(), 3);
+    assert_eq!(timed.lines[0].text, "曲：n-buna");
+    assert!(timed.lines.iter().all(|l| !l.words.is_empty()), "每行都要有逐字");
+    // 「曲：n-buna」是署名行，LRC 那层收进 credits；两行歌词都有逐字
+    let lines = &decoded.parsed.lines;
+    let texts: Vec<_> = lines.iter().map(|l| l.text.as_str()).collect();
+    assert_eq!(texts, ["やっと雨が降ったんだ", "この青をずっと思っていたんだ"]);
+    assert!(lines.iter().all(|l| !l.words.is_empty()));
+    // 「雨」整个字跟着注音「あめ」的时间走
+    let (line, chars) = (&lines[0], lines[0].text.chars().collect::<Vec<_>>());
+    let rain = line.words.iter().find(|w| chars[w.start..w.end].iter().collect::<String>() == "雨").unwrap();
+    assert_eq!((ms(rain.time_sec), rain.end_sec.map(ms)), (19_747, Some(20_059)));
+    // 「思」的注音是两段「お」「も」：取最早的开始和最晚的结束
+    let chars: Vec<char> = lines[1].text.chars().collect();
+    let think = lines[1].words.iter().find(|w| chars[w.start..w.end].iter().collect::<String>() == "思").unwrap();
+    assert_eq!((ms(think.time_sec), think.end_sec.map(ms)), (24_350, Some(24_610)));
+    assert_eq!(lines[1].words.len(), 14);
+}
+
+#[test]
+fn apple_music_translations_attach_by_key_and_romaji_is_ignored() {
+    let decoded = decode(&fixture("apple_music_word.ttml"), None).unwrap();
+    assert_eq!(decoded.format, Format::Ttml);
+    let lines = &decoded.parsed.lines;
+    assert_eq!(lines.len(), 2);
+    assert!(lines.iter().all(|l| !l.words.is_empty()));
+    assert_eq!(lines[0].text, "灰色に白んだ言葉はカプチーノみたいな色してる");
+    assert!(lines.iter().all(|l| !l.text.is_ascii() && !l.text.contains("haiiro")));
+    let translations = &decoded.parsed.translations;
+    assert_eq!(translations.len(), 2);
+    assert_eq!(translations[0].text, "The words that faded to gray are the color of a cappuccino");
+    assert_eq!(translations[0].time_sec, lines[0].time_sec);
+    assert_eq!(translations[1].time_sec, lines[1].time_sec);
+    assert!(translations.iter().all(|l| !l.text.contains("kotoba") && !has_kana(&l.text)));
+}
