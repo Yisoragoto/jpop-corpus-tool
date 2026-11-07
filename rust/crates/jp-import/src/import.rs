@@ -299,7 +299,8 @@ fn import_one(
     match lyrics {
         Some(crate::scan::LyricsPick::Embedded(text)) => {
             let source = LyricSource::new("embedded", &track.file_name, &track.path, "import");
-            stats += attach_lyrics_text(tx, song_id, text, &source, analyzer, track.artist(), track.title())
+            let decoded = crate::embedded::decode_text(text);
+            stats += attach_decoded(tx, song_id, &decoded, &source, analyzer, track.artist(), track.title())
                 .with_context(|| format!("内嵌歌词入库失败：{}", track.path))?;
         }
         Some(crate::scan::LyricsPick::File(path)) => {
@@ -436,9 +437,48 @@ pub fn attach_lyrics(
     artist: &str,
     title: &str,
 ) -> Result<Stats> {
-    let raw = crate::lrc::read_file(lrc_path)
+    let bytes = std::fs::read(lrc_path).with_context(|| format!("读歌词失败：{}", lrc_path.display()))?;
+    let extension = lrc_path.extension().and_then(|e| e.to_str());
+    let decoded = jp_lyric_format::decode(&bytes, extension)
         .with_context(|| format!("读歌词失败：{}", lrc_path.display()))?;
-    attach_lyrics_text(tx, song_id, &raw, source, analyzer, artist, title)
+    attach_decoded(tx, song_id, &decoded, source, analyzer, artist, title)
+}
+
+/// 同 [`attach_lyrics_text`]，歌词已经解析好（[`jp_lyric_format::decode`] 的结果）。
+///
+/// 入库的是转换后的 LRC 文本；不是 LRC 一家的（逐字格式、SRT），原文和格式另记到当前版本和来源上，
+/// 以后解析规则改了还能从原文重来，时间轴也从原文拿精确的字级时间。
+pub fn attach_decoded(
+    tx: &Connection,
+    song_id: &str,
+    decoded: &jp_lyric_format::Decoded,
+    source: &LyricSource,
+    analyzer: Option<&jp_tokenizer::Analyzer>,
+    artist: &str,
+    title: &str,
+) -> Result<Stats> {
+    let stats = attach_parsed(tx, song_id, &decoded.lrc, &decoded.parsed, source, analyzer, artist, title)?;
+    if !decoded.format.is_lrc_family() {
+        let lines = &decoded.parsed.lines;
+        let precision = if lines.iter().any(|l| !l.words.is_empty()) {
+            "word"
+        } else if lines.iter().any(|l| l.time_sec.is_some()) {
+            "line"
+        } else {
+            "none"
+        };
+        record_original(tx, song_id, decoded.format.name(), &decoded.original, precision)?;
+    }
+    Ok(stats)
+}
+
+/// 当前版本的原文换成转换前的那一份（`source_raw` / `raw_format`），来源那一行跟着改。
+pub fn record_original(tx: &Connection, song_id: &str, format: &str, raw: &str, precision: &str) -> Result<()> {
+    tx.execute(
+        "UPDATE lyric_versions SET raw_format=?2,source_raw=?3 WHERE song_id=?1 AND is_current=1",
+        params![song_id, format, raw],
+    )?;
+    jp_corpus::lyric_sources::update_current_format(tx, song_id, format, precision, Some(raw))
 }
 
 /// 同 [`attach_lyrics`]，歌词已经在手上（音频文件里内嵌的那份、在线下回来的那份）。

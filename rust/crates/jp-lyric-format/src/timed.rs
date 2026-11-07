@@ -1,6 +1,10 @@
 //! Decoded word-timed lyrics. Positions are Unicode scalar indices, `[start, end)`.
 //!
-//! YRC/QRC word clocks are absolute; KRC word clocks are relative to their line.
+//! YRC/QRC/LYS word clocks are absolute; KRC word clocks are relative to their line.
+//! QRC comes either wrapped in QQ's XML (`LyricContent="…"`) or as the bare
+//! `[line,duration]word(start,duration)` text that players embed in tags.
+//! LYS (Lyricify Syllable) rows are `[property]word(start,duration)…` with no
+//! line clock: a line spans its first word onset to its last word end.
 //! `[offset:N]` follows jp-import's LRC convention: subtract N milliseconds,
 //! clamping at zero. Validate clocks before applying the offset.
 //!
@@ -646,9 +650,15 @@ fn repair_lyric_content(text: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(out)
 }
 
-/// Input is decoded QRC XML. Only the primary LyricContent stream is accepted;
-/// multiple different streams are ambiguous and must be selected by the caller.
+/// Input is decoded QRC: QQ's XML wrapper, or the bare text inside it (what
+/// players embed in an audio file's lyrics tag). In the XML form only the
+/// primary LyricContent stream is accepted; multiple different streams are
+/// ambiguous and must be selected by the caller.
 pub fn parse_qrc(text: &str) -> Result<TimedLyrics> {
+    if !text.trim_start_matches(BOM).trim_start().starts_with('<') {
+        check_input(text)?;
+        return parse_qrc_content(text);
+    }
     let text = repair_lyric_content(text);
     let doc = safe_xml(&text)?;
     let mut content = None;
@@ -664,43 +674,34 @@ pub fn parse_qrc(text: &str) -> Result<TimedLyrics> {
             }
         }
     }
-    let content = content.context("QRC has no LyricContent attribute")?;
-    // Literal newlines in attributes are normalized to spaces by XML. Split on
-    // [start,duration], never on newlines, and decode XML entities exactly once.
-    let mut rest = content.trim_start_matches('\u{feff}').trim_start();
+    parse_qrc_content(content.context("QRC has no LyricContent attribute")?)
+}
+
+const BOM: char = '\u{feff}';
+
+/// The QRC body: `[offset:…]`-style headers, then `[start,duration]` rows.
+/// Literal newlines in XML attributes are normalized to spaces, so rows are
+/// split on `[start,duration]`, never on newlines, and XML entities are decoded
+/// exactly once. Header tags may also sit on their own lines between rows
+/// (bare embedded QRC carries `[kana:…]`); they are skipped wherever they appear.
+fn parse_qrc_content(content: &str) -> Result<TimedLyrics> {
+    let mut rest = content.trim_start_matches(BOM).trim_start();
     let mut offset = None;
-    while rest.starts_with('[') {
-        let end = rest.find(']').context("unterminated QRC header")?;
-        if let Some((key, value)) = metadata(&rest[..=end]) {
-            record_offset(key, value, &mut offset)?;
-            rest = rest[end + 1..].trim_start();
-        } else {
-            break;
-        }
-    }
     let mut lines = Vec::new();
     while !rest.trim().is_empty() {
-        let (clock, body) = line_header(rest.trim_start())?;
-        let next = next_marker(body, '[', ']')?.map_or(body.len(), |(at, _, _)| at);
+        rest = rest.trim_start();
+        if let Some(end) = rest.find(']')
+            && let Some((key, value)) = metadata(&rest[..=end])
+        {
+            record_offset(key, value, &mut offset)?;
+            rest = &rest[end + 1..];
+            continue;
+        }
+        let (clock, body) = line_header(rest)?;
+        let next = next_row(body)?;
         let row = &body[..next];
         if !row.trim().is_empty() {
-            let mut builder = TextBuilder::default();
-            let mut words = row;
-            while let Some((at, end, mark)) = next_marker(words, '(', ')')? {
-                let [start, duration] = fields(mark)?;
-                let clock = duration_clock(start, duration)?;
-                if words[..at].trim().is_empty() {
-                    // QRC also times spaces/empty separators. Retain separator
-                    // text without manufacturing a sung unit or losing the song.
-                    builder.raw(&words[..at], None);
-                } else {
-                    let word = builder.clock(clock);
-                    builder.raw(&words[..at], Some(word));
-                }
-                words = &words[end..];
-            }
-            builder.raw(words, None);
-            let (text, words) = builder.finish(false)?;
+            let (text, words) = paren_words(row)?;
             lines.push(TimedLine {
                 start_ms: clock.start,
                 end_ms: clock.end,
@@ -709,6 +710,87 @@ pub fn parse_qrc(text: &str) -> Result<TimedLyrics> {
             });
         }
         rest = &body[next..];
+    }
+    complete(lines, offset.unwrap_or(0))
+}
+
+/// Where the next `[start,duration]` row, or a `[key:value]` header on a line
+/// of its own, begins. (XML turns newlines into spaces, so wrapped QRC only
+/// ever splits on rows, exactly as before.)
+fn next_row(body: &str) -> Result<usize> {
+    let numeric = next_marker(body, '[', ']')?.map(|(at, _, _)| at);
+    let own_line = |at: usize| body[..at].trim_end_matches([' ', '\t', '\r']).ends_with('\n');
+    let tag = body.match_indices('[').map(|(at, _)| at).filter(|&at| own_line(at)).find(|&at| {
+        body[at..]
+            .find(']')
+            .is_some_and(|end| metadata(&body[at..=at + end]).is_some())
+    });
+    Ok(match (numeric, tag) {
+        (Some(a), Some(b)) => a.min(b),
+        (a, b) => a.or(b).unwrap_or(body.len()),
+    })
+}
+
+/// `word(start,duration)word(start,duration)…`: the text BEFORE each clock is
+/// the word it times (QRC and LYS).
+fn paren_words(row: &str) -> Result<(String, Vec<TimedWord>)> {
+    let mut builder = TextBuilder::default();
+    let mut words = row;
+    while let Some((at, end, mark)) = next_marker(words, '(', ')')? {
+        let [start, duration] = fields(mark)?;
+        let clock = duration_clock(start, duration)?;
+        if words[..at].trim().is_empty() {
+            // QRC also times spaces/empty separators. Retain separator
+            // text without manufacturing a sung unit or losing the song.
+            builder.raw(&words[..at], None);
+        } else {
+            let word = builder.clock(clock);
+            builder.raw(&words[..at], Some(word));
+        }
+        words = &words[end..];
+    }
+    builder.raw(words, None);
+    builder.finish(false)
+}
+
+/// Lyricify Syllable: `[property]word(start,duration)…`, one row per line.
+/// The property digit (singer side / background vocal) is not lyric text and is
+/// dropped. A line runs from its first word onset to its last word end.
+pub fn parse_lys(text: &str) -> Result<TimedLyrics> {
+    check_input(text)?;
+    let mut offset = None;
+    let mut lines = Vec::new();
+    for (index, raw) in text.trim_start_matches(BOM).lines().enumerate() {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        if let Some((key, value)) = metadata(raw) {
+            record_offset(key, value, &mut offset)?;
+            continue;
+        }
+        let parsed = (|| -> Result<Option<TimedLine>> {
+            let rest = raw.strip_prefix('[').context("expected [property]")?;
+            let (property, body) = rest.split_once(']').context("unterminated LYS property")?;
+            ensure!(
+                !property.is_empty() && property.bytes().all(|b| b.is_ascii_digit()),
+                "invalid LYS property: {property:?}"
+            );
+            if body.trim().is_empty() {
+                return Ok(None);
+            }
+            let (text, words) = paren_words(body)?;
+            let Some(first) = words.first() else {
+                bail!("LYS line has no word timing");
+            };
+            let start_ms = first.start_ms;
+            let end_ms = words.iter().filter_map(|w| w.end_ms).max();
+            Ok(Some(TimedLine { start_ms, end_ms, text, words }))
+        })()
+        .with_context(|| format!("invalid lyric line {}", index + 1))?;
+        if let Some(line) = parsed {
+            lines.push(line);
+        }
     }
     complete(lines, offset.unwrap_or(0))
 }

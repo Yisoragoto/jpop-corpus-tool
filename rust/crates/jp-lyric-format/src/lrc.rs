@@ -7,6 +7,10 @@
 //! 会把正文里碰巧含「作曲」二字的歌词也一起吞掉。这里复用
 //! `library/credits.py` 那套「标签 + 冒号」的结构化判断，
 //! 信用行单独收集，正文一行不丢。
+//!
+//! 行内逐字时间认两种写法（都叫「扩展 LRC」）：
+//! - **Lyrics A2**：尖括号，`[00:12.00]<00:12.00>夜<00:12.40>が<00:12.80>`
+//! - **ESLyric**：全是方括号，行首时间戳就是第一个字的开始，`[00:12.00]夜[00:12.40]が[00:12.80]`
 
 use serde::Serialize;
 
@@ -169,7 +173,7 @@ pub fn parse(text: &str) -> ParsedLrc {
 
     for raw in text.lines() {
         let (stamps, body) = split_timestamps_with(raw.trim(), format);
-        let (body, word_marks) = take_word_timestamps(body);
+        let (body, word_marks) = take_word_timestamps(body, stamps.first().copied());
         let (body, words) = trim_with_words(&body, &word_marks);
         let body = body.as_str();
         if body.is_empty() {
@@ -358,39 +362,64 @@ fn netease_json_text(line: &str) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-/// 剥掉增强型 LRC 的逐字时间戳 `<mm:ss>` / `<mm:ss.xx>` / `<mm:ss.xxx>`，**记下每个落在第几个字前面**。
+/// 剥掉行内的逐字时间戳 `<mm:ss>` / `<mm:ss.xx>` / `<mm:ss.xxx>`（Lyrics A2），
+/// 以及同样写法的方括号 `[mm:ss.xx]`（ESLyric），**记下每个落在第几个字前面**。
 ///
 /// 留在正文里的话，分词会把 `<00:12.34>` 切成一串符号 token，检索和制卡里都是噪音；
 /// 但时间本身要留下——从关键词开始放、逐字歌词都靠它（见 `jp_corpus::word_timing`）。
-/// 尖括号里不是时间的（`<愛>`）原样保留——那是正文。
-fn take_word_timestamps(body: &str) -> (String, Vec<(usize, f64)>) {
+/// 括号里不是时间的（`<愛>`、`[Chorus]`）原样保留——那是正文。
+///
+/// ESLyric 没有给第一个字单独写时间：行首的时间戳（`line_start`）就是它的开始。
+/// 所以只要这一行里出现了方括号的逐字时间、开头又还没有时间，就在第 0 个字前补一个行首时间。
+/// 没有行内方括号时间的行，结果和以前一样。
+fn take_word_timestamps(body: &str, line_start: Option<f64>) -> (String, Vec<(usize, f64)>) {
     let mut marks = Vec::new();
-    if !body.contains('<') {
+    if !body.contains(['<', '[']) {
         return (body.to_string(), marks);
     }
     let mut out = String::with_capacity(body.len());
     let mut chars = 0usize;
     let mut rest = body;
-    while let Some(open) = rest.find('<') {
+    let mut square = false;
+    while let Some(open) = rest.find(['<', '[']) {
         out.push_str(&rest[..open]);
         chars += rest[..open].chars().count();
+        let (open_char, close_char) = if rest[open..].starts_with('<') { ('<', '>') } else { ('[', ']') };
         let after = &rest[open + 1..];
-        match after.find('>') {
+        match after.find(close_char) {
             Some(close) if is_word_timestamp(&after[..close]) => {
                 if let Some(sec) = word_timestamp_sec(&after[..close]) {
                     marks.push((chars, sec));
+                    square |= open_char == '[';
                 }
                 rest = &after[close + 1..];
             }
             _ => {
-                out.push('<');
+                out.push(open_char);
                 chars += 1;
                 rest = after;
             }
         }
     }
     out.push_str(rest);
+    if square
+        && let Some(start) = line_start
+        && marks.first().is_none_or(|&(at, _)| at > 0)
+    {
+        marks.insert(0, (0, start));
+    }
     (out, marks)
+}
+
+/// 这一行（含行首时间戳）里有没有 ESLyric 写法的行内方括号逐字时间。
+pub(crate) fn has_inline_square_marks(line: &str) -> bool {
+    let (stamps, body) = split_timestamps_with(line.trim(), ThreePartFormat::HourMinSec);
+    if stamps.is_empty() {
+        return false;
+    }
+    body.match_indices('[').any(|(at, _)| {
+        body[at + 1..].split_once(']').is_some_and(|(inner, _)| is_word_timestamp(inner))
+    })
 }
 
 /// 去掉行首行尾空白，同时把逐字时间换成去掉空白之后的位置、切成一段一段。
@@ -547,7 +576,7 @@ pub fn format(lines: &[LyricLine]) -> String {
     out
 }
 
-/// 读文件并解析。编码按 UTF-8 → CP932 → GBK 依次尝试。
+/// 读文件并解析。编码按 UTF-8 → CP932 → GBK 依次尝试（见 [`crate::text`]）。
 pub fn parse_file(path: &std::path::Path) -> anyhow::Result<ParsedLrc> {
     Ok(parse(&read_file(path)?))
 }
@@ -556,39 +585,7 @@ pub fn parse_file(path: &std::path::Path) -> anyhow::Result<ParsedLrc> {
 ///
 /// 挂歌词时要的是**原文**：它原样存进 `lyric_versions.raw_text`，解析规则以后改了也能从它重来。
 pub fn read_file(path: &std::path::Path) -> anyhow::Result<String> {
-    let bytes = std::fs::read(path)?;
-    Ok(decode(&bytes).trim_start_matches('\u{feff}').to_string())
-}
-
-/// 字节 → 文本。UTF-8 → CP932 → GBK，第一个**不出错**的解释胜出。
-///
-/// 不能只用 `from_utf8_lossy`：日文站点下回来的 .lrc 有不少是 Shift-JIS，
-/// 整份歌词会变成一串 U+FFFD。那比没有歌词更糟——库里记着「这首有歌词」，
-/// 「补齐缺失歌词」再也不会看它一眼，而检索和制卡拿到的全是问号。
-///
-/// CP932 排在 GBK 前面：两者的双字节区大面积重叠，同一串字节往往两边都能
-/// 解出「字」来，只有一边是对的。这是个日文语料库，所以先假定日文编码；
-/// 真有 GBK 的中文歌词时，它多半含 CP932 解不出的字节（实测
-/// 「风的记忆」的 GBK 编码在 CP932 下第 17 字节就非法），于是会落到 GBK。
-///
-/// **带 BOM 的 UTF-16（LE / BE）也走得通，但靠的是一个不显眼的行为**：
-/// `Encoding::decode` 先嗅 BOM，看到 `FF FE` / `FE FF` 就改用 UTF-16 解，
-/// 不管调用的是哪个编码（encoding_rs 文档写明的）。所以 CP932 那一步其实就把它解对了。
-/// 改这段的时候别换成不嗅 BOM 的 `decode_without_bom_handling`——
-/// `utf16_with_a_bom_is_decoded_both_ways` 会拦住。
-fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
-    if let Ok(text) = std::str::from_utf8(bytes) {
-        return std::borrow::Cow::Borrowed(text);
-    }
-    for encoding in [encoding_rs::SHIFT_JIS, encoding_rs::GBK] {
-        let (text, _, had_errors) = encoding.decode(bytes);
-        if !had_errors {
-            return text;
-        }
-    }
-    // 三种都不干净：按 UTF-8 尽力而为，坏字节变 U+FFFD。
-    // 走到这里的文件本身就是坏的，报错反而会让一首歌整个导不进来。
-    String::from_utf8_lossy(bytes)
+    crate::text::read_file(path)
 }
 
 #[cfg(test)]
@@ -672,7 +669,7 @@ mod tests {
             let parsed = parse_file(&path).unwrap();
             assert_eq!(parsed.lines.len(), 1, "{name}");
             assert_eq!(parsed.lines[0].text, "夜が明けるまで", "{name}");
-            assert_eq!(decode(&bytes), text, "{name}");
+            assert_eq!(crate::text::decode_bytes(&bytes), text, "{name}");
         }
     }
 

@@ -315,21 +315,23 @@ fn local_fallback(
     }
     // 本地来源的优先级：旁边的同名文件 → 内嵌歌词（见 jp_corpus::lyric_sources）
     let sibling = crate::lyrics::sibling_lrc(&audio);
-    let (text, source, reference) = if let Some(path) = sibling {
-        (
-            crate::lyrics::read_text(&path)?,
-            "sibling",
-            path.display().to_string(),
-        )
+    let (decoded, source, reference) = if let Some(path) = sibling {
+        (crate::lyrics::decode_file(&path)?, "sibling", path.display().to_string())
     } else if let Some(e) = jp_import::embedded::read_lyrics(Path::new(&audio)) {
-        (e.text, "embedded", audio)
+        (jp_import::embedded::decode_text(&e.text), "embedded", audio)
     } else {
         return Ok(None);
     };
-    let parsed = jp_import::lrc::parse(&text);
+    let text = decoded.original;
+    let parsed = decoded.parsed;
     let native = parsed.lines.iter().any(|l| !l.words.is_empty());
     let synced = parsed.lines.iter().any(|l| l.time_sec.is_some());
-    let lyrics = jp_scraper::timed_lyrics::TimedLyrics {
+    // 逐字格式（QRC / YRC / TTML …）直接用它自己的毫秒时间轴，格式照实记
+    let word_format = decoded.timed.is_some().then(|| decoded.format.name());
+    let lyrics = if let Some(timed) = decoded.timed {
+        timed
+    } else {
+        jp_scraper::timed_lyrics::TimedLyrics {
         lines: parsed
             .lines
             .into_iter()
@@ -349,10 +351,13 @@ fn local_fallback(
                     .collect(),
             })
             .collect(),
+        }
     };
     let candidate = TimedFound {
         source: source.into(),
-        format: if native {
+        format: if let Some(format) = word_format {
+            format
+        } else if native {
             "ELRC"
         } else if synced {
             "LRC"

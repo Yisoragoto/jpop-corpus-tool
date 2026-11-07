@@ -2057,8 +2057,8 @@ name = "jp-import"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "encoding_rs",
  "jp-corpus",
+ "jp-lyric-format",
  "jp-tokenizer",
  "lofty",
  "regex",
@@ -2083,13 +2083,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "jp-lyrics"
+name = "jp-lyric-format"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "encoding_rs",
+ "flate2",
+ "regex",
+ "roxmltree",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "jp-lyrics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "jp-corpus",
  "jp-import",
+ "jp-lyric-format",
  "jp-normalize",
  "jp-scraper",
  "jp-tokenizer",
@@ -2130,11 +2143,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "flate2",
  "jp-corpus",
+ "jp-lyric-format",
  "jp-normalize",
  "regex",
- "roxmltree",
  "rusqlite",
  "serde",
  "serde_json",

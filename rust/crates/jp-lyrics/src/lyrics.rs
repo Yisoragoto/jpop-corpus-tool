@@ -29,7 +29,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{Connection, params};
 use serde::Serialize;
 
@@ -158,7 +158,7 @@ pub fn missing(conn: &Connection) -> Result<Vec<MissingLyrics>> {
     Ok(out)
 }
 
-/// 音频旁边的同名 .lrc，有才返回。
+/// 音频旁边当原文用的同名歌词文件（.ttml / .qrc / .lrc / .srt / .txt …），有才返回。
 ///
 /// 导入时找的就是这个（见 `jp_import::scan`）。在这里再找一次是为了
 /// 「导入完才去下歌词」的情况：文件后来才出现，没必要为此重导一遍歌。
@@ -166,8 +166,8 @@ pub fn sibling_lrc(audio_path: &str) -> Option<PathBuf> {
     if audio_path.is_empty() {
         return None;
     }
-    let candidate = Path::new(audio_path).with_extension("lrc");
-    candidate.is_file().then_some(candidate)
+    // 不只 .lrc：TTML、逐字格式、SRT、TXT 都算，挑哪一份见 jp_lyric_format::external
+    jp_lyric_format::external::primary_beside(Path::new(audio_path))
 }
 
 /// 把一段 LRC 文本挂到一首已经在库里的歌上。三条来源的共同出口。
@@ -674,19 +674,9 @@ pub fn attach_from_file(
     analyzer: Option<&jp_tokenizer::Analyzer>,
 ) -> Result<Attached> {
     let (artist, title) = song_names(conn, song_id)?;
-    let mut converted = crate::timed_lyrics::file_to_lrc(path)?;
-    if converted.is_none() && path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("srt")) {
-        let original = read_text(path)?;
-        converted = Some(crate::timed_lyrics::ConvertedFile {
-            text: crate::sources::canonical_lrc(&original, "srt")?,
-            original,
-            format: "srt".into(),
-        });
-    }
-    let text = match &converted {
-        Some(file) => file.text.clone(),
-        None => read_text(path)?,
-    };
+    let decoded = decode_file(path)?;
+    // LRC 一家入库的就是原文；逐字格式和 SRT 入库的是转换后的 LRC，原文和格式另记
+    let converted = (!decoded.format.is_lrc_family()).then(|| (decoded.format.name(), decoded.original.as_str()));
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -695,29 +685,44 @@ pub fn attach_from_file(
         conn,
         lyrics_dir,
         SongRef { id: song_id, artist: &artist, title: &title },
-        &text,
+        &decoded.lrc,
         LyricsSource::Manual,
         &name,
         analyzer,
         None,
         None,
-        converted.as_ref().map(|f|(f.format.as_str(),f.original.as_str())),
+        converted,
     )
 }
 
-/// 读文本，编码按 UTF-8 → CP932 → GBK 试，和 `jp_import::lrc::parse_file` 同一套规则。
-/// 带 BOM 的 UTF-16 也认：`Encoding::decode` 先嗅 BOM（见 `jp_import::lrc` 里 `decode` 的注释）。
+/// 用户选的一个歌词文件 → 解析结果。格式按扩展名（见 [`jp_lyric_format::decode`]），`.txt` 看内容。
+///
+/// QRC / KRC 可能是加密的二进制，直接交给解码器；其余先按 [`read_text`] 的规则读成文本，
+/// 认不出编码就报错，不硬读成一份乱码。
+pub(crate) fn decode_file(path: &Path) -> Result<jp_lyric_format::Decoded> {
+    let extension = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    let decoded = match extension.as_deref() {
+        Some("qrc" | "krc") => {
+            ensure!(std::fs::metadata(path)?.len() <= 8 * 1024 * 1024, "歌词文件过大（最多 8 MB）");
+            let bytes = std::fs::read(path).with_context(|| format!("读不了歌词文件：{}", path.display()))?;
+            jp_lyric_format::decode(&bytes, extension.as_deref())?
+        }
+        Some(ext @ ("yrc" | "ttml" | "lys")) => {
+            ensure!(std::fs::metadata(path)?.len() <= 8 * 1024 * 1024, "歌词文件过大（最多 8 MB）");
+            jp_lyric_format::decode_str(&read_text(path)?, Some(ext))?
+        }
+        other => jp_lyric_format::decode_str(&read_text(path)?, other)?,
+    };
+    Ok(decoded)
+}
+
+/// 读文本，编码按 UTF-8 → CP932 → GBK 试，和 `jp_import::lrc::parse_file` 同一套规则
+/// （都在 `jp_lyric_format::text`）。带 BOM 的 UTF-16 也认。三种都解不干净就报错。
 pub(crate) fn read_text(path: &Path) -> Result<String> {
     let bytes =
         std::fs::read(path).with_context(|| format!("读不了歌词文件：{}", path.display()))?;
-    if let Ok(text) = std::str::from_utf8(&bytes) {
-        return Ok(text.trim_start_matches('\u{feff}').to_string());
-    }
-    for encoding in [encoding_rs::SHIFT_JIS, encoding_rs::GBK] {
-        let (text, _, had_errors) = encoding.decode(&bytes);
-        if !had_errors {
-            return Ok(text.trim_start_matches('\u{feff}').to_string());
-        }
+    if let Some(text) = jp_lyric_format::text::decode_strict(&bytes) {
+        return Ok(text);
     }
     bail!(
         "{} 的编码认不出来（试过 UTF-8、CP932、GBK）。请另存为 UTF-8 再导入——\
@@ -737,7 +742,7 @@ fn song_names(conn: &Connection, song_id: &str) -> Result<(String, String)> {
     .with_context(|| format!("找不到曲目 {song_id}"))
 }
 
-/// 一首歌走一遍「先本地、再在线」：旁边的 .lrc → 内嵌的 → 在线搜。
+/// 一首歌走一遍「先本地、再在线」：旁边的同名歌词文件 → 内嵌的 → 在线搜。
 ///
 /// 本地优先是因为它必然对：文件就在那首歌旁边，不存在挑错的风险，还不用联网。
 /// 外挂和内嵌之间的取舍和导入时一样（见 `jp_import::ScannedTrack::lyrics_pick`）。
@@ -758,30 +763,39 @@ pub fn fill_one(
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        return Ok(Some(apply_lrc_text(
+        // 逐字格式入库的是转换后的 LRC，原文和格式另记（LRC 一家 lrc 就是原文）
+        let converted = (embedded.lrc != embedded.text).then_some((embedded.format, embedded.text.as_str()));
+        return Ok(Some(apply_lrc_inner(
             conn,
             lyrics_dir,
             SongRef { id: &target.song_id, artist: &target.artist, title: &target.title },
-            &embedded.text,
+            &embedded.lrc,
             LyricsSource::Embedded,
             &name,
             analyzer,
+            None,
+            None,
+            converted,
         )?));
     }
     if let Some(local) = sibling {
-        let text = read_text(&local)?;
+        let decoded = decode_file(&local)?;
         let name = local
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
-        return Ok(Some(apply_lrc_text(
+        let converted = (!decoded.format.is_lrc_family()).then(|| (decoded.format.name(), decoded.original.as_str()));
+        return Ok(Some(apply_lrc_inner(
             conn,
             lyrics_dir,
             SongRef { id: &target.song_id, artist: &target.artist, title: &target.title },
-            &text,
+            &decoded.lrc,
             LyricsSource::Sibling,
             &name,
             analyzer,
+            None,
+            None,
+            converted,
         )?));
     }
 

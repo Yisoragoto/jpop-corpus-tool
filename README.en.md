@@ -140,8 +140,18 @@ search box at the top searches titles, artists, albums, lyrics and words across 
 
 ### Where word-timed lyrics come from
 
-On import, an `.lrc` next to the audio and lyrics embedded in the file are picked up (word timestamps in enhanced
-LRC are kept). For songs with no lyrics, or with line timing only:
+On import, a same-name lyrics file next to the audio and lyrics embedded in the file are picked up. Of the same-name
+files, the first of `.ttml` > `.qrc` / `.yrc` / `.krc` / `.lys` > `.lrc` > `.srt` > `.txt` becomes the original; the
+others can be switched to under Lyric sources, and a language-suffixed file (`song.zh.lrc`) is a translation.
+Embedded lyrics are not always LRC: QRC, YRC, extended LRC and TTML are recognised from the content, with their word
+timing kept.
+
+Extended LRC means either of two styles, both supported:
+
+- **Lyrics A2**: angle brackets, `[00:12.00]<00:12.00>夜<00:12.40>が<00:12.80>`
+- **ESLyric**: square brackets only; the line timestamp is the first word's start, `[00:12.00]夜[00:12.40]が[00:12.80]`
+
+For songs with no lyrics, or with line timing only:
 
 - **Fill in word-timed lyrics** on the Scrape page does the whole library; on import, "fetch lyrics afterwards,
   word-timed first" is ticked by default.
@@ -153,7 +163,8 @@ LRC are kept). For songs with no lyrics, or with line timing only:
 - **No guessing**: title, artist and duration have to match and the text has to agree at least 97 % with the lyrics
   you already have before anything is adopted automatically; uncertain matches go to a review list. Lyrics you
   imported, edited or timed by hand are never overwritten by a batch run.
-- Import a lyrics file yourself: `.lrc` / `.txt` / `.yrc` / `.qrc` / `.krc` / `.ttml`, in UTF-8, Shift-JIS or GBK.
+- Import a lyrics file yourself: `.lrc` / `.txt` / `.srt` / `.yrc` / `.qrc` / `.krc` / `.lys` / `.ttml`, in UTF-8,
+  UTF-16, Shift-JIS or GBK.
 
 Details: [docs/word-lyrics.md](docs/word-lyrics.md) and [docs/karaoke.md](docs/karaoke.md) (Chinese).
 

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://itunes.apple.com/lyric-ttml-extensions" xml:lang="ja">
+  <head>
+    <metadata>
+      <ttm:title>夜明けの歌</ttm:title>
+      <ttm:agent type="person" xml:id="v1">
+        <ttm:name type="full">テスト</ttm:name>
+      </ttm:agent>
+      <!-- [kana:1よ1あ1あさ1ひかり] -->
+    </metadata>
+  </head>
+  <body dur="00:07.000">
+    <div begin="00:00.000" end="00:07.000">
+      <p begin="00:00.000" end="00:03.000" ttm:agent="v1" itunes:key="L1">
+        <span begin="00:00.000" end="00:00.500">夜</span><span begin="00:00.500" end="00:00.900">が</span><span begin="00:00.900" end="00:01.500">明</span><span begin="00:01.500" end="00:02.000">け</span><span begin="00:02.000" end="00:03.000">る</span>
+      </p>
+      <p begin="00:03.200" end="00:05.200" ttm:agent="v1" itunes:key="L2">
+        <span begin="00:03.200" end="00:03.900">朝</span><span begin="00:03.900" end="00:04.200">の</span><span begin="00:04.200" end="00:05.200">光</span>
+      </p>
+      <p begin="00:05.400" end="00:07.000" ttm:agent="v1" itunes:key="L3">
+        <span begin="00:05.400" end="00:06.000">Hello</span> <span begin="00:06.000" end="00:07.000">world</span>
+      </p>
+    </div>
+  </body>
+</tt>

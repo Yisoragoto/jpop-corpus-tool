@@ -895,54 +895,6 @@ pub fn redact(message: &str, options: &SourceOptions) -> String {
     result
 }
 
-/// Local files go through the same format parsers as online sources.
-/// Ordinary LRC/text files keep the established encoding and parsing path.
-pub struct ConvertedFile {
-    pub text: String,
-    pub original: String,
-    pub format: String,
-}
-
-pub fn file_to_lrc(path: &Path) -> Result<Option<ConvertedFile>> {
-    let extension = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if !["yrc", "qrc", "krc", "ttml"].contains(&extension.as_str()) {
-        return Ok(None);
-    }
-    ensure!(
-        std::fs::metadata(path)?.len() <= 8 * 1024 * 1024,
-        "歌词文件过大（最多 8 MB）"
-    );
-    let decoded = match extension.as_str() {
-        "krc" => jp_scraper::timed_sources::decode_krc(&std::fs::read(path)?)?,
-        "qrc" => {
-            let bytes = std::fs::read(path)?;
-            let text = crate::lyrics::read_text(path).ok();
-            if let Some(xml) = text.filter(|s| s.trim_start().starts_with('<')) {
-                xml
-            } else {
-                jp_scraper::timed_sources::decode_qrc(&bytes)?
-            }
-        }
-        _ => crate::lyrics::read_text(path)?,
-    };
-    let timed = match extension.as_str() {
-        "yrc" => jp_scraper::timed_lyrics::parse_yrc(&decoded)?,
-        "qrc" => jp_scraper::timed_lyrics::parse_qrc(&decoded)?,
-        "krc" => jp_scraper::timed_lyrics::parse_krc(&decoded)?,
-        "ttml" => jp_scraper::timed_lyrics::parse_ttml(&decoded)?,
-        _ => unreachable!(),
-    };
-    Ok(Some(ConvertedFile {
-        text: timed.to_enhanced_lrc(),
-        original: decoded,
-        format: extension,
-    }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

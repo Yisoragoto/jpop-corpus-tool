@@ -16,6 +16,10 @@
 //! 但网易云、Mp3tag 往里写的常常就是整份带时间戳的 LRC。所以两个键都读，
 //! 有没有时间轴按内容判断（见 [`EmbeddedLyrics::synced`]）。
 //!
+//! **字段里装的也不一定是 LRC**：别的播放器会往里写 QRC、YRC、ESLyric、TTML
+//! （[#61](https://github.com/Yisoragoto/jpop-corpus-tool/issues/61)）。没有扩展名可看，
+//! 所以交给 [`jp_lyric_format::decode`] 按内容判断格式。
+//!
 //! ID3v2 的 `SYLT`（二进制的同步歌词）lofty 不转成文本，这里不读——实际很少见。
 
 use std::path::Path;
@@ -29,8 +33,12 @@ use lofty::tag::ItemKey;
 /// 文件里内嵌的一份歌词。
 #[derive(Debug, Clone, PartialEq)]
 pub struct EmbeddedLyrics {
-    /// 原文，原样保留（LRC 或者纯文本），交给 [`crate::lrc::parse`] 去解析
+    /// 原文，原样保留（只统一了换行）。登记来源、存 `source_raw` 用的是它
     pub text: String,
+    /// 按内容判出的格式（`raw_format` 那个词：lrc / enhanced_lrc / qrc / ttml …）
+    pub format: &'static str,
+    /// 入库用的 LRC 文本：LRC 一家就是 `text`，逐字格式转换得到
+    pub lrc: String,
     /// 解析出来的行里至少有一行带时间戳
     pub synced: bool,
 }
@@ -59,12 +67,22 @@ fn judge(text: &str) -> Option<EmbeddedLyrics> {
     if text.trim().is_empty() {
         return None;
     }
-    let parsed = crate::lrc::parse(&text);
-    if parsed.lines.is_empty() {
+    let decoded = decode_text(&text);
+    if decoded.parsed.lines.is_empty() {
         return None;
     }
-    let synced = parsed.lines.iter().any(|l| l.time_sec.is_some());
-    Some(EmbeddedLyrics { text, synced })
+    let synced = decoded.parsed.lines.iter().any(|l| l.time_sec.is_some());
+    Some(EmbeddedLyrics { format: decoded.format.name(), lrc: decoded.lrc, text, synced })
+}
+
+/// 内嵌歌词的文本 → 解析结果。没有扩展名可看，按内容判断格式。
+///
+/// 看着像逐字格式、却解析失败的（坏掉的 TTML、时间写错的 QRC），退回按 LRC 读：
+/// 和以前一样至少把字留下来，不让一首歌因为格式判断而整个没了歌词。
+pub fn decode_text(text: &str) -> jp_lyric_format::Decoded {
+    jp_lyric_format::decode_str(text, None).unwrap_or_else(|_| {
+        jp_lyric_format::decode_as(text, jp_lyric_format::lrc_flavor(text)).expect("LRC parsing never fails")
+    })
 }
 
 /// 读一个文件里内嵌的歌词。读不开、没有都是 None。
@@ -121,6 +139,33 @@ mod tests {
         assert!(synced.synced);
         let plain = judge("一行目\n二行目").unwrap();
         assert!(!plain.synced);
+    }
+
+    #[test]
+    fn word_timed_formats_in_the_lyrics_tag_are_recognised() {
+        // 老 iTunes 式的单个 \r 换行，和 #61 里内嵌 QRC 一样带着 [ti:] 头和 [kana:] 注音行
+        let found = judge("[ti:夜]\r[kana:1よ]\r[0,900]夜(0,500)が(500,400)\r[1000,500]朝(1000,500)").unwrap();
+        assert_eq!(found.format, "qrc");
+        assert!(found.synced);
+        let parsed = crate::lrc::parse(&found.lrc);
+        assert_eq!(parsed.lines.len(), 2, "{}", found.lrc);
+        assert_eq!(parsed.lines[0].text, "夜が");
+        assert_eq!(parsed.lines[0].words.len(), 2);
+        // 原文原样留着（只统一了换行），登记来源时存的是它
+        assert!(found.text.starts_with("[ti:夜]\n[kana:1よ]\n[0,900]"));
+
+        let found = judge("[0,900](0,500,0)夜(500,400,0)が").unwrap();
+        assert_eq!(found.format, "yrc");
+        let found = judge("[00:01.00]夜[00:01.50]が[00:02.00]").unwrap();
+        assert_eq!(found.format, "enhanced_lrc");
+        assert_eq!(found.lrc, found.text);
+    }
+
+    #[test]
+    fn a_broken_word_timed_tag_falls_back_to_lrc_instead_of_disappearing() {
+        let found = judge("[0,900]夜(0,abc)\n[00:01.00]朝").unwrap();
+        assert_eq!(found.format, "lrc");
+        assert!(found.lrc.contains("朝"));
     }
 
     #[test]
