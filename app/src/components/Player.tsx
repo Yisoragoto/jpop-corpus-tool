@@ -181,7 +181,7 @@ export function Player({
           {/* key 换歌就重挂，封面和歌名一起滑进来 */}
           <div className="now-swap" key={state.songId ?? "none"}>
             <Cover path={coverPath} size={48} rounded={6} />
-            <div className="now">
+            <div className="now-text">
               <span className="now-title">{title || "—"}</span>
               <span className="now-artist">{artist}</span>
             </div>

@@ -885,7 +885,7 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 @keyframes now-in { from { opacity: 0; transform: translateY(10px); filter: blur(4px); } }
 .player-now .cover { box-shadow: 0 4px 14px var(--scene-black-a45); transition: transform var(--motion-fast) var(--ease-out); }
 .player-now.clickable:hover .cover { transform: scale(1.05); }
-.now { display: flex; flex-direction: column; min-width: 0; }
+.now-text { display: flex; flex-direction: column; min-width: 0; }
 .now-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .now-artist { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;  font: 400 12px/16px var(--font-small);}
 
@@ -2824,7 +2824,7 @@ body.col-resizing .columns.library-page { transition: none; }
 }
 @media (max-width: 860px) {
   .player-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
-  .now { display: none; }
+  .now-text { display: none; }
   .transport { justify-self: center; gap: 6px; }
   .volume, .volume-max { display: none; }
 }
