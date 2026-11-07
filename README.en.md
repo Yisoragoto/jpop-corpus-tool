@@ -144,7 +144,8 @@ On import, a same-name lyrics file next to the audio and lyrics embedded in the 
 files, the first of `.ttml` > `.qrc` / `.yrc` / `.krc` / `.lys` > `.lrc` > `.srt` > `.txt` becomes the original; the
 others can be switched to under Lyric sources, and a language-suffixed file (`song.zh.lrc`) is a translation.
 Embedded lyrics are not always LRC: QRC, YRC, extended LRC and TTML are recognised from the content, with their word
-timing kept.
+timing kept. Furigana marked with `tts:ruby` in TTML stays out of the lyric text, and the translation that Apple Music
+TTML carries becomes the translation (its romaji is ignored).
 
 Extended LRC means either of two styles, both supported:
 

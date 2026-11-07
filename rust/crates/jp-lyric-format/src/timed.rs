@@ -934,6 +934,60 @@ fn space_mode(node: Node<'_, '_>, inherited: bool) -> Result<bool> {
     }
 }
 
+/// `tts:ruby` 的取值（container / base / text / textContainer / delimiter …）。
+fn ruby_role<'a>(node: Node<'a, '_>) -> Option<&'a str> {
+    node.attributes().find(|a| a.name() == "ruby").map(|a| a.value())
+}
+
+/// 一个 `tts:ruby="container"`：正文只要 base，注音（text / textContainer / delimiter）不进正文。
+/// 时间按 container 自己的 → base 自己的 → 注音上的（最早的开始、最晚的结束）取，
+/// 让带振假名的字照样有逐字时间。
+fn ruby_container(
+    node: Node<'_, '_>,
+    bounds: Bounds,
+    active: Option<usize>,
+    preserve: bool,
+    builder: &mut TextBuilder,
+) -> Result<()> {
+    let preserve = space_mode(node, preserve)?;
+    let own = element_bounds(node, bounds)?;
+    let own_end = node.attribute("end").is_some() || node.attribute("dur").is_some();
+    let mut start: Option<u64> = None;
+    let mut end: Option<u64> = None;
+    let mut every_end = true;
+    for reading in node
+        .descendants()
+        .filter(|n| n.is_element() && ruby_role(*n) == Some("text"))
+    {
+        let reading_bounds = element_bounds(reading, own)?;
+        if reading.attribute("begin").is_some() {
+            let at = reading_bounds.start.context("missing ruby text begin")?;
+            start = Some(start.map_or(at, |s| s.min(at)));
+        }
+        if reading.attribute("end").is_some() || reading.attribute("dur").is_some() {
+            if let Some(at) = reading_bounds.end {
+                end = Some(end.map_or(at, |e| e.max(at)));
+            }
+        } else {
+            every_end = false;
+        }
+    }
+    let active = if node.attribute("begin").is_some() {
+        Some(builder.clock(Clock {
+            start: own.start.context("missing ruby container begin")?,
+            end: own.end.filter(|_| own_end),
+        }))
+    } else if let Some(start) = start {
+        Some(builder.clock(Clock {
+            start,
+            end: end.filter(|&e| every_end && e >= start),
+        }))
+    } else {
+        active
+    };
+    ttml_words(node, own, active, preserve, builder)
+}
+
 fn lyric_element(node: Node<'_, '_>) -> bool {
     node.tag_name()
         .namespace()
@@ -960,6 +1014,15 @@ fn ttml_words(
                 "unsupported element in TTML lyric line: {}",
                 child.tag_name().name()
             );
+            match ruby_role(child) {
+                Some("container") => {
+                    ruby_container(child, bounds, active, preserve, builder)?;
+                    continue;
+                }
+                // 注音、注音外壳、括注音用的括号：不是正文
+                Some("text" | "textContainer" | "delimiter") => continue,
+                _ => {}
+            }
             let preserve = space_mode(child, preserve)?;
             // AMLL permits standalone space spans at 00:00 even inside a later
             // line. They carry separators, not sung words or useful clocks.
@@ -1001,7 +1064,7 @@ fn ttml_container(
     node: Node<'_, '_>,
     parent: Bounds,
     preserve: bool,
-    lines: &mut Vec<TimedLine>,
+    lines: &mut Vec<(TimedLine, Option<String>)>,
 ) -> Result<()> {
     if auxiliary(node) {
         return Ok(());
@@ -1034,12 +1097,20 @@ fn ttml_container(
         } else {
             None
         };
-        lines.push(TimedLine {
-            start_ms,
-            end_ms,
-            text,
-            words,
-        });
+        // Apple Music 的 `itunes:key="L1"`：head 里的译文按它对到行上
+        let key = node
+            .attributes()
+            .find(|a| a.name() == "key")
+            .map(|a| a.value().to_string());
+        lines.push((
+            TimedLine {
+                start_ms,
+                end_ms,
+                text,
+                words,
+            },
+            key,
+        ));
     } else {
         ensure!(
             matches!(node.tag_name().name(), "tt" | "body" | "div"),
@@ -1061,6 +1132,38 @@ fn ttml_container(
 }
 
 pub fn parse_ttml(text: &str) -> Result<TimedLyrics> {
+    parse_ttml_with_translations(text).map(|(lyrics, _)| lyrics)
+}
+
+/// Apple Music TTML 的 `<iTunesMetadata><translations>`：`<text for="L1">` 按 key 收起来。
+/// 罗马音（transliterations）不要。同一个 key 有几种语言就有几条。
+fn itunes_translations(doc: &Document<'_>) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for translation in doc
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name() == "translation")
+    {
+        for item in translation
+            .children()
+            .filter(|n| n.is_element() && n.tag_name().name() == "text")
+        {
+            let Some(key) = item.attribute("for") else { continue };
+            let joined: String = item
+                .descendants()
+                .filter(|n| n.is_text())
+                .filter_map(|n| n.text())
+                .collect();
+            let text = joined.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !text.is_empty() {
+                out.push((key.to_string(), text));
+            }
+        }
+    }
+    out
+}
+
+/// [`parse_ttml`]，另外带上 head 里按 `itunes:key` 对到行上的译文（只有文字和行时间，没有逐字）。
+pub fn parse_ttml_with_translations(text: &str) -> Result<(TimedLyrics, Vec<TimedLine>)> {
     let doc = safe_xml(text)?;
     let root = doc.root_element();
     ensure!(
@@ -1077,9 +1180,26 @@ pub fn parse_ttml(text: &str) -> Result<TimedLyrics> {
             == 1,
         "TTML requires exactly one body"
     );
-    let mut lines = Vec::new();
-    ttml_container(root, Bounds::default(), false, &mut lines)?;
-    complete(lines, 0)
+    let mut keyed = Vec::new();
+    ttml_container(root, Bounds::default(), false, &mut keyed)?;
+    let wanted = itunes_translations(&doc);
+    let mut translations = Vec::new();
+    if !wanted.is_empty() {
+        for (line, key) in &keyed {
+            let Some(key) = key else { continue };
+            for (_, text) in wanted.iter().filter(|(k, _)| k == key) {
+                translations.push(TimedLine {
+                    start_ms: line.start_ms,
+                    end_ms: line.end_ms,
+                    text: text.clone(),
+                    words: Vec::new(),
+                });
+            }
+        }
+        translations.sort_by_key(|line| line.start_ms);
+    }
+    let lyrics = complete(keyed.into_iter().map(|(line, _)| line).collect(), 0)?;
+    Ok((lyrics, translations))
 }
 
 #[cfg(test)]
@@ -1265,6 +1385,45 @@ mod tests {
             [word(0, 2, 1000, Some(1400)), word(2, 4, 1700, Some(2600))]
         );
         assert_eq!(lyrics.lines[1].text, "歩く");
+    }
+
+    #[test]
+    fn ttml_ruby_keeps_only_the_base_and_takes_timing_from_container_or_readings() {
+        let doc = |body: &str| {
+            format!(
+                r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><p begin="1s" end="5s">{body}</p></body></tt>"#
+            )
+        };
+        // 时间在容器上；括号（delimiter）和注音都不进正文
+        let lyrics = parse_ttml(&doc(concat!(
+            "<span tts:ruby='container' begin='1s' end='2s'><span tts:ruby='base'>朝</span>",
+            "<span tts:ruby='delimiter'>(</span><span tts:ruby='textContainer'><span tts:ruby='text'>あさ</span></span>",
+            "<span tts:ruby='delimiter'>)</span></span><span begin='2s' end='3s'>だ</span>"
+        )))
+        .unwrap();
+        assert_eq!(lyrics.lines[0].text, "朝だ");
+        assert_eq!(lyrics.lines[0].words, vec![word(0, 1, 1000, Some(2000)), word(1, 2, 2000, Some(3000))]);
+        // 时间在注音上：最早的开始到最晚的结束
+        let lyrics = parse_ttml(&doc(concat!(
+            "<span tts:ruby='container'><span tts:ruby='base'>光</span><span tts:ruby='textContainer'>",
+            "<span tts:ruby='text' begin='1.2s' end='1.5s'>ひか</span><span tts:ruby='text' begin='1.5s' end='1.9s'>り</span>",
+            "</span></span>"
+        )))
+        .unwrap();
+        assert_eq!(lyrics.lines[0].text, "光");
+        assert_eq!(lyrics.lines[0].words, vec![word(0, 1, 1200, Some(1900))]);
+        // 哪里都没时间：和别的只有逐行的 TTML 一样，不算逐字歌词
+        assert!(parse_ttml(&doc(
+            "<span tts:ruby='container'><span tts:ruby='base'>夜</span><span tts:ruby='text'>よる</span></span>",
+        ))
+        .is_err());
+        // 同一行别的字有时间、注音没时间：这一行退回逐行，正文照样不带注音
+        let lyrics = parse_ttml(
+            r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><p begin="1s" end="2s"><span begin="1s" end="2s">朝</span></p><p begin="3s" end="5s"><span tts:ruby='container'><span tts:ruby='base'>夜</span><span tts:ruby='text'>よる</span></span><span begin="4s" end="5s">だ</span></p></body></tt>"#,
+        )
+        .unwrap();
+        assert_eq!(lyrics.lines[1].text, "夜だ");
+        assert!(lyrics.lines[1].words.is_empty());
     }
 
     #[test]

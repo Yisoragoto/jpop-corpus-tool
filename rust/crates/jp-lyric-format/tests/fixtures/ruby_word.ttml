@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://itunes.apple.com/lyric-ttml-extensions" xml:lang="ja">
+  <head>
+    <metadata>
+      <ttm:agent type="person" xml:id="v1"/>
+    </metadata>
+  </head>
+  <body>
+    <div begin="00:03.859" end="00:27.574">
+      <p begin="00:03.859" end="00:04.883" ttm:agent="v1" itunes:key="L3">
+<span tts:ruby="container"><span tts:ruby="base">曲</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="00:03.859" end="00:03.974">き</span><span tts:ruby="text" begin="00:03.975" end="00:04.090">ょ</span><span tts:ruby="text" begin="00:04.090" end="00:04.319">く</span></span></span><span begin="00:04.319" end="00:04.359">：</span><span begin="00:04.319" end="00:04.554">n-</span><span begin="00:04.554" end="00:04.883">buna</span>
+      </p>
+      <p begin="00:18.427" end="00:23.133" ttm:agent="v1" itunes:key="L4">
+<span begin="00:18.427" end="00:18.571">や</span><span begin="00:18.571" end="00:18.715">っ</span><span begin="00:18.715" end="00:19.283">と</span><span tts:ruby="container"><span tts:ruby="base">雨</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="00:19.747" end="00:20.059">あめ</span></span></span><span begin="00:20.059" end="00:20.215">が</span><span tts:ruby="container"><span tts:ruby="base">降</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="00:20.215" end="00:20.345">ふ</span></span></span><span begin="00:20.345" end="00:20.475">っ</span><span begin="00:20.476" end="00:20.623">た</span><span begin="00:20.623" end="00:20.770">ん</span><span begin="00:20.771" end="00:21.019">だ</span>
+      </p>
+      <p begin="00:23.133" end="00:27.574" ttm:agent="v1" itunes:key="L5">
+<span begin="00:23.133" end="00:23.287">こ</span><span begin="00:23.287" end="00:23.438">の</span><span tts:ruby="container"><span tts:ruby="base">青</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="00:23.438" end="00:23.741">あお</span></span></span><span begin="00:23.741" end="00:23.909">を</span><span begin="00:23.909" end="00:24.045">ず</span><span begin="00:24.045" end="00:24.181">っ</span><span begin="00:24.182" end="00:24.350">と</span><span tts:ruby="container"><span tts:ruby="base">思</span><span tts:ruby="textContainer"><span tts:ruby="text" begin="00:24.350" end="00:24.494">お</span><span tts:ruby="text" begin="00:24.494" end="00:24.610">も</span></span></span><span begin="00:24.610" end="00:24.726">っ</span><span begin="00:24.726" end="00:24.853">て</span><span begin="00:24.854" end="00:24.981">い</span><span begin="00:24.981" end="00:25.165">た</span><span begin="00:25.166" end="00:25.350">ん</span><span begin="00:25.350" end="00:25.623">だ</span>
+      </p>
+    </div>
+  </body>
+</tt>
