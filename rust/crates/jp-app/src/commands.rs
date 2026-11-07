@@ -2105,6 +2105,51 @@ pub fn library_restore_songs(state: State<'_, AppState>, ids: Vec<String>) -> Cm
     Ok(jp_api::sources::LibraryRestoreSongs::run(&state.corpus(), jp_api::sources::SongIdsArgs { ids })?)
 }
 
+/// 一首歌的歌词同步失败
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricSyncFailure {
+    pub song_id: String,
+    pub error: String,
+}
+
+/// 歌词同步的结果
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricSyncReport {
+    /// 挂上了新的一版
+    pub updated: Vec<String>,
+    /// 看过了，不用换（你选了别的来源、或者内容没变）
+    pub unchanged: usize,
+    pub failed: Vec<LyricSyncFailure>,
+}
+
+/// 音频或旁边的歌词文件变了之后，逐首同步歌词（见 `jp_lyrics::sources::sync_local`）。
+/// 对账确认后界面对「文件变了」「歌词文件变了」的歌调它。要分词，放进阻塞线程池；一首一个事务，
+/// 一首出错不影响其余
+#[tauri::command]
+pub async fn library_sync_lyrics<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    song_ids: Vec<String>,
+) -> CmdResult<LyricSyncReport> {
+    blocking(app, move |state| {
+        state.flush_session();
+        let lyrics_dir = state.lyrics_dir.clone();
+        let analyzer = state.analyzer();
+        let mut report = LyricSyncReport::default();
+        for id in song_ids {
+            let mut corpus = state.corpus();
+            match jp_lyrics::sources::sync_local(corpus.connection_mut(), &lyrics_dir, &id, None, analyzer.as_deref()) {
+                Ok(Some(_)) => report.updated.push(id),
+                Ok(None) => report.unchanged += 1,
+                Err(err) => report.failed.push(LyricSyncFailure { song_id: id, error: format!("{err:#}") }),
+            }
+        }
+        Ok(report)
+    })
+    .await
+}
+
 /// 还没有音乐文件夹时，按库里歌的位置建议几个（要知道项目目录，所以不在 jp-api）
 #[tauri::command(async)]
 pub fn library_source_suggestions(state: State<'_, AppState>) -> CmdResult<jp_library::sources::Suggestions> {

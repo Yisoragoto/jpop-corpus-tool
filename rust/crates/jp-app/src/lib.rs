@@ -129,6 +129,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::library_restore_songs,
             commands::library_source_suggestions,
             commands::library_source_remove,
+            commands::library_sync_lyrics,
             commands::library_missing_audio,
             commands::library_suggest_relinks,
             commands::library_relink_audio,

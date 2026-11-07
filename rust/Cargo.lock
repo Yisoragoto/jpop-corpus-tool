@@ -2078,6 +2078,7 @@ dependencies = [
  "jp-audio",
  "jp-corpus",
  "jp-import",
+ "jp-lyrics",
  "jp-scrape",
  "jp-setup",
  "rusqlite",

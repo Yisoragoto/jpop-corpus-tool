@@ -618,6 +618,7 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 }
 .link-btn.warn { color: var(--warn); }
 .link-btn.danger { color: var(--danger); }
+.page.tools.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; border-radius: 8px; }
 
 /* ── 曲库维护 ── */
 .track-side { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 0 0 auto; }

@@ -236,7 +236,12 @@ returned: Array<SongFile>, moved: Array<MovedSong>,
 /**
  * 文件不见了
  */
-gone: Array<SongFile>, unchanged: number, 
+gone: Array<SongFile>, 
+/**
+ * 音频没变、旁边的歌词文件新放进来或改过（`path` 是歌词文件）。
+ * 确认后对这些歌（和 `changed` 里的歌）调歌词同步，挂成新的一版
+ */
+lyricsChanged: Array<SongFile>, unchanged: number, 
 /**
  * 文件夹里一个音频都没扫到（可能是盘换了内容）
  */

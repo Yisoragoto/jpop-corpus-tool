@@ -22,6 +22,13 @@ export interface SourceRemoved {
   sources: SourceView[];
 }
 
+/** 和 `jp-app/src/commands.rs` 的 `LyricSyncReport` 对应 */
+export interface LyricSyncReport {
+  updated: string[];
+  unchanged: number;
+  failed: { songId: string; error: string }[];
+}
+
 export const sourcesApi = {
   list: () => command("library_sources"),
   add: (folders: { path: string; recursive: boolean }[]) => command("library_sources_add", { folders }),
@@ -31,5 +38,6 @@ export const sourcesApi = {
   removedSongs: () => command("library_removed_songs"),
   restore: (ids: string[]) => command("library_restore_songs", { ids }),
   suggestions: () => call<SourceSuggestions>("library_source_suggestions"),
+  syncLyrics: (songIds: string[]) => call<LyricSyncReport>("library_sync_lyrics", { songIds }),
   remove: (id: number, mode: "moveOut" | "delete") => call<SourceRemoved>("library_source_remove", { id, mode }),
 };

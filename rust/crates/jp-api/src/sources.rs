@@ -130,6 +130,9 @@ pub struct SourcePlanView {
     pub moved: Vec<MovedSong>,
     /// 文件不见了
     pub gone: Vec<SongFile>,
+    /// 音频没变、旁边的歌词文件新放进来或改过（`path` 是歌词文件）。
+    /// 确认后对这些歌（和 `changed` 里的歌）调歌词同步，挂成新的一版
+    pub lyrics_changed: Vec<SongFile>,
     pub unchanged: usize,
     /// 文件夹里一个音频都没扫到（可能是盘换了内容）
     pub nothing_found: bool,
@@ -186,6 +189,7 @@ impl Command for LibrarySourcePlan {
                 })
                 .collect(),
             gone: plan.gone.iter().map(song_file).collect(),
+            lyrics_changed: found.lyrics_changed.iter().map(song_file).collect(),
             unchanged: plan.unchanged,
             nothing_found: plan.nothing_found,
         })

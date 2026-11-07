@@ -6,8 +6,8 @@
 //! **两条不能破的线：**
 //! - 文件夹整个不在（盘没插、网络盘断了）时只记一条错误，**不对账**：
 //!   否则它下面每一首都会被当成「消失」移出语料库。
-//! - 对账结果先给人看，确认了才写（[`apply`]）。确认的是**这一次**扫出来的计划，
-//!   不在写的时候重扫一遍——不然人看到的和真正写进去的可能不一样。
+//! - 对账结果先给人看，确认了才写（[`apply`]）。确认时传回来的是人看过、勾选过的那几项，
+//!   不在写的时候重扫一遍——不然人看到的和真正写进去的可能不一样；但每一项落库前都重新核对。
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -15,7 +15,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use jp_corpus::Corpus;
 use jp_corpus::library_sources::{self as table, Source, SourceView};
-use jp_import::sync::{SourceSong, SyncPlan, sync_plan};
+use jp_import::sync::{SongAt, SourceSong, SyncPlan, sync_plan};
 use serde::{Deserialize, Serialize};
 
 use crate::admin::{Library, delete_song};
@@ -161,6 +161,9 @@ pub struct SourcePlan {
     pub source: Source,
     #[serde(flatten)]
     pub plan: SyncPlan,
+    /// 音频没变、旁边的歌词文件新放进来或改过的歌（`path` 是那个歌词文件）。
+    /// 确认后由客户端逐首同步歌词（`jp_lyrics::sources::sync_local`：要分词器，不在这一层）
+    pub lyrics_changed: Vec<SongAt>,
 }
 
 /// 扫一个文件夹，和库里属于它的歌对账。**不改歌**：只记扫描时间、错误，
@@ -188,10 +191,36 @@ pub fn plan(corpus: &Corpus, id: i64) -> Result<SourcePlan> {
             jp_import::import::refresh_known(&tx, song_id, &item.track, false)?;
         }
     }
+    // 歌词文件：音频变了、挪了、不见了的歌另有归处（音频变了确认时也会同步歌词），只看其余在库的
+    let elsewhere: HashSet<&str> = plan
+        .changed
+        .iter()
+        .filter_map(|c| match &c.action {
+            jp_import::Action::AlreadyImported { song_id, .. } => Some(song_id.as_str()),
+            _ => None,
+        })
+        .chain(plan.moved.iter().map(|m| m.song_id.as_str()))
+        .chain(plan.gone.iter().map(|g| g.song_id.as_str()))
+        .collect();
+    let mut lyrics_changed = Vec::new();
+    for m in members.iter().filter(|m| !m.removed && !elsewhere.contains(m.id.as_str())) {
+        let audio = Path::new(&m.audio_path);
+        if !audio.is_file() {
+            continue;
+        }
+        if let Some(path) = jp_lyrics::sources::local_changed(&tx, &m.id, audio)? {
+            lyrics_changed.push(SongAt {
+                song_id: m.id.clone(),
+                title: m.title.clone(),
+                artist: m.artist.clone(),
+                path: path.display().to_string(),
+            });
+        }
+    }
     table::record_scan(&tx, id, None)?;
     tx.commit()?;
     let source = table::get(conn, id)?.context("文件夹在扫描时被移除了")?;
-    Ok(SourcePlan { source, plan })
+    Ok(SourcePlan { source, plan, lyrics_changed })
 }
 
 /// 确认之后要写的事。由界面按它显示的那份对账、减去用户勾掉的组成后传回来。

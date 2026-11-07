@@ -1030,7 +1030,7 @@ export function LibraryPage({
       {view?.kind === "folders" && (
         <main className="pane profile-pane sources-pane">
           {backButton}
-          <LibrarySources onReview={onReviewFiles} onChanged={() => { onLibraryReload(); refreshMissing(); }} onError={onAudioError} version={libraryVersion} />
+          <LibrarySources onReview={onReviewFiles} onChanged={() => { onLibraryReload(); refreshMissing(); void actions.reloadLyrics(); }} onError={onAudioError} version={libraryVersion} />
         </main>
       )}
 

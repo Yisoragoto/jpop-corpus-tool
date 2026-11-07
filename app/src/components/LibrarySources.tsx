@@ -25,7 +25,7 @@ interface Props {
   version: number;
 }
 
-type Group = "changed" | "returned" | "moved" | "gone";
+type Group = "changed" | "lyrics" | "returned" | "moved" | "gone";
 
 /** 正在看的对账：哪个文件夹、对出来什么、每组勾没勾 */
 interface Review {
@@ -186,7 +186,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
     try {
       const plan = await sourcesApi.plan(source.id);
       // 一个音频都没扫到：多半是盘换了内容、挂错了盘，「不见了」那组默认不勾
-      setReview({ plan, on: { changed: true, returned: true, moved: true, gone: !plan.nothingFound } });
+      setReview({ plan, on: { changed: true, lyrics: true, returned: true, moved: true, gone: !plan.nothingFound } });
     } catch (err) {
       onError(messageOf(err));
     } finally {
@@ -212,6 +212,16 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
       if (done.restored > 0) parts.push(tr("恢复 {n} 首", { n: done.restored }));
       if (done.relinked > 0) parts.push(tr("改路径 {n} 首", { n: done.relinked }));
       if (done.movedOut > 0) parts.push(tr("移出 {n} 首", { n: done.movedOut }));
+      // 文件变了、歌词文件变了的歌：歌词另走一步（要分词）。内嵌、外挂歌词升级了就挂成新的一版
+      const lyricIds = [
+        ...(on.changed ? plan.changed.map((c) => c.songId).filter((id) => id !== "") : []),
+        ...(on.lyrics ? plan.lyricsChanged.map((l) => l.songId) : []),
+      ];
+      if (lyricIds.length > 0) {
+        const synced = await sourcesApi.syncLyrics(lyricIds);
+        if (synced.updated.length > 0) parts.push(tr("{n} 首换上了新歌词", { n: synced.updated.length }));
+        if (synced.failed.length > 0) onError(tr("{n} 首歌词没同步上：{err}", { n: synced.failed.length, err: synced.failed.map((f) => `${f.songId} ${f.error}`).join("；") }));
+      }
       let text = parts.length > 0 ? parts.join(tr("，")) : tr("没有要写的");
       if (done.skipped > 0) text += tr("；{n} 项在扫描之后又变了，没写，再扫一次看看", { n: done.skipped });
       setNote(text);
@@ -291,7 +301,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
   const pending = useMemo(() => {
     if (review === null) return 0;
     const { plan: p, on } = review;
-    return (on.changed ? p.changed.length : 0) + (on.returned ? p.returned.length : 0)
+    return (on.changed ? p.changed.length : 0) + (on.lyrics ? p.lyricsChanged.length : 0) + (on.returned ? p.returned.length : 0)
       + (on.moved ? p.moved.length : 0) + (on.gone ? p.gone.length : 0);
   }, [review]);
   const setOn = (group: Group, value: boolean) =>
@@ -427,10 +437,17 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
                     )}
                     <GroupBlock
                       title={tr("{n} 首文件变了", { n: plan.changed.length })}
-                      note={tr("刷新文件信息；你改过的、刮削来的不动")}
+                      note={tr("刷新文件信息和内嵌歌词；你改过的、刮削来的不动")}
                       on={review.on.changed}
                       onToggle={(v) => setOn("changed", v)}
                       rows={plan.changed.map((c) => ({ key: c.path, main: song(c.title, c.artist), sub: c.path }))}
+                    />
+                    <GroupBlock
+                      title={tr("{n} 首歌词文件变了", { n: plan.lyricsChanged.length })}
+                      note={tr("挂成新的一版，旧的留在历史里；你选了别的来源或改过的不动")}
+                      on={review.on.lyrics}
+                      onToggle={(v) => setOn("lyrics", v)}
+                      rows={plan.lyricsChanged.map((l) => ({ key: l.songId, main: song(l.title, l.artist), sub: l.path }))}
                     />
                     <GroupBlock
                       title={tr("{n} 首挪了位置", { n: plan.moved.length })}
@@ -459,9 +476,9 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
                       )}
                       <button className="link-btn" onClick={() => setReview(null)}>{pending > 0 ? tr("取消") : tr("关闭")}</button>
                       <span className="muted small">
-                        {plan.changed.length + plan.moved.length + plan.returned.length + plan.gone.length === 0 && plan.newFiles.length === 0
+                        {plan.changed.length + plan.lyricsChanged.length + plan.moved.length + plan.returned.length + plan.gone.length === 0 && plan.newFiles.length === 0
                           ? tr("{n} 首都没变，没有要做的", { n: plan.unchanged })
-                          : tr("另有 {n} 首没变", { n: plan.unchanged })}
+                          : tr("另有 {n} 首没变", { n: plan.unchanged - plan.lyricsChanged.length })}
                       </span>
                     </div>
                   </div>
