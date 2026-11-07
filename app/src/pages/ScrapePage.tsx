@@ -308,7 +308,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
             primary
             disabled={blocked}
             onClick={() => void startAll()}
-            title={tr("按顺序做完：识别没认出的歌 → 歌手照片 → 补封面 → 补专辑信息。认不准的不会写进库，停在下面「需要你确认」")}
+            title={tr("依次做完下面几行")}
           />
           <button
             className="btn scrape-more"
@@ -324,22 +324,22 @@ export function ScrapePage({ onError, onChanged }: Props) {
                 role="menuitem"
                 disabled={blocked}
                 onClick={() => void startJob("track", "identified", () => api.scrapeStart(true, 1000), tr("没有要刮的：每首都刮过了"))}
-              >{tr("刮新加的歌")}<span>{tr("只做第一步：识别还没认出的歌")}</span>
+              >{tr("刮新加的歌")}<span>{tr("只识别还没认出的")}</span>
               </button>
               <button
                 role="menuitem"
                 disabled={blocked}
                 onClick={() => void startJob("track", "identified", () => api.scrapeStart(false, 1000), tr("库里没有歌"))}
-              >{tr("全部重刮")}<span>{tr("每一首重新搜一遍，要十几分钟")}</span>
+              >{tr("全部重刮")}<span>{tr("每首重搜，要十几分钟")}</span>
               </button>
               <button
                 role="menuitem"
                 disabled={blocked || summary.failed === 0}
                 onClick={() => {
                   setMenuOpen(false);
-                  void runOnce("identified", async () => tr("{v} 首失败的打回待刮，点「刮新加的歌」重试", { v: await api.scrapeRetryFailed() }));
+                  void runOnce("identified", async () => tr("{v} 首打回待刮", { v: await api.scrapeRetryFailed() }));
                 }}
-              >{tr("重试失败的")}<span>{summary.failed === 0 ? tr("没有失败的") : tr("{failed} 首；需要确认的不动——那缺的是决定不是重试", { failed: summary.failed })}</span>
+              >{tr("重试失败的")}<span>{summary.failed === 0 ? tr("没有失败的") : tr("{failed} 首", { failed: summary.failed })}</span>
               </button>
             </div>
           )}
@@ -358,7 +358,6 @@ export function ScrapePage({ onError, onChanged }: Props) {
                   label: tr("刮 {identified} 首", { identified: gap(complete.identified) }),
                   disabled: blocked,
                   run: () => void startJob("track", "identified", () => api.scrapeStart(true, 1000), tr("没有要刮的")),
-                  title: tr("失败过的、需要确认的、跳过的也算在没认出里；需要确认的在下面挑"),
                 }
               : undefined
           }
@@ -379,9 +378,9 @@ export function ScrapePage({ onError, onChanged }: Props) {
                         ? tr("每首歌都有封面了")
                         : tr("补上 {filled}", { filled: r.filled }) +
                             (r.failed > 0 ? tr("，还是下不到 {failed}", { failed: r.failed }) : "") +
-                            (r.noCandidate > 0 ? tr("，{noCandidate} 首没有候选，要重刮", { noCandidate: r.noCandidate }) : "");
+                            (r.noCandidate > 0 ? tr("，{noCandidate} 首要重刮", { noCandidate: r.noCandidate }) : "");
                     }),
-                  title: tr("用刮削时存下的候选重新取封面（MusicBrainz 的封面在 Cover Art Archive），不重新搜索"),
+                  title: tr("用存下的候选，不重新搜索"),
                 }
               : undefined
           }
@@ -398,9 +397,9 @@ export function ScrapePage({ onError, onChanged }: Props) {
                   run: () =>
                     void runOnce("albumCovers", async () => {
                       const n = await api.fillAlbumArtwork();
-                      return n === 0 ? tr("填不上：这些专辑的曲目也还没有封面，先补曲目封面") : tr("填了 {n} 张", { n });
+                      return n === 0 ? tr("先补曲目封面") : tr("填了 {n} 张", { n });
                     }),
-                  title: tr("同一张专辑的曲目封面就是专辑封面，直接拿来用，不额外发请求"),
+                  title: tr("直接用曲目封面，不联网"),
                 }
               : undefined
           }
@@ -414,8 +413,8 @@ export function ScrapePage({ onError, onChanged }: Props) {
               ? {
                   label: tr("补 {n} 张", { n: gap(complete.albumInfo) }),
                   disabled: blocked,
-                  run: () => void startJob("album", "albumInfo", () => api.scrapeAlbumFillStart(), tr("每张专辑的发行类型和曲目数都齐了")),
-                  title: tr("发行类型（单曲 / EP / 专辑）、整张碟的曲目数、厂牌。对已经识别的歌重新匹配一次，只补空着的字段，不改动已有的信息和识别状态"),
+                  run: () => void startJob("album", "albumInfo", () => api.scrapeAlbumFillStart(), tr("专辑信息都齐了")),
+                  title: tr("只补空着的字段"),
                 }
               : undefined
           }
@@ -431,7 +430,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
                   disabled: blocked,
                   run: () => void startJob("artist", "photos", () => api.scrapeArtistsStart(true), tr("每个歌手都已经有照片了")),
                   title:
-                    tr("MusicBrainz 拿资料和别名，Deezer 拿照片。顺序不能反——很多日本歌手在 Deezer 上按罗马字收录（ずっと真夜中でいいのに。→ ZUTOMAYO），不带别名查不到"),
+                    tr("MusicBrainz 查别名，Deezer 取照片"),
                 }
               : undefined
           }
@@ -443,7 +442,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
                   key={a.name}
                   className="scrape-missing-artist"
                   disabled={blocked}
-                  title={tr("{name}：{trackCount} 首，还没有照片。点一下单独刮这一位", { name: a.name, trackCount: a.trackCount })}
+                  title={tr("{name}：{trackCount} 首，点一下单独刮", { name: a.name, trackCount: a.trackCount })}
                   onClick={() =>
                     void runOnce("photos", async () => {
                       const got = await api.scrapeArtist(a.name);
@@ -474,7 +473,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
                       errorRef.current(errorText(e));
                     });
                   },
-                  title: tr("使用已启用的歌词来源，优先逐字，找不到时回退逐行；不确定的保留待复核"),
+                  title: tr("优先逐字，找不到用逐行"),
                 }
               : undefined
           }
@@ -493,7 +492,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
                       const r = await api.backfillDurations();
                       return tr("补上 {written}", { written: r.written }) + (r.missing > 0 ? tr("，{missing} 个文件不在了", { missing: r.missing }) : "") + (r.failed + r.unknown > 0 ? tr("，{v} 个读不出来", { v: r.failed + r.unknown }) : "");
                     }),
-                  title: tr("扫一遍音频文件，把读得出的时长写进库"),
+                  title: tr("从音频文件读时长"),
                 }
               : undefined
           }
@@ -519,11 +518,11 @@ export function ScrapePage({ onError, onChanged }: Props) {
       <section className="section scrape-review">
         <header className="section-head">
           <h2>{tr("需要你确认 · {length}", { length: review.length })}</h2>
-          <span className="section-hint">{tr("置信度不够的不会自动写进库，停在这里等你挑")}</span>
+          <span className="section-hint">{tr("认不准的停在这里等你挑")}</span>
         </header>
         {notes.review !== undefined && <p className="scrape-note">{notes.review}</p>}
         {review.length === 0 ? (
-          <p className="section-empty">{tr("刮削结果都很确定，没有要你看的。")}</p>
+          <p className="section-empty">{tr("没有要你确认的。")}</p>
         ) : (
           <div className="list">
             {review.map((item) => (

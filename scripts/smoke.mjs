@@ -159,15 +159,15 @@ if (/^\d+$/.test(args[0] ?? '')) {
           result.before = await c.run('window.__JPOP_E2E__.e2e_state()');
           const scanning = await c.run(`(()=>{window.__JPOP_E2E__.e2e_scan_folder(${JSON.stringify(join(root, 'audio'))});return window.__JPOP_E2E__.e2e_state()})()`);
           assert.equal(scanning.scanning, true, '提交扫描后必须报告 scanning'); result.scanning = scanning;
-          await until('可导入计划', () => c.run("document.querySelector('[data-import-plan]')?.dataset.importPlan==='true' && [...document.querySelectorAll('button')].some(b=>b.title==='写库就在这一步'&&!b.disabled)"));
+          await until('可导入计划', () => c.run("document.querySelector('[data-import-plan]')?.dataset.importPlan==='true' && !!document.querySelector('.import-go .cmd-btn.primary:not(:disabled)')"));
           await screenshot('plan');
           // Synthetic identities must not query real lyric services.
           await c.run("document.querySelector('.import-lyrics-option input:checked')?.click()");
           if (name === 'keyboard') {
             result.audioReady = health.audioReady;
-            await c.tabTo("document.activeElement?.title==='写库就在这一步'");
+            await c.tabTo("document.activeElement?.matches('.import-go .cmd-btn.primary')");
             await c.key(' ', 'Space', 32, ' ');
-          } else await c.run("[...document.querySelectorAll('button')].find(b=>b.title==='写库就在这一步').click()");
+          } else await c.run("document.querySelector('.import-go .cmd-btn.primary').click()");
           await until('导入按钮让曲数 0→1', () => c.run('window.__JPOP_E2E__.e2e_state().trackCount===1'), 15000);
           result.after = await c.run('window.__JPOP_E2E__.e2e_state()');
           assert.equal((await c.invoke('health')).tracks, 1);

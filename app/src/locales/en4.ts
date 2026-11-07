@@ -87,11 +87,6 @@ export const en4: Record<string, string> = {
   "找不到 #root": "#root not found",
 
   // newSongs.ts
-  "一次 {length} 首，先过一眼计划": "{length} songs at once; review the plan first",
-  "{unreadable} 首读不出标签，曲名歌手是猜的": "{unreadable} {unreadable|song has|songs have} unreadable tags; title and artist are guessed",
-  "{guessed} 首的歌手是从文件夹名猜的": "{guessed} {guessed|song's artist was|songs' artists were} guessed from the folder name",
-  "{anonymous} 首定不出歌手": "{anonymous} {anonymous|song has|songs have} no identifiable artist",
-  "{named} 等 {length} 首": "{named} and more ({length} songs)",
 
   // AnalyticsPage.tsx
   "保存统计报告": "Save statistics report",
@@ -99,15 +94,9 @@ export const en4: Record<string, string> = {
   "已保存：{path}": "Saved: {path}",
   "词汇量": "Vocabulary",
   "总时长": "Total length",
-  "总时长为空：": "Total length is empty:",
-  "还没回填。 回填会逐个读音频文件的时长写回库，幂等，可随时重跑。": "durations haven't been filled in yet. Backfilling reads each audio file's length into the library; it's safe to rerun anytime.",
-  "回填中…": "Backfilling…",
-  "，文件缺失 {missing}": ", {missing} missing files",
-  "，无时长 {unknown}": ", {unknown} without a length",
   "没有带年份的曲目": "No songs with a year",
   "{trackCount} 首 · {vocabulary} 词": "{trackCount} {trackCount|song|songs} · {vocabulary} words",
   "只统计含假名或汉字的词元（去掉英文、数字）": "Only count lemmas with kana or kanji (no English or numbers)",
-  "词云搬到「资料库」了": "The word cloud moved to Library",
   "可以选词性（默认名词）、换字体、点歌就从那一句开始放，还能全屏": "Pick parts of speech, change the font, play songs straight from the line, and go full screen",
   "打开 →": "Open →",
   "词频统计": "Word frequency",
@@ -139,13 +128,10 @@ export const en4: Record<string, string> = {
 
   // AnkiPage.tsx
   "先勾几个词": "Select some words first",
-  "把语料里的词做成卡片。例句取自你自己听的歌——「夜」的例句是《夜に駆ける》里的那一句，不是教科书造的。": "Turn words from your corpus into flashcards. Examples come from songs you actually listen to: the example for yoru (night) is the line from Yoru ni Kakeru, not a made-up textbook sentence.",
   "连接": "Connected",
   "未连接": "Not connected",
   "已进 Anki 的词": "Words in Anki",
   "其中复习过": "Reviewed",
-  "选词和预览不需要 Anki——那些只读本地文件。只有真正推卡片 才需要它开着。": "Picking words and previewing don't need Anki; they only read local files. Anki only needs to be running when you actually send cards.",
-  "学习状态读自 {collectionPath}": "Study status read from {collectionPath}",
   "还没有「JPOP Corpus」笔记类型，第一次导出时会自动建。": "The “JPOP Corpus” note type doesn't exist yet. It's created on your first export.",
   "一键制卡": "One-click cards",
   "选词": "Pick words",

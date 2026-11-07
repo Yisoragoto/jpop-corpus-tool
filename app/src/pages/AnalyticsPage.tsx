@@ -21,7 +21,6 @@ import {
   formatLongDuration,
   POS_LABELS,
   type Dispersion,
-  type DurationBackfillReport,
   type FrequencyItem,
   type FrequencyRow,
   type LexicalRow,
@@ -105,7 +104,6 @@ const SCRIPTS = [
 
 interface Props {
   overview: Overview | null;
-  onOverviewChanged: () => void;
   actions: LibraryActions;
   onNavigate: () => void;
   /** 右边「词的去处」要接的线（App 给） */
@@ -123,7 +121,6 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 
 export function AnalyticsPage({
   overview,
-  onOverviewChanged,
   actions,
   onNavigate,
   wordLinks,
@@ -299,7 +296,6 @@ export function AnalyticsPage({
             whole={whole}
             timeline={timeline}
             overview={overview}
-            onOverviewChanged={onOverviewChanged}
             onGo={setTab}
             onSearchWord={onSearchWord}
             onOpenSong={(songId) => {
@@ -459,7 +455,6 @@ function OverviewTab({
   whole,
   timeline,
   overview,
-  onOverviewChanged,
   onGo,
   onSearchWord,
   onOpenSong,
@@ -471,7 +466,6 @@ function OverviewTab({
   whole: LexicalRow | null;
   timeline: YearStats[];
   overview: Overview | null;
-  onOverviewChanged: () => void;
   onGo: (tab: Tab) => void;
   onSearchWord: (lemma: string) => void;
   onOpenSong: (songId: string) => void;
@@ -600,7 +594,7 @@ function OverviewTab({
         </OvBlock>
       </div>
 
-      <LibraryBlock overview={overview} onOverviewChanged={onOverviewChanged} onError={onError} />
+      <LibraryBlock overview={overview} />
 
       <QualityCard onOpenSong={onOpenSong} onError={onError} />
 
@@ -611,7 +605,7 @@ function OverviewTab({
           <em>世界</em>
         </span>
         <span>
-          <strong>{tr("词云搬到「资料库」了")}</strong>
+          <strong>{tr("词云在「曲库」里")}</strong>
           <small>{tr("可以选词性（默认名词）、换字体、点歌就从那一句开始放，还能全屏")}</small>
         </span>
         <span className="cloud-moved-go">{tr("打开 →")}</span>
@@ -667,18 +661,8 @@ function OvBlock({
   );
 }
 
-/** 整个曲库的规模（不受范围影响），以及时长没回填时的维护入口 */
-function LibraryBlock({
-  overview,
-  onOverviewChanged,
-  onError,
-}: {
-  overview: Overview | null;
-  onOverviewChanged: () => void;
-  onError: (message: string) => void;
-}) {
-  const [backfill, setBackfill] = useState<DurationBackfillReport | null>(null);
-  const [backfilling, setBackfilling] = useState(false);
+/** 整个曲库的规模（不受范围影响）。补时长在「曲库 › 整理」里 */
+function LibraryBlock({ overview }: { overview: Overview | null }) {
   if (!overview) return null;
   return (
     <section className="card">
@@ -697,45 +681,6 @@ function LibraryBlock({
         <Stat label={tr("总时长")} value={formatLongDuration(overview.totalDurationSec)} align="start" />
       </div>
 
-      {overview.totalDurationSec === 0 && !backfill && (
-        <div className="maintenance">
-          <p className="muted small">{tr("总时长为空：")}<code>songs.duration_sec</code>{" "}{tr("还没回填。 回填会逐个读音频文件的时长写回库，幂等，可随时重跑。")}</p>
-          <button
-            className="primary"
-            disabled={backfilling}
-            onClick={async () => {
-              setBackfilling(true);
-              try {
-                const result = await api.backfillDurations();
-                setBackfill(result);
-                onOverviewChanged();
-              } catch (err) {
-                onError(message(err));
-              } finally {
-                setBackfilling(false);
-              }
-            }}
-          >
-            {backfilling ? tr("回填中…") : tr("回填时长")}
-          </button>
-        </div>
-      )}
-
-      {backfill && (
-        <div className="maintenance">
-          <p className="small">{tr("扫描 {scanned} 首：写入 {written}", { scanned: backfill.scanned, written: backfill.written })}{backfill.missing > 0 && tr("，文件缺失 {missing}", { missing: backfill.missing })}
-            {backfill.unknown > 0 && tr("，无时长 {unknown}", { unknown: backfill.unknown })}
-            {backfill.failed > 0 && tr("，失败 {failed}", { failed: backfill.failed })}
-          </p>
-          {backfill.samples.length > 0 && (
-            <ul className="muted small samples">
-              {backfill.samples.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
     </section>
   );
 }

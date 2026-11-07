@@ -50,10 +50,10 @@ export function LyricsUpgradePanel({ onChanged, onError, allowStart = true }: {
   if (!allowStart && (!job || job.total === 0)) return null;
   return <div className="lyrics-batch" aria-busy={busy}>
     <div className="lyrics-batch-heading">
-      <div><strong>{allowStart ? tr("全库逐字歌词") : tr("歌词后台任务")}</strong><p>{tr("自动匹配并优先补逐字；保留人工修改，无法确认的留待复核。")}</p></div>
+      <div><strong>{allowStart ? tr("全库逐字歌词") : tr("歌词后台任务")}</strong><p>{tr("优先补逐字，你改过的不动")}</p></div>
       {job?.running
         ? <button type="button" className="btn" disabled={busy || job.cancelled} onClick={() => void action(true)}>{job.cancelled ? tr("正在停止…") : tr("停止任务")}</button>
-        : allowStart && <button type="button" className="primary" disabled={busy} onClick={() => void action(false)}>{busy ? tr("正在启动…") : tr("一键补全逐字歌词")}</button>}
+        : allowStart && <button type="button" className="btn" disabled={busy} onClick={() => void action(false)}>{busy ? tr("正在启动…") : tr("一键补全逐字歌词")}</button>}
     </div>
     {job && job.total > 0 && <>
       <div className="lyrics-batch-status" role="status">

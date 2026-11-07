@@ -35,6 +35,7 @@ import asset_album from "@fluentui/svg-icons/icons/record_20_regular.svg?raw";
 import asset_export from "@fluentui/svg-icons/icons/arrow_upload_20_regular.svg?raw";
 import asset_report from "@fluentui/svg-icons/icons/document_data_20_regular.svg?raw";
 import asset_add from "@fluentui/svg-icons/icons/add_20_regular.svg?raw";
+import asset_broom from "@fluentui/svg-icons/icons/broom_20_regular.svg?raw";
 import asset_theme from "@fluentui/svg-icons/icons/dark_theme_20_regular.svg?raw";
 import asset_stage from "@fluentui/svg-icons/icons/desktop_20_regular.svg?raw";
 import asset_blur from "@fluentui/svg-icons/icons/blur_20_regular.svg?raw";
@@ -97,6 +98,7 @@ const icons = {
   "export": asset_export,
   "report": asset_report,
   "add": asset_add,
+  "broom": asset_broom,
   "theme": asset_theme,
   "stage": asset_stage,
   "blur": asset_blur,

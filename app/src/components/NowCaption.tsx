@@ -37,7 +37,7 @@ export function NowCaption({ track, line, onReveal, onFullscreen }: Props) {
         {parts.map((p, i) => (p.hit ? <mark key={i}>{p.text}</mark> : <span key={i}>{p.text}</span>))}
       </p>
       <div className="now-caption-actions">
-        <button className="link-btn" onClick={onReveal} title={tr("去资料库，滚到这一句")}>{tr("回到这一行")}</button>
+        <button className="link-btn" onClick={onReveal} title={tr("去曲库，滚到这一句")}>{tr("回到这一行")}</button>
         <button className="icon-btn" onClick={onFullscreen} title={tr("全屏歌词（退出后回到这里）")} aria-label={tr("全屏歌词")}>
           <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
             <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />

@@ -502,6 +502,20 @@ pub(crate) mod tests {
         assert_eq!(on_001, 3, "没补的那首不该被动");
     }
 
+    /// 移出语料库的歌不算「没分词」：导航栏的待处理数字只数在库的歌，恢复回来再算。
+    #[test]
+    fn removed_songs_are_not_listed_as_untokenized() {
+        let conn = library();
+        conn.execute("DELETE FROM tokens WHERE utterance_id = 3", []).unwrap();
+        assert_eq!(untokenized_songs(&conn).unwrap().len(), 1);
+
+        conn.execute("UPDATE songs SET deleted_at = '2026-11-07T00:00:00Z' WHERE id = '002'", []).unwrap();
+        assert!(untokenized_songs(&conn).unwrap().is_empty());
+
+        conn.execute("UPDATE songs SET deleted_at = NULL WHERE id = '002'", []).unwrap();
+        assert_eq!(untokenized_songs(&conn).unwrap()[0].song_id, "002");
+    }
+
     /// 换一份歌词：清掉旧的再挂新的，全文索引必须跟着走。
     ///
     /// 外部内容表 `utterances_fts` 没有触发器，删行时漏掉 `'delete'` 那一步的话
@@ -777,7 +791,7 @@ pub(crate) mod tests {
     }
 }
 
-/// 歌词在库里、但一个 token 都没有的歌。
+/// 歌词在库里、但一个 token 都没有的歌。已移出的不列（恢复回来时再算）。
 ///
 /// 怎么来的：导入或者补歌词的时候没有分词词典（`analyzer` 是 `None`），
 /// 歌词照常入库，分词那一步跳过了。表现是**点词查不了、也没有振假名**——
@@ -794,7 +808,7 @@ pub struct Untokenized {
 pub fn untokenized_songs(conn: &Connection) -> Result<Vec<Untokenized>> {
     let mut stmt = conn.prepare(
         "SELECT s.id, s.artist, s.title, COUNT(u.id) \
-         FROM songs s \
+         FROM live_songs s \
          JOIN utterances u ON u.song_id = s.id \
          WHERE NOT EXISTS ( \
              SELECT 1 FROM tokens t JOIN utterances u2 ON u2.id = t.utterance_id \

@@ -67,11 +67,11 @@ type Mode = "kwic" | "cql" | "fulltext";
 const CQL_EXAMPLES: { query: string; note: string }[] = [
   { query: '[lemma="君"] [pos="ADP"]', note: tr("「君」后面紧跟一个助词") },
   { query: '[pos="VERB" & cform="命令形.*"]', note: tr("所有命令形的动词") },
-  { query: '[lemma="て"] []{0,2} [lemma="しまう"]', note: tr("て……しまう，中间最多隔两个词") },
-  { query: '[reading="きみ"]', note: tr("读音是 きみ 的词，各种写法都算") },
+  { query: '[lemma="て"] []{0,2} [lemma="しまう"]', note: tr("中间隔 0–2 个词") },
+  { query: '[reading="きみ"]', note: tr("读作 きみ 的各种写法") },
   { query: '[norm="会う"] [lemma="たい"]', note: tr("「会いたい」「逢いたい」…") },
   { query: '[pos="ADJ"] [pos="NOUN"]', note: tr("形容词 + 名词") },
-  { query: '"夢" []? [pos="NOUN"]', note: tr("「夢」后面隔零到一个词跟名词") },
+  { query: '"夢" []? [pos="NOUN"]', note: tr("夢，隔 0–1 个词接名词") },
 ];
 
 /** 可筛选的词性。只列实词——助词做 KWIC 没有研究价值。 */
@@ -87,11 +87,11 @@ const TEXT_ROW_HEIGHT = 52;
 const KWIC_LIMIT = 5000;
 
 const MEASURES: { value: CollocationMeasure; label: string; title: string }[] = [
-  { value: "logDice", label: "logDice", title: tr("不受语料大小影响，低频噪音少") },
+  { value: "logDice", label: "logDice", title: tr("不受语料大小影响") },
   { value: "mi", label: "MI", title: tr("互信息：偏爱罕见的固定搭配") },
-  { value: "mi3", label: "MI3", title: tr("给共现次数加权的互信息：不那么偏爱只共现两三次的罕见词") },
+  { value: "mi3", label: "MI3", title: tr("加权互信息，少偏罕见词") },
   { value: "logLikelihood", label: "LL", title: tr("对数似然：显著性") },
-  { value: "deltaP", label: "ΔP", title: tr("ΔP（有方向）：看到关键词时，这个词出现的概率比平时高多少") },
+  { value: "deltaP", label: "ΔP", title: tr("有方向的关联强度") },
   { value: "frequency", label: tr("次数"), title: tr("共现次数") },
 ];
 
@@ -126,9 +126,9 @@ export interface KwicRequest {
 /** 匹配字段 */
 const FIELDS: { value: MatchField; label: string; title: string }[] = [
   { value: "surface", label: tr("表层"), title: tr("按词在歌词里的实际写法匹配") },
-  { value: "lemma", label: tr("词元"), title: tr("按辞书形匹配，能把「駆ける/駆けた/駆けろ」归到一起") },
-  { value: "reading", label: tr("读音"), title: tr("按读音匹配：输入「きみ」能找到「君」「きみ」「キミ」。平假名、片假名都行") },
-  { value: "normalized", label: tr("表记"), title: tr("按正规化表记匹配：「君」也找到「キミ」，「会う」也找到「逢う」") },
+  { value: "lemma", label: tr("词元"), title: tr("按辞书形：駆けた→駆ける") },
+  { value: "reading", label: tr("读音"), title: tr("按读音：きみ→君、キミ") },
+  { value: "normalized", label: tr("表记"), title: tr("按表记：会う→逢う") },
 ];
 
 /** 可筛选的活用形（大类，按前缀匹配）。用日语语法名，和 Sudachi / UniDic 一致 */
@@ -406,7 +406,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
     async (utteranceId: number, context: boolean) => {
       try {
         const ok = await audition(actions, utteranceId, context ? { before: 1, after: 1 } : {});
-        if (!ok) onError(tr("这一行没有时间戳，没法定位到音频"));
+        if (!ok) onError(tr("这一行没有时间戳"));
       } catch (err) {
         onError(err instanceof Error ? err.message : String(err));
       }
@@ -459,7 +459,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           <button
             className={mode === "cql" ? "on" : ""}
             onClick={() => setMode("cql")}
-            title={tr("按词的属性组合条件找词串：[lemma=\"君\"] [pos=\"ADP\"]")}
+            title='[lemma="君"] [pos="ADP"]'
           >
             CQL
           </button>
@@ -474,7 +474,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           className="search grow"
           placeholder={
             mode === "kwic"
-              ? tr("词元 / 表层形；空格或 | 分隔多个，+ 连接多词表达（て+しまう）")
+              ? tr("空格分隔多个，+ 连成词组")
               : mode === "cql"
                 ? '[lemma="君"] [pos="ADP"]'
                 : tr("歌词原文片段")
@@ -514,7 +514,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
               className="rate"
               value={cform}
               onChange={(e) => setCform(e.target.value)}
-              title={tr("只看这种活用形（动词、形容词、助动词）。「連用形」包括「連用形-促音便」等细类")}
+              title={tr("只看这种活用形（含细类）")}
             >
               {CFORMS.map((c) => (
                 <option key={c} value={c}>
@@ -526,7 +526,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
             )}
             <PerformerPicker selected={personIds} onChange={setPersonIds} onError={onError} />
             <SubcorpusPicker onError={onError} />
-            <span className="year-range" title={tr("按歌曲年份筛选（含两端）。没有年份的歌在设了年份时不计入")}>
+            <span className="year-range" title={tr("按发行年份筛选，含两端")}>
               <input
                 className="year-input"
                 inputMode="numeric"
@@ -551,14 +551,14 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                 checked={crossLine}
                 onChange={(e) => setCrossLine(e.target.checked)}
               />{tr("跨行")}</label>
-            <label className="check" title={tr("同一首歌里重复的相同歌词行折叠成一条；搭配统计也只算第一次")}>
+            <label className="check" title={tr("同一首里重复的行只算一次")}>
               <input
                 type="checkbox"
                 checked={dedup}
                 onChange={(e) => setDedup(e.target.checked)}
               />{tr("去重")}</label>
             {mode === "kwic" && (
-            <label className="check" title={tr("只留关键词含假名或汉字的命中（去掉英文、数字）")}>
+            <label className="check" title={tr("去掉英文、数字的命中")}>
               <input
                 type="checkbox"
                 checked={jpOnly}
@@ -578,7 +578,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
             {hitCount >= KWIC_LIMIT && tr("（已截断到 {KWIC_LIMIT} 条）", { KWIC_LIMIT })}
           </span>
           {near && (
-            <span className="near-chip" title={tr("只看关键词左右 3 个词内有这个词的行")}>{tr("附近有「{word}」", { word: near.word })}<button className="link-btn" onClick={clearNear} aria-label={tr("取消附近词筛选")}>
+            <span className="near-chip" title={tr("左右 3 个词内有它的行")}>{tr("附近有「{word}」", { word: near.word })}<button className="link-btn" onClick={clearNear} aria-label={tr("取消附近词筛选")}>
                 <Icon name="close" />
               </button>
             </span>
@@ -590,23 +590,23 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                 <button
                   className={view === "plot" ? "on" : ""}
                   onClick={() => setView("plot")}
-                  title={tr("每首歌一条：命中的行在歌里的位置。看它散在全曲还是挤在副歌")}
+                  title={tr("命中在每首歌里的位置")}
                 >{tr("分布图")}</button>
                 <button
                   className={view === "breakdown" ? "on" : ""}
                   onClick={() => setView("breakdown")}
-                  title={tr("按年份、演唱者分组，折成每万词")}
+                  title={tr("按年份、歌手，每万词")}
                 >{tr("年份·歌手")}</button>
                 {node && (
                   <button
                     className={view === "network" ? "on" : ""}
                     onClick={() => setView("network")}
-                    title={tr("关键词和它的搭配词，以及搭配词彼此之间的共现")}
+                    title={tr("关键词和搭配词的共现网")}
                   >{tr("网络")}</button>
                 )}
               </div>
               {view === "list" && (
-                <label className="kwic-sort" title={tr("按关键词左右第几个词排序；相同时接着比同一侧更远的词，再比另一侧")}>
+                <label className="kwic-sort" title={tr("按左右第几个词排序")}>
                   {tr("排序")}
                   <select className="rate" value={sort} onChange={(e) => setSort(e.target.value as KwicSort)}>
                     {KWIC_SORTS.map((s) => (
@@ -617,7 +617,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                   </select>
                 </label>
               )}
-              <button className="link-btn" onClick={() => void exportCsv()} title={tr("歌手、曲名、时刻、左右语境、全文，UTF-8（带 BOM）。按当前排序")}>{tr("导出 CSV")}</button>
+              <button className="link-btn" onClick={() => void exportCsv()} title={tr("按当前排序，UTF-8")}>{tr("导出 CSV")}</button>
             </>
           )}
           {kwicHits && (
@@ -625,7 +625,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
               className="link-btn"
               onClick={() => setShowColloc((v) => !v)}
               disabled={!node}
-              title={node ? tr("关键词左右 3 个词内常一起出现的词") : tr("搭配只对单个关键词有意义")}
+              title={node ? tr("左右 3 个词内的常见搭配") : tr("搭配只对单个关键词有意义")}
             >
               {showColloc ? tr("收起搭配") : tr("搭配")}
             </button>
@@ -636,7 +636,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
 
       {hitCount === null && !busy && mode === "cql" && (
         <div className="kwic-intro cql-help">
-          <p className="muted">{tr("CQL 按词的属性找词串：方括号里写一个词的条件，几个方括号连起来是相邻的几个词。值是正则表达式，要整个匹配。")}</p>
+          <p className="muted">{tr("[…] 是一个词，连写是相邻的词")}</p>
           <div className="cql-examples">
             {CQL_EXAMPLES.map((ex) => (
               <button
@@ -655,20 +655,19 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           <table className="cql-ref small">
             <tbody>
               <tr><td><code>word</code> <code>lemma</code></td><td>{tr("写法、辞书形")}</td></tr>
-              <tr><td><code>pos</code></td><td>{tr("词性（UPOS）：NOUN VERB ADJ ADV ADP AUX PRON PART PUNCT …")}</td></tr>
-              <tr><td><code>tag</code> <code>ctype</code> <code>cform</code></td><td>{tr("日语词性（名詞-普通名詞-一般）、活用型、活用形")}</td></tr>
-              <tr><td><code>reading</code> <code>norm</code></td><td>{tr("读音（平假名也行）、正规化表记")}</td></tr>
-              <tr><td><code>&amp;</code> <code>|</code> <code>!</code> <code>!=</code></td><td>{tr("且、或、非、不等于；可以加括号")}</td></tr>
-              <tr><td><code>[]</code> <code>?</code> <code>*</code> <code>+</code> <code>{"{m,n}"}</code></td><td>{tr("任意一个词；出现 0~1 次、0 次以上、1 次以上、m~n 次")}</td></tr>
+              <tr><td><code>pos</code></td><td>{tr("词性")} NOUN VERB ADJ ADV ADP AUX PRON PART PUNCT …</td></tr>
+              <tr><td><code>tag</code> <code>ctype</code> <code>cform</code></td><td>{tr("日语词性、活用型、活用形")}</td></tr>
+              <tr><td><code>reading</code> <code>norm</code></td><td>{tr("读音、正规化表记")}</td></tr>
+              <tr><td><code>&amp;</code> <code>|</code> <code>!</code> <code>!=</code></td><td>{tr("且、或、非、不等于")}</td></tr>
+              <tr><td><code>[]</code> <code>?</code> <code>*</code> <code>+</code> <code>{"{m,n}"}</code></td><td>{tr("任意词；0–1、≥0、≥1、m–n 次")}</td></tr>
             </tbody>
           </table>
-          <p className="muted small">{tr("不跨行；标点也是词；每个起点取最长的匹配，匹配之间不重叠。")}</p>
+          <p className="muted small">{tr("不跨行，标点也算一个词。")}</p>
         </div>
       )}
 
       {hitCount === null && !busy && mode !== "cql" && (
         <div className="kwic-intro">
-          <p className="muted">{tr("KWIC 把关键词居中对齐，一眼能看出它在不同歌里的搭配。 ▶ 原地试听那一句，⟲ 连前后各一行一起听；单击一条跳到那首歌的那一行接着放。 右键一条可以校正分词。用")}{" "}<code>+</code>{" "}{tr("连接可以查多词表达，比如")}{" "}<code>て+しまう</code>{tr("（选「词元」）。")}</p>
           {suggestions.length > 0 && (
             <>
               <p className="muted small">{tr("从语料里最常出现的词开始：")}</p>
@@ -755,7 +754,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                     e.preventDefault();
                     setEditing(hit.utteranceId);
                   }}
-                  title={tr("单击：从这个词开始放，留在检索页 · 双击：去资料库看整首 · 空格：试听这一句 · 右键：校正分词")}
+                  title={tr("单击播放 · 双击看整首 · 空格试听 · 右键校正分词")}
                 >
                   <span className="kwic-actions">
                     <button
@@ -878,7 +877,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
                             pickCollocate(c.lemma);
                           }
                         }}
-                        title={tr("点一下：只看附近有「{lemma}」的行。全库 {collocateFreq} 次", { lemma: c.lemma, collocateFreq: c.collocateFreq })}
+                        title={tr("只看附近有「{lemma}」的行 · 全库 {collocateFreq} 次", { lemma: c.lemma, collocateFreq: c.collocateFreq })}
                       >
                         <td>
                           {c.lemma} <span className="muted small">{POS_LABELS[c.pos] ?? c.pos}</span>

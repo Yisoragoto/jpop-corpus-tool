@@ -55,6 +55,19 @@ completed: boolean, lastPlayed: string, playCount: number,
 stoppedLine: string, };
 
 /**
+ * 导航栏底部状态点上的数：库里有几首要人处理。只数在库的歌（已移出的不算）
+ */
+export type CorpusStatus = { 
+/**
+ * 有歌词但没分词：点词查不了、没有振假名
+ */
+untokenized: number, 
+/**
+ * 记的路径上找不到音频文件
+ */
+missingAudio: number, };
+
+/**
  * 某一天（本地日期）听了多少。
  */
 export type DayListening = { listenedSec: number, 
@@ -288,6 +301,7 @@ export type YearStats = { year: string, trackCount: number, albumCount: number, 
 export interface Commands {
   overview: { args: NoArgs; output: Overview };
   timeline: { args: NoArgs; output: Array<YearStats> };
+  corpus_status: { args: NoArgs; output: CorpusStatus };
   get_track: { args: TrackArgs; output: Track | null };
   quick_search: { args: QuickSearchArgs; output: QuickSearchResults };
   home_summary: { args: HomeSummaryArgs; output: HomeSummary };

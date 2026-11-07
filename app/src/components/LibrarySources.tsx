@@ -1,13 +1,14 @@
 /**
- * 曲库 › 音乐文件夹：语料库里的歌来自哪些文件夹，逐个重新扫描对账，移除，恢复移出的歌。
+ * 曲库 › 来源：曲库从哪些文件夹读歌，逐个重新扫描对账，移除，恢复移出的歌。
  *
  * 对账只读（后端只记扫描时间和文件的大小、修改时间）；看过每一组再确认才写库。
- * 新文件不在这里导入，交给导入页的复核。确认时后端会逐项重新核对，期间情况变了的跳过。
+ * 新文件不在这里导入，交给「添加音乐」的复核。确认时后端会逐项重新核对，期间情况变了的跳过。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { claimDrops } from "../dropFiles";
 
 import { sourcesApi, type RemovedSong, type SourcePlanView, type SourceSuggestions, type SourceView } from "../librarySources";
 import { messageOf } from "../errors";
@@ -16,7 +17,7 @@ import { CommandButton } from "./CommandButton";
 import { tr } from "../i18n";
 
 interface Props {
-  /** 把这些新文件交给导入页复核 */
+  /** 把这些新文件交给「添加音乐」复核 */
   onReview: (paths: string[]) => void;
   /** 库变了（移出、恢复、刷新、删除）：曲库要重拉 */
   onChanged: () => void;
@@ -123,7 +124,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
         setPicked(new Set(s.folders.map((f) => f.path)));
       } else setSuggested(null);
     } catch (err) {
-      onError(tr("读不了音乐文件夹：{err}", { err: messageOf(err) }));
+      onError(tr("读不了来源文件夹：{err}", { err: messageOf(err) }));
     }
   }, [onError]);
 
@@ -162,6 +163,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
   // 把文件夹拖进来就是添加。拖进来的是文件也交给后端判断（会报「找不到这个文件夹」）
   useEffect(() => {
     let alive = true;
+    const release = claimDrops();
     const off = getCurrentWebview().onDragDropEvent((event) => {
       if (!alive) return;
       const kind = event.payload.type;
@@ -174,6 +176,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
     });
     return () => {
       alive = false;
+      release();
       void off.then((f) => f());
     };
   }, [add]);
@@ -312,15 +315,15 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
   return (
     <div className={`library-sources ${dropping ? "dropping" : ""}`}>
       <div className="section-head">
-        <h2>{tr("音乐文件夹")}</h2>
-        <span className="muted small">{tr("语料库里的歌来自这些文件夹。扫描只对账，看过再确认才写库")}</span>
+        <h2>{tr("来源文件夹")}</h2>
+        <span className="muted small">{tr("扫描只对账，确认了才写库")}</span>
       </div>
 
       {sources !== null && sources.length === 0 && (
         <div className="sources-empty">
           {suggested !== null && suggested.folders.length > 0 ? (
             <>
-              <p>{tr("还没有设音乐文件夹。按库里的歌所在的位置，建议加这几个：")}</p>
+              <p>{tr("按库里的歌所在的位置，建议加这几个：")}</p>
               <ul className="sync-rows">
                 {suggested.folders.map((f) => (
                   <li key={f.path}>
@@ -344,7 +347,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
                 ))}
               </ul>
               {suggested.looseSongs > 0 && (
-                <p className="muted small">{tr("另有 {n} 首不在这些文件夹里，不归任何文件夹管，照常在库里。", { n: suggested.looseSongs })}</p>
+                <p className="muted small">{tr("另有 {n} 首不在这些文件夹里，照常在库里。", { n: suggested.looseSongs })}</p>
               )}
               <div className="toolbar">
                 <CommandButton
@@ -359,7 +362,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
             </>
           ) : (
             <button className="drop-zone" onClick={() => void pickFolder()} disabled={busy !== ""}>
-              <b>{tr("添加音乐文件夹")}</b>
+              <b>{tr("添加来源文件夹")}</b>
               <span className="muted small">{tr("点这里选，或者把文件夹拖进窗口")}</span>
             </button>
           )}
@@ -383,7 +386,6 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
                       label={busy === `scan:${source.id}` ? tr("正在扫描…") : tr("扫描")}
                       disabled={busy !== "" || !source.present}
                       onClick={() => void scan(source)}
-                      title={tr("只读：和库里属于这个文件夹的歌对一遍")}
                     />
                     <button className="link-btn" disabled={busy !== ""} onClick={() => void toggle(source)}>
                       {source.enabled ? tr("停用") : tr("启用")}
@@ -397,7 +399,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
                     {!removing.hard ? (
                       <>
                         <span>{source.songs > 0
-                          ? tr("移除这个文件夹：它下面的 {n} 首会移出语料库，可以在下面「已移出的歌」里恢复。音频文件不动。", { n: source.songs })
+                          ? tr("它下面的 {n} 首会移出语料库，可以在「已移出的歌」里恢复。音频文件不动。", { n: source.songs })
                           : tr("移除这个文件夹？库里没有歌属于它。")}</span>
                         <div className="toolbar">
                           <CommandButton icon="check" label={tr("移除")} primary disabled={busy !== ""} onClick={() => void remove(source.id, "moveOut")} />
@@ -422,7 +424,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
                 {plan !== null && review !== null && plan.source.id === source.id && (
                   <div className="sync-review">
                     {plan.nothingFound && (
-                      <p className="error-text">{tr("这个文件夹里一个音频都没扫到。如果是盘换了内容或挂错了，别确认移出。")}</p>
+                      <p className="error-text">{tr("一个音频都没扫到。盘换了或挂错了的话，别确认移出。")}</p>
                     )}
                     {plan.newFiles.length > 0 && (
                       <div className="sync-group">
@@ -432,7 +434,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
                             ? tr("其中 {n} 首是新歌，其余疑似重复或读不出曲名", { n: plan.newSongs })
                             : tr("都不算新歌（疑似重复、格式放不了或者读不出曲名）")}
                         </span>
-                        <button className="link-btn" onClick={() => onReview(plan.newFiles)}>{tr("去导入页复核")}</button>
+                        <button className="link-btn" onClick={() => onReview(plan.newFiles)}>{tr("去添加音乐里复核")}</button>
                       </div>
                     )}
                     <GroupBlock
@@ -444,7 +446,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
                     />
                     <GroupBlock
                       title={tr("{n} 首歌词文件变了", { n: plan.lyricsChanged.length })}
-                      note={tr("挂成新的一版，旧的留在历史里；你选了别的来源或改过的不动")}
+                      note={tr("挂成新的一版，旧版留着；你改过的不动")}
                       on={review.on.lyrics}
                       onToggle={(v) => setOn("lyrics", v)}
                       rows={plan.lyricsChanged.map((l) => ({ key: l.songId, main: song(l.title, l.artist), sub: l.path }))}
@@ -498,7 +500,7 @@ export function LibrarySources({ onReview, onChanged, onError, version }: Props)
         <div className="removed-songs">
           <div className="section-head">
             <h2>{tr("已移出的歌")}</h2>
-            <span className="muted small">{tr("不算进语料、不出现在曲库里，数据都还在，随时可以恢复")}</span>
+            <span className="muted small">{tr("不算进语料，数据都在，随时可以恢复")}</span>
           </div>
           <ul className="sync-rows">
             {removed.map((s) => (

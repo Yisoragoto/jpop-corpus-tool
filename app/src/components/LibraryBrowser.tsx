@@ -109,13 +109,12 @@ interface Props {
   onOpenPerson: (id: number, from?: HTMLElement) => void;
   onOpenAlbum: (album: Album) => void;
   onOpenTrack: (track: Track, from: HTMLElement) => void;
-  /** 找不到音频的歌的提示条（原来在曲库左栏顶上） */
-  banner?: React.ReactNode;
   onOpenGraph: () => void;
   /** 没给就不显示时间轴按钮 */
   onOpenTimeline?: () => void;
   onOpenCloud: () => void;
-  onOpenFolders: () => void;
+  onOpenSources: () => void;
+  onOpenTidy: () => void;
   /** 收起左栏 */
   onHide: () => void;
 }
@@ -129,11 +128,11 @@ export function LibraryBrowser({
   onOpenPerson,
   onOpenAlbum,
   onOpenTrack,
-  banner,
   onOpenGraph,
   onOpenTimeline,
   onOpenCloud,
-  onOpenFolders,
+  onOpenSources,
+  onOpenTidy,
   onHide,
 }: Props) {
   const [mode, setModeState] = useState<BrowseMode>(readMode);
@@ -179,7 +178,6 @@ export function LibraryBrowser({
 
   return (
     <aside className="pane library browser">
-      {banner}
       <div className="browser-head">
         <button className="btn browser-view-btn browser-hide" onClick={onHide} title={tr("收起左栏")} aria-label={tr("收起左栏")}>
           <Icon name="panelHide" />
@@ -229,7 +227,7 @@ export function LibraryBrowser({
         )}
       </div>
 
-      <nav className="browser-views" aria-label={tr("整个资料库")}>
+      <nav className="browser-views" aria-label={tr("整个曲库")}>
         <button className={view.kind === "graph" ? "on" : ""} onClick={onOpenGraph} title={tr("关系网：所有人和他们的合作")}>
           <Icon name="network" />
           {tr("关系网")}
@@ -244,9 +242,13 @@ export function LibraryBrowser({
           <Icon name="font" />
           {tr("词云")}
         </button>
-        <button className={view.kind === "folders" ? "on" : ""} onClick={onOpenFolders} title={tr("音乐文件夹：歌从哪来、重新扫描对账、已移出的歌")}>
+        <button className={view.kind === "sources" ? "on" : ""} onClick={onOpenSources} title={tr("来源：曲库从哪些文件夹读歌")}>
           <Icon name="folder" />
-          {tr("音乐文件夹")}
+          {tr("来源")}
+        </button>
+        <button className={view.kind === "tidy" ? "on" : ""} onClick={onOpenTidy} title={tr("整理：识别、封面、歌词、时长")}>
+          <Icon name="broom" />
+          {tr("整理")}
         </button>
       </nav>
     </aside>

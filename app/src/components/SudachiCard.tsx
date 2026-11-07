@@ -32,7 +32,7 @@ const MB = 1024 * 1024;
 const SOURCE_LABELS: Record<string, string> = {
   app: tr("随程序自带"),
   library: tr("语料库目录里的"),
-  venv: tr("0.1.x 的 venv"),
+  venv: tr("旧版程序目录里的"),
 };
 
 export function SudachiCard({ icon, onError, onChanged }: Props) {
@@ -65,7 +65,7 @@ export function SudachiCard({ icon, onError, onChanged }: Props) {
   const install = useCallback(async () => {
     const picked = await openDialog({
       directory: true,
-      title: tr("选一个有 Sudachi 词典的目录（0.1.x 的项目目录、它的 venv，或另一个语料库目录）"),
+      title: tr("选一个有 Sudachi 词典的目录"),
     });
     if (typeof picked !== "string") return;
     setBusy(true);
@@ -91,7 +91,7 @@ export function SudachiCard({ icon, onError, onChanged }: Props) {
       ? tr("读取中…")
       : status.ready
         ? `${SOURCE_LABELS[status.source] ?? status.source}${tr("：")}${status.dictPath}${tr("（")}${(status.dictBytes / MB).toFixed(0)} MB${tr("）")}`
-        : tr("还没有。振假名、导入时的分词和实时分词要用它——歌、歌词、查词、播放不受影响。下一次就一直在了。");
+        : tr("还没有。振假名和分词要用它，播放和查词不受影响。");
 
   const download = useCallback(async () => {
     setBusy(true);
@@ -141,12 +141,12 @@ export function SudachiCard({ icon, onError, onChanged }: Props) {
           label={busy ? tr("处理中…") : status?.ready === true ? tr("换一份…") : tr("从目录导入…")}
           onClick={() => void install()}
           disabled={busy}
-          title={tr("手上已经有 0.1.x 的 venv 的话，从那儿复制比下载快得多")}
+          title={tr("已经有一份的话，复制比下载快")}
         />
       </SettingCard>
       {note !== "" && <SettingNote>{note}</SettingNote>}
       {status !== null && status.source !== "app" && (
-        <SettingNote>{tr("指 0.1.x 的项目目录（里面有")}{" "}<code>venv</code>{tr("）、它的")}{" "}<code>venv</code>{" "}{tr("本身，或者另一个语料库目录的{v}", { v: " " })}<code>sudachi</code>{" "}{tr("文件夹都行。复制过来之后放在")}{" "}<code>{status.bundledDir}</code>{tr("， 跟着语料库目录走；删掉它就回到随程序自带的那一份。")}</SettingNote>
+        <SettingNote>{tr("放在 {dir}，删掉就回到自带的那一份", { dir: status.bundledDir })}</SettingNote>
       )}
     </>
   );

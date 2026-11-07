@@ -243,10 +243,6 @@ export function AnkiPage({ onError }: Props) {
 
   return (
     <div className="page tools">
-      <p className="page-lead">
-        {tr("把语料里的词做成卡片。例句取自你自己听的歌——「夜」的例句是《夜に駆ける》里的那一句，不是教科书造的。")}
-      </p>
-
       <div className="card">
         <div className="card-head">
           <h2>{tr("连接")}</h2>
@@ -258,7 +254,8 @@ export function AnkiPage({ onError }: Props) {
         </div>
         {status !== null && (
           <>
-            <div className="stats">
+            {/* 学习状态读的是哪份 collection：放进悬停提示，不占版面 */}
+            <div className="stats" title={status.collectionPath}>
               <Stat label={tr("牌组")} value={status.decks.length} />
               <Stat label={tr("已进 Anki 的词")} value={status.knownWords} />
               <Stat label={tr("其中复习过")} value={status.studiedWords} />
@@ -266,10 +263,7 @@ export function AnkiPage({ onError }: Props) {
             {!status.connected && (
               <p className="warn">
                 {status.message}
-                <br />{tr("选词和预览不需要 Anki——那些只读本地文件。只有真正推卡片 才需要它开着。")}</p>
-            )}
-            {status.collectionPath !== "" && (
-              <p className="muted small">{tr("学习状态读自 {collectionPath}", { collectionPath: status.collectionPath })}</p>
+                <br />{tr("选词和预览不用开 Anki。")}</p>
             )}
             {status.connected && !status.noteTypeReady && (
               <p className="muted small">{tr("还没有「JPOP Corpus」笔记类型，第一次导出时会自动建。")}</p>

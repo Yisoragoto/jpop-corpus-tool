@@ -1,6 +1,6 @@
 /**
- * 导入页。要求书第二十条的完整链路在 Tauri 侧的入口：
- * 选目录**或选单曲** → 扫描 → **复核** → 确认导入。
+ * 曲库 › 添加音乐（原来的导入页）。要求书第二十条的完整链路在 Tauri 侧的入口：
+ * 选目录**或选单曲** → 扫描 → **复核** → 确认导入。选完就扫，拖进窗口也一样（拖放由外壳接，经 `request` 传进来）。
  *
  * 两个入口共用后面的全部流程。单曲导入不是「另一条导入路径」，
  * 只是把选中的文件交给同一个扫描器（`scan_dir` 本来就认单个文件）——
@@ -18,10 +18,9 @@ import { LyricsUpgradePanel } from "../components/LyricsUpgradePanel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "../events";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { CommandButton } from "../components/CommandButton";
-import { WatchedFolders } from "../components/WatchedFolders";
+import { AUDIO_EXTENSIONS } from "../dropFiles";
 
 import {
   ACTION_LABELS,
@@ -50,24 +49,15 @@ interface Props {
   /** 外面要这一页直接扫的文件。用掉之后调 `onRequestConsumed` 清空 */
   request?: ImportRequest | null;
   onRequestConsumed?: () => void;
+  /** 全部导进去了：回到曲库，打开第一首新歌 */
+  onOpenSong?: (songId: string) => void;
 }
 
 type Filter = "all" | ImportAction["kind"];
 
-/** Rust 侧 `jp_import::scan` 的 `AUDIO_EXTS` 加上 `UNSUPPORTED_AUDIO`。只用来给文件选择框当筛选，
- *  真正算不算音频由后端判断——两边不一致时，后端会把选错的文件报在 `ignored` 里。
- *
- *  opus 和 wma 放不了、不会入库，但**故意留在这里**：选得到，导入计划里才能告诉用户
- *  「这种格式不支持」；筛掉的话文件在选择框里凭空消失，用户只会以为没扫到。 */
-const AUDIO_EXTENSIONS = ["flac", "mp3", "wav", "m4a", "ogg", "aac", "opus", "wma"];
 
-/** 路径只显示文件名。完整路径太长，一行塞不下，而用户认的是歌名。 */
-function fileName(path: string): string {
-  const parts = path.split(/[\\/]/);
-  return parts[parts.length - 1] || path;
-}
 
-export function ImportPage({ onError, onImported, request = null, onRequestConsumed }: Props) {
+export function ImportPage({ onError, onImported, request = null, onRequestConsumed, onOpenSong }: Props) {
   const [path, setPath] = useState("");
   /** 选中的具体文件。非空时扫这些，忽略上面的路径框。 */
   const [files, setFiles] = useState<string[]>([]);
@@ -77,38 +67,6 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [tokenize, setTokenize] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
-  /** 导完一批加一：语料库文件夹那张卡片跟着重新查 */
-  const [importedCount, setImportedCount] = useState(0);
-
-  const pick = useCallback(async () => {
-    try {
-      const chosen = await openDialog({ directory: true, multiple: false });
-      if (typeof chosen === "string") {
-        setPath(chosen);
-        setFiles([]);
-      }
-    } catch (e) {
-      // 选目录失败不该让页面卡住——还能手敲路径
-      onError(tr("打不开目录选择框：{String}", { String: String((e as Error)?.message ?? e) }));
-    }
-  }, [onError]);
-
-  const pickFiles = useCallback(async () => {
-    try {
-      const chosen = await openDialog({
-        multiple: true,
-        title: tr("选择音频文件"),
-        filters: [{ name: tr("音频"), extensions: AUDIO_EXTENSIONS }],
-      });
-      const picked = chosen === null ? [] : Array.isArray(chosen) ? chosen : [chosen];
-      if (picked.length > 0) {
-        setFiles(picked);
-        setPath("");
-      }
-    } catch (e) {
-      onError(tr("打不开文件选择框：{String}", { String: String((e as Error)?.message ?? e) }));
-    }
-  }, [onError]);
 
   /** 扫这些文件（`chosen` 非空）或者这个目录，把计划摆出来等复核 */
   const scanTargets = useCallback(
@@ -129,50 +87,37 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
     [onError],
   );
 
-  // 拖进窗口：一个文件夹就扫这个文件夹，几首音频就扫这几首。网页这边分不出是文件夹还是文件，
-  // 按扩展名分：不是音频扩展名的当文件夹（「Vol.2」这种带点的文件夹名也对）
-  const [dropping, setDropping] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    const isAudio = (p: string) => AUDIO_EXTENSIONS.some((ext) => p.toLowerCase().endsWith(`.${ext}`));
-    const off = getCurrentWebview().onDragDropEvent((event) => {
-      if (!alive) return;
-      const kind = event.payload.type;
-      if (kind === "enter" || kind === "over") setDropping(true);
-      else if (kind === "leave") setDropping(false);
-      else if (kind === "drop") {
-        setDropping(false);
-        if (busy !== "") return;
-        const paths = event.payload.paths;
-        const audio = paths.filter(isAudio);
-        const folders = paths.filter((p) => !isAudio(p));
-        if (folders.length === 0 && audio.length > 0) {
-          setPath("");
-          setFiles(audio);
-          void scanTargets(audio, "");
-        } else if (folders.length === 1 && audio.length === 0) {
-          setFiles([]);
-          setPath(folders[0]!);
-          void scanTargets([], folders[0]!);
-        } else if (paths.length > 0) {
-          onError(tr("一次拖一个文件夹，或者只拖音频文件"));
-        }
+  // 选完就扫：中间不再多一下「扫描」——扫描只读，看过计划才写库
+  const pick = useCallback(async () => {
+    try {
+      const chosen = await openDialog({ directory: true, multiple: false });
+      if (typeof chosen === "string") {
+        setPath(chosen);
+        setFiles([]);
+        void scanTargets([], chosen);
       }
-    });
-    return () => {
-      alive = false;
-      void off.then((f) => f());
-    };
-  }, [busy, scanTargets, onError]);
-
-  const doScan = useCallback(async () => {
-    const target = path.trim();
-    if (files.length === 0 && target === "") {
-      onError(tr("先选一个目录，或者选几个音频文件"));
-      return;
+    } catch (e) {
+      onError(tr("打不开目录选择框：{String}", { String: String((e as Error)?.message ?? e) }));
     }
-    await scanTargets(files, target);
-  }, [path, files, onError, scanTargets]);
+  }, [onError, scanTargets]);
+
+  const pickFiles = useCallback(async () => {
+    try {
+      const chosen = await openDialog({
+        multiple: true,
+        title: tr("选择音频文件"),
+        filters: [{ name: tr("音频"), extensions: AUDIO_EXTENSIONS }],
+      });
+      const picked = chosen === null ? [] : Array.isArray(chosen) ? chosen : [chosen];
+      if (picked.length > 0) {
+        setFiles(picked);
+        setPath("");
+        void scanTargets(picked, "");
+      }
+    } catch (e) {
+      onError(tr("打不开文件选择框：{String}", { String: String((e as Error)?.message ?? e) }));
+    }
+  }, [onError, scanTargets]);
 
   /** 别处交过来的一批文件（启动横幅的「查看」、上面那张卡片的「查看这几首」）：当成选中的单曲，直接扫 */
   const reviewFiles = useCallback(
@@ -215,15 +160,19 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
       if (csv !== undefined && !["updated", "noFile", "unchanged"].includes(csv)) onError(csv);
       setScan(null);
       setFiles([]);
-      setImportedCount((n) => n + 1);
       onImported();
+      // 一首不落地导进去了就直接去听；有失败的留在这里，把原因摆出来
+      const first = result.tracks.find((t) => t.outcome.kind === "imported");
+      if (first !== undefined && !result.cancelled && result.tracks.every((t) => t.outcome.kind === "imported")) {
+        onOpenSong?.(first.songId);
+      }
     } catch (e) {
       onError(String((e as { message?: string })?.message ?? e));
     } finally {
       setBusy("");
       setProgress(null);
     }
-  }, [tokenize, fetchLyrics, onError, onImported]);
+  }, [tokenize, fetchLyrics, onError, onImported, onOpenSong]);
 
   /** 丢弃还没导的那批；导入进行中则是「停止」——后端每导完一首看一次标志。 */
   const doCancel = useCallback(async () => {
@@ -246,58 +195,23 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
   const imported = report?.tracks.filter((t) => t.outcome.kind === "imported") ?? [];
 
   return (
-    <div className={`page tools ${dropping ? "dropping" : ""}`} data-scanning={busy === "scanning"} data-import-plan={scan !== null}>
-      <p className="page-lead">{tr("选一个装着音频的目录，或者直接选几首歌，也可以把文件夹、音频拖进窗口。扫描只读取，不写库；看过计划再决定导不导。")}</p>
-
-      <label className="check import-lyrics-option"><input type="checkbox" checked={fetchLyrics} disabled={busy !== ""} onChange={event => setFetchLyrics(event.target.checked)} />{tr("导入后自动补歌词，优先逐字")}</label>
-      <LyricsUpgradePanel allowStart={false} onChanged={onImported} onError={onError} />
-      <WatchedFolders
-        onReview={reviewFiles}
-        onError={onError}
-        disabled={busy !== ""}
-        refreshKey={importedCount}
-      />
-
-      <div className="card">
-        <div className="toolbar">
-          <input
-            className="search"
-            value={path}
-            placeholder={tr("音频目录，例如 D:\\jp_corpus\\raw\\audio")}
-            onChange={(e) => setPath(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void doScan();
-            }}
-          />
-          <CommandButton icon="folder" label={tr("选目录…")} onClick={() => void pick()} disabled={busy !== ""} />
-          <CommandButton
-            icon="import"
-            label={tr("选单曲…")}
-            onClick={() => void pickFiles()}
-            disabled={busy !== ""}
-            title={tr("直接选一首或几首音频文件，不用先把它们挪进一个目录")}
-          />
-          <CommandButton
-            icon="scan"
-            label={busy === "scanning" ? tr("扫描中…") : tr("扫描")}
-            onClick={() => void doScan()}
-            disabled={busy !== "" || (files.length === 0 && path.trim() === "")}
-            primary
-            title={tr("只读：和现有曲库比对，什么都不写")}
-          />
+    <div className="page tools add-music" data-scanning={busy === "scanning"} data-import-plan={scan !== null}>
+      <div className="add-start">
+        <div className="add-start-actions">
+          <CommandButton icon="folder" label={tr("选文件夹…")} onClick={() => void pick()} disabled={busy !== ""} primary={scan === null} />
+          <CommandButton icon="import" label={tr("选几首歌…")} onClick={() => void pickFiles()} disabled={busy !== ""} />
         </div>
-        {files.length > 0 && (
-          <div className="chosen-files">
-            <span className="muted small">{tr("选中 {length} 个文件", { length: files.length })}</span>
-            <ul className="list compact">
-              {files.map((f) => (
-                <li key={f}>{fileName(f)}</li>
-              ))}
-            </ul>
-            <button className="link-btn" onClick={() => setFiles([])}>{tr("清空，改回按目录扫")}</button>
-          </div>
-        )}
+        <p className="muted small">
+          {busy === "scanning"
+            ? tr("正在扫描…")
+            : files.length > 0
+              ? tr("{length} 个文件", { length: files.length })
+              : path !== ""
+                ? path
+                : tr("也可以直接拖进窗口")}
+        </p>
       </div>
+      <LyricsUpgradePanel allowStart={false} onChanged={onImported} onError={onError} />
 
       {scan !== null && (
         <div className="card">
@@ -315,13 +229,13 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
           </div>
 
           {scan.summary.possibleDuplicates > 0 && (
-            <p className="warn">{tr("有 {n} 首和库里的是同一个录音（同一个 ISRC，或曲名、歌手、版本相同且时长相近），只是文件不同。这类", { n: scan.summary.possibleDuplicates })}<strong>{tr("不会")}</strong>{tr("被导入——多半是换了音源或挪了位置；挪了位置的用「找回音频」重新链接。Live、翻唱、重制、时长不同的版本会作为新歌导入。")}</p>
+            <p className="warn">{tr("{n} 首疑似重复，不导入", { n: scan.summary.possibleDuplicates })}</p>
           )}
           {scan.ignored.length > 0 && (
-            <p className="warn">{tr("这 {length} 个不是音频文件，没有进计划：{ignored}。 歌词文件不用在这里选——导入时会自动认音频旁边的同名 .lrc， 也可以在曲库里给某一首单独导入歌词。", { length: scan.ignored.length, ignored: scan.ignored.join(tr("、")) })}</p>
+            <p className="warn">{tr("不是音频，跳过：{ignored}", { ignored: scan.ignored.join(tr("、")) })}</p>
           )}
           {!scan.tokenizerReady && (
-            <p className="warn">{tr("找不到 Sudachi 词典，这次导入不会写分词。歌和歌词照常入库， 之后补上词典再重新分词即可。")}</p>
+            <p className="warn">{tr("还没有分词词典，这次不分词")}</p>
           )}
 
           <div className="chips">
@@ -347,14 +261,16 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
 
           <PlanTable items={shown} />
 
-          <div className="toolbar">
+          <div className="toolbar import-go">
             <label className="check">
               <input
                 type="checkbox"
                 checked={tokenize}
                 onChange={(e) => setTokenize(e.target.checked)}
                 disabled={!scan.tokenizerReady}
-              />{tr("同时分词（慢一些，但语料立刻可检索）")}</label>
+              />{tr("同时分词")}</label>
+            <label className="check import-lyrics-option">
+              <input type="checkbox" checked={fetchLyrics} disabled={busy !== ""} onChange={(e) => setFetchLyrics(e.target.checked)} />{tr("补歌词")}</label>
             <CommandButton
               icon="import"
               label={
@@ -369,7 +285,6 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
               onClick={() => void doImport()}
               disabled={busy !== "" || (scan.summary.new === 0 && (scan.summary.filesChanged ?? 0) === 0)}
               primary
-              title={tr("写库就在这一步")}
             />
             {/* 导入中这个按钮是「停止」：一首歌一个事务，停在哪儿哪儿之前是真导进去了 */}
             <CommandButton
@@ -383,10 +298,10 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
             <p className="muted small">{tr("正在导：{title}", { title: progress.title })}</p>
           )}
           {(scan.summary.filesChanged ?? 0) > 0 && (
-            <p className="muted small">{tr("有 {n} 个库里的文件变了（大小或修改时间不同）。导入时刷新它们的文件信息；来自文件的曲名、年份、流派、时长跟着更新，你改过的字段不动，也不会往音频文件里写。", { n: scan.summary.filesChanged ?? 0 })}</p>
+            <p className="muted small">{tr("{n} 个文件变了，导入时刷新", { n: scan.summary.filesChanged ?? 0 })}</p>
           )}
           {scan.summary.new === 0 && (scan.summary.filesChanged ?? 0) === 0 && scan.summary.total > 0 && (
-            <p className="muted small">{tr("这一批里没有新东西，不需要导入。")}</p>
+            <p className="muted small">{tr("没有新歌。")}</p>
           )}
         </div>
       )}
@@ -397,10 +312,10 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
             <h2>{tr("导入结果")}</h2>
           </div>
           {(report.filesRefreshed ?? 0) > 0 && (
-            <p className="muted small">{tr("刷新了 {n} 个变了的文件的信息。", { n: report.filesRefreshed ?? 0 })}</p>
+            <p className="muted small">{tr("刷新了 {n} 个文件。", { n: report.filesRefreshed ?? 0 })}</p>
           )}
           {report.cancelled && (
-            <p className="muted small">{tr("你中途停了。下面这 {length} 首是", { length: report.tracks.length })}<strong>{tr("真的导进去了")}</strong>{tr("（一首一个事务），剩下的一行都没写——再点一次「导入」会接着往下走。")}</p>
+            <p className="muted small">{tr("中途停了：{length} 首已经导进去，其余没写。再导一次会接着往下走。", { length: report.tracks.length })}</p>
           )}
           <div className="stats">
             <Stat label={tr("成功")} value={imported.length} />
@@ -436,7 +351,7 @@ export function ImportPage({ onError, onImported, request = null, onRequestConsu
           {failures.length > 0 ? (
             <>
               {/* 失败要逐条说清是哪首、为什么。只报一个数字等于没报。 */}
-              <p className="warn">{tr("下面这些没能导入，其余的已经进库了（每首歌一个事务， 失败的那首一行都没留下）。重新扫描一次可以再试。")}</p>
+              <p className="warn">{tr("这些没能导入，其余已进库。")}</p>
               <ul className="list">
                 {failures.map((t) => (
                   <li key={t.path}>
@@ -500,7 +415,7 @@ function explain(item: PlanItem): string {
   switch (a.kind) {
     case "new": {
       // 新歌要写库，拿不准的地方在这里说出来：复核看的就是这几句
-      const notes = [tr("将写入 id {songId}", { songId: a.songId })];
+      const notes: string[] = [];
       if (a.versionOf) notes.push(tr("是库里 {songId} 的另一个版本：{reason}", { songId: a.versionOf.songId, reason: trBackend(a.versionOf.reason) }));
       if (item.warning !== null) notes.push(item.warning);
       if (item.artistSource === "folder") notes.push(tr("歌手是从文件夹名猜的"));

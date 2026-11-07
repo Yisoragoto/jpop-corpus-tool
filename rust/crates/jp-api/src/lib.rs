@@ -135,6 +135,7 @@ macro_rules! commands {
 commands![
     corpus::GetOverview,
     corpus::GetTimeline,
+    corpus::GetCorpusStatus,
     library::GetTrack,
     search::QuickSearch,
     home::GetHomeSummary,
