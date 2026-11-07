@@ -1,7 +1,7 @@
 //! 歌词来源的应用层：找本地来源、解析成统一时间轴、换来源、调偏移。
 //!
 //! 数据和优先级规则在 `jp_corpus::lyric_sources`，时间轴结构在 `jp_corpus::lyric_timeline`；
-//! 这里把它们和解析器（`jp_import::lrc` / `jp_import::srt` / 逐字格式）、入库路径接起来。
+//! 这里把它们和解析器（`jp_lyric_format::decode`，所有格式一个入口）、入库路径接起来。
 //! Tauri 和 macOS（jp-ffi）都调这一层，两边的行为才是一样的。
 
 use std::path::{Path, PathBuf};
@@ -13,9 +13,6 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use crate::lyrics::{Attached, LyricsSource, SongRef};
-
-/// 本地歌词文件认这几种扩展名。
-const LOCAL_EXTENSIONS: [&str; 3] = ["lrc", "srt", "txt"];
 
 /// 太大的不是歌词（多半是放错了的别的文本）。
 const MAX_LOCAL_BYTES: u64 = 4 * 1024 * 1024;
@@ -30,17 +27,9 @@ pub struct LocalFile {
     pub role: &'static str,
 }
 
-/// 语言标记：`zh`、`zh-Hans`、`pt-BR`、`ja-Latn` 这一类。
-fn is_language_tag(tag: &str) -> bool {
-    let mut parts = tag.split('-');
-    let Some(primary) = parts.next() else { return false };
-    (2..=3).contains(&primary.len())
-        && primary.chars().all(|c| c.is_ascii_alphabetic())
-        && parts.all(|p| (2..=8).contains(&p.len()) && p.chars().all(|c| c.is_ascii_alphanumeric()))
-}
-
-/// 音频旁边同名的歌词文件：`song.lrc`、`song.srt`、`song.txt`，以及带语言后缀的
-/// `song.zh-Hans.lrc`。日语后缀（`ja`、`jpn`）算原文，其他语言算译文。
+/// 音频旁边同名的歌词文件：`song.ttml`、`song.qrc`、`song.lrc`、`song.srt`、`song.txt`……
+/// 以及带语言后缀的 `song.zh-Hans.lrc`。日语后缀（`ja`、`jpn`）算原文，其他语言算译文。
+/// 认哪些扩展名、谁当原文见 [`jp_lyric_format::find_external`]；这里全都登记，按路径排。
 ///
 /// 只看音频所在的那一个目录。`raw/lyrics_lrc/{id}.lrc` 是本程序自己落盘的当前歌词，
 /// 不算「旁边的文件」——否则用户改过的歌词会被当成外挂文件再登记一遍。
@@ -49,38 +38,27 @@ pub fn local_files(audio: &Path) -> Vec<LocalFile> {
         return Vec::new();
     };
     let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
-    let mut out = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()) else { continue };
-        if !LOCAL_EXTENSIONS.contains(&ext.as_str()) {
-            continue;
-        }
-        let Some(name) = path.file_stem().and_then(|s| s.to_str()) else { continue };
-        let language = if name == stem {
-            String::new()
-        } else if let Some(tag) = name.strip_prefix(stem).and_then(|r| r.strip_prefix('.')) {
-            if !is_language_tag(tag) {
-                continue;
-            }
-            tag.to_string()
-        } else {
-            continue;
-        };
-        let primary = language.split('-').next().unwrap_or("").to_ascii_lowercase();
-        let role = if language.is_empty() || primary == "ja" || primary == "jpn" { "original" } else { "translation" };
-        out.push(LocalFile { path, language, role });
-    }
+    let names: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .filter_map(|e| e.file_name().to_str().map(str::to_owned))
+        .collect();
+    let found = jp_lyric_format::find_external(stem, names.iter().map(String::as_str));
+    let mut out: Vec<LocalFile> = found
+        .all()
+        .map(|f| LocalFile {
+            path: dir.join(&f.name),
+            language: f.language.clone(),
+            role: if f.translation { "translation" } else { "original" },
+        })
+        .collect();
     out.sort_by(|a, b| a.path.cmp(&b.path));
     out
 }
 
-/// 解析一份原文，得到时间轴用的行和夹带的译文。
+/// 解析一份原文，得到时间轴用的行和夹带的译文。`format` 是来源记的格式（见 [`jp_lyric_format::decode`]）。
 pub fn parse_raw(raw: &str, format: &str) -> Result<(Vec<RawLine>, Vec<RawLine>)> {
-    let from_lrc = |lines: Vec<jp_import::lrc::LyricLine>| -> Vec<RawLine> {
+    let from_lrc = |lines: Vec<jp_lyric_format::LyricLine>| -> Vec<RawLine> {
         lines
             .into_iter()
             .map(|l| RawLine {
@@ -92,48 +70,22 @@ pub fn parse_raw(raw: &str, format: &str) -> Result<(Vec<RawLine>, Vec<RawLine>)
             })
             .collect()
     };
-    Ok(match format {
-        "srt" => {
-            let parsed = jp_import::srt::parse(raw);
-            let mut lines = from_lrc(parsed.lines);
-            for (line, end) in lines.iter_mut().zip(parsed.ends) {
-                line.end_sec = Some(end);
-            }
-            (lines, from_lrc(parsed.translations))
-        }
-        _ => {
-            let lrc = canonical_lrc(raw, format)?;
-            let parsed = jp_import::lrc::parse(&lrc);
-            (from_lrc(parsed.lines), from_lrc(parsed.translations))
-        }
-    })
-}
-
-/// 转成入库用的 LRC 文本。LRC、增强 LRC、纯文本原样；SRT 和逐字格式转换。
-pub fn canonical_lrc(raw: &str, format: &str) -> Result<String> {
-    use jp_scraper::timed_lyrics as t;
-    Ok(match format {
-        "srt" => {
-            let cues = jp_import::srt::parse_cues(raw);
-            ensure!(!cues.is_empty(), "这份 SRT 里没有认得出的字幕");
-            jp_import::srt::to_lrc(&cues)
-        }
-        "yrc" => t::parse_yrc(raw)?.to_enhanced_lrc(),
-        "qrc" => t::parse_qrc(raw)?.to_enhanced_lrc(),
-        "krc" => t::parse_krc(raw)?.to_enhanced_lrc(),
-        "ttml" => t::parse_ttml(raw)?.to_enhanced_lrc(),
-        _ => raw.to_string(),
-    })
-}
-
-fn format_of(path: &Path, raw: &str) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
-        Some("srt") => "srt",
-        _ => match store::sniff_format(raw) {
-            "srt" => "srt",
-            other => other,
-        },
+    let decoded = jp_lyric_format::decode_str(raw, Some(format))?;
+    let mut lines = from_lrc(decoded.parsed.lines);
+    for (line, end) in lines.iter_mut().zip(decoded.ends) {
+        line.end_sec = end;
     }
+    Ok((lines, from_lrc(decoded.parsed.translations)))
+}
+
+/// 转成入库用的 LRC 文本。LRC、带逐字的 LRC、纯文本原样；SRT 和逐字格式转换。
+pub fn canonical_lrc(raw: &str, format: &str) -> Result<String> {
+    Ok(jp_lyric_format::decode_str(raw, Some(format))?.lrc)
+}
+
+/// 本地文件记成什么格式：扩展名说了算，`.lrc` 只按内容细分带不带逐字，`.txt` 看内容判断。
+fn format_of(path: &Path, raw: &str) -> &'static str {
+    jp_lyric_format::resolve_format(raw, path.extension().and_then(|e| e.to_str())).name()
 }
 
 /// 一份原文的行数、带时间的行数、精度。
@@ -225,7 +177,7 @@ pub fn discover_local_at(conn: &Connection, song_id: &str, audio: Option<&Path>)
     }
     if audio.is_file()
         && let Some(embedded) = jp_import::embedded::read_lyrics(audio) {
-            let format = store::sniff_format(&embedded.text);
+            let format = embedded.format;
             let (lines, timed, precision) = measure(&embedded.text, format);
             let name = audio.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             let hash = store::raw_hash(&embedded.text);

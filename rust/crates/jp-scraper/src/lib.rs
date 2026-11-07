@@ -22,7 +22,8 @@
 
 pub mod lyrics;
 pub mod alignment;
-pub mod timed_lyrics;
+/// 逐字歌词的解析器在 `jp-lyric-format`，这里转出去，老的 `jp_scraper::timed_lyrics::…` 路径照旧能用
+pub use jp_lyric_format::timed as timed_lyrics;
 #[cfg(feature = "network")]
 pub mod timed_sources;
 pub mod artwork;

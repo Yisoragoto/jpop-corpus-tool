@@ -1,0 +1,21 @@
+[package]
+name = "jp-lyric-format"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "One decoder for every lyric format: LRC, SRT, TTML, QRC, YRC, KRC, LYS"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+# 网易云 .lrc 开头的 JSON 署名行
+serde_json.workspace = true
+# 文本编码回退（Shift-JIS / GBK / 带 BOM 的 UTF-16）
+encoding_rs = "0.8"
+# TTML 和 QRC 的 XML 外壳
+roxmltree = "0.20"
+# QRC / KRC 解密后的 zlib 流
+flate2 = "1"
+# LRCLIB 的 Enhanced LRC 时间标签
+regex = "1"

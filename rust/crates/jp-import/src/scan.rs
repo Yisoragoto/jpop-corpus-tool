@@ -347,13 +347,12 @@ pub fn scan_file_path(path: &Path) -> String {
     platform_path(path)
 }
 
-/// 找同名的 .lrc。先看同目录，再看 `raw/lyrics_lrc/{stem}.lrc`
-/// （本项目自己的布局）。
+/// 找同名的歌词文件。先看同目录（几种格式里挑哪一份见 [`jp_lyric_format::external::primary_beside`]），
+/// 再看 `raw/lyrics_lrc/{stem}.lrc`（本项目自己的布局）。
 fn find_lyrics(audio: &Path) -> Option<PathBuf> {
     let stem = audio.file_stem()?;
-    let sibling = audio.with_extension("lrc");
-    if sibling.is_file() {
-        return Some(sibling);
+    if let Some(found) = jp_lyric_format::external::primary_beside(audio) {
+        return Some(found);
     }
     // 往上找项目根，再去 raw/lyrics_lrc 里看
     for ancestor in audio.ancestors().skip(1).take(5) {

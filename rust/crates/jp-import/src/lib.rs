@@ -20,14 +20,14 @@ pub mod annotate;
 pub mod embedded;
 pub mod filename;
 pub mod import;
-pub mod lrc;
+/// 解析器在 `jp-lyric-format`，这里转出去，老的 `jp_import::lrc::…` 路径照旧能用
+pub use jp_lyric_format::{lrc, srt};
 pub mod maintain;
 pub mod migrate;
 pub mod metadata_csv;
 pub mod plan;
 pub mod review;
 pub mod scan;
-pub mod srt;
 pub mod version;
 pub mod watch;
 

@@ -11,10 +11,11 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 rusqlite = { version = "0.40", features = ["bundled"] }
-encoding_rs = "0.8"
 sha2 = "0.10"
 jp-corpus = { path = "../jp-corpus" }
 jp-import = { path = "../jp-import" }
 jp-tokenizer = { path = "../jp-tokenizer" }
 jp-scraper = { path = "../jp-scraper" }
 jp-normalize = { path = "../jp-normalize" }
+# 所有歌词格式的解析
+jp-lyric-format = { path = "../jp-lyric-format" }
