@@ -736,4 +736,13 @@ export const backendEn: Record<string, string> = {
   "时长差 {0} 秒": "lengths differ by {0} s",
   "曲名、歌手相同，时长相差 {0} 秒": "same title and artist, lengths within {0} s",
   "曲名、歌手相同（没有时长可比）": "same title and artist (no length to compare)",
+  "建不了备份目录 {0}": "Couldn't create backup folder {0}",
+  "备份路径不是合法的 UTF-8：{0}": "Backup path is not valid UTF-8: {0}",
+  "升级前备份失败，没有升级。请确认 {0} 所在的磁盘有不少于语料库大小的剩余空间": "Backup before upgrade failed, so nothing was upgraded. Make sure the disk holding {0} has at least as much free space as the corpus",
+  "读不了备份目录 {0}": "Couldn't read backup folder {0}",
+  "删不掉旧备份 {0}": "Couldn't delete old backup {0}",
+  "建在库视图失败": "Couldn't create the library views",
+  "歌曲的移出标记（songs.deleted_at）和只看在库歌曲的视图（live_songs 等）": "Removed-song marker (songs.deleted_at) and views of songs still in the library (live_songs etc.)",
+  "；升级前备份在 {0}": "; backup from before the upgrade is at {0}",
+  "live_views.sql 里的视图名不对：{0}": "Bad view name in live_views.sql: {0}",
 };

@@ -18,9 +18,13 @@
 //! 3. **挡降级**。库比我新就直接报错，而不是等某个查询炸出 `no such column`。
 //!    `jp-dict` 的 `dictionaries.db` 早就这么做了，这里只是把 `corpus.db` 补齐。
 //!
-//! **步骤只许加东西**（加列、加表、加索引），不许删、不许改数据。
-//! 有这条约束才敢不做备份——991MB 的库 `VACUUM INTO` 一次要很久，
-//! 而每次启动都备份是不可接受的。约束由 `steps_only_ever_add_things` 守着。
+//! **步骤只许加东西**（加列、加表、加索引、加视图），不许删、不许改数据。
+//! 约束由 `steps_only_ever_add_things` 守着。
+//!
+//! **升级前先备份**：老库真要往上升时，先用 [`crate::backup::before_upgrade`]
+//! 在 `backups/` 留一份整库副本（只留最近 3 份），备份失败就不升级。
+//! 每次启动都备份不可接受（991MB 的库 `VACUUM INTO` 一次要十几秒），
+//! 所以只在版本戳落后时做，一个版本只做一次。
 
 use anyhow::{Context, Result, bail};
 use rusqlite::Connection;
@@ -32,7 +36,7 @@ use rusqlite::Connection;
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///
 /// 格式是 `YYYYMMDD`：单调递增，一眼看得出先后。
-pub const CURRENT: i64 = 20_261_101;
+pub const CURRENT: i64 = 20_261_106;
 
 /// 一步迁移里的一个改动。
 enum Change {
@@ -195,6 +199,13 @@ const STEPS: &[Step] = &[
         // 新表由 schema.sql 建；存量的歌由 `audio_files::backfill` 按 songs.audio_path 补登记
         changes: &[],
     },
+    Step {
+        version: 20_261_106,
+        what: "歌曲的移出标记（songs.deleted_at）和只看在库歌曲的视图（live_songs 等）",
+        // 只加一个空列：存量的歌全是 NULL，也就是全部在库，所有统计数字不变。
+        // 视图由随后的 schema.sql 建（它依赖这一列，所以必须先补列）
+        changes: &[Change::AddColumn { table: "songs", column: "deleted_at", ddl: "TEXT" }],
+    },
 ];
 
 /// 这次打开做了什么。调用方拿去写日志。
@@ -208,6 +219,8 @@ pub struct Applied {
     pub created: bool,
     /// 实际跑过的步骤，各一句人话
     pub steps: Vec<&'static str>,
+    /// 升级前留的备份。没升级、空库、内存库都是 `None`
+    pub backup: Option<std::path::PathBuf>,
 }
 
 impl Applied {
@@ -219,13 +232,17 @@ impl Applied {
         if self.steps.is_empty() {
             return format!("语料库结构版本 {}，无需迁移", self.to);
         }
-        format!(
+        let mut line = format!(
             "语料库结构 {} → {}，跑了 {} 步：{}",
             self.from,
             self.to,
             self.steps.len(),
             self.steps.join("、")
-        )
+        );
+        if let Some(path) = &self.backup {
+            line.push_str(&format!("；升级前备份在 {}", path.display()));
+        }
+        line
     }
 }
 
@@ -255,6 +272,14 @@ pub fn apply(conn: &Connection) -> Result<Applied> {
     // 最新结构了，一步都不用补；老库才要逐步补列。
     let created = !table_exists(conn, "songs")?;
 
+    // 老库要升级：先备份。备份不成就不往下走——步骤虽然只加东西，
+    // 但出了意外没有退路的话，用户损失的是全部的分词校正和收听记录
+    let backup = if !created && from < CURRENT {
+        crate::backup::before_upgrade(conn, from)?
+    } else {
+        None
+    };
+
     let mut steps = Vec::new();
     if !created {
         for step in STEPS.iter().filter(|step| step.version > from) {
@@ -263,6 +288,11 @@ pub fn apply(conn: &Connection) -> Result<Applied> {
         }
     }
 
+    // 在库视图不存数据，每次升级都删了按当前写法重建：`CREATE VIEW IF NOT EXISTS`
+    // 不会替换老写法。所以**改了 live_views.sql 就要升 CURRENT**（加一个空步骤即可）
+    if !created && from < CURRENT {
+        drop_live_views(conn)?;
+    }
     crate::Corpus::create_tables_on(conn)?;
     stamp(conn, CURRENT)?;
     Ok(Applied {
@@ -270,12 +300,27 @@ pub fn apply(conn: &Connection) -> Result<Applied> {
         to: CURRENT,
         created,
         steps,
+        backup,
     })
 }
 
 /// 库现在戳着几版。从没戳过的是 0。
 pub fn version(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row("PRAGMA user_version", [], |row| row.get(0))?)
+}
+
+/// 删掉 `live_views.sql` 建的所有视图（名字从文件里读，不另抄一份清单）
+fn drop_live_views(conn: &Connection) -> Result<()> {
+    for line in crate::LIVE_VIEWS.lines() {
+        let Some(rest) = line.trim().strip_prefix("CREATE VIEW IF NOT EXISTS ") else { continue };
+        let name = rest.split_whitespace().next().unwrap_or_default();
+        anyhow::ensure!(
+            !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),
+            "live_views.sql 里的视图名不对：{name}"
+        );
+        conn.execute_batch(&format!("DROP VIEW IF EXISTS {name}"))?;
+    }
+    Ok(())
 }
 
 /// 跑一步，**改动和版本戳在同一个事务里**提交。
@@ -389,6 +434,7 @@ mod tests {
                 "词的日语形态信息：细分词性、活用型、活用形、读音、正规化表记（语料分析第二阶段）",
                 "歌词来源、来源选择与整体偏移、在线查询记录、时间轴缓存",
                 "音频文件记录（路径、大小、修改时间、时长、格式、指纹、曲目起点）",
+                "歌曲的移出标记（songs.deleted_at）和只看在库歌曲的视图（live_songs 等）",
             ]
         );
 
@@ -476,6 +522,7 @@ mod tests {
                 "词的日语形态信息：细分词性、活用型、活用形、读音、正规化表记（语料分析第二阶段）",
                 "歌词来源、来源选择与整体偏移、在线查询记录、时间轴缓存",
                 "音频文件记录（路径、大小、修改时间、时长、格式、指纹、曲目起点）",
+                "歌曲的移出标记（songs.deleted_at）和只看在库歌曲的视图（live_songs 等）",
             ],
             "没戳过就得把每一步都重跑一遍"
         );
@@ -515,10 +562,8 @@ mod tests {
         assert!(STEPS.iter().all(|s| !s.what.is_empty()), "每一步都要有一句人话");
     }
 
-    /// **不做备份的前提**：步骤只许加东西。
-    ///
-    /// 哪天真需要删列、改数据、重建表，就得先把备份补上，再放开这条——
-    /// 这个断言是让那件事必须被想一次，而不是顺手写进去。
+    /// 步骤只许加东西。升级前虽然有备份，但备份是兜底，不是许可：
+    /// 哪天真需要删列、改数据、重建表，要先想清楚怎么对账、怎么回退，再放开这条。
     #[test]
     fn steps_only_ever_add_things() {
         const FORBIDDEN: [&str; 6] = ["DROP", "DELETE", "UPDATE", "RENAME", "REPLACE", "TRUNCATE"];
@@ -535,5 +580,121 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// 落在磁盘上的老库（内存库没有路径，不备份）。测完删目录
+    struct DiskDb {
+        dir: std::path::PathBuf,
+    }
+    impl DiskDb {
+        fn old(tag: &str) -> (Self, Connection) {
+            let dir = std::env::temp_dir().join(format!(
+                "jp-corpus-migrate-{tag}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let conn = Connection::open(dir.join("corpus.db")).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE songs (
+                    id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL,
+                    year TEXT, album TEXT, genre TEXT, audio_path TEXT,
+                    corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT,
+                    cover_path TEXT, duration_sec REAL);
+                 INSERT INTO songs (id, title, artist) VALUES ('001', '夜に駆ける', 'YOASOBI');
+                 PRAGMA user_version = 20260907;",
+            )
+            .unwrap();
+            (Self { dir }, conn)
+        }
+        fn backups(&self) -> Vec<std::path::PathBuf> {
+            match std::fs::read_dir(self.dir.join("backups")) {
+                // macOS 的临时目录是符号链接（/var → /private/var），比较前都换成真实路径
+                Ok(entries) => entries.map(|e| std::fs::canonicalize(e.unwrap().path()).unwrap()).collect(),
+                Err(_) => Vec::new(),
+            }
+        }
+    }
+    impl Drop for DiskDb {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[test]
+    fn upgrading_an_old_database_on_disk_leaves_a_backup_of_the_old_version() {
+        let (db, conn) = DiskDb::old("backup");
+        let applied = apply(&conn).unwrap();
+        let backup = applied.backup.clone().expect("升级了就该有备份");
+        assert_eq!(db.backups(), vec![std::fs::canonicalize(&backup).unwrap()]);
+        assert!(applied.summary().contains("升级前备份在"), "{}", applied.summary());
+
+        // 备份是升级之前的样子：旧版本戳、没有新列，歌还在
+        let copy = Connection::open(&backup).unwrap();
+        assert_eq!(version(&copy).unwrap(), 20_260_907);
+        assert!(!column_exists(&copy, "songs", "deleted_at").unwrap());
+        let title: String = copy.query_row("SELECT title FROM songs", [], |r| r.get(0)).unwrap();
+        assert_eq!(title, "夜に駆ける");
+    }
+
+    #[test]
+    fn opening_a_current_database_again_makes_no_backup() {
+        let (db, conn) = DiskDb::old("no-backup");
+        apply(&conn).unwrap();
+        let again = apply(&conn).unwrap();
+        assert_eq!(again.backup, None);
+        assert_eq!(db.backups().len(), 1, "只有第一次升级那一份");
+    }
+
+    #[test]
+    fn live_songs_hides_removed_songs_and_follows_new_columns() {
+        let conn = old_database();
+        apply(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO songs (id, title, artist) VALUES ('002', 'アイドル', 'YOASOBI');
+             UPDATE songs SET deleted_at = '2026-11-06T00:00:00Z' WHERE id = '002';",
+        )
+        .unwrap();
+        let live: Vec<String> = conn
+            .prepare("SELECT id FROM live_songs ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(live, ["001"]);
+
+        // 视图写的是 *：songs 以后加的列，视图里自动就有
+        conn.execute_batch("ALTER TABLE songs ADD COLUMN some_future_column TEXT").unwrap();
+        assert_eq!(columns(&conn, "live_songs"), columns(&conn, "songs"));
+    }
+
+    #[test]
+    fn upgrading_replaces_a_live_view_left_by_an_older_build() {
+        let conn = old_database();
+        conn.execute_batch("CREATE VIEW live_songs AS SELECT 1 AS stale").unwrap();
+        apply(&conn).unwrap();
+        assert_eq!(columns(&conn, "live_songs"), columns(&conn, "songs"));
+    }
+
+    #[test]
+    fn every_live_view_can_be_dropped_by_name() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply(&conn).unwrap();
+        drop_live_views(&conn).unwrap();
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type = 'view'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 0, "live_views.sql 里每个视图都要能按名字删掉");
+    }
+
+    #[test]
+    fn a_fresh_database_also_has_the_live_songs_view() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply(&conn).unwrap();
+        assert_eq!(columns(&conn, "live_songs"), columns(&conn, "songs"));
     }
 }

@@ -678,7 +678,7 @@ pub fn quality_overview(conn: &Connection, limit: usize) -> Result<QualityOvervi
     {
         let mut stmt = conn.prepare(
             "SELECT s.id, s.title, s.artist, v.completeness, v.source_type, v.validation_json \
-             FROM lyric_versions v JOIN songs s ON s.id = v.song_id WHERE v.is_current=1 \
+             FROM live_lyric_versions v JOIN live_songs s ON s.id = v.song_id WHERE v.is_current=1 \
              ORDER BY v.completeness, s.id",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -727,29 +727,29 @@ pub fn quality_overview(conn: &Connection, limit: usize) -> Result<QualityOvervi
         stmt.query_map([], tokenizer_row)?.collect::<rusqlite::Result<Vec<_>>>()?
     };
     for t in &mut tokenizers {
-        t.line_count = conn.query_row("SELECT COUNT(*) FROM utterances WHERE tokenizer_run_id=?1", params![t.id], |r| r.get(0))?;
+        t.line_count = conn.query_row("SELECT COUNT(*) FROM live_utterances WHERE tokenizer_run_id=?1", params![t.id], |r| r.get(0))?;
     }
 
     Ok(QualityOverview {
-        songs: one("SELECT COUNT(*) FROM songs")?,
-        songs_with_lyrics: one("SELECT COUNT(DISTINCT song_id) FROM utterances")?,
-        songs_with_version: one("SELECT COUNT(DISTINCT song_id) FROM lyric_versions WHERE is_current=1")?,
-        legacy_versions: one("SELECT COUNT(*) FROM lyric_versions WHERE is_current=1 AND raw_text IS NULL")?,
+        songs: one("SELECT COUNT(*) FROM live_songs")?,
+        songs_with_lyrics: one("SELECT COUNT(DISTINCT song_id) FROM live_utterances")?,
+        songs_with_version: one("SELECT COUNT(DISTINCT song_id) FROM live_lyric_versions WHERE is_current=1")?,
+        legacy_versions: one("SELECT COUNT(*) FROM live_lyric_versions WHERE is_current=1 AND raw_text IS NULL")?,
         avg_completeness: conn.query_row(
-            "SELECT ROUND(AVG(completeness), 3) FROM lyric_versions WHERE is_current=1",
+            "SELECT ROUND(AVG(completeness), 3) FROM live_lyric_versions WHERE is_current=1",
             [],
             |r| r.get(0),
         )?,
         by_source: pairs(
-            "SELECT source_type, COUNT(*) FROM lyric_versions WHERE is_current=1 GROUP BY source_type ORDER BY 2 DESC, 1",
+            "SELECT source_type, COUNT(*) FROM live_lyric_versions WHERE is_current=1 GROUP BY source_type ORDER BY 2 DESC, 1",
         )?,
-        by_language: pairs("SELECT COALESCE(language,''), COUNT(*) FROM songs GROUP BY 1 ORDER BY 2 DESC, 1")?,
+        by_language: pairs("SELECT COALESCE(language,''), COUNT(*) FROM live_songs GROUP BY 1 ORDER BY 2 DESC, 1")?,
         issues,
         token_status: pairs(
-            "SELECT COALESCE(token_status,'unknown'), COUNT(*) FROM utterances GROUP BY 1 ORDER BY 2 DESC, 1",
+            "SELECT COALESCE(token_status,'unknown'), COUNT(*) FROM live_utterances GROUP BY 1 ORDER BY 2 DESC, 1",
         )?,
         lines_low_time_confidence: conn.query_row(
-            "SELECT COUNT(*) FROM utterances WHERE time_confidence IS NOT NULL AND time_confidence < ?1",
+            "SELECT COUNT(*) FROM live_utterances WHERE time_confidence IS NOT NULL AND time_confidence < ?1",
             params![LOW_TIME_CONFIDENCE],
             |r| r.get(0),
         )?,

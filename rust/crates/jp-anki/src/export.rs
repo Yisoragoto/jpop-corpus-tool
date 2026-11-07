@@ -69,7 +69,7 @@ pub fn pick_words(
     let mut sql = String::from(
         "SELECT t.lemma, t.pos, COUNT(*) AS n, COUNT(DISTINCT u.song_id) AS songs
          FROM tokens t
-         JOIN utterances u ON u.id = t.utterance_id
+         JOIN live_utterances u ON u.id = t.utterance_id
          WHERE COALESCE(t.lemma,'') <> ''",
     );
     // **数字必须按数字绑定。** 全当字符串塞进去的话 `n >= '1'` 恒假——
@@ -558,7 +558,7 @@ pub fn refresh_target(
 
 fn common_pos(conn: &Connection, lemma: &str) -> Result<String> {
     let mut stmt = conn.prepare(
-        "SELECT pos FROM tokens WHERE lemma=?1 GROUP BY pos ORDER BY COUNT(*) DESC LIMIT 1",
+        "SELECT pos FROM live_tokens WHERE lemma=?1 GROUP BY pos ORDER BY COUNT(*) DESC LIMIT 1",
     )?;
     let mut rows = stmt.query_map([lemma], |r| r.get::<_, Option<String>>(0))?;
     Ok(rows.next().transpose()?.flatten().unwrap_or_default())
@@ -623,6 +623,8 @@ mod tests {
                                        (4,1,2,'が','が','ADP');",
         )
         .unwrap();
+        conn.execute_batch("ALTER TABLE songs ADD COLUMN deleted_at TEXT").unwrap();
+        conn.execute_batch(jp_corpus::LIVE_VIEWS).unwrap();
         conn
     }
 

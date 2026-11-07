@@ -426,9 +426,15 @@ impl<'a> ScrapeStore<'a> {
     }
 
     pub fn summary(&self) -> Result<ScrapeSummary> {
+        self.summary_of("scrape_state")
+    }
+
+    /// 同 [`ScrapeStore::summary`]，但从 `source` 这张表（或视图）数。
+    /// 语料库那边传 `live_scrape_state`，被移出曲库的歌就不计入。`source` 只能是常量
+    pub fn summary_of(&self, source: &'static str) -> Result<ScrapeSummary> {
         let mut stmt = self
             .conn
-            .prepare("SELECT status, COUNT(*) FROM scrape_state GROUP BY status")?;
+            .prepare(&format!("SELECT status, COUNT(*) FROM {source} GROUP BY status"))?;
         let mut out = ScrapeSummary::default();
         for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))? {
             let (status, n) = row?;

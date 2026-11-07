@@ -144,7 +144,9 @@ CREATE TABLE IF NOT EXISTS songs (
             album      TEXT,
             genre      TEXT,
             audio_path TEXT
-        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT, language TEXT, isrc TEXT, recording_mbid TEXT, audio_fingerprint TEXT);
+        , corpus_type TEXT NOT NULL DEFAULT 'song', source_file TEXT, cover_path TEXT, duration_sec REAL, album_id INTEGER, added_at TEXT, release_date TEXT, language TEXT, isrc TEXT, recording_mbid TEXT, audio_fingerprint TEXT, deleted_at TEXT);
+-- 被移出曲库的歌通常很少：部分索引只收这几行，「排除移出的歌」那一步几乎不花时间
+CREATE INDEX IF NOT EXISTS idx_songs_removed ON songs(deleted_at) WHERE deleted_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS external_ids (
     entity_type TEXT, entity_id TEXT, provider TEXT, external_id TEXT, source TEXT, confidence REAL,

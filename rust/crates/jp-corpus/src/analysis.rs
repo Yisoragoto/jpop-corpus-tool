@@ -104,12 +104,12 @@ pub struct CorpusSnapshot {
 
 pub fn snapshot(conn: &Connection) -> Result<CorpusSnapshot> {
     let schema_version = crate::migrations::version(conn)?;
-    let (songs,): (i64,) = conn.query_row("SELECT COUNT(*) FROM songs", [], |r| Ok((r.get(0)?,)))?;
+    let (songs,): (i64,) = conn.query_row("SELECT COUNT(*) FROM live_songs", [], |r| Ok((r.get(0)?,)))?;
     let (lines, max_line): (i64, i64) =
-        conn.query_row("SELECT COUNT(*), COALESCE(MAX(id),0) FROM utterances", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        conn.query_row("SELECT COUNT(*), COALESCE(MAX(id),0) FROM live_utterances", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
     // 校正会删掉旧 token 重新插入，所以最大 id 会变——这正是要的
     let (tokens, max_token): (i64, i64) =
-        conn.query_row("SELECT COUNT(*), COALESCE(MAX(id),0) FROM tokens", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        conn.query_row("SELECT COUNT(*), COALESCE(MAX(id),0) FROM live_tokens", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let has_corrections = conn
         .query_row("SELECT 1 FROM sqlite_master WHERE type='table' AND name='token_corrections'", [], |_| Ok(()))
         .is_ok();
@@ -126,17 +126,17 @@ pub fn snapshot(conn: &Connection) -> Result<CorpusSnapshot> {
     // 歌的元数据（年份、演唱）会改变子语料的范围，也要进指纹
     let meta: String = conn.query_row(
         "SELECT COALESCE(group_concat(id || ':' || COALESCE(year,'') || ':' || COALESCE(album_id,''), ','),'') \
-         FROM (SELECT id, year, album_id FROM songs ORDER BY id)",
+         FROM (SELECT id, year, album_id FROM live_songs ORDER BY id)",
         [],
         |r| r.get(0),
     )?;
     let credits: i64 = conn
-        .query_row("SELECT COUNT(*) FROM track_credits", [], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM live_credits", [], |r| r.get(0))
         .unwrap_or(0);
     // 形态信息是后台慢慢补的（jp-import 的 annotate）：补到一半时按读音、正规化表记、活用形算的结果
     // 和补完时不一样，所以标了多少也进指纹。老库没有这一列时是 0
     let annotated: i64 = conn
-        .query_row("SELECT COUNT(*) FROM tokens WHERE pos_ja IS NOT NULL", [], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM live_tokens WHERE pos_ja IS NOT NULL", [], |r| r.get(0))
         .unwrap_or(0);
     let mut h = Fnv64::new();
     for part in [
@@ -240,7 +240,7 @@ pub(crate) fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> 
     let sql = format!(
         "SELECT u.song_id, u.id, u.text, t.surface, t.lemma, COALESCE(t.pos,''), \
                 COALESCE(t.reading,''), COALESCE(t.normalized,''), COALESCE(t.ctype,''), COALESCE(t.cform,'') \
-         FROM utterances u JOIN tokens t ON t.utterance_id = u.id \
+         FROM live_utterances u JOIN tokens t ON t.utterance_id = u.id \
          WHERE 1{clause} \
          ORDER BY u.song_id, u.line_idx, u.id, t.token_idx"
     );

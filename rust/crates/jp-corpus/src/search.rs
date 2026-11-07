@@ -202,7 +202,7 @@ fn spans_for(conn: &Connection, hits: &[RawHit]) -> Result<(HashMap<i64, crate::
         let marks = placeholders(chunk.len());
         let mut durations: HashMap<String, Option<f64>> = HashMap::new();
         {
-            let mut stmt = conn.prepare(&format!("SELECT id, duration_sec FROM songs WHERE id IN ({marks})"))?;
+            let mut stmt = conn.prepare(&format!("SELECT id, duration_sec FROM live_songs WHERE id IN ({marks})"))?;
             let rows = stmt.query_map(params_from_iter(chunk.iter()), |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))?;
             for row in rows {
                 let (id, d) = row?;
@@ -210,7 +210,7 @@ fn spans_for(conn: &Connection, hits: &[RawHit]) -> Result<(HashMap<i64, crate::
             }
         }
         let mut stmt = conn.prepare(&format!(
-            "SELECT song_id, id, line_idx, time_sec, text FROM utterances \
+            "SELECT song_id, id, line_idx, time_sec, text FROM live_utterances \
              WHERE song_id IN ({marks}) ORDER BY song_id, line_idx, id"
         ))?;
         let rows = stmt.query_map(params_from_iter(chunk.iter()), |r| {
@@ -259,7 +259,7 @@ fn fetch_hits(conn: &Connection, query: &KwicQuery, patterns: &[Vec<String>], ra
     if !query.person_ids.is_empty() {
         // 走 track_credits 的索引，而不是对 songs.artist 做 LIKE 扫描
         wheres.push_str(&format!(
-            " AND EXISTS (SELECT 1 FROM track_credits c \
+            " AND EXISTS (SELECT 1 FROM live_credits c \
                WHERE c.song_id = u.song_id AND c.person_id IN ({}))",
             placeholders(query.person_ids.len())
         ));
@@ -278,8 +278,8 @@ fn fetch_hits(conn: &Connection, query: &KwicQuery, patterns: &[Vec<String>], ra
                     MIN(u.id), MIN(u.line_idx), MIN(u.time_sec), u.text, \
                     MIN(t.token_idx), COUNT(*) \
              FROM tokens t \
-             JOIN utterances u ON u.id = t.utterance_id \
-             JOIN songs s ON s.id = u.song_id \
+             JOIN live_utterances u ON u.id = t.utterance_id \
+             JOIN live_songs s ON s.id = u.song_id \
              WHERE {wheres} \
              GROUP BY u.song_id, u.text \
              ORDER BY s.artist, s.title, MIN(u.time_sec)"
@@ -289,8 +289,8 @@ fn fetch_hits(conn: &Connection, query: &KwicQuery, patterns: &[Vec<String>], ra
             "SELECT u.song_id, s.artist, s.title, COALESCE(s.audio_path,''), \
                     u.id, u.line_idx, u.time_sec, u.text, t.token_idx, 1 \
              FROM tokens t \
-             JOIN utterances u ON u.id = t.utterance_id \
-             JOIN songs s ON s.id = u.song_id \
+             JOIN live_utterances u ON u.id = t.utterance_id \
+             JOIN live_songs s ON s.id = u.song_id \
              WHERE {wheres} \
              ORDER BY s.artist, s.title, u.time_sec, u.line_idx, t.token_idx"
         )
@@ -359,7 +359,7 @@ fn fetch_neighbours(conn: &Connection, hits: &[RawHit]) -> Result<HashMap<(Strin
         let clause = std::iter::repeat_n("(u.song_id=? AND u.line_idx=?)", chunk.len())
             .collect::<Vec<_>>()
             .join(" OR ");
-        let sql = format!("SELECT u.song_id, u.line_idx, u.text FROM utterances u WHERE {clause}");
+        let sql = format!("SELECT u.song_id, u.line_idx, u.text FROM live_utterances u WHERE {clause}");
         let mut stmt = conn.prepare(&sql)?;
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::with_capacity(chunk.len() * 2);
         for (song_id, line_idx) in chunk {
@@ -495,8 +495,8 @@ pub(crate) fn search_lyrics(conn: &Connection, text: &str, limit: i64) -> Result
     let mut stmt = conn.prepare(
         "SELECT u.song_id, s.artist, s.title, u.id, u.time_sec, u.text, bm25(utterances_fts) \
          FROM utterances_fts f \
-         JOIN utterances u ON u.id = f.rowid \
-         JOIN songs s ON s.id = u.song_id \
+         JOIN live_utterances u ON u.id = f.rowid \
+         JOIN live_songs s ON s.id = u.song_id \
          WHERE utterances_fts MATCH ?1 \
          ORDER BY bm25(utterances_fts) \
          LIMIT ?2",
@@ -526,7 +526,7 @@ fn search_lyrics_like(conn: &Connection, needle: &str, limit: i64) -> Result<Vec
 
     let mut stmt = conn.prepare(
         "SELECT u.song_id, s.artist, s.title, u.id, u.time_sec, u.text \
-         FROM utterances u JOIN songs s ON s.id = u.song_id \
+         FROM live_utterances u JOIN live_songs s ON s.id = u.song_id \
          WHERE u.text LIKE ?1 ESCAPE '\\' \
          ORDER BY instr(u.text, ?2), s.artist, s.title \
          LIMIT ?3",

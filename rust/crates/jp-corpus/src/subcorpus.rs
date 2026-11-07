@@ -64,7 +64,7 @@ impl Subcorpus {
         let mut params: Vec<Value> = Vec::new();
         if !self.performer_ids.is_empty() {
             parts.push(format!(
-                "EXISTS (SELECT 1 FROM track_credits c WHERE c.song_id = {alias}.id \
+                "EXISTS (SELECT 1 FROM live_credits c WHERE c.song_id = {alias}.id \
                  AND c.role = 'performer' AND c.person_id IN ({}))",
                 marks(self.performer_ids.len())
             ));
@@ -122,7 +122,7 @@ impl Subcorpus {
         }
         let (cond, params) = self.songs_where("sc");
         (
-            format!(" AND {song_col} IN (SELECT sc.id FROM songs sc WHERE {cond})"),
+            format!(" AND {song_col} IN (SELECT sc.id FROM live_songs sc WHERE {cond})"),
             params,
         )
     }
@@ -130,7 +130,7 @@ impl Subcorpus {
     /// 这个子语料里有哪些歌
     pub fn song_ids(&self, conn: &Connection) -> Result<HashSet<String>> {
         let (cond, params) = self.songs_where("s");
-        let mut stmt = conn.prepare(&format!("SELECT s.id FROM songs s WHERE {cond}"))?;
+        let mut stmt = conn.prepare(&format!("SELECT s.id FROM live_songs s WHERE {cond}"))?;
         let rows = stmt.query_map(params_from_iter(params), |row| row.get::<_, String>(0))?;
         Ok(rows.collect::<rusqlite::Result<HashSet<_>>>()?)
     }
@@ -143,7 +143,7 @@ impl Subcorpus {
         let mut parts = Vec::new();
         if !self.performer_ids.is_empty() {
             let mut stmt = conn.prepare(&format!(
-                "SELECT name FROM people WHERE id IN ({}) ORDER BY name",
+                "SELECT name FROM live_people WHERE id IN ({}) ORDER BY name",
                 marks(self.performer_ids.len())
             ))?;
             let names = stmt

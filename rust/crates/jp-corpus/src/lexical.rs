@@ -183,7 +183,7 @@ pub fn lexical_profile(conn: &Connection, query: &LexicalQuery) -> Result<Lexica
 /// 范围里每首歌的演唱者（`people.id`）
 fn performers_of(conn: &Connection, lines: &[Line]) -> Result<HashMap<String, Vec<i64>>> {
     let songs: HashSet<&str> = lines.iter().map(|l| l.song_id.as_str()).collect();
-    let mut stmt = conn.prepare("SELECT song_id, person_id FROM track_credits WHERE role = 'performer' ORDER BY song_id, person_id")?;
+    let mut stmt = conn.prepare("SELECT song_id, person_id FROM live_credits WHERE role = 'performer' ORDER BY song_id, person_id")?;
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
     let mut out: HashMap<String, Vec<i64>> = HashMap::new();
     for row in rows {
@@ -202,8 +202,8 @@ fn labels<'a>(conn: &Connection, group: LexicalGroup, keys: impl Iterator<Item =
     let mut out = HashMap::new();
     let sql = match group {
         LexicalGroup::Whole => return Ok(out),
-        LexicalGroup::Performer => "SELECT name FROM people WHERE id = ?",
-        LexicalGroup::Song => "SELECT artist || ' · ' || title FROM songs WHERE id = ?",
+        LexicalGroup::Performer => "SELECT name FROM live_people WHERE id = ?",
+        LexicalGroup::Song => "SELECT artist || ' · ' || title FROM live_songs WHERE id = ?",
     };
     let mut stmt = conn.prepare(sql)?;
     for key in keys {

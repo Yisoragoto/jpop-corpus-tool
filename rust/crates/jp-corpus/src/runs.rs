@@ -114,7 +114,7 @@ pub struct TokenizerUse {
 pub fn scope(conn: &Connection, filter: &StatsFilter) -> Result<Scope> {
     let (clause, values) = filter.clause();
     let mut stmt = conn.prepare(&format!(
-        "SELECT u.song_id, u.version_id, COUNT(*) FROM utterances u WHERE 1=1{clause} \
+        "SELECT u.song_id, u.version_id, COUNT(*) FROM live_utterances u WHERE 1=1{clause} \
          GROUP BY u.song_id, u.version_id ORDER BY u.song_id, u.version_id"
     ))?;
     let songs: Vec<ScopeSong> = stmt
@@ -128,7 +128,7 @@ pub fn scope(conn: &Connection, filter: &StatsFilter) -> Result<Scope> {
 fn tokenizers_in_scope(conn: &Connection, filter: &StatsFilter) -> Result<TokenizerUse> {
     let (clause, values) = filter.clause();
     let mut stmt = conn.prepare(&format!(
-        "SELECT u.tokenizer_run_id, COUNT(*) FROM utterances u WHERE 1=1{clause} \
+        "SELECT u.tokenizer_run_id, COUNT(*) FROM live_utterances u WHERE 1=1{clause} \
          AND EXISTS (SELECT 1 FROM tokens t WHERE t.utterance_id = u.id) GROUP BY u.tokenizer_run_id"
     ))?;
     let counts: Vec<(Option<i64>, i64)> =
@@ -723,7 +723,7 @@ pub fn facets(conn: &Connection) -> Result<FilterFacets> {
     let (year_min, year_max, songs_without_year): (Option<i32>, Option<i32>, i64) = conn.query_row(
         &format!(
             "SELECT MIN(CASE WHEN {year} > 0 THEN {year} END), MAX(CASE WHEN {year} > 0 THEN {year} END), \
-             SUM(CASE WHEN {year} > 0 THEN 0 ELSE 1 END) FROM songs"
+             SUM(CASE WHEN {year} > 0 THEN 0 ELSE 1 END) FROM live_songs"
         ),
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, Option<i64>>(2)?.unwrap_or(0))),
@@ -738,10 +738,10 @@ pub fn facets(conn: &Connection) -> Result<FilterFacets> {
         year_max,
         songs_without_year,
         genres: pairs(
-            "SELECT TRIM(genre), COUNT(*) FROM songs WHERE TRIM(COALESCE(genre,'')) <> '' GROUP BY LOWER(TRIM(genre)) ORDER BY 2 DESC, 1",
+            "SELECT TRIM(genre), COUNT(*) FROM live_songs WHERE TRIM(COALESCE(genre,'')) <> '' GROUP BY LOWER(TRIM(genre)) ORDER BY 2 DESC, 1",
         )?,
         languages: pairs(
-            "SELECT language, COUNT(*) FROM songs WHERE COALESCE(language,'') <> '' GROUP BY language ORDER BY 2 DESC, 1",
+            "SELECT language, COUNT(*) FROM live_songs WHERE COALESCE(language,'') <> '' GROUP BY language ORDER BY 2 DESC, 1",
         )?,
     })
 }

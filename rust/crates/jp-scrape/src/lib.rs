@@ -1464,7 +1464,8 @@ pub struct ReviewItem {
 pub fn summary(conn: &rusqlite::Connection) -> Result<jp_scraper::ScrapeSummary> {
     let store = ScrapeStore::new(conn);
     store.ensure_schema()?;
-    store.summary()
+    // 被移出曲库的歌不计入（视图见 jp-corpus 的 live_views.sql）
+    store.summary_of("live_scrape_state")
 }
 
 /// 复核队列。默认取需要人工确认的（`low_confidence`），也可以点名要别的状态。

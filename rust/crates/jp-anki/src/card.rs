@@ -91,8 +91,8 @@ pub fn examples(
                  WHERE u2.song_id = u.song_id AND u2.time_sec > u.time_sec) AS end_sec,
                 u.id
          FROM tokens t
-         JOIN utterances u ON u.id = t.utterance_id
-         JOIN songs s ON s.id = u.song_id
+         JOIN live_utterances u ON u.id = t.utterance_id
+         JOIN live_songs s ON s.id = u.song_id
          WHERE t.lemma = ?1",
     );
     let mut values: Vec<String> = vec![lemma.to_string()];
@@ -700,6 +700,8 @@ mod tests {
                 (4,4,0,'夜','夜','NOUN');",
         )
         .unwrap();
+        conn.execute_batch("ALTER TABLE songs ADD COLUMN deleted_at TEXT").unwrap();
+        conn.execute_batch(jp_corpus::LIVE_VIEWS).unwrap();
         conn
     }
 

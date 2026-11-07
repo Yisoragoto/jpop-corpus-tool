@@ -32,7 +32,7 @@ pub struct Completeness {
 
 pub(crate) fn completeness(conn: &Connection) -> Result<Completeness> {
     let scalar = |sql: &str| -> Result<i64> { Ok(conn.query_row(sql, [], |r| r.get(0))?) };
-    let tracks = scalar("SELECT COUNT(*) FROM songs")?;
+    let tracks = scalar("SELECT COUNT(*) FROM live_songs")?;
 
     // 新建的库还没刮过时可能连这张表都没有
     let has_scrape_state = scalar(
@@ -42,11 +42,11 @@ pub(crate) fn completeness(conn: &Connection) -> Result<Completeness> {
         (
             scalar(
                 "SELECT COUNT(DISTINCT song_id) FROM scrape_state \
-                 WHERE status = 'success' AND song_id IN (SELECT id FROM songs)",
+                 WHERE status = 'success' AND song_id IN (SELECT id FROM live_songs)",
             )?,
             scalar(
                 "SELECT COUNT(DISTINCT song_id) FROM scrape_state \
-                 WHERE status = 'skipped' AND song_id IN (SELECT id FROM songs)",
+                 WHERE status = 'skipped' AND song_id IN (SELECT id FROM live_songs)",
             )?,
         )
     } else {
@@ -60,25 +60,25 @@ pub(crate) fn completeness(conn: &Connection) -> Result<Completeness> {
         },
         skipped,
         track_covers: Count {
-            done: existing_files(conn, "SELECT cover_path FROM songs")?,
+            done: existing_files(conn, "SELECT cover_path FROM live_songs")?,
             total: tracks,
         },
         album_covers: Count {
-            done: existing_files(conn, "SELECT artwork_path FROM albums")?,
-            total: scalar("SELECT COUNT(*) FROM albums")?,
+            done: existing_files(conn, "SELECT artwork_path FROM live_albums")?,
+            total: scalar("SELECT COUNT(*) FROM live_albums")?,
         },
         album_info: Count {
-            done: scalar("SELECT COUNT(*) FROM albums WHERE COALESCE(album_type,'') <> '' AND track_count IS NOT NULL")?,
-            total: scalar("SELECT COUNT(*) FROM albums")?,
+            done: scalar("SELECT COUNT(*) FROM live_albums WHERE COALESCE(album_type,'') <> '' AND track_count IS NOT NULL")?,
+            total: scalar("SELECT COUNT(*) FROM live_albums")?,
         },
         lyrics: Count {
             done: scalar(
-                "SELECT COUNT(*) FROM songs s WHERE EXISTS (SELECT 1 FROM utterances u WHERE u.song_id = s.id)",
+                "SELECT COUNT(*) FROM live_songs s WHERE EXISTS (SELECT 1 FROM live_utterances u WHERE u.song_id = s.id)",
             )?,
             total: tracks,
         },
         durations: Count {
-            done: scalar("SELECT COUNT(*) FROM songs WHERE duration_sec > 0")?,
+            done: scalar("SELECT COUNT(*) FROM live_songs WHERE duration_sec > 0")?,
             total: tracks,
         },
     })

@@ -78,7 +78,7 @@ fn top(map: HashMap<String, i64>, n: usize) -> Vec<(String, i64)> {
 fn unannotated(conn: &Connection, scope: &Scope) -> Result<i64> {
     let (clause, params) = scope.subcorpus.and_clause("u.song_id");
     let sql = format!(
-        "SELECT COUNT(*) FROM tokens t JOIN utterances u ON u.id = t.utterance_id WHERE t.pos_ja IS NULL{clause}"
+        "SELECT COUNT(*) FROM tokens t JOIN live_utterances u ON u.id = t.utterance_id WHERE t.pos_ja IS NULL{clause}"
     );
     Ok(conn.query_row(&sql, rusqlite::params_from_iter(params), |r| r.get(0)).unwrap_or(0))
 }

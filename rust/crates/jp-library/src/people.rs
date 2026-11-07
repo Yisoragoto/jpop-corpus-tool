@@ -39,7 +39,7 @@ pub fn artist_roster(conn: &rusqlite::Connection) -> Result<Vec<ArtistRow>> {
             .optional()?
             .unwrap_or_default();
         let track_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM songs WHERE artist = ?1 OR artist LIKE ?1 || '/%'
+            "SELECT COUNT(*) FROM live_songs WHERE artist = ?1 OR artist LIKE ?1 || '/%'
                  OR artist LIKE '%/' || ?1 OR artist LIKE '%/' || ?1 || '/%'",
             rusqlite::params![name],
             |r| r.get(0),
