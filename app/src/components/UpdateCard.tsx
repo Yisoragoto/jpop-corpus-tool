@@ -58,6 +58,8 @@ export function UpdateCard({ icons, onError }: Props) {
       setStatus(next);
       setNote(next.message || (next.updateAvailable ? tr("有新版本 {v}", { v: next.latest?.buildId ?? next.latest?.version ?? "" }) : tr("已经是最新版（{current}）", { current: next.current })));
     } catch (err) {
+      // 别留着上一次的「已是最新」：这次没查成
+      setStatus(null);
       onError(err instanceof Error ? err.message : String(err));
     } finally {
       setChecking(false);

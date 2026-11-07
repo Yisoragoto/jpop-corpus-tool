@@ -43,6 +43,12 @@ pub(super) fn not_older(current: &str, candidate: &str) -> bool {
 #[serde(rename_all = "camelCase")]
 struct Manifest { build_id: String, version: String, file: String, sha256: String, size: u64 }
 
+/// API 给资产的 `digest`（`sha256:<hex>`），去掉前缀、转小写
+fn asset_sha256(asset: &serde_json::Value) -> Option<String> {
+    let hex = asset["digest"].as_str()?.strip_prefix("sha256:")?;
+    (hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())).then(|| hex.to_ascii_lowercase())
+}
+
 fn debug(transport: &impl Transport, platform: Platform) -> Result<Option<ReleaseView>> {
     let Some(body) = transport.get(&format!("{API_BASE}/tags/debug"))? else { return Ok(None) };
     let release: serde_json::Value = serde_json::from_slice(&body).context("debug 发布信息不是有效 JSON")?;
@@ -57,7 +63,14 @@ fn debug(transport: &impl Transport, platform: Platform) -> Result<Option<Releas
     ensure!(manifests.len() == 1, "debug 发布缺少唯一的 {name}，不能安装");
     let url = manifests[0]["browser_download_url"].as_str().context("debug 清单缺少下载地址")?;
     ensure!(url == format!("{prefix}{name}"), "debug 清单地址不在本仓库的 debug 发布下");
+    // 清单可能是经镜像拿到的（见 `GITHUB_MIRRORS`）：和 API 直连给的哈希逐字节对上才用
+    let manifest_sha = asset_sha256(manifests[0]).with_context(|| format!("debug 发布没给 {name} 的校验值，不能安装"))?;
     let bytes = transport.get(url)?.with_context(|| format!("debug 的 {name} 不存在，不能安装"))?;
+    {
+        use sha2::Digest;
+        let got = sha2::Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect::<String>();
+        ensure!(got == manifest_sha, "下到的 {name} 和 GitHub 记录的校验值对不上，不能安装");
+    }
     let manifest: Manifest = serde_json::from_slice(&bytes).with_context(|| format!("debug 的 {name} 缺少必要字段或格式损坏，不能安装"))?;
     ensure!(!manifest.build_id.is_empty() && manifest.build_id.len() <= 128 && manifest.build_id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')), "debug 构建编号无效，不能安装");
     ensure!(manifest.sha256.len() == 64 && manifest.sha256.bytes().all(|b| b.is_ascii_hexdigit()), "debug 缺少有效的 SHA-256，不能安装");
@@ -70,6 +83,7 @@ fn debug(transport: &impl Transport, platform: Platform) -> Result<Option<Releas
     let url = files[0]["browser_download_url"].as_str().context("debug 安装包缺少下载地址")?;
     ensure!(url == format!("{prefix}{}", manifest.file), "debug 安装包地址不在本仓库的 debug 发布下");
     ensure!(files[0]["size"].as_u64() == Some(manifest.size), "debug 发布资产大小与 latest.json 不一致");
+    ensure!(asset_sha256(files[0]).as_deref() == Some(manifest.sha256.to_ascii_lowercase().as_str()), "debug 安装包的校验值和 GitHub 记录的对不上，不能安装");
     Ok(Some(ReleaseView {
         build_id: Some(manifest.build_id), version: manifest.version, tag: "debug".into(),
         name: "debug build".into(), notes: release["body"].as_str().unwrap_or("").into(),
@@ -128,10 +142,22 @@ mod tests {
     fn stable_body() -> Value { json!({"tag_name":"v0.3.3","draft":false,"prerelease":false,"assets":[]}) }
     fn debug_body() -> Value { json!({"tag_name":"debug","draft":false,"prerelease":true,"assets":[
         {"name":"latest.json","browser_download_url":format!("{DOWNLOAD_PREFIX}debug/latest.json")},
-        {"name":"JPOP.Corpus.Tool_0.3.3-debug.exe","size":12,"browser_download_url":format!("{DOWNLOAD_PREFIX}debug/JPOP.Corpus.Tool_0.3.3-debug.exe")}
+        {"name":"JPOP.Corpus.Tool_0.3.3-debug.exe","size":12,"digest":format!("sha256:{}", "ab".repeat(32)),"browser_download_url":format!("{DOWNLOAD_PREFIX}debug/JPOP.Corpus.Tool_0.3.3-debug.exe")}
     ]}) }
     fn manifest(id: &str) -> Value { json!({"buildId":id,"version":"0.3.3","file":"JPOP.Corpus.Tool_0.3.3-debug.exe","sha256":"ab".repeat(32),"size":12}) }
+    /// 发布里清单那一项的 `digest` 按清单实际字节算好（GitHub 就是这么给的）；已经写了的不动
+    fn sign(mut body: Value, name: &str, manifest: &Value) -> Value {
+        use sha2::Digest;
+        let digest = sha2::Sha256::digest(serde_json::to_vec(manifest).unwrap()).iter().map(|b| format!("{b:02x}")).collect::<String>();
+        for asset in body["assets"].as_array_mut().unwrap() {
+            if asset["name"] == name && asset.get("digest").is_none() {
+                asset["digest"] = json!(format!("sha256:{digest}"));
+            }
+        }
+        body
+    }
     fn debug_script(body: Value, manifest: Value) -> Scripted {
+        let body = sign(body, "latest.json", &manifest);
         script(vec![("https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases/tags/debug", Some(body)),
             ("https://github.com/Yisoragoto/jpop-corpus-tool/releases/download/debug/latest.json", Some(manifest))])
     }
@@ -160,12 +186,13 @@ mod tests {
         let mut body = debug_body();
         body["assets"].as_array_mut().unwrap().extend([
             json!({"name":"latest-macos.json","browser_download_url":format!("{DOWNLOAD_PREFIX}debug/latest-macos.json")}),
-            json!({"name":MAC_DMG,"size":34,"browser_download_url":format!("{DOWNLOAD_PREFIX}debug/{MAC_DMG}")}),
+            json!({"name":MAC_DMG,"size":34,"digest":format!("sha256:{}", "cd".repeat(32)),"browser_download_url":format!("{DOWNLOAD_PREFIX}debug/{MAC_DMG}")}),
         ]);
         body
     }
     fn mac_manifest(id: &str) -> Value { json!({"buildId":id,"version":"0.3.3","file":MAC_DMG,"sha256":"cd".repeat(32),"size":34}) }
     fn mac_script(body: Value, manifest: Value) -> Scripted {
+        let body = sign(body, "latest-macos.json", &manifest);
         script(vec![("https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases/tags/debug", Some(body)),
             ("https://github.com/Yisoragoto/jpop-corpus-tool/releases/download/debug/latest-macos.json", Some(manifest))])
     }
@@ -209,6 +236,25 @@ mod tests {
         }
         let mut bad = manifest("new"); bad["sha256"] = json!("00");
         assert!(check_on(w, "0.3.2", "old", Channel::Debug, &debug_script(debug_body(),bad)).is_err());
+    }
+    #[test]
+    fn a_manifest_or_installer_that_does_not_match_the_api_digest_is_refused() {
+        let w = Platform::Windows;
+        // 镜像给了一份被改过的清单：API 记的是原来那份的哈希
+        let signed = sign(debug_body(), "latest.json", &manifest("new"));
+        let mut tampered = manifest("new"); tampered["buildId"] = json!("evil");
+        let transport = script(vec![("https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases/tags/debug", Some(signed)),
+            ("https://github.com/Yisoragoto/jpop-corpus-tool/releases/download/debug/latest.json", Some(tampered))]);
+        let err = check_on(w, "0.3.3", "old", Channel::Debug, &transport).unwrap_err().to_string();
+        assert!(err.contains("校验值对不上"), "{err}");
+        // 清单里的安装包哈希和 API 记的不一样
+        let mut other = manifest("new"); other["sha256"] = json!("ef".repeat(32));
+        let err = check_on(w, "0.3.3", "old", Channel::Debug, &debug_script(debug_body(), other)).unwrap_err().to_string();
+        assert!(err.contains("安装包的校验值"), "{err}");
+        // API 没给清单的哈希：不装
+        let mut unsigned = debug_body(); unsigned["assets"][0]["digest"] = json!(null);
+        let transport = script(vec![("https://api.github.com/repos/Yisoragoto/jpop-corpus-tool/releases/tags/debug", Some(unsigned))]);
+        assert!(check_on(w, "0.3.3", "old", Channel::Debug, &transport).is_err());
     }
     #[test]
     fn only_an_absent_debug_release_falls_back_to_stable() {
