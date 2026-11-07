@@ -1,5 +1,5 @@
 /**
- * 导入页上的「语料库文件夹」：启动时去哪些文件夹找新歌、现在里面有没有还没导入的。
+ * 曲库 › 来源 里的「启动时检查新歌」：开关，启动时去哪些文件夹找新歌、现在里面有没有还没导入的。
  *
  * 看哪些文件夹是后端从库里的歌所在的位置推出来的，用户没有亲手配过——所以**必须摆出来**：
  * 「我放进去的歌为什么没被发现」「为什么老提示那个下载目录」都只能在这里找到答案，
@@ -12,6 +12,8 @@ import { api, type NewAudio, type WatchedFolder } from "../api";
 import { messageOf } from "../errors";
 import { NO_IGNORES, pathKey, setIgnores, useNewSongIgnores, withIgnored, withoutIgnoredFolder } from "../newSongs";
 import { CommandButton } from "./CommandButton";
+import { Switch } from "./SettingCard";
+import { updateSettings, useAppSettings } from "../settings";
 import { tr } from "../i18n";
 
 interface Props {
@@ -33,12 +35,13 @@ function why(folder: WatchedFolder): string {
     case "parent":
       return tr("库里有 {songs} 首歌在这下面 · 连子文件夹一起看", { songs: folder.songs });
     case "source":
-      return folder.depth <= 1 ? tr("音乐文件夹 · 只看这一层") : tr("音乐文件夹 · 连子文件夹一起看");
+      return folder.depth <= 1 ? tr("来源文件夹 · 只看这一层") : tr("来源文件夹 · 连子文件夹一起看");
   }
 }
 
 export function WatchedFolders({ onReview, onError, disabled, refreshKey }: Props) {
   const ignores = useNewSongIgnores();
+  const settings = useAppSettings();
   const [found, setFound] = useState<NewAudio | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -47,7 +50,7 @@ export function WatchedFolders({ onReview, onError, disabled, refreshKey }: Prop
     try {
       setFound(await api.libraryNewAudio(ignores.folders, ignores.files));
     } catch (err) {
-      onError(tr("查不了语料库文件夹：{err}", { err: messageOf(err) }));
+      onError(tr("查不了新歌：{err}", { err: messageOf(err) }));
     } finally {
       setBusy(false);
     }
@@ -59,18 +62,25 @@ export function WatchedFolders({ onReview, onError, disabled, refreshKey }: Prop
   }, [check, refreshKey]);
 
   const unknown = found?.scan.items ?? [];
+  // 设了来源文件夹时，看的就是上面那几个，不再列一遍；只有靠推断的才要把理由摆出来
+  const inferred = found?.folders.some((folder) => folder.reason !== "source") ?? false;
   const fresh = found?.scan.summary.new ?? 0;
   const others = unknown.length - fresh;
 
   return (
-    <div className="card">
-      <div className="card-head">
-        <h2>{tr("语料库文件夹")}</h2>
-        <span className="muted small">{tr("启动时会看这些地方有没有新歌")}</span>
+    <div className="watched-section">
+      <div className="section-head">
+        <h2>{tr("启动时检查新歌")}</h2>
+        <span className="muted small">{tr("只提示，不自己导入")}</span>
+        <Switch
+          checked={settings.autoCheckNewSongs}
+          onChange={(v) => updateSettings({ autoCheckNewSongs: v })}
+          label={tr("启动时检查新歌")}
+        />
       </div>
-      {found !== null && (
+      {found !== null && (inferred || ignores.folders.length > 0) && (
         <ul className="watched-folders">
-          {found.folders.map((folder) => (
+          {found.folders.filter((folder) => inferred || folder.reason !== "source").map((folder) => (
             <li key={folder.path}>
               <span className="watched-path" title={folder.path}>
                 {folder.path}
@@ -113,8 +123,14 @@ export function WatchedFolders({ onReview, onError, disabled, refreshKey }: Prop
             onClick={() => onReview(unknown.map((item) => item.path))}
             disabled={busy || disabled}
             primary={fresh > 0}
-            title={tr("把它们放进下面的计划里，看完再决定导不导")}
           />
+        )}
+        {unknown.length > 0 && (
+          <button
+            className="link-btn"
+            disabled={busy || disabled}
+            onClick={() => setIgnores(withIgnored(ignores, { files: unknown.map((item) => item.path) }))}
+          >{tr("不再提示这些")}</button>
         )}
         <span className="muted small">
           {found === null

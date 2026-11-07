@@ -32,6 +32,7 @@ import { formatRelative } from "../relativeTime";
 import { useAppSettings } from "../settings";
 import type { LibraryActions } from "../useLibrary";
 import { tr } from "../i18n";
+import { CommandButton } from "../components/CommandButton";
 
 interface Props {
   actions: LibraryActions;
@@ -43,9 +44,11 @@ interface Props {
   playbackSongId: string;
   /** 库里的歌变了就加一（启动横幅上直接导入新歌时，人还停在这一页） */
   libraryVersion: number;
+  /** 曲库是空的时候才给：「继续听」那一块换成「添加音乐」 */
+  onAddMusic?: (() => void) | undefined;
 }
 
-export function HomePage({ actions, onNavigate, onError, onPickHit, playbackSongId, libraryVersion }: Props) {
+export function HomePage({ actions, onNavigate, onError, onPickHit, playbackSongId, libraryVersion, onAddMusic }: Props) {
   const [home, setHome] = useState<HomeSummary | null>(null);
   /** 今天制了几张卡。没装 Anki 是 null，那一句就不显示 */
   const [cardsToday, setCardsToday] = useState<number | null>(null);
@@ -103,7 +106,11 @@ export function HomePage({ actions, onNavigate, onError, onPickHit, playbackSong
       <div className="home-grid">
         <section className="home-panel home-main">
           <h2 className="home-panel-title">{tr("继续听")}</h2>
-          {home.continueTrack === null ? (
+          {onAddMusic ? (
+            <div className="home-add">
+              <CommandButton icon="add" label={tr("添加音乐")} primary onClick={onAddMusic} />
+            </div>
+          ) : home.continueTrack === null ? (
             <p className="section-empty">{tr("还没有收听记录。去曲库挑一首，听满 5 秒就会出现在这里。")}</p>
           ) : (
             <ContinueHero

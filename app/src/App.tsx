@@ -11,16 +11,17 @@ import { Icon } from "./components/Icon";
  * 不是「你最近在听什么」。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "./events";
 
-import { api, NO_DICTIONARY, type HealthReport, type MatchField, type NewAudio, type Overview, type QuickHit, type ReleaseInfo } from "./api";
+import { api, NO_DICTIONARY, type HealthReport, type LyricsUpgradeProgress, type MatchField, type NewAudio, type Overview, type QuickHit, type ReleaseInfo } from "./api";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { LanguagePicker } from "./components/LanguagePicker";
 import { needsLanguageChoice } from "./i18n";
 import { messageOf } from "./errors";
 import { CommandPalette, type PaletteCommand, type PaletteMode } from "./components/CommandPalette";
 import { NavIcon } from "./components/NavIcons";
-import { NewSongsBanner } from "./components/NewSongsBanner";
+import { CorpusStatus } from "./components/CorpusStatus";
 import { invalidatePerformers } from "./components/PerformerPicker";
 import { NowCaption } from "./components/NowCaption";
 import type { WordPanelLinks } from "./components/WordWhere";
@@ -32,14 +33,16 @@ import { useAppSettings } from "./settings";
 import { Stat } from "./components/Stat";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { HomePage } from "./pages/HomePage";
-import { ImportPage, type ImportRequest } from "./pages/ImportPage";
-import { currentIgnores, newItems, setIgnores, withIgnored } from "./newSongs";
+import { currentIgnores, newItems } from "./newSongs";
 import { AnkiPage } from "./pages/AnkiPage";
 import { DictionaryPage } from "./pages/DictionaryPage";
-import { ScrapePage } from "./pages/ScrapePage";
 import { KwicPage, type KwicRequest } from "./pages/KwicPage";
 import type { WordJump } from "./wordCloud";
-import { LibraryPage } from "./pages/LibraryPage";
+import { LibraryPage, type LibraryTool } from "./pages/LibraryPage";
+import { CommandButton } from "./components/CommandButton";
+import { classifyDrop, dropsClaimed } from "./dropFiles";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openSettingsSection, SettingsPage } from "./pages/SettingsPage";
 import { useLibrary } from "./useLibrary";
 import { toggleFullscreen } from "./fullscreen";
@@ -52,21 +55,19 @@ import { installHooks } from "./e2e";
 /** 和 styles.css「窗口宽窄」那一节的断点一致 */
 const NARROW_WINDOW = "(max-width: 1100px)";
 
-type Route = "home" | "kwic" | "library" | "analytics" | "import" | "scrape" | "anki" | "dict" | "settings";
+type Route = "home" | "kwic" | "library" | "analytics" | "anki" | "dict" | "settings";
 
 const ROUTES: { key: Route; label: string; hint: string }[] = [
   { key: "home", label: tr("首页"), hint: tr("继续听 · 今日 · 语料库") },
   { key: "kwic", label: tr("检索"), hint: tr("KWIC 语境检索与歌词全文") },
-  { key: "library", label: tr("资料库"), hint: tr("音乐人 · 专辑 · 歌曲 · 关系网 · 时间轴 · 词云") },
+  { key: "library", label: tr("曲库"), hint: tr("音乐人 · 专辑 · 歌曲 · 关系网 · 时间轴 · 词云") },
   { key: "analytics", label: tr("分析"), hint: tr("词表 · 词簇 · 活用与写法 · 丰富度 · 对比") },
-  { key: "import", label: tr("导入"), hint: tr("扫描目录 · 复核 · 写入语料") },
-  { key: "scrape", label: tr("刮削"), hint: tr("识别 · 补 metadata · 封面") },
   { key: "anki", label: "Anki", hint: tr("选词 · 用语料例句做卡片") },
   { key: "dict", label: tr("词典"), hint: tr("查词 · 释义 · 音调 · 词频") },
 ];
 
 /** 设置不排在导航列表里，钉在左下角——和 Windows 11 设置、Niratan 一样 */
-const SETTINGS_ROUTE = { key: "settings" as const, label: tr("设置"), hint: tr("外观 · 歌词 · 词典 · 制卡 · 曲库维护 · 更新") };
+const SETTINGS_ROUTE = { key: "settings" as const, label: tr("设置"), hint: tr("外观 · 歌词 · 查词 · 制卡 · 语料处理 · 更新") };
 
 type Status = { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready" };
 
@@ -150,8 +151,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 启动时看一眼语料库的文件夹里有没有还没导入的音频（设置里可关）。只读；发现了出一条横幅，
-  // 导不导由人决定。放在这里而不是导入页：用户往文件夹里丢了歌，不该还得记着去导入页点一下。
+  // 启动时看一眼来源文件夹里有没有还没导入的音频（曲库 › 来源里可关）。只读；发现了记在导航栏底部的状态点上，
+  // 导不导由人决定。放在这里而不是曲库里：用户往文件夹里丢了歌，不该还得记着去点一下。
   const [newAudio, setNewAudio] = useState<NewAudio | null>(null);
   const ready = status.kind === "ready";
   useEffect(() => {
@@ -175,10 +176,42 @@ export default function App() {
     // 开关改了之后不重新跑：这一轮已经查过了
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
-  // 横幅上点「查看」：带着那几个文件去导入页，导入页用掉后清空
-  const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
-  const consumeImportRequest = useCallback(() => setImportRequest(null), []);
-  useEffect(() => installHooks((path) => { setRoute("import"); setImportRequest({ paths: [], folder: path, nonce: Date.now() }); }), []);
+  // 曲库里的工具视图（来源、整理、添加音乐）：请求 + 消费，和全屏歌词一样
+  const [libraryTool, setLibraryTool] = useState<LibraryTool | null>(null);
+  const consumeLibraryTool = useCallback(() => setLibraryTool(null), []);
+  const openTool = useCallback((tool: LibraryTool) => {
+    setRoute("library");
+    setLibraryTool(tool);
+  }, []);
+  useEffect(() => installHooks((path) => openTool({ kind: "add", nonce: Date.now(), scan: { paths: [], folder: path, nonce: Date.now() } })), [openTool]);
+
+  // 拖进窗口：一个文件夹或几首音频，去「添加音乐」扫。来源页挂着时它自己接（拖进来是加来源）
+  const [dropping, setDropping] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const off = getCurrentWebview().onDragDropEvent((event) => {
+      if (!alive || dropsClaimed()) return;
+      const kind = event.payload.type;
+      if (kind === "enter" || kind === "over") setDropping(true);
+      else if (kind === "leave") setDropping(false);
+      else if (kind === "drop") {
+        setDropping(false);
+        const target = classifyDrop(event.payload.paths);
+        if (target === null) return;
+        if (target.kind === "mixed") setNotice(tr("一次拖一个文件夹，或者只拖音频文件"));
+        else
+          openTool({
+            kind: "add",
+            nonce: Date.now(),
+            scan: target.kind === "folder" ? { paths: [], folder: target.path, nonce: Date.now() } : { paths: target.paths, nonce: Date.now() },
+          });
+      }
+    });
+    return () => {
+      alive = false;
+      void off.then((f) => f());
+    };
+  }, [openTool]);
 
   // 字体探测很贵（本机 401 个名字冷着跑 1.8 秒），空闲时先备好，
   // 免得用户点开「显示」面板或设置页时卡在那里。结果会存进 localStorage。
@@ -321,6 +354,21 @@ export default function App() {
     setLibraryVersion((v) => v + 1);
   }, [actions, refreshOverview]);
 
+  // 导入时勾了「补歌词」，歌词是后台一首首补上的：补到一首就重拉当前这首的歌词，整批完了再刷新统计。
+  // 不然刚导入、正开着的那首会一直显示「还没有歌词」
+  const lyricsSync = useRef({ reload: actions.reloadLyrics, onImported, done: 0 });
+  lyricsSync.current.reload = actions.reloadLyrics;
+  lyricsSync.current.onImported = onImported;
+  useEffect(() => {
+    const off = listen<LyricsUpgradeProgress>("lyrics-upgrade://progress", ({ payload }) => {
+      const sync = lyricsSync.current;
+      if (payload.done > sync.done || !payload.running) void sync.reload();
+      sync.done = payload.running ? payload.done : 0;
+      if (!payload.running && payload.total > 0) sync.onImported();
+    });
+    return () => void off.then((stop) => stop());
+  }, []);
+
   // 面板里选中一条结果 → 跳到对应的地方。
   // 每种结果的落点不同，这个映射就是「搜索不是死胡同」的具体实现。
   const onPickHit = useCallback(
@@ -374,12 +422,13 @@ export default function App() {
       { id: "fullscreen", label: tr("全屏 / 退出全屏"), hint: "F11", run: () => toggleFullscreen() },
       { id: "go-home", label: tr("打开 首页"), hint: tr("继续听 · 今日 · 语料库"), run: () => setRoute("home") },
       { id: "go-kwic", label: tr("打开 检索"), hint: "KWIC", run: () => setRoute("kwic") },
-      { id: "go-library", label: tr("打开 资料库"), hint: tr("音乐人 · 专辑 · 歌曲"), run: () => setRoute("library") },
+      { id: "go-library", label: tr("打开 曲库"), hint: tr("音乐人 · 专辑 · 歌曲"), run: () => setRoute("library") },
       { id: "go-analytics", label: tr("打开 分析"), run: () => setRoute("analytics") },
-      { id: "go-import", label: tr("打开 导入"), hint: tr("扫描目录并写入语料"), run: () => setRoute("import") },
-      { id: "go-scrape", label: tr("打开 刮削"), hint: tr("识别 · metadata · 封面"), run: () => setRoute("scrape") },
+      { id: "add-music", label: tr("添加音乐"), hint: tr("选文件夹或几首歌"), run: () => openTool({ kind: "add", nonce: Date.now() }) },
+      { id: "go-sources", label: tr("打开 曲库 › 来源"), hint: tr("来源文件夹 · 已移出的歌"), run: () => openTool({ kind: "sources", nonce: Date.now() }) },
+      { id: "go-tidy", label: tr("打开 曲库 › 整理"), hint: tr("识别 · 封面 · 歌词 · 时长"), run: () => openTool({ kind: "tidy", nonce: Date.now() }) },
       { id: "go-anki", label: tr("打开 Anki"), hint: tr("用语料例句做卡片"), run: () => setRoute("anki") },
-      { id: "go-settings", label: tr("打开 设置"), hint: tr("外观 · 歌词 · 词典 · 制卡"), run: () => setRoute("settings") },
+      { id: "go-settings", label: tr("打开 设置"), hint: tr("外观 · 歌词 · 查词 · 制卡"), run: () => setRoute("settings") },
       {
         id: "search",
         label: tr("全局搜索…"),
@@ -389,7 +438,7 @@ export default function App() {
       {
         id: "backfill",
         label: tr("回填时长"),
-        hint: tr("扫描音频文件补 duration_sec"),
+        hint: tr("补上缺的歌曲时长"),
         run: async () => {
           const report = await api.backfillDurations();
           setNotice(
@@ -400,7 +449,7 @@ export default function App() {
         },
       },
     ],
-    [playback.playState, playback.loopRegion, audioReady, refreshOverview],
+    [playback.playState, playback.loopRegion, audioReady, refreshOverview, openTool],
   );
 
   if (status.kind === "loading") {
@@ -409,12 +458,7 @@ export default function App() {
   if (status.kind === "error") {
     return (
       <div className="center">
-        <div className="error-box">
-          <h2>{tr("启动失败")}</h2>
-          <p>{status.message}</p>
-          <p className="muted">{tr("先跑")}{" "}<code>python legacy/scripts/migrate_db.py</code>{" "}{tr("和{v}", { v: " " })}<code>python scripts/backfill_library.py</code>
-          </p>
-        </div>
+        <StartupError message={status.message} />
       </div>
     );
   }
@@ -422,7 +466,7 @@ export default function App() {
   const current = [...ROUTES, SETTINGS_ROUTE].find((r) => r.key === route) ?? { key: route, label: "", hint: "" };
 
   return (
-    <div className="app" data-route={route} data-track-count={overview?.tracks ?? 0} data-library-path={health?.dbPath ?? ""}>
+    <div className={`app ${dropping ? "dropping" : ""}`} data-route={route} data-track-count={overview?.tracks ?? 0} data-library-path={health?.dbPath ?? ""}>
       <aside className={`sidebar ${navOpen ? "" : "collapsed"}`}>
         <div className="sidebar-head">
           <button
@@ -450,6 +494,20 @@ export default function App() {
         </nav>
 
         <div className="sidebar-foot">
+          <CorpusStatus
+            version={libraryVersion}
+            newSongs={newAudio === null ? 0 : newItems(newAudio.scan).length}
+            onNewSongs={() => {
+              const paths = newAudio === null ? [] : newItems(newAudio.scan).map((item) => item.path);
+              setNewAudio(null);
+              openTool({ kind: "add", nonce: Date.now(), scan: { paths, nonce: Date.now() } });
+            }}
+            onSources={() => openTool({ kind: "sources", nonce: Date.now() })}
+            onCorpusSettings={() => {
+              openSettingsSection("corpus");
+              setRoute("settings");
+            }}
+          />
           <button className="nav-search" onClick={() => setPalette("search")} title={tr("搜索全库 (Ctrl K)")}>
             <NavIcon name="search" />
             <span className="nav-label">{tr("搜索全库")}</span>
@@ -481,6 +539,12 @@ export default function App() {
               <Stat label={tr("词汇")} value={overview.vocabulary} />
             </div>
           )}
+          {/* 每页最多一个主按钮，固定在页头右侧。空曲库不显示：那时整页就是「添加音乐」 */}
+          {route === "library" && (overview?.tracks ?? 0) > 0 && (
+            <span className="cmdbar-primary">
+              <CommandButton icon="add" label={tr("添加音乐")} primary onClick={() => openTool({ kind: "add", nonce: Date.now() })} />
+            </span>
+          )}
         </header>
 
         {health && !health.audioReady && (
@@ -500,24 +564,6 @@ export default function App() {
         {notice && !notice.includes(NO_DICTIONARY) && (
           <div className="banner error" role="alert"><Icon name="info" /><span>{notice}</span><button className="icon-btn banner-close" onClick={() => setNotice(null)} aria-label={tr("关闭")}><Icon name="close" /></button></div>
         )}
-        {newAudio !== null && (
-          <NewSongsBanner
-            found={newAudio}
-            onImported={onImported}
-            onReview={(paths) => {
-              setImportRequest({ paths, nonce: Date.now() });
-              setRoute("import");
-              setNewAudio(null);
-            }}
-            onIgnore={(paths) => {
-              setIgnores(withIgnored(currentIgnores(), { files: paths }));
-              setNewAudio(null);
-            }}
-            onDismiss={() => setNewAudio(null)}
-            onError={onError}
-          />
-        )}
-
         <div className="body">
         {route === "home" && (
           <HomePage
@@ -527,6 +573,7 @@ export default function App() {
             onPickHit={onPickHit}
             playbackSongId={playback.songId}
             libraryVersion={libraryVersion}
+            onAddMusic={overview && overview.tracks === 0 ? () => openTool({ kind: "add", nonce: Date.now() }) : undefined}
           />
         )}
         {route === "kwic" && (
@@ -560,27 +607,14 @@ export default function App() {
             onSongConsumed={consumeSong}
             examplesWanted={examplesWanted}
             onExamplesConsumed={consumeExamples}
-            onReviewFiles={(paths) => {
-              setImportRequest({ paths, nonce: Date.now() });
-              setRoute("import");
-            }}
             onLibraryReload={onImported}
+            toolWanted={libraryTool}
+            onToolConsumed={consumeLibraryTool}
           />
-        )}
-        {route === "import" && (
-          <ImportPage
-            onError={onError}
-            onImported={onImported}
-            request={importRequest}
-            onRequestConsumed={consumeImportRequest}
-          />
-        )}
-        {route === "scrape" && (
-          <ScrapePage onError={onError} onChanged={onImported} />
         )}
         {route === "anki" && <AnkiPage onError={onError} />}
         {route === "settings" && (
-          <SettingsPage health={health} onError={onError} onNavigate={setRoute} onChanged={refreshOverview} />
+          <SettingsPage health={health} onError={onError} onChanged={refreshOverview} />
         )}
         {route === "dict" && (
           <DictionaryPage
@@ -596,7 +630,6 @@ export default function App() {
           <AnalyticsPage
             key={libraryVersion}
             overview={overview}
-            onOverviewChanged={refreshOverview}
             actions={actions}
             onNavigate={goLibrary}
             wordLinks={wordLinks}
@@ -651,6 +684,40 @@ export default function App() {
         onOpenStage={library.selected ? openStage : null}
         onError={onError}
       />
+    </div>
+  );
+}
+
+/** 打不开语料库：一句原因，加两条出路。不再叫人去跑脚本（那是开发机上的事，见 README） */
+function StartupError({ message }: { message: string }) {
+  const [report, setReport] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const showReport = async () => {
+    try {
+      setReport(await api.diagnosticsReport());
+    } catch (err) {
+      setNote(messageOf(err));
+    }
+  };
+  const pickLibrary = async () => {
+    try {
+      const picked = await openDialog({ directory: true, title: tr("选择语料库目录") });
+      if (typeof picked !== "string") return;
+      setNote(tr("{rootNote}，重启后生效。", { rootNote: await api.setLibraryRoot(picked) }));
+    } catch (err) {
+      setNote(messageOf(err));
+    }
+  };
+  return (
+    <div className="error-box">
+      <h2>{tr("打不开语料库")}</h2>
+      <p>{message}</p>
+      <div className="toolbar">
+        <CommandButton icon="report" label={tr("打开诊断")} onClick={() => void showReport()} />
+        <CommandButton icon="folder" label={tr("换一个库…")} onClick={() => void pickLibrary()} />
+      </div>
+      {note !== "" && <p className="muted small">{note}</p>}
+      {report !== null && <pre className="diagnostics-text">{report}</pre>}
     </div>
   );
 }

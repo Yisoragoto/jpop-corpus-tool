@@ -129,14 +129,14 @@ export function DictionaryPage({ onError, onOpenSettings, wordLinks }: Props) {
       <div className="page dict-page empty">
         <div className="empty-state">
           <Icon name="dict" size={46} />
-          <h2>{tr("还没有词典")}</h2>
+          <h2>{tr("还没有查词词典")}</h2>
           <p>
-            {tr("导入 Yomitan 格式的 zip 就能查词：Jitendex、大辞泉、明鏡、JPDB 词频、アクセント辞典都认。导进来之后，曲库里点歌词上的词也会出释义。")}
+            {tr("Yomitan 格式的 zip：Jitendex、大辞泉、JPDB 词频……")}
           </p>
           <div className="empty-actions">
             <CommandButton
               icon="import"
-              label={importing ? tr("正在导入…") : tr("导入 .zip")}
+              label={importing ? tr("正在导入…") : tr("导入词典")}
               onClick={() => {
                 void pickDictionaryFiles(onError).then(async (paths) => {
                   if (paths.length === 0) return;
@@ -157,7 +157,6 @@ export function DictionaryPage({ onError, onOpenSettings, wordLinks }: Props) {
               />
             )}
           </div>
-          <button className="link-btn" onClick={onOpenSettings}>{tr("在设置里管理词典")}</button>
         </div>
       </div>
     );

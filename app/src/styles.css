@@ -418,6 +418,8 @@ code { background: var(--code-fill); padding: 1px 5px; border-radius: 4px; font-
 
 .error-box { max-width: 560px; border: 1px solid var(--danger); border-radius: 8px; padding: 20px; }
 .error-box h2 { margin: 0 0 8px; color: var(--danger); font-size: 15px; }
+.error-box .toolbar { padding: 0; border: 0; margin-top: 12px; }
+.diagnostics-text { max-height: 40vh; overflow: auto; margin: 12px 0 0; padding: 10px; font-size: 11px; white-space: pre-wrap; background: var(--subtle-hover); border-radius: 6px; user-select: text; }
 
 /* ── 外壳：左侧导航 + 页头命令栏（照 WinUI 的 NavigationView） ── */
 .app {
@@ -459,6 +461,28 @@ code { background: var(--code-fill); padding: 1px 5px; border-radius: 4px; font-
 .nav-label { overflow: hidden; text-overflow: ellipsis; }
 
 .sidebar-foot { margin-top: auto; padding-top: 8px; }
+
+/* 导航栏底部的状态点：有要处理的才出现，点开是数量列表 */
+.corpus-status { position: relative; }
+.nav-status {
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 0 12px; min-height: 36px;
+  border-radius: 4px; color: var(--fg); white-space: nowrap; font: 400 14px/20px var(--font-text);
+}
+.nav-status:hover { background: var(--subtle-hover); }
+.sidebar.collapsed .nav-status { justify-content: center; padding-inline: 0; }
+.sidebar.collapsed .status-count { display: none; }
+.status-dot-icon { position: relative; display: inline-flex; }
+.status-dot { position: absolute; top: -2px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--shell); }
+.status-count { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.status-menu {
+  position: absolute; left: 4px; bottom: calc(100% + 4px); z-index: 30; min-width: 200px;
+  display: flex; flex-direction: column; padding: 4px; border-radius: 8px;
+  background: var(--surface-pop); backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid var(--flyout-stroke); box-shadow: var(--elevation-flyout);
+}
+.status-menu button { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 7px 10px; border-radius: 4px; color: var(--fg); font-size: 13px; text-align: left; }
+.status-menu button:hover { background: var(--subtle-hover); }
+.status-menu button svg { color: var(--muted); }
 .nav-search { width: 100%; }
 .nav-search kbd {
   margin-left: auto; font-size: 10px; font-family: inherit; color: var(--muted);
@@ -478,6 +502,13 @@ code { background: var(--code-fill); padding: 1px 5px; border-radius: 4px; font-
 .page-head h1 { margin: 0; letter-spacing: normal;  font: 600 28px/36px var(--font-display);}
 .page-head span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmdbar .stats { margin-left: auto; }
+.home-add {
+  padding: 4px 0 2px;
+}
+
+.cmdbar-primary { flex: none; margin-left: 20px; }
+/* 来源、整理、添加音乐里各有自己的主按钮，页头那个让开 */
+.app:has(.tool-pane, .sources-pane, .library-empty) .cmdbar-primary { display: none; }
 .stats { display: flex; gap: 18px; }
 .stat { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
 .stat b { font-size: 14px; font-variant-numeric: tabular-nums; }
@@ -618,7 +649,8 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 }
 .link-btn.warn { color: var(--warn); }
 .link-btn.danger { color: var(--danger); }
-.page.tools.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; border-radius: 8px; }
+/* 拖文件进窗口：整块内容区描一圈虚线，松手就去「添加音乐」 */
+.app.dropping .main { outline: 2px dashed var(--accent); outline-offset: -4px; }
 
 /* ── 曲库维护 ── */
 .track-side { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 0 0 auto; }
@@ -626,11 +658,6 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 .track-actions { display: flex; gap: 10px; align-items: center; font-size: 12px; }
 .confirm-delete { display: flex; gap: 8px; align-items: center; color: var(--warn); font-size: 12px; }
 .maintain-note { margin: 0 0 12px; padding: 8px 12px; border-radius: 6px; background: var(--accent-soft); font-size: 12px; }
-.missing-banner {
-  width: 100%; text-align: left; margin-bottom: 8px; padding: 7px 10px; border-radius: 6px;
-  background: var(--caution-bg); color: var(--warn); font-size: 12px;
-}
-.missing-banner:hover { background: var(--caution-bg); }
 .song-editor {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 14px;
   margin: 0 0 16px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
@@ -1909,25 +1936,7 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 .sudachi-close { flex: 0 0 auto; color: inherit; padding: 0 2px; border-radius: 4px; width: 32px; height: 32px; display: grid; place-items: center; opacity: 1; }
 .sudachi-close:hover { opacity: 1; }
 
-/* ── 启动时查到新歌的横幅：是个好消息，用强调色，不用警告的黄和报错的红 ── */
-.banner.new-songs {
-  display: flex; align-items: center; gap: 12px;
-  color: var(--fg);
-  background: var(--success-bg);
-}
-.new-songs-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.new-songs-text strong { font-weight: 600; color: var(--fg); }
-.new-songs-go {
-  flex: 0 0 auto; padding: 4px 12px;
-  background: var(--accent); color: var(--accent-ink); font-weight: 600; border-radius: 4px; font-size: 14px; min-height: 32px;
-}
-.new-songs-go:hover:not(:disabled) { filter: brightness(1.1); }
-.new-songs-go:disabled { opacity: 1; background: var(--accent-disabled); color: var(--accent-ink-disabled); }
-.banner.new-songs .link-btn { flex: 0 0 auto; }
-.new-songs-close { flex: 0 0 auto; color: inherit; padding: 0 2px; border-radius: 4px; width: 32px; height: 32px; display: grid; place-items: center; opacity: 1; }
-.new-songs-close:hover { opacity: 1; }
-
-/* ── 导入页：语料库文件夹 ── */
+/* ── 曲库 › 来源：启动时检查新歌 ── */
 .watched-folders { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .watched-folders li { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
 .watched-folders .watched-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1935,9 +1944,26 @@ button.chip:not(:disabled):hover { color: var(--fg); background: var(--btn-fill-
 .watched-folders .link-btn { flex: 0 0 auto; margin-left: auto; }
 .watched-folders li.off .watched-path { color: var(--muted); text-decoration: line-through; }
 
-/* ── 曲库 › 音乐文件夹：行与行之间是分隔线，不套方框 ── */
+/* ── 曲库 › 来源：行与行之间是分隔线，不套方框 ── */
 .library-sources { width: 100%; max-width: 960px; min-width: 0; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 .sources-pane > .nav-back { margin-bottom: 8px; }
+.sources-missing, .watched-section { width: 100%; max-width: 960px; margin: 28px auto 0; display: flex; flex-direction: column; gap: 10px; }
+.sources-missing > .section-head > .cmd-btn, .watched-section > .section-head > .switch { margin-left: auto; }
+.watched-section .toolbar { padding: 0; border: 0; }
+
+/* ── 曲库 › 整理、添加音乐：原来的整页搬进曲库，占中栏加右栏 ── */
+.tool-pane { grid-column: 3 / -1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding: 0; }
+.tool-pane > .nav-back { margin: 16px 0 0 20px; align-self: flex-start; flex: none; }
+.tool-pane > .page { flex: 1; min-height: 0; }
+.add-start { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.add-start-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.add-start p { margin: 0; overflow-wrap: anywhere; }
+/* 空曲库：整页只有这一块，居中放大 */
+.library-empty { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.library-empty > .page { flex: 1; }
+.library-empty .add-music:not([data-import-plan="true"]) { display: flex; flex-direction: column; justify-content: center; }
+.library-empty .add-music:not([data-import-plan="true"]) .add-start { align-items: center; text-align: center; margin: 0 auto; padding-bottom: 10vh; }
+.library-empty .add-music:not([data-import-plan="true"]) .add-start-actions .cmd-btn { height: 40px; padding: 0 20px; font-size: 14px; }
 .library-sources.dropping { outline: 2px dashed var(--accent); outline-offset: 8px; border-radius: 8px; }
 .folder-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
 .folder-list > li { min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }

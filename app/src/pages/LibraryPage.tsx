@@ -22,6 +22,7 @@ import {
   type Track,
 } from "../api";
 import { Stat } from "../components/Stat";
+import { CommandButton } from "../components/CommandButton";
 import { useArtistPhotos } from "../components/PerformerPicker";
 import { LibraryBrowser, useDirectory } from "../components/LibraryBrowser";
 import { AlbumView, PersonProfile } from "../components/PersonProfile";
@@ -32,6 +33,9 @@ import { Cover } from "../components/Cover";
 import { Avatar } from "../components/Avatar";
 import { AudioRepair } from "../components/AudioRepair";
 import { LibrarySources } from "../components/LibrarySources";
+import { WatchedFolders } from "../components/WatchedFolders";
+import { ImportPage, type ImportRequest } from "./ImportPage";
+import { ScrapePage } from "./ScrapePage";
 import { LyricsStage } from "../components/LyricsStage";
 import { KaraokeStage } from "../components/KaraokeStage";
 import { SongEditor } from "../components/SongEditor";
@@ -164,11 +168,18 @@ interface Props {
   /** 外面（别的页面上的「词的去处」）点「看例句和释义」：打开这个词的释义和例句 */
   examplesWanted?: { lemma: string; jump: WordJump } | null;
   onExamplesConsumed?: () => void;
-  /** 音乐文件夹里扫出的新文件：交给导入页复核 */
-  onReviewFiles: (paths: string[]) => void;
-  /** 移出、恢复、删了歌之后：曲目列表、总览都要重拉 */
+  /** 移出、恢复、删了歌、导入、刮削之后：曲目列表、总览都要重拉 */
   onLibraryReload: () => void;
+  /** 外面要打开的工具栏（页头的「添加音乐」、命令面板、状态点、拖进窗口的文件）。`nonce` 让同一个请求能再发一次 */
+  toolWanted?: LibraryTool | null;
+  onToolConsumed?: () => void;
 }
+
+/** 曲库里的三个工具视图。`add` 可以带着要扫的文件夹或文件 */
+export type LibraryTool =
+  | { kind: "sources"; nonce: number }
+  | { kind: "tidy"; nonce: number }
+  | { kind: "add"; nonce: number; scan?: ImportRequest };
 
 export function LibraryPage({
   library,
@@ -190,8 +201,9 @@ export function LibraryPage({
   onSongConsumed,
   examplesWanted = null,
   onExamplesConsumed,
-  onReviewFiles,
   onLibraryReload,
+  toolWanted = null,
+  onToolConsumed,
 }: Props) {
   const { tracks, selected, lyrics, credits, lyricsLoading, word, wordJump, wordLoading, activeLemma } =
     library;
@@ -616,6 +628,33 @@ export function LibraryPage({
     if (id !== null) go({ kind: "song" });
   }, [selected?.id, go]);
 
+  // 页头「添加音乐」、命令面板、状态点、拖进窗口：打开对应的工具视图
+  const [importRequest, setImportRequest] = useState<ImportRequest | null>(null);
+  const consumeImportRequest = useCallback(() => setImportRequest(null), []);
+  useEffect(() => {
+    if (toolWanted === null) return;
+    go({ kind: toolWanted.kind });
+    if (toolWanted.kind === "add" && toolWanted.scan !== undefined) setImportRequest(toolWanted.scan);
+    onToolConsumed?.();
+  }, [toolWanted, go, onToolConsumed]);
+  /** 来源里扫出来的新文件、启动检查发现的新歌：放进「添加音乐」的计划里 */
+  const reviewFiles = useCallback(
+    (paths: string[]) => {
+      go({ kind: "add" });
+      setImportRequest({ paths, nonce: Date.now() });
+    },
+    [go],
+  );
+  /** 导完了：回到这首新歌（不自动放） */
+  const openImported = useCallback(
+    (songId: string) => {
+      go({ kind: "song" });
+      void actions.openTrackById(songId, { autoPlay: false });
+    },
+    [go, actions],
+  );
+  const [repairOpen, setRepairOpen] = useState(false);
+
   // 命令面板点了一个人
   useEffect(() => {
     if (focusPersonId === null) return;
@@ -954,6 +993,22 @@ export function LibraryPage({
   /** 关系网、时间轴、词云、档案占中栏加右栏 */
   const wide = view !== null && view.kind !== "song";
 
+  // 空曲库：整页只有「添加音乐」。这就是全部的引导
+  const tool = view?.kind === "sources" || view?.kind === "tidy" || view?.kind === "add";
+  if (tracks.length === 0 && !tool) {
+    return (
+      <div className="library-empty">
+        <ImportPage
+          onError={onAudioError}
+          onImported={onLibraryReload}
+          request={importRequest}
+          onRequestConsumed={consumeImportRequest}
+          onOpenSong={openImported}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className={`columns library-page ${browserHidden ? "browser-hidden" : ""}`}
@@ -977,19 +1032,15 @@ export function LibraryPage({
         onOpenGraph={() => go({ kind: "graph", focus: view?.kind === "person" ? view.id : null })}
         onOpenTimeline={() => go({ kind: "timeline" })}
         onOpenCloud={() => go({ kind: "cloud" })}
-        onOpenFolders={() => go({ kind: "folders" })}
+        onOpenSources={() => go({ kind: "sources" })}
+        onOpenTidy={() => go({ kind: "tidy" })}
         onHide={toggleBrowser}
-        banner={
-          missing.length > 0 && (
-            <button className="missing-banner" onClick={() => { go({ kind: "song" }); setPanel("repair"); }} title={tr("扫文件夹或逐首选文件找回")}>{tr("⚠ {length} 首找不到音频文件 · 找回", { length: missing.length })}</button>
-          )
-        }
       />
 
       <ColumnSplitter
         className="split-left"
         edge="left"
-        label={tr("资料库左栏宽度")}
+        label={tr("曲库左栏宽度")}
         onDrag={columns.drag}
         onNudge={columns.nudge}
         onReset={columns.reset}
@@ -1027,10 +1078,51 @@ export function LibraryPage({
         </main>
       )}
 
-      {view?.kind === "folders" && (
+      {view?.kind === "sources" && (
         <main className="pane profile-pane sources-pane">
           {backButton}
-          <LibrarySources onReview={onReviewFiles} onChanged={() => { onLibraryReload(); refreshMissing(); void actions.reloadLyrics(); }} onError={onAudioError} version={libraryVersion} />
+          <LibrarySources onReview={reviewFiles} onChanged={() => { onLibraryReload(); refreshMissing(); void actions.reloadLyrics(); }} onError={onAudioError} version={libraryVersion} />
+          {missing.length > 0 && (
+            <div className="sources-missing">
+              <div className="section-head">
+                <h2>{tr("找不到音频的歌")}</h2>
+                <span className="muted small">{tr("{length} 首", { length: missing.length })}</span>
+                {!repairOpen && <CommandButton icon="folder" label={tr("找回…")} onClick={() => setRepairOpen(true)} />}
+              </div>
+              {repairOpen && (
+                <AudioRepair
+                  missing={missing}
+                  onApplied={(ids) => {
+                    refreshMissing();
+                    void actions.refreshAfterChange(ids, false);
+                  }}
+                  onClose={() => setRepairOpen(false)}
+                  onError={onAudioError}
+                />
+              )}
+            </div>
+          )}
+          <WatchedFolders onReview={reviewFiles} onError={onAudioError} disabled={false} refreshKey={libraryVersion} />
+        </main>
+      )}
+
+      {view?.kind === "tidy" && (
+        <main className="pane tool-pane">
+          {backButton}
+          <ScrapePage onError={onAudioError} onChanged={onLibraryReload} />
+        </main>
+      )}
+
+      {view?.kind === "add" && (
+        <main className="pane tool-pane">
+          {backButton}
+          <ImportPage
+            onError={onAudioError}
+            onImported={onLibraryReload}
+            request={importRequest}
+            onRequestConsumed={consumeImportRequest}
+            onOpenSong={openImported}
+          />
         </main>
       )}
 
@@ -1260,7 +1352,7 @@ export function LibraryPage({
             )}
 
             {untokenized && (
-              <p className="warn small">{tr("这首歌有歌词但还没分词，所以点不了词、也没有振假名（多半是在还没有分词词典时入库的）。")}<button className="link-btn" onClick={() => void tokenizeNow()} disabled={tokenizing}>
+              <p className="warn small">{tr("还没分词，点不了词，也没有振假名。")}<button className="link-btn" onClick={() => void tokenizeNow()} disabled={tokenizing}>
                   {tokenizing ? tr("分词中…") : tr("现在补分词")}
                 </button>
               </p>
@@ -1269,7 +1361,7 @@ export function LibraryPage({
             {!lyricsLoading && lyrics.length === 0 && (
               <div className="empty-state pad">
                 <p>{tr("这首歌还没有歌词")}</p>
-                <p className="muted small">{tr("导入只认音频旁边的同名 .lrc。在线搜一下，或者自己选一份文件—— 歌词会存进语料库目录的 raw/lyrics_lrc，和导入进来的一样。")}</p>
+                <p className="muted small">{tr("在线搜一下，或者自己选一份歌词文件。")}</p>
                 <LyricsFill
                   songId={selected.id}
                   hasLyrics={false}

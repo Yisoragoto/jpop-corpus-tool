@@ -172,7 +172,7 @@ export function albumOwner(albumArtist: string): string {
 }
 
 /**
- * 资料库中间那一栏在看什么：一首歌、一个人（可以带着要定位的专辑）、或者一张对不上人的专辑。
+ * 曲库中间那一栏在看什么：一首歌、一个人（可以带着要定位的专辑）、或者一张对不上人的专辑。
  * 歌本身存在 `useLibrary` 的 `selected` 里，这里只记「现在看的是歌」。
  */
 export type LibraryView =
@@ -184,8 +184,12 @@ export type LibraryView =
   | { kind: "timeline" }
   /** 词云（筛选记在 CloudView 的模块里） */
   | { kind: "cloud" }
-  /** 音乐文件夹：来源、对账、已移出的歌 */
-  | { kind: "folders" };
+  /** 来源：音乐文件夹、对账、已移出的歌、找不到音频的歌 */
+  | { kind: "sources" }
+  /** 整理：识别、封面、歌词、时长（原来的刮削页） */
+  | { kind: "tidy" }
+  /** 添加音乐：扫描 → 计划 → 导入（原来的导入页） */
+  | { kind: "add" };
 
 export function sameView(a: LibraryView, b: LibraryView): boolean {
   if (a.kind !== b.kind) return false;

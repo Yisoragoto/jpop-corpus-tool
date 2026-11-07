@@ -479,6 +479,11 @@ pub fn overview(state: State<'_, AppState>) -> CmdResult<Overview> {
 }
 
 #[tauri::command(async)]
+pub fn corpus_status(state: State<'_, AppState>) -> CmdResult<jp_api::corpus::CorpusStatus> {
+    Ok(jp_api::corpus::GetCorpusStatus::run(&state.corpus(), jp_api::NoArgs {})?)
+}
+
+#[tauri::command(async)]
 pub fn timeline(state: State<'_, AppState>) -> CmdResult<Vec<YearStats>> {
     Ok(jp_api::corpus::GetTimeline::run(&state.corpus(), jp_api::NoArgs {})?)
 }

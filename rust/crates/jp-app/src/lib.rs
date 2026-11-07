@@ -90,6 +90,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::quick_search,
             // 语料
             commands::overview,
+            commands::corpus_status,
             commands::timeline,
             commands::word_frequency,
             commands::word_in_corpus,
