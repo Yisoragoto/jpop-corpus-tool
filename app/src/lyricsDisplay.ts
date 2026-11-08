@@ -156,6 +156,13 @@ export function retryFurigana() {
   for (const listener of retryListeners) listener();
 }
 
+/** 读音改过了（#63）：缓存的振假名都作废，重新取 */
+let furiganaVersion = 0;
+export function refreshFurigana() {
+  furiganaVersion += 1;
+  retryFurigana();
+}
+
 function subscribeRetry(listener: () => void) {
   retryListeners.add(listener);
   return () => {
@@ -172,7 +179,7 @@ export function useSongFurigana(
 ): Map<number, Ruby[]> | null {
   const cache = useRef(new Map<string, Map<number, Ruby[]>>());
   const [result, setResult] = useState<{ key: string; map: Map<number, Ruby[]> } | null>(null);
-  const key = songId !== undefined && enabled ? `${songId}|${mode}` : null;
+  const key = songId !== undefined && enabled ? `${songId}|${mode}|${furiganaVersion}` : null;
   const tick = useSyncExternalStore(subscribeRetry, () => retryTick);
 
   useEffect(() => {

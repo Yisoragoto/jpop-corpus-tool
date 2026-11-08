@@ -134,6 +134,7 @@ pub fn parse_enhanced_lrc(text: &str) -> Result<TimedLyrics> {
             end_ms,
             text: line_text,
             words,
+            rubies: Vec::new(),
         });
     }
     ensure!(!lines.is_empty(), "没有 Enhanced LRC 正文");

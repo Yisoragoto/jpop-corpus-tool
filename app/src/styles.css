@@ -1103,6 +1103,22 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 .loop-time small { margin-left: 3px; color: var(--accent); font-size: 10px; }
 .loop-adjust-actions { display: inline-flex; gap: 12px; margin-left: auto; }
 
+/* 改读音（#63）：右键一个词，贴着鼠标弹出来。全屏歌词里也能用，所以层级要压过全屏 */
+.reading-editor {
+  position: fixed; z-index: 1000; width: 280px;
+  display: grid; gap: 10px; padding: 12px; border-radius: 8px;
+  background: var(--surface-pop); backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid var(--flyout-stroke); box-shadow: var(--elevation-flyout);
+  color: var(--fg); font-size: 12px;
+  animation: fade-in var(--motion-fast) var(--ease-out);
+}
+.reading-editor-head { display: flex; align-items: baseline; gap: 8px; color: var(--muted); }
+.reading-editor-head b { font-size: 15px; font-weight: 600; color: var(--fg); }
+.reading-editor input[type="text"] { width: 100%; font-size: 14px; }
+.reading-editor-scope { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.reading-editor-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.reading-editor-actions .link-btn { margin-right: auto; }
+
 /* ── 逐字点亮（卡拉 OK）──
    只有当前行在逐字时每个字才包成 .kc（见 LibraryPage 的 renderLineText），动画由 useKaraoke 每帧改类名和 --p。
    类名带 kc- 前缀：播放条早有一个 .now（display: flex），撞上了会把带注音的行挤得一个字一折。

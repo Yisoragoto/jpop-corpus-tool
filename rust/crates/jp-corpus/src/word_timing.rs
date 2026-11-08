@@ -192,8 +192,10 @@ pub fn insert_lrc(conn: &Connection, utterance_id: i64, segments: &[Segment]) ->
 
 /// 删歌词行之前调：这首歌所有行的词级时间一起删（表不在就什么都不做，老库还没建）。
 pub fn delete_for_song(conn: &Connection, song_id: &str) -> Result<usize> {
-    // 记在行上的循环微调也跟着行走
+    // 记在行上的循环微调、源文件注音也跟着行走
     crate::segments::delete_loop_adjust_for_song(conn, song_id)?;
+    // 源文件注音也是记在行上的
+    crate::ruby::delete_for_song(conn, song_id)?;
     let exists: bool = conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'word_timings')",
         [],

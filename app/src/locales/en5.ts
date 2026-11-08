@@ -837,4 +837,10 @@ export const en5: Record<string, string> = {
   "重置": "Reset",
   "回到按时间轴算的起止": "Back to the start and end from the timestamps",
   "取消循环": "Stop loop",
+  "改读音": "Edit reading",
+  "怎么读": "How it is read",
+  "全库里「{surface}」都这么读": "Read \"{surface}\" this way across the library",
+  "去掉全库的这条读音": "Remove this library-wide reading",
+  "去掉这首歌里改过的读音": "Remove the reading edited for this song",
+  "恢复自动": "Back to automatic",
 };

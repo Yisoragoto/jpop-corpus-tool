@@ -36,7 +36,7 @@ use rusqlite::Connection;
 /// 共用一个编号，Python 迁移过的库和本程序新建的库才不会互相看成「另一版」。
 ///
 /// 格式是 `YYYYMMDD`：单调递增，一眼看得出先后。
-pub const CURRENT: i64 = 20_261_108;
+pub const CURRENT: i64 = 20_261_109;
 
 /// 一步迁移里的一个改动。
 enum Change {
@@ -221,6 +221,12 @@ const STEPS: &[Step] = &[
         version: 20_261_108,
         what: "循环区间的微调（line_loop_adjust）",
         // 新表由 schema.sql 建，一开始是空的：没调过的行照旧按行区间循环
+        changes: &[],
+    },
+    Step {
+        version: 20_261_109,
+        what: "源文件注音（line_ruby）和改过的读音（reading_rules）",
+        // 新表由 schema.sql 建。已有的歌没有源文件注音（要重新导入那份歌词才有），没改过读音
         changes: &[],
     },
 ];
@@ -454,6 +460,7 @@ mod tests {
                 "歌曲的移出标记（songs.deleted_at）和只看在库歌曲的视图（live_songs 等）",
                 "音乐文件夹（library_sources）、歌曲所属文件夹（songs.source_id）、歌词文件的大小和修改时间",
                 "循环区间的微调（line_loop_adjust）",
+                "源文件注音（line_ruby）和改过的读音（reading_rules）",
             ]
         );
 
@@ -544,6 +551,7 @@ mod tests {
                 "歌曲的移出标记（songs.deleted_at）和只看在库歌曲的视图（live_songs 等）",
                 "音乐文件夹（library_sources）、歌曲所属文件夹（songs.source_id）、歌词文件的大小和修改时间",
                 "循环区间的微调（line_loop_adjust）",
+                "源文件注音（line_ruby）和改过的读音（reading_rules）",
             ],
             "没戳过就得把每一步都重跑一遍"
         );

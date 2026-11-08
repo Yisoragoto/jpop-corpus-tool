@@ -37,6 +37,16 @@ pub struct TimedLine {
     pub end_ms: Option<u64>,
     pub text: String,
     pub words: Vec<TimedWord>,
+    /// 源文件自带的注音（TTML 的 `tts:ruby`）。别的格式没有，是空的
+    pub rubies: Vec<RubyText>,
+}
+
+/// 源文件给的一段注音：`text` 里第 `start..end` 个字（Unicode 字符）读作 `reading`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RubyText {
+    pub start: usize,
+    pub end: usize,
+    pub reading: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,6 +123,8 @@ struct Glyph {
 struct TextBuilder {
     glyphs: Vec<Glyph>,
     clocks: Vec<Clock>,
+    /// 注音：(第几个 glyph 起, 到第几个止, 读音)，`finish` 时换算成正文里的字符位置
+    rubies: Vec<(usize, usize, String)>,
 }
 
 impl TextBuilder {
@@ -152,6 +164,10 @@ impl TextBuilder {
     }
 
     fn finish(self, xml: bool) -> Result<(String, Vec<TimedWord>)> {
+        self.finish_with_rubies(xml).map(|(text, words, _)| (text, words))
+    }
+
+    fn finish_with_rubies(self, xml: bool) -> Result<(String, Vec<TimedWord>, Vec<RubyText>)> {
         let trim = |g: &Glyph| {
             !g.preserve
                 && if xml {
@@ -209,7 +225,23 @@ impl TextBuilder {
         if missing_main {
             words.clear();
         }
-        Ok((text, words))
+        // 注音的位置跟着去掉的行首空白挪；注音底下的字两头的空白不算
+        let mut rubies = Vec::new();
+        for (from, to, reading) in &self.rubies {
+            let mut start = from.saturating_sub(first).min(glyphs.len());
+            let mut stop = to.saturating_sub(first).min(glyphs.len());
+            while start < stop && glyphs[start].ch.is_whitespace() {
+                start += 1;
+            }
+            while stop > start && glyphs[stop - 1].ch.is_whitespace() {
+                stop -= 1;
+            }
+            let reading = reading.trim();
+            if start < stop && !reading.is_empty() {
+                rubies.push(RubyText { start, end: stop, reading: reading.to_string() });
+            }
+        }
+        Ok((text, words, rubies))
     }
 }
 
@@ -479,6 +511,7 @@ fn prefix_line(body: &str, line: Clock, format: PrefixFormat) -> Result<TimedLin
         end_ms: line.end,
         text,
         words,
+        rubies: Vec::new(),
     })
 }
 
@@ -707,6 +740,7 @@ fn parse_qrc_content(content: &str) -> Result<TimedLyrics> {
                 end_ms: clock.end,
                 text,
                 words,
+                rubies: Vec::new(),
             });
         }
         rest = &body[next..];
@@ -785,7 +819,7 @@ pub fn parse_lys(text: &str) -> Result<TimedLyrics> {
             };
             let start_ms = first.start_ms;
             let end_ms = words.iter().filter_map(|w| w.end_ms).max();
-            Ok(Some(TimedLine { start_ms, end_ms, text, words }))
+            Ok(Some(TimedLine { start_ms, end_ms, text, words, rubies: Vec::new() }))
         })()
         .with_context(|| format!("invalid lyric line {}", index + 1))?;
         if let Some(line) = parsed {
@@ -985,7 +1019,19 @@ fn ruby_container(
     } else {
         active
     };
-    ttml_words(node, own, active, preserve, builder)
+    // 注音：所有 `tts:ruby="text"` 的字连起来，标在 base 那几个字上
+    let reading: String = node
+        .descendants()
+        .filter(|n| n.is_element() && ruby_role(*n) == Some("text"))
+        .flat_map(|n| n.descendants().filter(|d| d.is_text()).map(|d| d.text().unwrap_or_default()))
+        .collect();
+    let from = builder.glyphs.len();
+    ttml_words(node, own, active, preserve, builder)?;
+    let to = builder.glyphs.len();
+    if to > from {
+        builder.rubies.push((from, to, reading));
+    }
+    Ok(())
 }
 
 fn lyric_element(node: Node<'_, '_>) -> bool {
@@ -1079,7 +1125,7 @@ fn ttml_container(
     if node.tag_name().name() == "p" {
         let mut builder = TextBuilder::default();
         ttml_words(node, bounds, None, preserve, &mut builder)?;
-        let (text, words) = builder.finish(true)?;
+        let (text, words, rubies) = builder.finish_with_rubies(true)?;
         if text.chars().all(char::is_whitespace) {
             return Ok(());
         }
@@ -1108,6 +1154,7 @@ fn ttml_container(
                 end_ms,
                 text,
                 words,
+                rubies,
             },
             key,
         ));
@@ -1193,6 +1240,7 @@ pub fn parse_ttml_with_translations(text: &str) -> Result<(TimedLyrics, Vec<Time
                     end_ms: line.end_ms,
                     text: text.clone(),
                     words: Vec::new(),
+                    rubies: Vec::new(),
                 });
             }
         }

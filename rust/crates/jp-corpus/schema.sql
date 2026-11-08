@@ -477,6 +477,32 @@ CREATE TABLE IF NOT EXISTS line_loop_adjust (
     updated_at     TEXT    NOT NULL
 );
 
+-- 注音（20261109，#63）。显示振假名时的优先级：用户改的读音 > 源文件注音 > Sudachi 自动注音。
+-- 只管显示的读音，不改分词、原形、词频；要改分词仍走 token_corrections。
+--
+-- line_ruby：某一行第 char_start..char_end 个字（Unicode 字符）的注音，来自源文件（TTML 的 tts:ruby）
+-- 或以后的可选模型（origin = 'model'）。跟着行走：换歌词、删歌时一起删，导入新歌词时重新写。
+CREATE TABLE IF NOT EXISTS line_ruby (
+    utterance_id INTEGER NOT NULL REFERENCES utterances(id),
+    char_start   INTEGER NOT NULL,
+    char_end     INTEGER NOT NULL,
+    reading      TEXT    NOT NULL,
+    origin       TEXT    NOT NULL,
+    created_at   TEXT    NOT NULL,
+    PRIMARY KEY (utterance_id, char_start, char_end, origin)
+);
+
+-- reading_rules：用户改的读音。按写法记：这首歌（song_id）或全库（song_id = ''）里，
+-- 分出来的词正好是 surface 时读作 reading。按写法而不是按行记，换歌词、重新导入后照样生效，
+-- 勾了全库的新歌进来也自动用上。同一写法本首歌的规则优先于全库的。
+CREATE TABLE IF NOT EXISTS reading_rules (
+    song_id    TEXT NOT NULL DEFAULT '',
+    surface    TEXT NOT NULL,
+    reading    TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (song_id, surface)
+);
+
 -- ── 歌词来源与选择（20261031）──────────────────────────────────
 -- 设计说明见 jp-corpus/src/lyric_sources.rs。
 -- 一首歌的每个来源各存一行：原文、格式、更新时间、是不是用户改过的。

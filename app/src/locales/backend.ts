@@ -759,4 +759,8 @@ export const backendEn: Record<string, string> = {
   "文件夹在扫描时被移除了": "The folder was removed during the scan",
   "改不了 {0}《{1}》的路径": "Couldn't change the path of {0} \"{1}\"",
   "循环区间的微调（line_loop_adjust）": "Loop region adjustments (line_loop_adjust)",
+  "源文件注音（line_ruby）和改过的读音（reading_rules）": "Source ruby (line_ruby) and edited readings (reading_rules)",
+  "没有要改读音的词": "No word to change the reading of",
+  "读音不能是空的；不想改了点「恢复自动」": "The reading cannot be empty; use \"Back to automatic\" to undo",
+  "读音太长了": "The reading is too long",
 };

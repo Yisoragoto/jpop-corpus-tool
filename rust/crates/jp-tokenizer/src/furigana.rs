@@ -22,9 +22,30 @@ pub enum FuriganaMode {
 
 /// 一行歌词的振假名段。`text` 是分词的原文：分词结果一个都没有时退回整行不注音。
 pub fn furigana_segments(text: &str, tokens: &[Token], mode: FuriganaMode) -> Vec<(String, String)> {
+    furigana_segments_with(text, tokens, mode, |_| None)
+}
+
+/// 同 [`furigana_segments`]，但有的词读音改过（#63 用户改的读音）：`reading_of(第几个词)` 给出改过的读音时用它，
+/// 不用 Sudachi 的。改过的读音**照用户写的原样显示**（「本気」注「マジ」就是片假名）；
+/// 汉字模式下词里夹着假名的（見つめる），按假名定位只注汉字那几段（这时转成平假名）。
+pub fn furigana_segments_with<'a>(
+    text: &str,
+    tokens: &[Token],
+    mode: FuriganaMode,
+    reading_of: impl Fn(usize) -> Option<&'a str>,
+) -> Vec<(String, String)> {
     let mut result = Vec::new();
-    for token in tokens {
+    for (index, token) in tokens.iter().enumerate() {
         let surface = token.surface.as_str();
+        if let Some(reading) = reading_of(index).map(str::trim).filter(|r| !r.is_empty()) {
+            let has_kana = surface.chars().any(is_kana_char);
+            if mode == FuriganaMode::Kanji && has_kana && surface.chars().any(is_kanji_re) {
+                result.extend(kanji_only_furigana(surface, reading));
+            } else {
+                result.push((surface.to_owned(), reading.to_owned()));
+            }
+            continue;
+        }
         let mut reading = if token.reading.is_empty() || token.reading == "*" {
             String::new()
         } else {
@@ -73,6 +94,40 @@ pub fn ruby_spans(text: &str, segments: &[(String, String)]) -> Option<Vec<Ruby>
         joined.push_str(surface);
     }
     (joined == text).then_some(rubies)
+}
+
+/// 每个词在原文里的 [起, 止)（按字符）。词连起来和原文对不上时是 None
+pub fn token_spans(text: &str, tokens: &[Token]) -> Option<Vec<(usize, usize)>> {
+    let mut spans = Vec::with_capacity(tokens.len());
+    let mut offset = 0;
+    let mut joined = String::with_capacity(text.len());
+    for token in tokens {
+        let len = token.surface.chars().count();
+        spans.push((offset, offset + len));
+        offset += len;
+        joined.push_str(&token.surface);
+    }
+    (joined == text).then_some(spans)
+}
+
+/// 把源文件给的注音盖到自动注音上。
+///
+/// 一段注音只有完整落在**一个词**里才用（界面上注音挂在词上，跨两个词的放不下），
+/// `locked` 的词（用户改过读音的）不盖——用户改的优先。盖上时去掉和它重叠的自动注音。
+pub fn overlay_rubies(mut rubies: Vec<Ruby>, extra: &[Ruby], spans: &[(usize, usize)], locked: &[bool]) -> Vec<Ruby> {
+    for ruby in extra {
+        if ruby.start >= ruby.end || ruby.reading.trim().is_empty() {
+            continue;
+        }
+        let Some(index) = spans.iter().position(|&(a, b)| a <= ruby.start && ruby.end <= b) else { continue };
+        if locked.get(index).copied().unwrap_or(false) {
+            continue;
+        }
+        rubies.retain(|r| r.end <= ruby.start || ruby.end <= r.start);
+        rubies.push(ruby.clone());
+    }
+    rubies.sort_by_key(|r| r.start);
+    rubies
 }
 
 /// `_is_kanji_char`：拆汉字段时「々」也算汉字
@@ -245,5 +300,47 @@ mod tests {
     #[test]
     fn katakana_becomes_hiragana_but_prolonged_mark_stays() {
         assert_eq!(katakana_to_hiragana("ヴァイオリンー"), "ゔぁいおりんー");
+    }
+
+    #[test]
+    fn a_changed_reading_wins_and_keeps_the_users_kana() {
+        // #63：「他人」唱ひと；「本気」唱マジ（片假名照原样）
+        let tokens = [token("他人", "タニン"), token("の", "ノ"), token("本気", "ホンキ")];
+        let rules = |i: usize| match i {
+            0 => Some("ひと"),
+            2 => Some("マジ"),
+            _ => None,
+        };
+        assert_eq!(
+            furigana_segments_with("他人の本気", &tokens, FuriganaMode::Kanji, rules),
+            pairs(&[("他人", "ひと"), ("の", ""), ("本気", "マジ")])
+        );
+        // 夹着假名的词，汉字模式只注汉字
+        let tokens = [token("見つめる", "ミツメル")];
+        assert_eq!(
+            furigana_segments_with("見つめる", &tokens, FuriganaMode::Kanji, |_| Some("みつめる")),
+            pairs(&[("見", "み"), ("つめる", "")])
+        );
+        assert_eq!(
+            furigana_segments_with("見つめる", &tokens, FuriganaMode::Word, |_| Some("みつめる")),
+            pairs(&[("見つめる", "みつめる")])
+        );
+    }
+
+    #[test]
+    fn source_rubies_cover_auto_ones_only_inside_one_unlocked_word() {
+        let ruby = |start, end, reading: &str| Ruby { start, end, reading: reading.into() };
+        let auto = vec![ruby(0, 2, "たにん"), ruby(3, 5, "うんめい")];
+        let spans = [(0, 2), (2, 3), (3, 5)];
+        // 第一个词用户改过（锁住），源文件注音不盖；第三个词盖上；跨两个词的不要
+        let out = overlay_rubies(
+            auto,
+            &[ruby(0, 2, "ひと"), ruby(3, 5, "さだめ"), ruby(1, 4, "x")],
+            &spans,
+            &[true, false, false],
+        );
+        assert_eq!(out, vec![ruby(0, 2, "たにん"), ruby(3, 5, "さだめ")]);
+        assert_eq!(token_spans("他人の", &[token("他人", ""), token("の", "")]), Some(vec![(0, 2), (2, 3)]));
+        assert_eq!(token_spans("他人の", &[token("他人", "")]), None);
     }
 }

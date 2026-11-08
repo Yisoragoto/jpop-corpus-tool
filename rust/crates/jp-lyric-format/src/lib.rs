@@ -24,7 +24,7 @@ use anyhow::{Result, ensure};
 
 pub use external::{ExternalFile, ExternalLyrics, find_external};
 pub use lrc::{Credit, LyricLine, ParsedLrc, WordTime};
-pub use timed::{TimedLine, TimedLyrics, TimedWord};
+pub use timed::{RubyText, TimedLine, TimedLyrics, TimedWord};
 
 /// 一份歌词的格式。[`Format::name`] 就是库里 `raw_format` 记的那个词。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -107,6 +107,8 @@ pub struct Decoded {
     pub ends: Vec<Option<f64>>,
     /// 逐字格式的原始时间轴（毫秒），其余格式是 None
     pub timed: Option<TimedLyrics>,
+    /// 和 `parsed.lines` 一一对应：源文件自带的注音（目前只有 TTML），位置是那一行 `text` 里的字符下标
+    pub rubies: Vec<Vec<RubyText>>,
 }
 
 /// 字节 → 解析结果。`hint` 是扩展名或库里记的格式名，没有就看内容判断。
@@ -171,12 +173,13 @@ pub fn decode_as(text: &str, format: Format) -> Result<Decoded> {
         ensure!(!cues.is_empty(), "这份 SRT 里没有认得出的字幕");
         let parsed = srt::parse(&original);
         let lrc = srt::to_lrc(&cues);
-        let ends = parsed.ends.iter().copied().map(Some).collect();
+        let ends: Vec<Option<f64>> = parsed.ends.iter().copied().map(Some).collect();
         return Ok(Decoded {
             format,
             original,
             lrc,
             parsed: ParsedLrc { lines: parsed.lines, credits: Vec::new(), translations: parsed.translations },
+            rubies: vec![Vec::new(); ends.len()],
             ends,
             timed: None,
         });
@@ -192,7 +195,43 @@ pub fn decode_as(text: &str, format: Format) -> Result<Decoded> {
         words: Vec::new(),
     }));
     let ends = vec![None; parsed.lines.len()];
-    Ok(Decoded { format, original, lrc, parsed, ends, timed })
+    let rubies = match &timed {
+        Some(timed) => align_rubies(timed, &parsed.lines),
+        None => vec![Vec::new(); parsed.lines.len()],
+    };
+    Ok(Decoded { format, original, lrc, parsed, ends, timed, rubies })
+}
+
+/// 把逐字格式里每行的注音对到解析好的行上。
+///
+/// 解析好的行是从逐字格式转成的 LRC 再解析出来的：会按时间重排、去掉署名行、去掉两头空白，
+/// 所以按「同一个开始时间 + 文字一样（去掉两头空白）」逐行认，认不出的那行就没有注音，不猜。
+pub fn align_rubies(timed: &TimedLyrics, lines: &[LyricLine]) -> Vec<Vec<RubyText>> {
+    let mut used = vec![false; timed.lines.len()];
+    lines
+        .iter()
+        .map(|line| {
+            let Some(time) = line.time_sec else { return Vec::new() };
+            let ms = (time * 1000.0).round() as u64;
+            let wanted = line.text.trim();
+            let found = timed.lines.iter().enumerate().position(|(i, t)| {
+                !used[i] && t.start_ms == ms && !t.rubies.is_empty() && t.text.trim() == wanted
+            });
+            let Some(i) = found else { return Vec::new() };
+            used[i] = true;
+            let source = &timed.lines[i];
+            // 解析好的那一行在原行里从第几个字开始（去掉了几个行首空白）
+            let Some(byte_at) = source.text.find(line.text.as_str()) else { return Vec::new() };
+            let shift = source.text[..byte_at].chars().count();
+            let len = line.text.chars().count();
+            source
+                .rubies
+                .iter()
+                .filter(|r| r.start >= shift && r.end - shift <= len && r.start < r.end)
+                .map(|r| RubyText { start: r.start - shift, end: r.end - shift, reading: r.reading.clone() })
+                .collect()
+        })
+        .collect()
 }
 
 /// 看内容判断格式。顺序：TTML → QRC 的 XML 外壳 → 逐字明文（LYS / QRC / YRC / KRC）→ LRC → SRT → 纯文本。
@@ -371,5 +410,31 @@ mod tests {
         assert_eq!(decoded.format, Format::Krc);
         assert_eq!(decoded.parsed.lines[0].text, "夜が");
         assert_eq!(decoded.parsed.lines[0].words.len(), 2);
+    }
+
+    #[test]
+    fn ttml_ruby_comes_out_on_the_decoded_line() {
+        // #63：「他人」唱ひと，源文件里写着；时间在 container 上
+        let ttml = concat!(
+            r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>"#,
+            r#"<p begin="1s" end="3s"><span tts:ruby="container" begin="1s" end="2s"><span tts:ruby="base">他人</span>"#,
+            r#"<span tts:ruby="textContainer"><span tts:ruby="text">ひと</span></span></span>"#,
+            r#"<span begin="2s" end="3s">の</span><span tts:ruby="container" begin="2.5s" end="3s"><span tts:ruby="base">夢</span>"#,
+            r#"<span tts:ruby="text">ゆめ</span></span></p>"#,
+            r#"<p begin="4s" end="5s"><span begin="4s" end="5s">ねえ</span></p></div></body></tt>"#,
+        );
+        let decoded = decode_str(ttml, Some("ttml")).unwrap();
+        assert_eq!(decoded.parsed.lines[0].text, "他人の夢");
+        assert_eq!(
+            decoded.rubies[0],
+            vec![
+                RubyText { start: 0, end: 2, reading: "ひと".into() },
+                RubyText { start: 3, end: 4, reading: "ゆめ".into() },
+            ]
+        );
+        assert!(decoded.rubies[1].is_empty());
+        assert_eq!(decoded.rubies.len(), decoded.parsed.lines.len());
+        // 注音不进正文，逐字时间照旧
+        assert_eq!(decoded.parsed.lines[0].words.len(), 3);
     }
 }

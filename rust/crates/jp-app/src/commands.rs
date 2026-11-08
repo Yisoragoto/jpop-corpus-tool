@@ -257,22 +257,42 @@ pub struct LineFurigana {
 
 /// 整首歌的振假名。和 Python 版 `_furigana_tokens` 一样现场用 Sudachi（SplitMode C）分词取读音，
 /// 全部 8443 行两种模式逐段对过账。一行约 0.02 ms，不入库。
+///
+/// 上面再盖两层（#63，见 `jp_corpus::ruby`）：用户改过的读音（按写法，分出来的词正好是这个写法时）
+/// 最优先，其次是源文件自带的注音。两层都没有的行和以前逐段相同。
 #[tauri::command(async)]
 pub fn lyrics_furigana(
     state: State<'_, AppState>,
     song_id: String,
     mode: jp_tokenizer::furigana::FuriganaMode,
 ) -> CmdResult<Vec<LineFurigana>> {
+    use jp_tokenizer::furigana::{Ruby, furigana_segments_with, overlay_rubies, ruby_spans, token_spans};
     let analyzer = state
         .analyzer()
         .ok_or_else(|| anyhow::anyhow!(crate::tokenizer::no_dictionary("振假名")))?;
-    let lines = state.corpus().lyrics(&song_id)?;
+    let corpus = state.corpus();
+    let lines = corpus.lyrics(&song_id)?;
+    let rules = jp_corpus::ruby::rules_for_song(corpus.connection(), &song_id)?;
+    let mut sources: std::collections::HashMap<i64, Vec<Ruby>> = std::collections::HashMap::new();
+    for r in jp_corpus::ruby::for_song(corpus.connection(), &song_id)? {
+        sources.entry(r.utterance_id).or_default().push(Ruby {
+            start: r.char_start.max(0) as usize,
+            end: r.char_end.max(0) as usize,
+            reading: r.reading,
+        });
+    }
+    drop(corpus);
     let mut out = Vec::with_capacity(lines.len());
     for line in lines {
         let tokens = analyzer.analyze(&line.text)?;
-        let segments = jp_tokenizer::furigana::furigana_segments(&line.text, &tokens, mode);
+        let rule_of = |i: usize| tokens.get(i).and_then(|t| rules.get(&t.surface)).map(String::as_str);
+        let segments = furigana_segments_with(&line.text, &tokens, mode, rule_of);
         // 对不上原文就这一行不注音，不猜位置
-        let rubies = jp_tokenizer::furigana::ruby_spans(&line.text, &segments).unwrap_or_default();
+        let mut rubies = ruby_spans(&line.text, &segments).unwrap_or_default();
+        if let (Some(extra), Some(spans)) = (sources.get(&line.utterance_id), token_spans(&line.text, &tokens)) {
+            let locked: Vec<bool> = tokens.iter().map(|t| rules.contains_key(&t.surface)).collect();
+            rubies = overlay_rubies(rubies, extra, &spans, &locked);
+        }
         out.push(LineFurigana {
             utterance_id: line.utterance_id,
             rubies,
@@ -337,6 +357,41 @@ pub async fn kwic<R: tauri::Runtime>(
 #[tauri::command(async)]
 pub fn line_spans(state: State<'_, AppState>, song_id: String) -> CmdResult<Vec<jp_corpus::segments::LineSpan>> {
     Ok(state.corpus().line_spans(&song_id)?)
+}
+
+/// 这首歌里这个写法现在用的读音规则，见 jp-api 的 `GetReadingRule`
+#[tauri::command(async)]
+pub fn reading_rule(
+    state: State<'_, AppState>,
+    song_id: String,
+    surface: String,
+) -> CmdResult<Option<jp_corpus::ruby::ReadingRule>> {
+    Ok(jp_api::ruby::GetReadingRule::run(&state.corpus(), jp_api::ruby::ReadingRuleArgs { song_id, surface })?)
+}
+
+/// 改读音
+#[tauri::command(async)]
+pub fn reading_rule_set(
+    state: State<'_, AppState>,
+    song_id: String,
+    surface: String,
+    reading: String,
+    whole_library: Option<bool>,
+) -> CmdResult<jp_corpus::ruby::ReadingRule> {
+    Ok(jp_api::ruby::SetReadingRule::run(
+        &state.corpus(),
+        jp_api::ruby::SetReadingRuleArgs { song_id, surface, reading, whole_library: whole_library.unwrap_or(false) },
+    )?)
+}
+
+/// 恢复自动注音
+#[tauri::command(async)]
+pub fn reading_rule_clear(
+    state: State<'_, AppState>,
+    song_id: String,
+    surface: String,
+) -> CmdResult<Option<jp_corpus::ruby::ReadingRule>> {
+    Ok(jp_api::ruby::ClearReadingRule::run(&state.corpus(), jp_api::ruby::ReadingRuleArgs { song_id, surface })?)
 }
 
 /// 循环区间（含记住的微调），见 jp-api 的 `GetLoopRegion`

@@ -1380,7 +1380,7 @@ mod tests {
     #[test]
     fn the_title_artist_header_line_is_not_kept_as_lyrics() {
         use crate::timed_lyrics::TimedLine;
-        let line = |text: &str| TimedLine { start_ms: 0, end_ms: None, text: text.into(), words: vec![] };
+        let line = |text: &str| TimedLine { start_ms: 0, end_ms: None, text: text.into(), words: vec![], rubies: vec![] };
         let mut lyrics = TimedLyrics { lines: vec![line("怪獣の花唄 - Vaundy"), line("思い出すのは君の歌")] };
         drop_title_line(&mut lyrics, "怪獣の花唄", "Vaundy");
         assert_eq!(lyrics.lines.len(), 1);
@@ -1407,7 +1407,7 @@ mod tests {
     #[test]
     fn a_musician_credit_block_at_either_end_is_dropped_but_sung_lines_stay() {
         use crate::timed_lyrics::TimedLine;
-        let line = |text: &str| TimedLine { start_ms: 0, end_ms: None, text: text.into(), words: vec![] };
+        let line = |text: &str| TimedLine { start_ms: 0, end_ms: None, text: text.into(), words: vec![], rubies: vec![] };
         let mut lyrics = TimedLyrics {
             lines: vec![
                 line("词：大森元貴"),
