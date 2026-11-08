@@ -118,14 +118,16 @@ fn load_lines(
     let Some(position) = lyrics.iter().position(|l| l.utterance_id == utterance_id) else {
         return Ok(None);
     };
-    // 下一句开始的时间就是这一句结束的时间（和导出例句音频的算法一致）
-    let end_of = |i: usize| {
-        lyrics[i].time_sec.and_then(|t| {
-            lyrics[i + 1..]
-                .iter()
-                .filter_map(|l| l.time_sec)
-                .find(|&next| next > t)
-        })
+    // 截哪一段和循环用同一个区间（终点到最后一个字唱完，含循环时调过的微调，见 jp_corpus::segments）。
+    // 算不出区间时退回旧算法：下一句开始的时间就是这一句结束的时间
+    let clip_of = |i: usize| -> Result<(Option<f64>, Option<f64>)> {
+        let l = &lyrics[i];
+        let Some(t) = l.time_sec else { return Ok((None, None)) };
+        if let Some(r) = corpus.loop_region(l.utterance_id, l.utterance_id)? {
+            return Ok((Some(r.start_sec), Some(r.end_sec)));
+        }
+        let next = lyrics[i + 1..].iter().filter_map(|l| l.time_sec).find(|&next| next > t);
+        Ok((Some(t), next))
     };
 
     let line = &lyrics[position];
@@ -140,13 +142,8 @@ fn load_lines(
                 .count(),
         ),
     };
-    let current = Line {
-        text,
-        offset,
-        utterance_id,
-        time_sec: line.time_sec,
-        end_sec: end_of(position),
-    };
+    let (time_sec, end_sec) = clip_of(position)?;
+    let current = Line { text, offset, utterance_id, time_sec, end_sec };
 
     // 找其他行：词头（点的是假名写法时也认读音），活用条件和词条的词性相容
     let mut targets: Vec<&str> = entry.headwords.iter().map(|h| h.term.as_str()).collect();
@@ -207,13 +204,8 @@ fn load_lines(
                 )
             })
             .collect();
-        others.push(OtherLine {
-            text,
-            highlights,
-            utterance_id: other.utterance_id,
-            time_sec: other.time_sec,
-            end_sec: end_of(i),
-        });
+        let (time_sec, end_sec) = clip_of(i)?;
+        others.push(OtherLine { text, highlights, utterance_id: other.utterance_id, time_sec, end_sec });
     }
     Ok(Some((current, others)))
 }

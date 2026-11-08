@@ -9,7 +9,7 @@
  * command（读几个原子变量）反而更省，而且不用管订阅生命周期。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { api, PLAYBACK_KICK, type LyricLine, type PlaybackState } from "./api";
 
@@ -218,22 +218,3 @@ export function useCurrentLine(
   );
 }
 
-/**
- * 单句循环：把循环区间设成某一行的起止。
- *
- * 起止怎么算由 Rust 的 `segments.rs` 决定（和 KWIC 试听、macOS 客户端同一个规则）：
- * 结束 = 下一行开始；离下一行太远（间奏）就按字数估，不把十几秒伴奏也循环进去。
- * 以前这里自己算「下一行开始」，间奏前的那一句会连着整段间奏一起循环。
- */
-export function useLineLoop(lines: LyricLine[]) {
-  return useCallback(
-    async (lineIdx: number): Promise<boolean> => {
-      const line = lines[lineIdx];
-      if (!line || line.timeSec === null) return false;
-      const window = await api.listenWindow(line.utteranceId, 0, 0);
-      if (!window) return false;
-      return api.audioSetLoop(window.focusStartSec, window.focusEndSec);
-    },
-    [lines],
-  );
-}

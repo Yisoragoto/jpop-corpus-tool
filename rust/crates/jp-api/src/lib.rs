@@ -137,6 +137,8 @@ commands![
     corpus::GetTimeline,
     corpus::GetCorpusStatus,
     library::GetTrack,
+    library::GetLoopRegion,
+    library::SetLoopAdjust,
     search::QuickSearch,
     home::GetHomeSummary,
     sources::LibrarySources,

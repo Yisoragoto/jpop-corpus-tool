@@ -758,4 +758,5 @@ export const backendEn: Record<string, string> = {
   "找不到文件夹 {0}：盘没插上，或者文件夹被挪走了。没有对账，库里的歌都没动": "Couldn't find folder {0}: the drive may be unplugged or the folder moved. Nothing was checked and no songs were changed",
   "文件夹在扫描时被移除了": "The folder was removed during the scan",
   "改不了 {0}《{1}》的路径": "Couldn't change the path of {0} \"{1}\"",
+  "循环区间的微调（line_loop_adjust）": "Loop region adjustments (line_loop_adjust)",
 };

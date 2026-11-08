@@ -283,6 +283,8 @@ export default function App() {
     audioReady,
     positionSec: playback.positionSec,
     volume: playback.volume,
+    songId: playback.songId,
+    loopRegion: playback.loopRegion,
   });
 
   const goLibrary = useCallback(() => setRoute("library"), []);
@@ -416,6 +418,7 @@ export default function App() {
       {
         id: "loop-off",
         label: tr("取消单句循环"),
+        hint: "Ctrl+L",
         ...(playback.loopRegion ? {} : { disabled: tr("当前没有循环") }),
         run: () => void api.audioSetLoop(),
       },

@@ -8,6 +8,9 @@
  * | ↑ ↓ | 音量 ±5% |
  * | Ctrl/Cmd+K | 全局搜索 |
  * | Ctrl/Cmd+P | 命令面板 |
+ * | Ctrl/Cmd+L | 循环正在唱的这一句 / 取消循环 |
+ * | [ ] | 循环时起点提前 / 推后 0.1 秒（按着 Alt 0.5 秒） |
+ * | Shift+[ ] | 循环时终点提前 / 推后 |
  *
  * **输入框、滑块、用键盘移过去的按钮自己处理按键**（见 `keepsKey`）。判断依据是事件目标，
  * 不是焦点状态——后者在 Tauri 的 webview 里不总是可靠。
@@ -16,7 +19,8 @@
 import { useEffect } from "react";
 import { toggleFullscreen } from "./fullscreen";
 
-import { api } from "./api";
+import { api, type LoopRegion as PlayerLoop } from "./api";
+import { activeLineLoop, getLineLoopRegion, lineAt, loopKeyChange, nudgeLineLoop, startLineLoop, stopLineLoop } from "./lineLoop";
 
 /** 方向键的跳转步长。5 秒是听写场景下「刚才那句没听清」的合适粒度。 */
 const SEEK_STEP_SEC = 5;
@@ -31,6 +35,9 @@ export interface HotkeyHandlers {
   audioReady: boolean;
   positionSec: number;
   volume: number;
+  /** 正在放的歌和播放器里的循环：循环快捷键用 */
+  songId: string;
+  loopRegion: PlayerLoop | null;
 }
 
 const TYPING = 'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),textarea,select';
@@ -98,6 +105,8 @@ export function useHotkeys({
   audioReady,
   positionSec,
   volume,
+  songId,
+  loopRegion,
 }: HotkeyHandlers): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -122,8 +131,26 @@ export function useHotkeys({
         return;
       }
 
-      if (e.defaultPrevented || keepsKey(e.target, e.code) || mod || e.altKey) return;
+      if (e.defaultPrevented || keepsKey(e.target, e.code)) return;
       if (!audioReady) return;
+
+      if (mod && !e.altKey && !e.shiftKey && e.code === "KeyL") {
+        e.preventDefault();
+        if (loopRegion) void stopLineLoop();
+        else if (songId) {
+          void lineAt(songId, positionSec).then((id) => (id === null ? false : startLineLoop(id)));
+        }
+        return;
+      }
+      // 循环区间微调：只在循环着一段歌词时生效，别的时候 [ ] 不占
+      const change = mod ? null : loopKeyChange(e);
+      if (change && activeLineLoop(getLineLoopRegion(), loopRegion, songId)) {
+        e.preventDefault();
+        void nudgeLineLoop(change);
+        return;
+      }
+
+      if (mod || e.altKey) return;
 
       switch (e.code) {
         case "Space":
@@ -157,5 +184,5 @@ export function useHotkeys({
       window.removeEventListener("keydown", onKey);
       untrack();
     };
-  }, [onQuickSearch, onCommandPalette, audioReady, positionSec, volume]);
+  }, [onQuickSearch, onCommandPalette, audioReady, positionSec, volume, songId, loopRegion]);
 }

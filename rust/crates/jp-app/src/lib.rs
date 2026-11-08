@@ -57,6 +57,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             // 曲库
             commands::list_tracks,
             commands::get_track,
+            commands::loop_region,
+            commands::loop_adjust_set,
             commands::list_albums,
             commands::album_tracks,
             commands::track_credits,

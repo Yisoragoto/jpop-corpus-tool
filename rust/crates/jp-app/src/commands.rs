@@ -339,6 +339,34 @@ pub fn line_spans(state: State<'_, AppState>, song_id: String) -> CmdResult<Vec<
     Ok(state.corpus().line_spans(&song_id)?)
 }
 
+/// 循环区间（含记住的微调），见 jp-api 的 `GetLoopRegion`
+#[tauri::command(async)]
+pub fn loop_region(
+    state: State<'_, AppState>,
+    first_utterance_id: i64,
+    last_utterance_id: i64,
+) -> CmdResult<Option<jp_corpus::segments::LoopRegion>> {
+    Ok(jp_api::library::GetLoopRegion::run(
+        &state.corpus(),
+        jp_api::library::LoopRegionArgs { first_utterance_id, last_utterance_id },
+    )?)
+}
+
+/// 记住循环区间的微调
+#[tauri::command(async)]
+pub fn loop_adjust_set(
+    state: State<'_, AppState>,
+    first_utterance_id: i64,
+    last_utterance_id: i64,
+    start_delta_ms: i64,
+    end_delta_ms: i64,
+) -> CmdResult<Option<jp_corpus::segments::LoopRegion>> {
+    Ok(jp_api::library::SetLoopAdjust::run(
+        &state.corpus(),
+        jp_api::library::LoopAdjustArgs { first_utterance_id, last_utterance_id, start_delta_ms, end_delta_ms },
+    )?)
+}
+
 /// 以某一行为中心、前后各扩几行的试听区间。没有时间戳时是 null
 #[tauri::command(async)]
 pub fn listen_window(

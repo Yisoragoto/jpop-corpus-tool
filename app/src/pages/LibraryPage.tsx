@@ -54,7 +54,9 @@ import { morph, prefersReducedMotion } from "../motion";
 import { holdFullscreen, releaseFullscreen } from "../fullscreen";
 import { WORD_EXAMPLE_LIMIT, type LibraryActions, type LibraryState } from "../useLibrary";
 import type { WordJump } from "../wordCloud";
-import { timedLines, useLineLoop } from "../usePlayback";
+import { timedLines } from "../usePlayback";
+import { activeLineLoop, startLineLoop, stopLineLoop, useLineLoopRegion } from "../lineLoop";
+import { LoopAdjustBar } from "../components/LoopAdjustBar";
 import { useFollowScroll, useSyncedLine } from "../playbackClock";
 import { useAppSettings } from "../settings";
 import { useKaraoke } from "../useKaraoke";
@@ -407,7 +409,18 @@ export function LibraryPage({
   // 当前行由位置推导，不是引擎给的——见 usePlayback.ts。
   // **歌词属于 selected，位置属于正在放的那一首**，换歌的一瞬间两者不是同一首。
   const lyricsArePlaying = selected !== null && playback.songId === selected.id;
-  const loopLine = useLineLoop(lyrics);
+  // 循环的那一段：区间和微调由 Rust 算（见 lineLoop.ts），这里只显示和调整
+  const lineLoop = activeLineLoop(useLineLoopRegion(), playback.loopRegion, selected?.id ?? "");
+  const loopTimedIds = useMemo(
+    () => lyrics.filter((l) => l.timeSec !== null).map((l) => l.utteranceId),
+    [lyrics],
+  );
+  const loopedIds = useMemo(() => {
+    if (!lineLoop) return new Set<number>();
+    const a = loopTimedIds.indexOf(lineLoop.firstUtteranceId);
+    const b = loopTimedIds.indexOf(lineLoop.lastUtteranceId);
+    return new Set(a >= 0 && b >= a ? loopTimedIds.slice(a, b + 1) : [lineLoop.firstUtteranceId]);
+  }, [lineLoop, loopTimedIds]);
 
   // 每行独立验证真实单位；部分行缺失或异常时，只降级该行。
   const karaokeEnabled = useAppSettings().karaokeLyrics;
@@ -1371,13 +1384,12 @@ export function LibraryPage({
               </div>
             )}
 
+            {lineLoop && <LoopAdjustBar region={lineLoop} timedIds={loopTimedIds} onError={onAudioError} />}
+
             {lyrics.map((line, idx) => {
               const active = idx === currentLine;
               const startSec = syncedLyrics[idx]?.timeSec ?? null;
-              const looped =
-                playback.loopRegion !== null &&
-                line.timeSec !== null &&
-                Math.abs(playback.loopRegion.startSec - line.timeSec) < 0.01;
+              const looped = loopedIds.has(line.utteranceId);
               return (
                 <p
                   className={`line ${active ? "current" : ""} ${looped ? "looped" : ""}`}
@@ -1404,8 +1416,8 @@ export function LibraryPage({
                     disabled={!audioReady || !validLyricTime(line.timeSec)}
                     onClick={async () => {
                       if (looped) {
-                        await api.audioSetLoop();
-                      } else if (!(await loopLine(idx))) {
+                        await stopLineLoop();
+                      } else if (!(await startLineLoop(line.utteranceId))) {
                         onAudioError(tr("这一句太短，无法循环"));
                       }
                     }}

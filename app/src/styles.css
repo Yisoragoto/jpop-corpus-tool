@@ -1081,6 +1081,28 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 .line.current { background: var(--accent-soft); border-radius: 4px; }
 .line.looped { box-shadow: inset 2px 0 0 var(--accent); }
 
+/* 循环区间调整栏（#64）：贴在歌词栏顶上，滚到哪儿都在；一条，不是方框 */
+.loop-adjust {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px;
+  margin: 0 0 10px; padding: 8px 10px; border-radius: 6px;
+  background: var(--content); box-shadow: inset 2px 0 0 var(--accent);
+  font-size: 12px;
+}
+.loop-adjust-title { font-weight: 600; }
+.loop-edge { display: inline-flex; align-items: center; gap: 2px; }
+.loop-edge-label { color: var(--muted); margin-right: 4px; }
+.loop-step {
+  min-width: 34px; padding: 2px 4px; border-radius: 4px;
+  font-size: 11px; font-variant-numeric: tabular-nums; color: var(--muted);
+}
+.loop-step:hover { background: var(--accent-soft); color: var(--accent); }
+.loop-time {
+  min-width: 64px; text-align: center; font-variant-numeric: tabular-nums;
+}
+.loop-time small { margin-left: 3px; color: var(--accent); font-size: 10px; }
+.loop-adjust-actions { display: inline-flex; gap: 12px; margin-left: auto; }
+
 /* ── 逐字点亮（卡拉 OK）──
    只有当前行在逐字时每个字才包成 .kc（见 LibraryPage 的 renderLineText），动画由 useKaraoke 每帧改类名和 --p。
    类名带 kc- 前缀：播放条早有一个 .now（display: flex），撞上了会把带注音的行挤得一个字一折。
