@@ -114,6 +114,39 @@ utcOffsetMinutes?: number,
  */
 addedLimit?: number, };
 
+export type LoopAdjustArgs = { firstUtteranceId: number, lastUtteranceId: number, 
+/**
+ * 起点、终点挪多少毫秒（负数是提前）。是整个微调量，不是增量；两个都是 0 就是重置
+ */
+startDeltaMs: number, endDeltaMs: number, };
+
+/**
+ * 一段循环区间，交给播放器的起止已经算好了微调。
+ */
+export type LoopRegion = { songId: string, firstUtteranceId: number, lastUtteranceId: number, 
+/**
+ * 交给播放器的起止（含微调，夹在曲目范围内）
+ */
+startSec: number, endSec: number, 
+/**
+ * 不含微调的起止
+ */
+baseStartSec: number, baseEndSec: number, 
+/**
+ * 第一行记住的起点微调、最后一行记住的终点微调（毫秒，负数是提前）
+ */
+startDeltaMs: number, endDeltaMs: number, 
+/**
+ * 终点取的是最后一个字的真实结束时刻
+ */
+endFromWords: boolean, };
+
+export type LoopRegionArgs = { 
+/**
+ * 循环的第一行和最后一行；单行循环两个一样
+ */
+firstUtteranceId: number, lastUtteranceId: number, };
+
 /**
  * 挪了位置的歌。
  */
@@ -303,6 +336,8 @@ export interface Commands {
   timeline: { args: NoArgs; output: Array<YearStats> };
   corpus_status: { args: NoArgs; output: CorpusStatus };
   get_track: { args: TrackArgs; output: Track | null };
+  loop_region: { args: LoopRegionArgs; output: LoopRegion | null };
+  loop_adjust_set: { args: LoopAdjustArgs; output: LoopRegion | null };
   quick_search: { args: QuickSearchArgs; output: QuickSearchResults };
   home_summary: { args: HomeSummaryArgs; output: HomeSummary };
   library_sources: { args: NoArgs; output: Array<SourceView> };

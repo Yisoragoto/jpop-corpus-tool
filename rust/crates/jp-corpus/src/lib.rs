@@ -465,6 +465,16 @@ impl Corpus {
         segments::context_window(&self.conn, utterance_id, before, after, segments::DEFAULT_PREROLL_SEC)
     }
 
+    /// 从第一行到最后一行的循环区间（含记住的微调）
+    pub fn loop_region(&self, first: i64, last: i64) -> Result<Option<segments::LoopRegion>> {
+        segments::loop_region(&self.conn, first, last)
+    }
+
+    /// 记住循环区间的微调，返回调完的区间
+    pub fn set_loop_adjust(&self, first: i64, last: i64, start_delta_ms: i64, end_delta_ms: i64) -> Result<Option<segments::LoopRegion>> {
+        segments::set_loop_adjust(&self.conn, first, last, start_delta_ms, end_delta_ms)
+    }
+
     pub fn snapshot(&self) -> Result<analysis::CorpusSnapshot> {
         analysis::snapshot(&self.conn)
     }

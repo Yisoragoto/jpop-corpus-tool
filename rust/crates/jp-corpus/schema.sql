@@ -467,6 +467,16 @@ CREATE TABLE IF NOT EXISTS word_timings (
     PRIMARY KEY (utterance_id, char_start, source)
 );
 
+-- 循环区间的微调（20261108，#64）：时间轴开始晚了、结束早了，循环时听不全。
+-- 循环几行时，起点的微调记在第一行上，终点的记在最后一行上；单行循环两头都记在这一行。
+-- 只影响循环、试听、制卡截的那一段，不改 utterances.time_sec。换歌词、删歌时跟着行一起删。
+CREATE TABLE IF NOT EXISTS line_loop_adjust (
+    utterance_id   INTEGER PRIMARY KEY REFERENCES utterances(id),
+    start_delta_ms INTEGER NOT NULL DEFAULT 0,
+    end_delta_ms   INTEGER NOT NULL DEFAULT 0,
+    updated_at     TEXT    NOT NULL
+);
+
 -- ── 歌词来源与选择（20261031）──────────────────────────────────
 -- 设计说明见 jp-corpus/src/lyric_sources.rs。
 -- 一首歌的每个来源各存一行：原文、格式、更新时间、是不是用户改过的。
