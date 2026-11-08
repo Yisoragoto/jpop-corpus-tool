@@ -1045,8 +1045,6 @@ export function LibraryPage({
         onOpenGraph={() => go({ kind: "graph", focus: view?.kind === "person" ? view.id : null })}
         onOpenTimeline={() => go({ kind: "timeline" })}
         onOpenCloud={() => go({ kind: "cloud" })}
-        onOpenSources={() => go({ kind: "sources" })}
-        onOpenTidy={() => go({ kind: "tidy" })}
         onHide={toggleBrowser}
       />
 
@@ -1092,7 +1090,7 @@ export function LibraryPage({
       )}
 
       {view?.kind === "sources" && (
-        <main className="pane profile-pane sources-pane">
+        <main className="pane profile-pane sources-pane" data-tool="sources">
           {backButton}
           <LibrarySources onReview={reviewFiles} onChanged={() => { onLibraryReload(); refreshMissing(); void actions.reloadLyrics(); }} onError={onAudioError} version={libraryVersion} />
           {missing.length > 0 && (
@@ -1120,7 +1118,7 @@ export function LibraryPage({
       )}
 
       {view?.kind === "tidy" && (
-        <main className="pane tool-pane">
+        <main className="pane tool-pane" data-tool="tidy">
           {backButton}
           <ScrapePage onError={onAudioError} onChanged={onLibraryReload} />
         </main>

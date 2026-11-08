@@ -507,6 +507,13 @@ code { background: var(--code-fill); padding: 1px 5px; border-radius: 4px; font-
 }
 
 .cmdbar-primary { flex: none; margin-left: 20px; }
+/* 页头的次要命令：无底色，图标 + 字（WinUI CommandBar 的 AppBarButton）。正开着的那个用强调色 */
+.cmdbar-tools { flex: none; display: flex; gap: 2px; margin-left: 12px; }
+.cmdbar-tools + .cmdbar-primary { margin-left: 8px; }
+.cmdbar-tools button { display: flex; align-items: center; gap: 6px; height: var(--ctl-h); padding: 0 10px; color: var(--muted); }
+.cmdbar-tools button:hover { color: var(--fg); }
+.app:has(.pane[data-tool="sources"]) .cmdbar-tools [data-tool="sources"],
+.app:has(.pane[data-tool="tidy"]) .cmdbar-tools [data-tool="tidy"] { background: var(--accent-soft); color: var(--accent-text); }
 /* 来源、整理、添加音乐里各有自己的主按钮，页头那个让开 */
 .app:has(.tool-pane, .sources-pane, .library-empty) .cmdbar-primary { display: none; }
 .stats { display: flex; gap: 18px; }
@@ -2897,6 +2904,7 @@ body.col-resizing .columns.library-page { transition: none; }
    大屏（27 寸 2560 宽、100% 缩放）：版心放宽，字、按钮、封面都大一档，不再是一小块缩在中间。 */
 @media (max-width: 1100px) {
   .cmdbar .stats { display: none; }
+  .cmdbar .cmdbar-tools { margin-left: auto; }
   .now-artist { display: none; }
   .volume { width: 64px; }
   .player-tools { gap: 2px; }
@@ -3410,11 +3418,17 @@ table.data th.sortable:hover { color: var(--fg); }
 .scrape > .lyrics-batch { margin-bottom: 8px; }
 
 /* 左栏底部：整个资料库的三种看法（关系网、时间轴、词云），带文字 */
-.browser-views { display: grid; gap: 1px; padding: 8px 6px 10px; border-top: 1px solid var(--line); }
+/* 整个资料库的三种视图：一行命令栏（图标 + 字），原来竖着三行占掉列表一大块。
+   左栏拖窄到放不下字时只留图标，字在 title 里 */
+.browser-views { display: flex; gap: 2px; padding: 6px; border-top: 1px solid var(--line); container-type: inline-size; }
 .browser-views button {
-  display: flex; align-items: center; gap: 10px; height: var(--ctl-h); padding: 0 10px; border-radius: var(--ctl-radius);
-  color: var(--muted); text-align: left; font-size: 13px; transition: background 140ms, color 140ms;
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--ctl-h); padding: 0 8px; border-radius: var(--ctl-radius);
+  color: var(--muted); font-size: 12.5px; white-space: nowrap; transition: background 140ms, color 140ms;
 }
+.browser-views button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.browser-views button > svg { flex: none; }
+@container (max-width: 200px) { .browser-views button > span { display: none; } }
 .browser-views button:hover { background: var(--control-hover); color: var(--fg); }
 .browser-views button.on { background: var(--accent-soft); color: var(--accent-text); }
 
