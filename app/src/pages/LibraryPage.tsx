@@ -9,7 +9,7 @@ import { Icon } from "../components/Icon";
  * 点例句可以跳到另一首歌——这就是要求书第十八条那条回路。
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 
 import {
   api,
@@ -46,7 +46,7 @@ import { SubcorpusPicker } from "../components/SubcorpusPicker";
 import { LyricsTools } from "../components/LyricsTools";
 import { LyricsFill } from "../components/LyricsFill";
 import { lyricFontStack, useLyricFontFiles } from "../fonts";
-import { retryFurigana, useLyricsDisplay, useSongFurigana } from "../lyricsDisplay";
+import { refreshFurigana, retryFurigana, useLyricsDisplay, useSongFurigana } from "../lyricsDisplay";
 import { csvProblem, describeDelete, describeEdit, libraryApi, type MissingAudio } from "../libraryAdmin";
 import { segmentLine, type Piece } from "../lyricSegments";
 import { albumOwner, sameView, type LibraryView } from "../libraryIndex";
@@ -57,6 +57,7 @@ import type { WordJump } from "../wordCloud";
 import { timedLines } from "../usePlayback";
 import { activeLineLoop, startLineLoop, stopLineLoop, useLineLoopRegion } from "../lineLoop";
 import { LoopAdjustBar } from "../components/LoopAdjustBar";
+import { ReadingEditor, type ReadingTarget } from "../components/ReadingEditor";
 import { useFollowScroll, useSyncedLine } from "../playbackClock";
 import { useAppSettings } from "../settings";
 import { useKaraoke } from "../useKaraoke";
@@ -124,6 +125,9 @@ function useSongWordTimings(lyrics: { utteranceId: number }[], enabled: boolean)
   }, [lyrics, enabled]);
   return enabled && state.lyrics === lyrics ? state.list : NO_TIMINGS;
 }
+
+/** 词里有汉字才有振假名可改（含「々」） */
+const HAS_KANJI = /[\p{Script=Han}々]/u;
 
 const NO_TIMINGS: WordTiming[] = [];
 
@@ -361,6 +365,9 @@ export function LibraryPage({
 
   const display = useLyricsDisplay();
   const furigana = useSongFurigana(selected?.id, display.furigana, display.furiganaMode, onAudioError);
+  // 右键一个词改读音（#63）
+  const [readingTarget, setReadingTarget] = useState<ReadingTarget | null>(null);
+  const closeReading = useCallback(() => setReadingTarget(null), []);
   useLyricFontFiles([display.fontFamily, display.fallbackFamily], onAudioError);
   // 全屏歌词；stageSide 是全屏里右边的查词栏（点了词才出来）
   const [stageOpen, setStageOpen] = useState(false);
@@ -553,6 +560,16 @@ export function LibraryPage({
                 setStageSide(true);
               };
               const content = segment.pieces.length > 0 ? pieces(segment.pieces) : chars(token.surface);
+              // 右键改读音：只有带汉字的词才有振假名可改
+              const editReading = HAS_KANJI.test(token.surface)
+                ? (e: ReactMouseEvent) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const reading = segment.pieces.map((p) => p.reading ?? p.text).join("");
+                    const shown = segment.pieces.some((p) => p.reading !== undefined) ? reading : "";
+                    setReadingTarget({ songId, surface: token.surface, reading: shown, x: e.clientX, y: e.clientY });
+                  }
+                : undefined;
               return CONTENT_POS.has(token.pos) ? (
                 <button
                   key={i}
@@ -562,6 +579,7 @@ export function LibraryPage({
                     e.stopPropagation();
                     lookupToken();
                   }}
+                  onContextMenu={editReading}
                   title={`${token.lemma} · ${POS_LABELS[token.pos] ?? token.pos}`}
                 >
                   {content}
@@ -574,6 +592,7 @@ export function LibraryPage({
                     e.stopPropagation();
                     lookupToken();
                   }}
+                  onContextMenu={editReading}
                   title={tr("查词典")}
                 >
                   {content}
@@ -1443,6 +1462,10 @@ export function LibraryPage({
       />
 
       <aside className={`pane corpus ${wide ? "is-hidden" : ""}`}>{corpusContent}</aside>
+
+      {readingTarget && (
+        <ReadingEditor target={readingTarget} onChanged={refreshFurigana} onClose={closeReading} onError={onAudioError} />
+      )}
 
       {stageOpen && selected && (
         <LyricsStage

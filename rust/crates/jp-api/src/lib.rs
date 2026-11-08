@@ -54,6 +54,7 @@ use serde_json::Value;
 pub mod corpus;
 pub mod home;
 pub mod library;
+pub mod ruby;
 pub mod search;
 pub mod sources;
 
@@ -139,6 +140,9 @@ commands![
     library::GetTrack,
     library::GetLoopRegion,
     library::SetLoopAdjust,
+    ruby::GetReadingRule,
+    ruby::SetReadingRule,
+    ruby::ClearReadingRule,
     search::QuickSearch,
     home::GetHomeSummary,
     sources::LibrarySources,

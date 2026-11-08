@@ -48,6 +48,7 @@ pub mod explore;
 pub mod lexical;
 pub mod morphology;
 pub mod media;
+pub mod ruby;
 pub mod segments;
 pub mod subcorpus;
 pub mod word_timing;

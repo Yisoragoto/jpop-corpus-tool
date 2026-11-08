@@ -465,6 +465,7 @@ pub fn attach_decoded(
     title: &str,
 ) -> Result<Stats> {
     let stats = attach_parsed(tx, song_id, &decoded.lrc, &decoded.parsed, source, analyzer, artist, title)?;
+    attach_source_rubies(tx, song_id, &decoded.rubies)?;
     if !decoded.format.is_lrc_family() {
         let lines = &decoded.parsed.lines;
         let precision = if lines.iter().any(|l| !l.words.is_empty()) {
@@ -477,6 +478,31 @@ pub fn attach_decoded(
         record_original(tx, song_id, decoded.format.name(), &decoded.original, precision)?;
     }
     Ok(stats)
+}
+
+/// 刚写进去的这一版歌词的源文件注音（#63）：`rubies` 和写库的行一一对应（第 i 个就是 line_idx = i 那一行）。
+/// 只有 TTML 这类自带注音的格式才有，其余是空的，什么都不写。
+pub fn attach_source_rubies(tx: &Connection, song_id: &str, rubies: &[Vec<jp_lyric_format::RubyText>]) -> Result<usize> {
+    if rubies.iter().all(Vec::is_empty) {
+        return Ok(0);
+    }
+    // 同一 line_idx 取最新写的那一行（刚插进去的）
+    let mut ids = std::collections::HashMap::new();
+    {
+        let mut stmt = tx.prepare("SELECT line_idx, id FROM utterances WHERE song_id = ?1 ORDER BY id")?;
+        let rows = stmt.query_map(params![song_id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+        for row in rows {
+            let (line_idx, id) = row?;
+            ids.insert(line_idx, id);
+        }
+    }
+    let mut written = 0;
+    for (line_idx, line) in rubies.iter().enumerate() {
+        let Some(&id) = ids.get(&(line_idx as i64)) else { continue };
+        let spans: Vec<(usize, usize, &str)> = line.iter().map(|r| (r.start, r.end, r.reading.as_str())).collect();
+        written += jp_corpus::ruby::insert_source(tx, id, &spans)?;
+    }
+    Ok(written)
 }
 
 /// 当前版本的原文换成转换前的那一份（`source_raw` / `raw_format`），来源那一行跟着改。
@@ -1050,6 +1076,31 @@ mod tests {
             vec![("夜が明ける".to_string(), 0, 2, 10.0), ("夜が明ける".to_string(), 2, 5, 10.4)],
             "逐字时间要跟着导进来"
         );
+    }
+
+    #[test]
+    fn ttml_ruby_becomes_source_ruby_on_the_written_lines() {
+        // #63：源文件注音（他人→ひと）跟着这一版歌词写进 line_ruby；换歌词时跟着删
+        let conn = test_db();
+        conn.execute("INSERT INTO songs (id, title, artist) VALUES ('001', '思想犯', '誰か')", []).unwrap();
+        let ttml = concat!(
+            r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling"><body><div>"#,
+            r#"<p begin="1s" end="2s"><span begin="1s" end="2s">ねえ</span></p>"#,
+            r#"<p begin="3s" end="5s"><span tts:ruby="container" begin="3s" end="4s"><span tts:ruby="base">他人</span>"#,
+            r#"<span tts:ruby="text">ひと</span></span><span begin="4s" end="5s">の</span></p></div></body></tt>"#,
+        );
+        let decoded = jp_lyric_format::decode_str(ttml, Some("ttml")).unwrap();
+        let source = LyricSource::new("file", "", "test.ttml", "user");
+        attach_decoded(&conn, "001", &decoded, &source, None, "誰か", "思想犯").unwrap();
+        let rubies = jp_corpus::ruby::for_song(&conn, "001").unwrap();
+        assert_eq!(rubies.len(), 1);
+        let text: String = conn
+            .query_row("SELECT text FROM utterances WHERE id = ?1", [rubies[0].utterance_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!((text.as_str(), rubies[0].char_start, rubies[0].char_end, rubies[0].reading.as_str()), ("他人の", 0, 2, "ひと"));
+
+        crate::maintain::clear_lyrics(&conn, "001").unwrap();
+        assert!(jp_corpus::ruby::for_song(&conn, "001").unwrap().is_empty());
     }
 
     #[test]

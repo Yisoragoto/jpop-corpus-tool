@@ -349,6 +349,7 @@ fn local_fallback(
                         end_ms: w.end_sec.map(|s| (s * 1000.0).round() as u64),
                     })
                     .collect(),
+                rubies: Vec::new(),
             })
             .collect(),
         }
@@ -718,6 +719,7 @@ mod tests {
                 lines: vec![TimedLine {
                     text: "あの空".into(),
                     start_ms: 10_000,
+                    rubies: Vec::new(),
                     end_ms: Some(12_000),
                     words: vec![
                         TimedWord {
@@ -802,6 +804,7 @@ mod tests {
         found.lyrics.lines[0] = TimedLine {
             text: "夜が\u{3000}明ける".into(),
             start_ms: 10_000,
+            rubies: Vec::new(),
             end_ms: Some(12_000),
             words: vec![
                 TimedWord { start: 0, end: 2, start_ms: 10_000, end_ms: Some(10_800) },

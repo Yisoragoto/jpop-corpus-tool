@@ -510,6 +510,7 @@ pub fn from_basic(basic: jp_scraper::timed_sources::BasicFound) -> Option<TimedF
                     end_ms: None,
                     text: l.text,
                     words: Vec::new(),
+                    rubies: Vec::new(),
                 })
                 .collect(),
         },
@@ -766,6 +767,8 @@ pub fn apply(
         &before.artist,
         &before.title,
     )?;
+    // 候选自带的注音（AMLL 的 TTML 可能有 tts:ruby）跟着写进去：写库的行就是 `parsed` 的行
+    jp_import::attach_source_rubies(&tx, &pending.song_id, &jp_lyric_format::align_rubies(&found.lyrics, &parsed.lines))?;
     let native = candidate_mode(found) == "karaoke";
     let report = serde_json::json!({"status":"validated", "mode":candidate_mode(found),"native":native,"algorithmGenerated":false,"textAgreement":if before.lines.is_empty(){None}else{Some(jp_scraper::similarity::difflib_ratio(&body_key(&before.text()),&body_key(&found.lyrics.lines.iter().map(|l|l.text.as_str()).collect::<String>())))}, "manualPreserved":manual.len(), "lineCount":parsed.lines.len()});
     tx.execute("UPDATE lyric_versions SET raw_format=?2,source_raw=?3,sync_granularity=?4,timing_origin=?5,timing_validation_json=?6 WHERE song_id=?1 AND is_current=1",params![pending.song_id,found.format,found.raw_text,if native {"unit"} else if candidate_mode(found)=="plain" {"plain"} else {"line"},if native {"native"} else {"source"},report.to_string()])?;
@@ -932,6 +935,7 @@ mod tests {
                     .map(|start_ms| TimedLine {
                         start_ms,
                         end_ms: Some(start_ms + 1400),
+                        rubies: Vec::new(),
                         text: "あの空".into(),
                         words: vec![
                             TimedWord {

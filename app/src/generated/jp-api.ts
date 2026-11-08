@@ -227,6 +227,21 @@ heardLemmas: number,
  */
 totalLemmas: number, };
 
+/**
+ * 一条改过的读音。`song_id` 是空串时对全库生效
+ */
+export type ReadingRule = { songId: string, surface: string, reading: string, 
+/**
+ * 对全库生效（`song_id` 为空）
+ */
+wholeLibrary: boolean, };
+
+export type ReadingRuleArgs = { songId: string, 
+/**
+ * 词的写法（分出来的那个词）
+ */
+surface: string, };
+
 export type RelinkArg = { songId: string, to: string, };
 
 /**
@@ -243,6 +258,12 @@ source: string,
 audioPresent: boolean, };
 
 export type SetEnabledArgs = { id: number, enabled: boolean, };
+
+export type SetReadingRuleArgs = { songId: string, surface: string, reading: string, 
+/**
+ * 全库同一写法都这么读；不勾只管这首歌
+ */
+wholeLibrary: boolean, };
 
 /**
  * 一首歌和它的文件。
@@ -338,6 +359,9 @@ export interface Commands {
   get_track: { args: TrackArgs; output: Track | null };
   loop_region: { args: LoopRegionArgs; output: LoopRegion | null };
   loop_adjust_set: { args: LoopAdjustArgs; output: LoopRegion | null };
+  reading_rule: { args: ReadingRuleArgs; output: ReadingRule | null };
+  reading_rule_set: { args: SetReadingRuleArgs; output: ReadingRule };
+  reading_rule_clear: { args: ReadingRuleArgs; output: ReadingRule | null };
   quick_search: { args: QuickSearchArgs; output: QuickSearchResults };
   home_summary: { args: HomeSummaryArgs; output: HomeSummary };
   library_sources: { args: NoArgs; output: Array<SourceView> };
