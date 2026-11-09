@@ -526,6 +526,15 @@ pub async fn inflection<R: tauri::Runtime>(
     blocking(app, move |state| state.corpus().inflection(&query)).await
 }
 
+/// 元音分布和单元音词（音系层）
+#[tauri::command]
+pub async fn vowels<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::phonology::VowelQuery,
+) -> CmdResult<jp_corpus::phonology::VowelResult> {
+    blocking(app, move |state| state.corpus().vowels(&query)).await
+}
+
 /// 表记变体（君 / きみ / キミ）
 #[tauri::command]
 pub async fn orthography<R: tauri::Runtime>(

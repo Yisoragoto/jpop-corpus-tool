@@ -34,6 +34,7 @@ import { AnalysisRuns } from "../components/AnalysisRuns";
 import { KeynessCard, RepeatEffectCard } from "../components/CorpusCompare";
 import { LexicalCard } from "../components/LexicalCard";
 import { InflectionCard, OrthographyCard } from "../components/MorphologyCards";
+import { PhonologyCard } from "../components/PhonologyCard";
 import { NgramCard } from "../components/NgramCard";
 import { QualityCard } from "../components/QualityCard";
 import { saveCsv } from "../components/saveCsv";
@@ -69,13 +70,14 @@ const SORT_UP: Record<FreqSort, boolean> = { freq: false, songs: false, dp: true
 
 const dispersionKey = (lemma: string, pos: string) => `${pos}\u{1f}${lemma}`;
 
-type Tab = "overview" | "words" | "ngrams" | "morph" | "richness" | "compare" | "report" | "runs";
+type Tab = "overview" | "words" | "ngrams" | "morph" | "phono" | "richness" | "compare" | "report" | "runs";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: tr("概览") },
   { key: "words", label: tr("词表") },
   { key: "ngrams", label: tr("词簇") },
   { key: "morph", label: tr("活用·写法") },
+  { key: "phono", label: tr("音系") },
   { key: "richness", label: tr("丰富度") },
   { key: "compare", label: tr("对比") },
   { key: "report", label: tr("报告") },
@@ -398,6 +400,12 @@ export function AnalyticsPage({
         <div className="analytics-tab" hidden={show("morph")}>
           <InflectionCard filter={filter} onSearchInflected={onSearchInflected} onError={onError} />
           <OrthographyCard filter={filter} onSearch={onSearchPhrase} onError={onError} />
+        </div>
+      )}
+
+      {visited.has("phono") && (
+        <div className="analytics-tab" hidden={show("phono")}>
+          <PhonologyCard filter={filter} onSearchWord={onSearchWord} onError={onError} />
         </div>
       )}
 

@@ -90,6 +90,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
             commands::kwic_breakdown,
             commands::collocation_network,
             commands::orthography,
+            commands::vowels,
             commands::song_profile,
             commands::search_lyrics,
             commands::quick_search,

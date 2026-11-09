@@ -10,6 +10,8 @@
 //! 匹配失败的绝大多数原因都在这一层：全角半角、大小写、feat. 的七八种写法、
 //! 【】［］（）四种括号、以及 Live / Remastered / TV size 这类版本后缀。
 
+pub mod phonology;
+
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 

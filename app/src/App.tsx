@@ -61,7 +61,7 @@ const ROUTES: { key: Route; label: string; hint: string }[] = [
   { key: "home", label: tr("首页"), hint: tr("继续听 · 今日 · 语料库") },
   { key: "kwic", label: tr("检索"), hint: tr("KWIC 语境检索与歌词全文") },
   { key: "library", label: tr("曲库"), hint: tr("音乐人 · 专辑 · 歌曲 · 关系网 · 时间轴 · 词云") },
-  { key: "analytics", label: tr("分析"), hint: tr("词表 · 词簇 · 活用与写法 · 丰富度 · 对比") },
+  { key: "analytics", label: tr("分析"), hint: tr("词表 · 词簇 · 活用与写法 · 音系 · 丰富度 · 对比") },
   { key: "anki", label: "Anki", hint: tr("选词 · 用语料例句做卡片") },
   { key: "dict", label: tr("词典"), hint: tr("查词 · 释义 · 音调 · 词频") },
 ];
