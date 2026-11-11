@@ -1484,6 +1484,17 @@ button.kpi:hover { background: var(--panel-2); }
 .phono-subhead { margin: 16px 0 6px; font-size: 14px; }
 .phono-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .phono-lines li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.rhyme-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 10px; }
+.rhyme-input { width: 220px; }
+.rhyme-carriers { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 10px; }
+.rhyme-carriers .chip { font-size: 12.5px; }
+.rhyme-hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.rhyme-hits li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+/* 歌词行按正文显示，只有押韵的那几个词变色；link-btn 的 inline-flex 会在文字和 mark 之间插空隙 */
+.rhyme-hits .rhyme-line { display: inline; text-align: start; font-size: inherit; line-height: inherit; color: var(--text); white-space: normal; }
+.rhyme-example { white-space: normal; text-align: start; }
+.rhyme-hits mark { background: none; color: var(--accent); font-weight: 600; }
+.rhyme-song { margin-left: auto; }
 .coarse-seg.c0 { background: var(--script-kanji); }
 .coarse-seg.c1 { background: var(--script-hiragana); }
 .coarse-seg.c2 { background: var(--script-katakana); }

@@ -535,6 +535,24 @@ pub async fn vowels<R: tauri::Runtime>(
     blocking(app, move |state| state.corpus().vowels(&query)).await
 }
 
+/// 按元音模式找行：脚韵、头韵（音系层）
+#[tauri::command]
+pub async fn rhyme<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::phonology::RhymeQuery,
+) -> CmdResult<jp_corpus::phonology::RhymeResult> {
+    blocking(app, move |state| state.corpus().rhyme(&query)).await
+}
+
+/// 相邻行押韵比碰巧多多少、常见韵脚、押韵最密的歌（音系层）
+#[tauri::command]
+pub async fn rhyme_stats<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    query: jp_corpus::phonology::RhymeStatsQuery,
+) -> CmdResult<jp_corpus::phonology::RhymeStatsResult> {
+    blocking(app, move |state| state.corpus().rhyme_stats(&query)).await
+}
+
 /// 表记变体（君 / きみ / キミ）
 #[tauri::command]
 pub async fn orthography<R: tauri::Runtime>(

@@ -35,6 +35,7 @@ import { KeynessCard, RepeatEffectCard } from "../components/CorpusCompare";
 import { LexicalCard } from "../components/LexicalCard";
 import { InflectionCard, OrthographyCard } from "../components/MorphologyCards";
 import { PhonologyCard } from "../components/PhonologyCard";
+import { RhymeCard } from "../components/RhymeCard";
 import { NgramCard } from "../components/NgramCard";
 import { QualityCard } from "../components/QualityCard";
 import { saveCsv } from "../components/saveCsv";
@@ -406,6 +407,15 @@ export function AnalyticsPage({
       {visited.has("phono") && (
         <div className="analytics-tab" hidden={show("phono")}>
           <PhonologyCard filter={filter} onSearchWord={onSearchWord} onError={onError} />
+          <RhymeCard
+            filter={filter}
+            onOpenLine={(songId, utteranceId) => {
+              void actions
+                .openTrackById(songId, utteranceId === null ? { autoPlay: false } : { scrollTo: utteranceId, autoPlay: false })
+                .then((ok) => ok && onNavigate());
+            }}
+            onError={onError}
+          />
         </div>
       )}
 

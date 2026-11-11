@@ -514,6 +514,16 @@ impl Corpus {
         phonology::vowels(&self.conn, query)
     }
 
+    /// 按元音模式找行（押韵、头韵，见 `phonology`）
+    pub fn rhyme(&self, query: &phonology::RhymeQuery) -> Result<phonology::RhymeResult> {
+        phonology::rhyme(&self.conn, query)
+    }
+
+    /// 相邻行押韵的比例、常见韵脚、押韵最密的歌
+    pub fn rhyme_stats(&self, query: &phonology::RhymeStatsQuery) -> Result<phonology::RhymeStatsResult> {
+        phonology::rhyme_stats(&self.conn, query)
+    }
+
     pub fn breakdown(&self, query: &explore::BreakdownQuery) -> Result<explore::BreakdownResult> {
         explore::breakdown(&self.conn, query)
     }

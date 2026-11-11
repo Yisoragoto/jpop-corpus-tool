@@ -87,6 +87,8 @@ fn dump(db: &str, out: &str, lemma: &str, person: i64, album: i64, songs: &[Stri
         ("collocationNetwork".into(), json!({ "query": { "collocation": { "node": lemma, "minFreq": 1 } } })),
         ("orthography".into(), json!({ "query": {} })),
         ("vowels".into(), json!({ "query": {} })),
+        ("rhyme".into(), json!({ "query": { "pattern": "ai" } })),
+        ("rhymeStats".into(), json!({ "query": {} })),
         ("qualityOverview".into(), json!({ "limit": 100000 })),
         ("subcorpusFacets".into(), json!({})),
         ("subcorpusPreview".into(), json!({ "filter": {} })),

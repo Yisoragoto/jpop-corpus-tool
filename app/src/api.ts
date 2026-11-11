@@ -627,6 +627,95 @@ export interface VowelResult {
   provenance: Provenance;
 }
 
+export type RhymePosition = "end" | "start" | "any";
+
+export interface RhymeQuery {
+  scope?: AnalysisScope;
+  /** 元音（a i u e o，n = ン，q = ッ，. = 任意一个）或假名，假名按发音转 */
+  pattern: string;
+  position?: RhymePosition;
+  /** ン、ッ 也要对上 */
+  strict?: boolean;
+  limit?: number;
+}
+
+export interface RhymeHit {
+  songId: string;
+  title: string;
+  artist: string;
+  utteranceId: number;
+  timeSec: number | null;
+  text: string;
+  kana: string;
+  matched: string;
+  /** 押韵的词在 text 里的字符范围（Unicode 码点下标） */
+  charStart: number | null;
+  charEnd: number | null;
+}
+
+export interface RhymeCarrier {
+  text: string;
+  kana: string;
+  lines: number;
+  songs: number;
+}
+
+export interface RhymeResult {
+  /** 解析后的模式；空串表示没有能比的音 */
+  pattern: string;
+  lines: number;
+  songs: number;
+  hits: RhymeHit[];
+  carriers: RhymeCarrier[];
+  provenance: Provenance;
+}
+
+export interface RhymeStatsQuery {
+  scope?: AnalysisScope;
+  position?: RhymePosition;
+  strict?: boolean;
+  tail?: number;
+  minPairs?: number;
+  limit?: number;
+}
+
+export interface RhymeLength {
+  length: number;
+  adjacent: number;
+  adjacentRhymed: number;
+  adjacentRate: number;
+  baseline: number;
+  baselineRhymed: number;
+  baselineRate: number;
+  lift: number | null;
+}
+
+export interface RhymeTail {
+  tail: string;
+  pairs: number;
+  songs: number;
+  sameWord: number;
+  example: { songId: string; first: string; second: string };
+}
+
+export interface SongRhyme {
+  songId: string;
+  title: string;
+  artist: string;
+  pairs: number;
+  rhymed: number;
+  rate: number;
+}
+
+export interface RhymeStatsResult {
+  tail: number;
+  lengths: RhymeLength[];
+  sameWord: number;
+  tails: RhymeTail[];
+  songs: SongRhyme[];
+  provenance: Provenance;
+}
+
 export interface OrthographyQuery {
   scope?: AnalysisScope;
   minFreq?: number;
@@ -1075,6 +1164,8 @@ export const api = {
   collocationNetwork: (query: NetworkQuery) => call<NetworkResult>("collocation_network", { query }),
   orthography: (query: OrthographyQuery) => call<OrthographyResult>("orthography", { query }),
   vowels: (query: VowelQuery) => call<VowelResult>("vowels", { query }),
+  rhyme: (query: RhymeQuery) => call<RhymeResult>("rhyme", { query }),
+  rhymeStats: (query: RhymeStatsQuery) => call<RhymeStatsResult>("rhyme_stats", { query }),
   songProfile: (songId: string, limit?: number) => call<SongProfile>("song_profile", { songId, limit }),
   searchLyrics: (text: string, limit?: number) =>
     call<LyricHit[]>("search_lyrics", { text, limit }),

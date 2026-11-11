@@ -423,6 +423,8 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         "collocationNetwork" => serde_json::to_value(corpus.collocation_network(&arg(&args, "query")?)?)?,
         "orthography" => serde_json::to_value(corpus.orthography(&arg(&args, "query")?)?)?,
         "vowels" => serde_json::to_value(corpus.vowels(&arg(&args, "query")?)?)?,
+        "rhyme" => serde_json::to_value(corpus.rhyme(&arg(&args, "query")?)?)?,
+        "rhymeStats" => serde_json::to_value(corpus.rhyme_stats(&arg(&args, "query")?)?)?,
         "songProfile" => serde_json::to_value(
             corpus.song_profile(&arg::<String>(&args, "songId")?, arg_or(&args, "limit", 12)?)?,
         )?,
