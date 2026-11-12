@@ -176,7 +176,8 @@ export function albumOwner(albumArtist: string): string {
  * 歌本身存在 `useLibrary` 的 `selected` 里，这里只记「现在看的是歌」。
  */
 export type LibraryView =
-  | { kind: "song" }
+  /** `songId`：离开这首歌时记下来的，「返回」时回到的是这一首而不是「随便哪首歌」。正在看的那一层不带 */
+  | { kind: "song"; songId?: string | undefined }
   | { kind: "person"; id: number; albumId?: number | null }
   | { kind: "album"; albumId: number; title: string }
   /** 全局关系网；focus = 打开时选中的人 */
@@ -195,6 +196,7 @@ export function sameView(a: LibraryView, b: LibraryView): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "person" && b.kind === "person") return a.id === b.id;
   if (a.kind === "album" && b.kind === "album") return a.albumId === b.albumId;
+  if (a.kind === "song" && b.kind === "song") return a.songId === undefined || b.songId === undefined || a.songId === b.songId;
   return true;
 }
 

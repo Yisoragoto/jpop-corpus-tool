@@ -1,3 +1,4 @@
+import { TrackPlayButton } from "./TrackPlayButton";
 import { useDismiss } from "../dismiss";
 import { Segmented } from "./Segmented";
 import { useMenuFocus } from "../menuFocus";
@@ -168,9 +169,13 @@ interface ProfileProps {
   /** 要定位的专辑（从左栏「专辑」点进来的） */
   focusAlbumId: number | null;
   playingSongId: string | null;
+  /** 播放条里那首正在走（不是暂停）：行上的按钮显示「暂停」 */
+  playingNow: boolean;
   onOpenPerson: (id: number) => void;
+  /** 点行：打开歌词看，不动正在放的歌 */
   onOpenTrack: (track: Track, from: HTMLElement) => void;
-  onPlayAll: (tracks: Track[]) => void;
+  /** 播放：从第 start 首起按这个列表往下放，人留在这一页 */
+  onPlayList: (tracks: Track[], start?: number) => void;
   /** 改了成员：目录要重拉 */
   onMembersChanged: () => void;
   /** 看这个人的词云 */
@@ -192,9 +197,10 @@ export function PersonProfile({
   data,
   focusAlbumId,
   playingSongId,
+  playingNow,
   onOpenPerson,
   onOpenTrack,
-  onPlayAll,
+  onPlayList,
   onMembersChanged,
   onOpenCloud,
   onOpenGraph,
@@ -432,7 +438,7 @@ export function PersonProfile({
           </div>
           <div className="hero-actions">
             {works !== null && works.length > 0 && (
-              <button className="primary play-all" onClick={() => onPlayAll(sections[0]?.works ?? works)}>
+              <button className="primary play-all" onClick={() => onPlayList(sections[0]?.works ?? works)}>
                 <Icon name="play" />{tr("播放")}</button>
             )}
             {canCloud && (
@@ -480,7 +486,7 @@ export function PersonProfile({
               <div className="overview-releases">
                 <div className="overview-head">
                   <h2>{tr("单曲")}</h2>
-                  <span className="muted small">{tr("{n} 首 · 最新在前 · 点一下就播放", { n: songs.length })}</span>
+                  <span className="muted small">{tr("{n} 首 · 最新在前", { n: songs.length })}</span>
                   <Segmented
                     bare
                     className="view-switch"
@@ -497,38 +503,43 @@ export function PersonProfile({
                   {songs.map((t, i) => {
                     const now = playingSongId === t.id;
                     const meta = [t.year.slice(0, 4), titleKey(releaseTitle(t.album)) === titleKey(t.title) ? "" : t.album, t.durationSec ? formatDuration(t.durationSec) : ""].filter(Boolean).join(" · ");
+                    const play = (
+                      <TrackPlayButton title={t.title} current={now} playing={now && playingNow} onPlay={() => onPlayList(songs, i)} />
+                    );
                     return singlesView === "rows" ? (
-                      <button
-                        key={t.id}
-                        className={`release-row song-row ${now ? "now" : ""}`}
-                        style={{ ["--n" as string]: Math.min(i, 12) }}
-                        onClick={() => onPlayAll([t])}
-                        title={tr("播放「{title}」", { title: t.title })}
-                      >
-                        <span className="song-cover">
-                          <Cover path={t.coverPath} size={52} rounded={6} />
-                          <span className="song-play" aria-hidden="true"><Icon name={now ? "music" : "play"} /></span>
-                        </span>
-                        <span>
+                      <div key={t.id} className="song-row-wrap as-row">
+                        <button
+                          className={`release-row song-row ${now ? "now" : ""}`}
+                          style={{ ["--n" as string]: Math.min(i, 12) }}
+                          onClick={(e) => onOpenTrack(t, e.currentTarget)}
+                          title={tr("看《{title}》的歌词", { title: t.title })}
+                        >
+                          <span className="song-cover">
+                            <Cover path={t.coverPath} size={52} rounded={6} />
+                          </span>
+                          <span>
+                            <b>{t.title}</b>
+                            <small>{meta}</small>
+                          </span>
+                        </button>
+                        {play}
+                      </div>
+                    ) : (
+                      <div key={t.id} className="song-row-wrap as-card">
+                        <button
+                          className={`cover-card song-row ${now ? "now" : ""}`}
+                          style={{ ["--n" as string]: Math.min(i, 12) }}
+                          onClick={(e) => onOpenTrack(t, e.currentTarget)}
+                          title={tr("看《{title}》的歌词", { title: t.title })}
+                        >
+                          <span className="song-cover">
+                            <Cover path={t.coverPath} size={160} rounded={8} />
+                          </span>
                           <b>{t.title}</b>
                           <small>{meta}</small>
-                        </span>
-                      </button>
-                    ) : (
-                      <button
-                        key={t.id}
-                        className={`cover-card song-row ${now ? "now" : ""}`}
-                        style={{ ["--n" as string]: Math.min(i, 12) }}
-                        onClick={() => onPlayAll([t])}
-                        title={tr("播放「{title}」", { title: t.title })}
-                      >
-                        <span className="song-cover">
-                          <Cover path={t.coverPath} size={160} rounded={8} />
-                          <span className="song-play" aria-hidden="true"><Icon name={now ? "music" : "play"} /></span>
-                        </span>
-                        <b>{t.title}</b>
-                        <small>{meta}</small>
-                      </button>
+                        </button>
+                        {play}
+                      </div>
                     );
                   })}
                 </div>
@@ -661,17 +672,18 @@ export function PersonProfile({
                         </h3>
                         <ol className="album-rows">
                           {g.tracks.map((t, k) => (
-                            <li key={t.id}>
+                            <li key={t.id} className="track-line">
                               <button
                                 className={`album-row ${playingSongId === t.id ? "now" : ""}`}
                                 onClick={(e) => onOpenTrack(t, e.currentTarget)}
-                                title={`${t.title} · ${t.artist}`}
+                                title={tr("看《{title}》的歌词", { title: t.title })}
                               >
                                 <span className="album-row-no">{playingSongId === t.id ? "♪" : k + 1}</span>
                                 <span className="album-row-title">{t.title}</span>
                                 {t.artist !== name && <span className="album-row-artist">{t.artist}</span>}
                                 <span className="album-row-time">{formatDuration(t.durationSec)}</span>
                               </button>
+                              <TrackPlayButton className="in-row" title={t.title} current={playingSongId === t.id} playing={playingSongId === t.id && playingNow} onPlay={() => onPlayList(g.tracks, k)} />
                             </li>
                           ))}
                         </ol>
@@ -904,15 +916,17 @@ export function AlbumView({
   album,
   title,
   playingSongId,
+  playingNow,
   onOpenTrack,
-  onPlayAll,
+  onPlayList,
   onError,
 }: {
   album: Album | null;
   title: string;
   playingSongId: string | null;
+  playingNow: boolean;
   onOpenTrack: (track: Track, from: HTMLElement) => void;
-  onPlayAll: (tracks: Track[]) => void;
+  onPlayList: (tracks: Track[], start?: number) => void;
   onError: (message: string) => void;
 }) {
   const [tracks, setTracks] = useState<Track[] | null>(null);
@@ -951,22 +965,25 @@ export function AlbumView({
           </div>
         </div>
         {tracks !== null && tracks.length > 0 && (
-          <button className="primary play-all" onClick={() => onPlayAll(tracks)}><Icon name="play" />{tr("播放")}</button>
+          <button className="primary play-all" onClick={() => onPlayList(tracks)}><Icon name="play" />{tr("播放")}</button>
         )}
       </header>
       <section className="album-tracklist">
         {tracks === null && <p className="muted">{tr("加载中…")}</p>}
         {tracks?.map((t, i) => (
-          <button
-            key={t.id}
-            className={`album-track ${playingSongId === t.id ? "now" : ""}`}
-            style={{ ["--n" as string]: Math.min(i, 16) }}
-            onClick={(e) => onOpenTrack(t, e.currentTarget)}
-          >
-            <span className="album-track-no">{playingSongId === t.id ? "♪" : i + 1}</span>
-            <span className="album-track-title">{t.title}</span>
-            <span className="muted small">{t.artist}</span>
-          </button>
+          <div key={t.id} className="track-line">
+            <button
+              className={`album-track ${playingSongId === t.id ? "now" : ""}`}
+              style={{ ["--n" as string]: Math.min(i, 16) }}
+              onClick={(e) => onOpenTrack(t, e.currentTarget)}
+              title={tr("看《{title}》的歌词", { title: t.title })}
+            >
+              <span className="album-track-no">{playingSongId === t.id ? "♪" : i + 1}</span>
+              <span className="album-track-title">{t.title}</span>
+              <span className="muted small">{t.artist}</span>
+            </button>
+            <TrackPlayButton className="in-row" title={t.title} current={playingSongId === t.id} playing={playingSongId === t.id && playingNow} onPlay={() => onPlayList(tracks, i)} />
+          </div>
         ))}
       </section>
     </div>

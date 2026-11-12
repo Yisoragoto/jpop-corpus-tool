@@ -41,6 +41,11 @@ interface Props {
   showSpectrum: boolean;
   /** 点左下角这首歌：进全屏歌词。没有选中曲目时传 null，卡片就不可点 */
   onOpenStage: (() => void) | null;
+  /** 播放队列：没有上一首 / 下一首时是 null，按钮禁用 */
+  onPrevious: (() => void) | null;
+  onNext: (() => void) | null;
+  /** 下一首的歌名（下一首按钮的提示） */
+  upNext: string | null;
   onError: (message: string) => void;
 }
 
@@ -52,6 +57,9 @@ export function Player({
   disabled,
   showSpectrum,
   onOpenStage,
+  onPrevious,
+  onNext,
+  upNext,
   onError,
 }: Props) {
   const [scrubbing, setScrubbing] = useState<number | null>(null);
@@ -193,6 +201,15 @@ export function Player({
         {/* 走带：照 Apple Music，只有图标没有底框；鼠标移上去才浮出一圈玻璃 */}
         <div className="transport">
           <button
+            className="glyph-btn small queue-btn"
+            onClick={() => onPrevious?.()}
+            disabled={disabled || onPrevious === null}
+            title={tr("上一首（放了几秒以上时先回到开头）")}
+            aria-label={tr("上一首")}
+          >
+            <Icon name="previous" size={20} />
+          </button>
+          <button
             className="glyph-btn nudge-back"
             onClick={() => step(-STEP_SEC)}
             disabled={disabled || idle}
@@ -225,6 +242,15 @@ export function Player({
             aria-label={tr("前进 {STEP_SEC} 秒", { STEP_SEC })}
           >
             <IconSkip />
+          </button>
+          <button
+            className="glyph-btn small queue-btn"
+            onClick={() => onNext?.()}
+            disabled={disabled || onNext === null}
+            title={upNext !== null ? tr("下一首：{title}", { title: upNext }) : tr("没有下一首（在曲库里按「播放」放一整张专辑或一位歌手的歌）")}
+            aria-label={tr("下一首")}
+          >
+            <Icon name="next" size={20} />
           </button>
         </div>
 

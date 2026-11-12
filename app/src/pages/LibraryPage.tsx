@@ -181,6 +181,8 @@ interface Props {
   /** 外面要打开的工具栏（页头的「添加音乐」、命令面板、状态点、拖进窗口的文件）。`nonce` 让同一个请求能再发一次 */
   toolWanted?: LibraryTool | null;
   onToolConsumed?: () => void;
+  /** 按一个列表往下放（播放队列在 App 上，切页也接着放） */
+  onPlayList: (tracks: Track[], start?: number) => void;
 }
 
 /** 曲库里的三个工具视图。`add` 可以带着要扫的文件夹或文件 */
@@ -212,6 +214,7 @@ export function LibraryPage({
   onLibraryReload,
   toolWanted = null,
   onToolConsumed,
+  onPlayList,
 }: Props) {
   const { tracks, selected, lyrics, credits, lyricsLoading, word, wordJump, wordLoading, activeLemma } =
     library;
@@ -630,21 +633,36 @@ export function LibraryPage({
   const [canBack, setCanBack] = useState(false);
   const viewRef = useRef(view);
   viewRef.current = view;
+  /** 上一次「看到」的那首。外面换了选中的歌（命令面板、检索）时据此切到歌词 */
+  const lastSongId = useRef(selected?.id ?? null);
+  const selectedIdRef = useRef(selected?.id ?? null);
+  selectedIdRef.current = selected?.id ?? null;
   const go = useCallback((next: LibraryView) => {
     const current = viewRef.current;
-    // 同一个人、只换了要定位的专辑：不进栈
-    if (current !== null && !sameView(current, next)) {
-      trail.current = [...trail.current.slice(-30), current];
+    // 离开一首歌时记下是哪一首：「返回」回到的是它，不是后来换上的那首
+    const leaving = current?.kind === "song" ? { kind: "song" as const, songId: current.songId ?? selectedIdRef.current ?? undefined } : current;
+    const arriving = next.kind === "song" ? { kind: "song" as const } : next;
+    // 同一个人、只换了要定位的专辑：不进栈。从一首歌换到另一首要进栈（「返回」回到上一首）
+    if (leaving !== null && !sameView(leaving, next)) {
+      trail.current = [...trail.current.slice(-30), leaving];
       setCanBack(true);
     }
-    viewRef.current = next;
-    setView(next);
+    viewRef.current = arriving;
+    setView(arriving);
   }, []);
   const back = useCallback(() => {
     const previous = trail.current.pop();
     setCanBack(trail.current.length > 0);
-    if (previous !== undefined) setView(previous);
-  }, []);
+    if (previous === undefined) return;
+    if (previous.kind === "song" && previous.songId !== undefined && previous.songId !== selectedIdRef.current) {
+      // 回到之前看的那首：只是看，不动正在放的
+      lastSongId.current = previous.songId;
+      void actions.openTrackById(previous.songId, { autoPlay: false });
+    }
+    const arriving = previous.kind === "song" ? { kind: "song" as const } : previous;
+    viewRef.current = arriving;
+    setView(arriving);
+  }, [actions]);
 
   // 什么都没看时（第一次进来、没选过歌），先打开排第一的音乐人——中栏空着像没加载出来
   useEffect(() => {
@@ -654,12 +672,11 @@ export function LibraryPage({
   }, [view, data]);
 
   // 别处（命令面板、首页、检索）打开了一首歌：切到歌
-  const lastSongId = useRef(selected?.id ?? null);
   useEffect(() => {
     const id = selected?.id ?? null;
     if (id === lastSongId.current) return;
     lastSongId.current = id;
-    if (id !== null) go({ kind: "song" });
+    if (id !== null) go({ kind: "song", songId: id });
   }, [selected?.id, go]);
 
   // 页头「添加音乐」、命令面板、状态点、拖进窗口：打开对应的工具视图
@@ -737,6 +754,12 @@ export function LibraryPage({
     else go({ kind: "album", albumId, title });
   };
   const performers = credits.filter((c) => c.role === "performer");
+  const songContext = useMemo(
+    () => (selected === null ? null : { personIds: performers.map((c) => c.personId), albumId: selected.albumId }),
+    // performers 每次渲染都是新数组；按 id 串比较
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selected?.id, selected?.albumId, performers.map((c) => c.personId).join(",")],
+  );
   /** 右栏的署名按人合并：同一个人作曲又编曲只占一行 */
   const creditPeople = useMemo(() => {
     const byPerson = new Map<number, { personId: number; name: string; roles: string[] }>();
@@ -756,16 +779,29 @@ export function LibraryPage({
   useDismiss(menuRef, menuOpen, () => setMenuOpen(false));
 
   /** 打开一首歌：封面从点的地方飞到歌词栏的标题旁（共享元素过渡） */
-  const openWithMorph = (track: Track, button: HTMLElement) => {
+  const openWithMorph = (track: Track, button: HTMLElement, animate = true) => {
     if (selected?.id === track.id) {
-      go({ kind: "song" });
+      go({ kind: "song", songId: track.id });
+      return;
+    }
+    const open = () => {
+      go({ kind: "song", songId: track.id });
+      lastSongId.current = track.id;
+      // 只是打开看：正在放的歌不换（播放条空着时顺手备上，按空格就能放）
+      void actions.openTrack(track, { autoPlay: false });
+    };
+    // 已经在看歌词、或者从左栏点的：直接换，不做飞过去的动画。
+    // 动画期间页面不接收点击，左栏的双击（播放）会丢掉第二下
+    if (!animate || view?.kind === "song") {
+      open();
       return;
     }
     morph(
       () => {
-        go({ kind: "song" });
+        go({ kind: "song", songId: track.id });
         lastSongId.current = track.id;
-        void actions.openTrack(track);
+        // 只是打开看：正在放的歌不换（播放条空着时顺手备上，按空格就能放）
+        void actions.openTrack(track, { autoPlay: false });
       },
       {
         name: "track-cover",
@@ -829,16 +865,6 @@ export function LibraryPage({
     onCloudConsumed?.();
   }, [cloudWanted, go, onCloudConsumed]);
 
-  const playAll = useCallback(
-    (list: Track[]) => {
-      const first = list.find((t) => t.audioPath) ?? list[0];
-      if (first === undefined) return;
-      lastSongId.current = first.id;
-      go({ kind: "song" });
-      void actions.openTrack(first, { autoPlay: true });
-    },
-    [actions, go],
-  );
 
   // 「词典」这一页的内容。标题行只说查的是哪几个字——折叠交给上面的标签页
   const dictionarySection = lookup !== null && (
@@ -1055,7 +1081,11 @@ export function LibraryPage({
         missingIds={missingIds}
         onOpenPerson={openPerson}
         onOpenAlbum={openAlbum}
-        onOpenTrack={openWithMorph}
+        onOpenTrack={(track, from) => openWithMorph(track, from, false)}
+        onPlayList={onPlayList}
+        songContext={songContext}
+        playingSongId={playback.songId}
+        playingNow={playback.playState === "playing"}
         onOpenGraph={() => go({ kind: "graph", focus: view?.kind === "person" ? view.id : null })}
         onOpenTimeline={() => go({ kind: "timeline" })}
         onOpenCloud={() => go({ kind: "cloud" })}
@@ -1161,9 +1191,8 @@ export function LibraryPage({
             onOpenPerson={(id) => go({ kind: "person", id })}
             onOpenAlbum={(id, albumId) => go({ kind: "person", id, albumId })}
             onPlaySong={(songId) => {
-              // 人留在时间树里：先记下这首，免得「换了歌」把中栏切到歌词
-              lastSongId.current = songId;
-              void actions.openTrackById(songId, { autoPlay: true });
+              // 只放不看：人留在时间树里，歌词栏也不换
+              void actions.playTrackById(songId);
             }}
             onError={onAudioError}
           />
@@ -1179,9 +1208,10 @@ export function LibraryPage({
               data={data}
               focusAlbumId={view.albumId ?? null}
               playingSongId={playback.songId}
+              playingNow={playback.playState === "playing"}
               onOpenPerson={openPerson}
               onOpenTrack={openWithMorph}
-              onPlayAll={playAll}
+              onPlayList={onPlayList}
               onMembersChanged={bumpMembers}
               onOpenCloud={() => {
                 focusCloudOn(view.id);
@@ -1199,8 +1229,9 @@ export function LibraryPage({
               album={data?.albums.find((a) => a.id === view.albumId) ?? null}
               title={view.title}
               playingSongId={playback.songId}
+              playingNow={playback.playState === "playing"}
               onOpenTrack={openWithMorph}
-              onPlayAll={playAll}
+              onPlayList={onPlayList}
               onError={onAudioError}
             />
           )}

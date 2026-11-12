@@ -927,4 +927,14 @@ export const en5: Record<string, string> = {
   "搭配强度怎么算": "Collocation measure",
   "查词栏显示什么": "Lookup panel shows",
   "在第几个字后面拆开": "Split after which character",
+  // 曲库：看和放分开、播放队列
+  "看《{title}》的歌词（双击播放）": "Show lyrics of “{title}” (double-click to play)",
+  "看《{title}》的歌词": "Show lyrics of “{title}”",
+  "上一首（放了几秒以上时先回到开头）": "Previous (restarts the song if it has played for a few seconds)",
+  "上一首": "Previous",
+  "下一首：{title}": "Next: {title}",
+  "没有下一首（在曲库里按「播放」放一整张专辑或一位歌手的歌）": "Nothing up next (press Play on an album or artist in the library to play all their songs)",
+  "下一首": "Next",
+  "暂停「{title}」": "Pause “{title}”",
+  "《{title}》没有音频文件": "“{title}” has no audio file",
 };

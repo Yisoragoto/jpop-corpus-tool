@@ -2444,7 +2444,7 @@ button.chip.on { color: var(--accent-text); background: var(--accent-soft); bord
 .browse-group { position: relative; }
 /* 上千行的列表：屏幕外的行不排版、不绘制（content-visibility），DOM 和 Tab 顺序照旧。
    行高不一（乐队展开成员）也没关系，`auto` 会记住每行量过的真实高度 */
-.browse-list > .browse-group, .browse-list > .browse-item {
+.browse-list > .browse-group, .browse-list > .browse-item, .browse-list > .song-line {
   content-visibility: auto; contain-intrinsic-size: auto 46px;
 }
 .browse-item {
@@ -3623,6 +3623,24 @@ input[aria-invalid="true"], input[aria-invalid="true"]:focus { border-bottom-col
 .cover-card .song-play { bottom: 8px; border-radius: 8px; font-size: 30px; }
 .song-row:hover .song-play, .song-row:focus-visible .song-play, .song-row.now .song-play { opacity: 1; }
 .song-row.now b { color: var(--accent); }
+/* 曲目行：点行看歌词，叠在封面 / 序号上的那颗按钮才播放（见 TrackPlayButton） */
+.song-row-wrap, .track-line { position: relative; min-width: 0; }
+.track-play {
+  position: absolute; z-index: 1; display: grid; place-items: center; padding: 0;
+  color: var(--media-fg); background: var(--song-scrim); border-radius: 6px;
+  opacity: 0; transition: opacity 140ms, transform 140ms;
+}
+.track-play:active { transform: scale(.94); }
+.song-row-wrap.as-row > .track-play { left: 8px; top: 50%; width: 52px; height: 52px; margin-top: -26px; }
+.song-row-wrap.as-card > .track-play { left: 0; top: 0; width: 100%; aspect-ratio: 1; border-radius: 8px; }
+.song-row-wrap.as-card > .track-play svg { width: 34px; height: 34px; }
+.track-line > .track-play.in-row {
+  left: 6px; top: 50%; width: 28px; height: 28px; margin-top: -14px;
+  color: var(--accent); background: var(--surface-pop); box-shadow: var(--elevation-card); border-radius: 50%;
+}
+.track-line > .track-play.on-cover { left: 8px; top: 50%; width: 34px; height: 34px; margin-top: -17px; border-radius: 6px; }
+.song-row-wrap:hover > .track-play, .track-line:hover > .track-play, .track-play:focus-visible, .track-play.current { opacity: 1; }
+.song-row.now b, .album-row.now .album-row-title, .album-track.now .album-track-title { color: var(--accent-text); }
 .view-switch { display: inline-flex; gap: 2px; margin-left: auto; align-self: center; }
 .overview-head .view-switch + .link-btn { margin-left: 8px; }
 .view-switch button { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--ctl-radius); color: var(--muted); }

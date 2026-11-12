@@ -131,7 +131,7 @@ export const en2: Record<string, string> = {
   "成员与合作": "Members & collaborators",
   "档案分页": "Profile sections",
   "专辑和 EP": "Albums & EPs",
-  "{n} 首 · 最新在前 · 点一下就播放": "{n} songs · newest first · click to play",
+  "{n} 首 · 最新在前": "{n} {n|song|songs} · newest first",
   "播放「{title}」": "Play “{title}”",
   "显示方式": "View",
   "只看 {label}": "Only {label}",
