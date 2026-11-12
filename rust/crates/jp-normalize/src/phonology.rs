@@ -16,7 +16,7 @@
 //! 4. ー 是长音拍，元音跟前一拍。
 //!
 //! 只是近似东京音的规则，不查发音词典。在真实库（8,443 行）上和 UniDic 的发音字段（`pron`）
-//! 逐行对过账：两边都能读的 7,591 行里，拍的写法完全相同的 7,344 行，元音序列相同的 7,464 行；
+//! 逐行对过账：两边都能读的 7,591 行里，拍的写法完全相同的 7,345 行，元音序列相同的 7,464 行；
 //! 五个元音的占比差不到千分之一。剩下的差异主要是：
 //! - 复合词内部的词界：生き急ぐ（イキイソグ）、ため息（タメイキ）——不看词素切分，规则会读成长音；
 //! - 两边选的读音不同（君 キミ / クン、力 チカラ / リョク）；
@@ -302,11 +302,37 @@ pub fn pronounce(w: Word) -> Option<Vec<Mora>> {
     Some(ms)
 }
 
-/// 一行里的词逐个 [`pronounce`]，再处理跨词的长音：Sudachi 把「行こう」「でしょう」切成
-/// 行こ + う、でしょ + う，意志、推量的「う」接在オ段后面读长音（イコー、デショー）。
+/// 一行里的词逐个 [`pronounce`]，再处理跨词的两件事：
+///
+/// - 长音：Sudachi 把「行こう」「でしょう」切成 行こ + う、でしょ + う，意志、推量的「う」
+///   接在オ段后面读长音（イコー、デショー）；
+/// - 小字：歌词里拖腔的「とぅるる」「寝ぇ」有时被切成 と + ぅるる、寝 + ぇ。打头的小字和前一个词的
+///   最后一拍拼成一拍（トゥ），同元音的读长音（ネー）。
+///
 /// 拆不了的词是 None。
 pub fn pronounce_words(words: &[Word]) -> Vec<Option<Vec<Mora>>> {
     let mut out: Vec<Option<Vec<Mora>>> = words.iter().map(|w| pronounce(*w)).collect();
+    for i in 1..out.len() {
+        let Some(first) = out[i].as_ref().and_then(|ms| ms.first()) else { continue };
+        if first.kind != MoraKind::Plain || !matches!(first.kana.as_str(), "ァ" | "ィ" | "ゥ" | "ェ" | "ォ" | "ャ" | "ュ" | "ョ" | "ヮ") {
+            continue;
+        }
+        let Some(prev) = out[i - 1].as_ref().and_then(|ms| ms.last()).filter(|m| m.kind == MoraKind::Plain) else { continue };
+        let Some(joined) = morae(&format!("{}{}", prev.kana, first.kana)) else { continue };
+        match joined.as_slice() {
+            // 拼成一拍：前一个词的最后一拍换成它，小字不再单独算
+            [one] => {
+                let one = one.clone();
+                *out[i - 1].as_mut().and_then(|ms| ms.last_mut()).expect("checked") = one;
+                out[i].as_mut().expect("checked").remove(0);
+            }
+            // 同元音：小字是长音拍
+            [_, second] if second.kind == MoraKind::Long => {
+                out[i].as_mut().expect("checked")[0] = second.clone();
+            }
+            _ => {}
+        }
+    }
     for i in 1..out.len() {
         let w = words[i];
         if !(w.reading == "ウ" && is_aux(w.pos, w.pos_ja)) {
@@ -340,6 +366,23 @@ pub fn single_vowel(ms: &[Mora]) -> Option<Vowel> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_leading_small_kana_joins_the_previous_word() {
+        let w = |reading: &'static str| Word { reading, ..Word::default() };
+        let out = pronounce_words(&[w("ト"), w("ゥルル")]);
+        assert_eq!(kana_of(out[0].as_ref().unwrap()), "トゥ");
+        assert_eq!(vowels_of(out[0].as_ref().unwrap()), [Vowel::U]);
+        assert_eq!(kana_of(out[1].as_ref().unwrap()), "ルル");
+        // 同元音读长音
+        let out = pronounce_words(&[w("ネ"), w("ェ")]);
+        assert_eq!(kana_of(out[0].as_ref().unwrap()), "ネ");
+        assert_eq!(out[1].as_ref().unwrap()[0].kind, MoraKind::Long);
+        assert_eq!(vowels_of(out[1].as_ref().unwrap()), [Vowel::E]);
+        // 前一个词拆不了、或是 ン：不动
+        let out = pronounce_words(&[w("ン"), w("ァ")]);
+        assert_eq!(kana_of(out[1].as_ref().unwrap()), "ァ");
+    }
 
     fn word<'a>(reading: &'a str, surface: &'a str, pos: &'a str, pos_ja: &'a str) -> Word<'a> {
         Word { reading, surface, pos, pos_ja, cform: "" }

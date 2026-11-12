@@ -211,6 +211,8 @@ pub(crate) struct Tok {
     pub(crate) normalized: String,
     pub(crate) ctype: String,
     pub(crate) cform: String,
+    /// Sudachi 的日文词性（「助詞,係助詞」这样）。音系的读音规则要它分助词、动词
+    pub(crate) pos_ja: String,
 }
 
 impl Tok {
@@ -228,6 +230,8 @@ impl Tok {
 pub(crate) struct Line {
     pub(crate) song_id: String,
     pub(crate) utterance_id: i64,
+    /// 这一行的原文
+    pub(crate) text: String,
     /// 同一首歌里前面已经有一行文本完全相同
     pub(crate) repeat: bool,
     /// 已去掉标点、符号（以及 jp_only 时的非日文词）
@@ -239,7 +243,7 @@ pub(crate) fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> 
     let (clause, params) = scope.subcorpus.and_clause("u.song_id");
     let sql = format!(
         "SELECT u.song_id, u.id, u.text, t.surface, t.lemma, COALESCE(t.pos,''), \
-                COALESCE(t.reading,''), COALESCE(t.normalized,''), COALESCE(t.ctype,''), COALESCE(t.cform,'') \
+                COALESCE(t.reading,''), COALESCE(t.normalized,''), COALESCE(t.ctype,''), COALESCE(t.cform,''), COALESCE(t.pos_ja,'') \
          FROM live_utterances u JOIN tokens t ON t.utterance_id = u.id \
          WHERE 1{clause} \
          ORDER BY u.song_id, u.line_idx, u.id, t.token_idx"
@@ -254,8 +258,8 @@ pub(crate) fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> 
         if lines.last().map(|l| l.utterance_id) != Some(utterance_id) {
             let song_id: String = row.get(0)?;
             let text: String = row.get(2)?;
-            let repeat = !seen.insert((song_id.clone(), text));
-            lines.push(Line { song_id, utterance_id, repeat, tokens: Vec::new() });
+            let repeat = !seen.insert((song_id.clone(), text.clone()));
+            lines.push(Line { song_id, utterance_id, text, repeat, tokens: Vec::new() });
             gap = false;
         }
         let pos: String = row.get(5)?;
@@ -280,6 +284,7 @@ pub(crate) fn load_lines(conn: &Connection, scope: &Scope) -> Result<Vec<Line>> 
             normalized: row.get(7)?,
             ctype: row.get(8)?,
             cform: row.get(9)?,
+            pos_ja: row.get(10)?,
         });
         gap = false;
     }
@@ -1289,6 +1294,7 @@ mod tests {
         Line {
             song_id: song.into(),
             utterance_id: 0,
+            text: lemmas.concat(),
             repeat: false,
             tokens: lemmas
                 .iter()
@@ -1301,6 +1307,7 @@ mod tests {
                     normalized: String::new(),
                     ctype: String::new(),
                     cform: String::new(),
+                    pos_ja: String::new(),
                 })
                 .collect(),
         }
