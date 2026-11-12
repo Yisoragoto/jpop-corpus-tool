@@ -81,6 +81,14 @@ struct LyricsStage: View {
             }
             }
         }
+        // 循环区间的调整栏（#64）：贴在播放条上面
+        .overlay(alignment: .bottom) {
+            if app.player.loopRegion != nil {
+                LoopAdjustBar()
+                    .frame(maxWidth: 420)
+                    .padding(.bottom, Self.barHeight + 8)
+            }
+        }
         // 开着振假名却没有词典：在全屏歌词里也说清楚，并且能直接下载（以前这里什么都不提示）
         .overlay(alignment: .top) {
             FuriganaDictionaryNotice(style: .card).padding(.top, Self.topHeight + 8).padding(.horizontal, 28)
@@ -357,7 +365,7 @@ struct LyricsStage: View {
             .help(line.timeSec.map { "点词查词，点空白处从 \(formatTime($0)) 放" } ?? "点词查词（这一行没有时间戳）")
             .contextMenu {
                 Button("从这里放") { Task { await app.player.playLine(line) } }.disabled(line.timeSec == nil)
-                Button(app.player.loop?.utteranceId == line.utteranceId ? "取消循环" : "循环这一句") {
+                Button(app.player.loopedLines.contains(line.utteranceId) ? "取消循环" : "循环这一句") {
                     Task { await app.player.toggleLoop(line.utteranceId) }
                 }.disabled(app.player.spans[line.utteranceId] == nil)
                 Button("选择原文 / 查选中文本") { selectionLine = line }

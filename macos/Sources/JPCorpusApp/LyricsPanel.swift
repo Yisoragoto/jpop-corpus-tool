@@ -45,6 +45,9 @@ struct LyricsPanel: View {
                 .frame(height: 34)
                 .padding(.horizontal, 14)
                 .padding(.bottom, 6)
+                if player.loopRegion != nil {
+                    LoopAdjustBar().padding(.horizontal, 14).padding(.bottom, 6)
+                }
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: app.lyricsDisplay.lineGap) {
@@ -223,7 +226,7 @@ struct LyricsPanel: View {
 
     private func row(_ line: LyricLine, current: Bool, before: Bool) -> some View {
         let player = app.player
-        let looping = player.loop?.utteranceId == line.utteranceId
+        let looping = player.loopedLines.contains(line.utteranceId)
         let focused = player.focusUtterance == line.utteranceId
         let units = player.timingUnits(for: line)
         let mode = player.displayMode(for: line)
