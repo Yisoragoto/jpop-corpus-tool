@@ -113,8 +113,6 @@ interface Props {
   /** 没给就不显示时间轴按钮 */
   onOpenTimeline?: () => void;
   onOpenCloud: () => void;
-  onOpenSources: () => void;
-  onOpenTidy: () => void;
   /** 收起左栏 */
   onHide: () => void;
 }
@@ -131,8 +129,6 @@ export function LibraryBrowser({
   onOpenGraph,
   onOpenTimeline,
   onOpenCloud,
-  onOpenSources,
-  onOpenTidy,
   onHide,
 }: Props) {
   const [mode, setModeState] = useState<BrowseMode>(readMode);
@@ -230,25 +226,17 @@ export function LibraryBrowser({
       <nav className="browser-views" aria-label={tr("整个曲库")}>
         <button className={view.kind === "graph" ? "on" : ""} onClick={onOpenGraph} title={tr("关系网：所有人和他们的合作")}>
           <Icon name="network" />
-          {tr("关系网")}
+          <span>{tr("关系网")}</span>
         </button>
         {onOpenTimeline && (
           <button className={view.kind === "timeline" ? "on" : ""} onClick={onOpenTimeline} title={tr("时间轴：谁在哪年发了什么")}>
             <Icon name="timeline" />
-            {tr("时间轴")}
+            <span>{tr("时间轴")}</span>
           </button>
         )}
         <button className={view.kind === "cloud" ? "on" : ""} onClick={onOpenCloud} title={tr("词云：歌词里最常出现的词")}>
           <Icon name="font" />
-          {tr("词云")}
-        </button>
-        <button className={view.kind === "sources" ? "on" : ""} onClick={onOpenSources} title={tr("来源：曲库从哪些文件夹读歌")}>
-          <Icon name="folder" />
-          {tr("来源")}
-        </button>
-        <button className={view.kind === "tidy" ? "on" : ""} onClick={onOpenTidy} title={tr("整理：识别、封面、歌词、时长")}>
-          <Icon name="broom" />
-          {tr("整理")}
+          <span>{tr("词云")}</span>
         </button>
       </nav>
     </aside>

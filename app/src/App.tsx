@@ -542,7 +542,20 @@ export default function App() {
               <Stat label={tr("词汇")} value={overview.vocabulary} />
             </div>
           )}
-          {/* 每页最多一个主按钮，固定在页头右侧。空曲库不显示：那时整页就是「添加音乐」 */}
+          {/* 曲库的两个管理视图和「添加音乐」一起放在页头（原来在左栏底下，占掉列表一大块）。
+              每页最多一个主按钮，固定在页头右侧。空曲库不显示：那时整页就是「添加音乐」 */}
+          {route === "library" && (overview?.tracks ?? 0) > 0 && (
+            <span className="cmdbar-tools">
+              <button className="ghost" data-tool="sources" onClick={() => openTool({ kind: "sources", nonce: Date.now() })} title={tr("来源：曲库从哪些文件夹读歌")}>
+                <Icon name="folder" />
+                <span>{tr("来源")}</span>
+              </button>
+              <button className="ghost" data-tool="tidy" onClick={() => openTool({ kind: "tidy", nonce: Date.now() })} title={tr("整理：识别、封面、歌词、时长")}>
+                <Icon name="broom" />
+                <span>{tr("整理")}</span>
+              </button>
+            </span>
+          )}
           {route === "library" && (overview?.tracks ?? 0) > 0 && (
             <span className="cmdbar-primary">
               <CommandButton icon="add" label={tr("添加音乐")} primary onClick={() => openTool({ kind: "add", nonce: Date.now() })} />
