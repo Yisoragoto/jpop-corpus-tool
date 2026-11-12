@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type PersonSummary } from "../api";
 import { tr } from "../i18n";
+import { pyGrouped } from "../pyFormat";
 
 let cached: Promise<PersonSummary[]> | null = null;
 
@@ -124,19 +125,22 @@ export function PerformerPicker({ selected, onChange, onError }: Props) {
       ? tr("全部歌手")
       : names.length === 1
         ? names[0]
-        : tr("{v} 等 {length} 人", { v: names[0] ?? "…", length: selected.length });
+        : tr("{v} 等 {length} 人", { v: names[0] ?? "…", length: pyGrouped(selected.length) });
 
   return (
     <div className="picker" ref={root}>
       <button
+        type="button"
         className={`picker-button${selected.length ? " on" : ""}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         title={names.length > 1 ? names.join(tr("、")) : undefined}
       >
         <span>{label}</span>
       </button>
       {open && (
-        <div className="picker-pop">
+        <div className="picker-pop" role="dialog" aria-label={tr("演唱者")}>
           <div className="picker-head">
             <input
               className="search"
@@ -145,14 +149,14 @@ export function PerformerPicker({ selected, onChange, onError }: Props) {
               onChange={(e) => setQuery(e.target.value)}
               autoFocus
             />
-            <button className="link-btn" disabled={!selected.length} onClick={() => onChange([])}>{tr("清除")}</button>
+            <button type="button" className="link-btn" disabled={!selected.length} onClick={() => onChange([])}>{tr("清除")}</button>
           </div>
           <div className="picker-list">
             {visible.map((p) => (
               <label key={p.id} className="picker-item">
                 <input type="checkbox" checked={chosen.has(p.id)} onChange={() => toggle(p.id)} />
                 <span className="picker-name">{p.name}</span>
-                <span className="muted small">{tr("{trackCount} 首", { trackCount: p.trackCount })}</span>
+                <span className="muted small">{tr("{trackCount} 首", { trackCount: pyGrouped(p.trackCount) })}</span>
               </label>
             ))}
             {visible.length === 0 && <p className="muted small pad">{tr("没有匹配的歌手")}</p>}

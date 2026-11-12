@@ -12,7 +12,7 @@
  * 对数似然只说明「有没有差别」，Log Ratio 才说明「差多少」（差 1 = 相对频率差一倍）。
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import {
   api,
@@ -23,11 +23,13 @@ import {
   type KeynessQuery,
   type KeynessResult,
   type Provenance,
+  type StatsFilter,
   type Subcorpus,
 } from "../api";
 import { ANALYSIS_ARCHIVED, isWholeCorpus, qualityApi, type AnalysisSpec } from "../corpusQuality";
 import { mergeSubcorpus, useSubcorpora, type ActiveScope } from "../subcorpusScope";
 import { PerformerPicker } from "./PerformerPicker";
+import { pyGrouped } from "../pyFormat";
 import { tr } from "../i18n";
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -36,18 +38,37 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  * 把这次分析存进「分析记录」：连同范围里每首歌的歌词版本、分词器、库指纹一起，之后能原样重跑对比
  * （`jp-corpus/src/runs.rs`）。这里的 Provenance 只说明「是不是在现在的库上算的」，存档回答「为什么变了」。
  */
-function ArchiveButton({ spec, label, onError }: { spec: AnalysisSpec; label: string; onError: (m: string) => void }) {
+function ArchiveButton({
+  spec,
+  filter,
+  label,
+  disabled = false,
+  onError,
+}: {
+  spec: AnalysisSpec;
+  /** 记录页「范围」一列显示的就是它，要和 spec 里的范围一致 */
+  filter: StatsFilter;
+  label: string;
+  disabled?: boolean;
+  onError: (m: string) => void;
+}) {
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
   useEffect(() => setState("idle"), [JSON.stringify(spec)]); // eslint-disable-line
+  // 「已存档」只提示一下，3 秒后可以再存
+  useEffect(() => {
+    if (state !== "done") return;
+    const t = window.setTimeout(() => setState("idle"), 3000);
+    return () => window.clearTimeout(t);
+  }, [state]);
   return (
     <button
-      className="ghost"
-      disabled={state !== "idle"}
+      type="button"
+      disabled={disabled || state !== "idle"}
       title={tr("存进下面的「分析记录」，之后可以原样重跑、对比")}
       onClick={async () => {
         setState("busy");
         try {
-          await qualityApi.runAnalysis(spec, { performerIds: [], jpOnly: false }, label);
+          await qualityApi.runAnalysis(spec, filter, label);
           setState("done");
           window.dispatchEvent(new Event(ANALYSIS_ARCHIVED));
         } catch (e) {
@@ -61,12 +82,12 @@ function ArchiveButton({ spec, label, onError }: { spec: AnalysisSpec; label: st
   );
 }
 
-export function ProvenanceLine({ p }: { p: Provenance }) {
+export function ProvenanceLine({ p, prefix }: { p: Provenance; prefix?: string }) {
   return (
     <p
       className="provenance muted small"
       title={tr("规则 {rules} · 库指纹 {fingerprint} · 结构版本 {schemaVersion}", { rules: p.rules, fingerprint: p.snapshot.fingerprint, schemaVersion: p.snapshot.schemaVersion })}
-    >{tr("{scope} · {songs} 首 / {tokens} 词（", { scope: p.scope, songs: p.songs, tokens: p.tokens.toLocaleString() })}{p.unit === "distinctLines" ? tr("重复行只算一次") : tr("全部词次")}{tr("）· 指纹 {slice}", { slice: p.snapshot.fingerprint.slice(0, 8) })}</p>
+    >{prefix && <><b>{prefix}</b>{" · "}</>}{tr("{scope} · {songs} 首 / {tokens} 词（", { scope: p.scope, songs: pyGrouped(p.songs), tokens: pyGrouped(p.tokens) })}{p.unit === "distinctLines" ? tr("重复行只算一次") : tr("全部词次")}{tr("）· 指纹 {slice}", { slice: p.snapshot.fingerprint.slice(0, 8) })}</p>
   );
 }
 
@@ -74,23 +95,28 @@ export function ProvenanceLine({ p }: { p: Provenance }) {
 
 export function RepeatEffectCard({
   subcorpus,
+  filter,
   jpOnly,
   onSearchWord,
   onError,
 }: {
   /** 统计页筛选条里的范围（歌手、年代、流派、语言、完整度……） */
   subcorpus: Subcorpus;
+  /** 同一个范围的筛选条原样，存档时写进记录（不给就记成整个库） */
+  filter?: StatsFilter;
   jpOnly: boolean;
   onSearchWord: (lemma: string) => void;
   onError: (message: string) => void;
 }) {
   const [raw, setRaw] = useState<FrequencyResult | null>(null);
   const [distinct, setDistinct] = useState<FrequencyResult | null>(null);
+  const [busy, setBusy] = useState(false);
   // 对象每次渲染都是新的，按内容判断变没变
   const scopeKey = JSON.stringify(subcorpus);
 
   useEffect(() => {
     let cancelled = false;
+    setBusy(true);
     const run = (unit: CountUnit) =>
       api.corpusFrequency({ scope: { subcorpus, unit, jpOnly }, pos: null, limit: 100_000 });
     Promise.all([run("tokens"), run("distinctLines")])
@@ -99,7 +125,8 @@ export function RepeatEffectCard({
         setRaw(a);
         setDistinct(b);
       })
-      .catch((e) => !cancelled && onError(message(e)));
+      .catch((e) => !cancelled && onError(message(e)))
+      .finally(() => !cancelled && setBusy(false));
     return () => {
       cancelled = true;
     };
@@ -117,23 +144,35 @@ export function RepeatEffectCard({
     [raw],
   );
 
-  if (!raw || !distinct) return null;
+  if (!raw || !distinct) {
+    if (!busy) return null;
+    return (
+      <section className="card" aria-busy>
+        <div className="card-head">
+          <h2>{tr("副歌对词频的影响")}</h2>
+        </div>
+        <p className="muted small">{tr("计算中…")}</p>
+      </section>
+    );
+  }
   const share = raw.provenance.tokens > 0 ? 1 - distinct.provenance.tokens / raw.provenance.tokens : 0;
 
   return (
-    <section className="card">
+    <section className="card" aria-busy={busy}>
       <div className="card-head">
         <h2>{tr("副歌对词频的影响")}</h2>
         <div className="card-tools">
           <ArchiveButton
             spec={{ kind: "corpusFrequency", query: { scope: { subcorpus, unit: "distinctLines", jpOnly }, pos: null, limit: 500 } }}
+            filter={filter ?? { performerIds: [], jpOnly }}
             label={tr("副歌效应（去重词频）")}
+            disabled={busy}
             onError={onError}
           />
         </div>
       </div>
-      <p className="muted small">{tr("歌词里的副歌会原样唱好几遍。同一首歌里重复出现的行占了全部词次的{v}", { v: " " })}<strong>{(share * 100).toFixed(1)}%</strong>{tr("（{tokens} →{v}{tokens2} 词）。下面这些词的频次大半来自重复行： 按「唱了几遍」数和按「写了几次」数，排名会很不一样。", { tokens: raw.provenance.tokens.toLocaleString(), v: " ", tokens2: distinct.provenance.tokens.toLocaleString() })}</p>
-      <table className="data">
+      <p className="muted small">{tr("歌词里的副歌会原样唱好几遍。同一首歌里重复出现的行占了全部词次的{v}", { v: " " })}<strong>{(share * 100).toFixed(1)}%</strong>{tr("（{tokens} →{v}{tokens2} 词）。下面这些词的频次大半来自重复行： 按「唱了几遍」数和按「写了几次」数，排名会很不一样。", { tokens: pyGrouped(raw.provenance.tokens), v: " ", tokens2: pyGrouped(distinct.provenance.tokens) })}</p>
+      <table className={`data${busy ? " stale" : ""}`}>
         <thead>
           <tr>
             <th>{tr("词元")}</th>
@@ -142,7 +181,7 @@ export function RepeatEffectCard({
             <th className="num" title={tr("同一首歌里重复的行只算一次")}>{tr("去重后")}</th>
             <th className="num">{tr("来自重复行")}</th>
             <th className="num">{tr("曲数")}</th>
-            <th />
+            <th><span className="sr-only">{tr("操作")}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -150,14 +189,14 @@ export function RepeatEffectCard({
             <tr key={`${w.lemma}:${w.pos}`}>
               <td>{w.lemma}</td>
               <td className="muted">{POS_LABELS[w.pos] ?? w.pos}</td>
-              <td className="num">{w.rawFreq}</td>
-              <td className="num">{w.distinctFreq}</td>
+              <td className="num">{pyGrouped(w.rawFreq)}</td>
+              <td className="num">{pyGrouped(w.distinctFreq)}</td>
               <td className="num">
                 <span className="share-bar" style={{ ["--share" as string]: `${w.repeatShare * 100}%` }}>
                   {(w.repeatShare * 100).toFixed(0)}%
                 </span>
               </td>
-              <td className="num">{w.songs}</td>
+              <td className="num">{pyGrouped(w.songs)}</td>
               <td className="row-actions">
                 <button className="link-btn" onClick={() => onSearchWord(w.lemma)} title={tr("出现在哪些歌里，点一首就从这个词开始放")}>{tr("出处")}</button>
               </td>
@@ -202,6 +241,10 @@ function isEmpty(side: SideState) {
   return isWholeCorpus({ ...s, performerIds: s.performerIds ?? [], jpOnly: false });
 }
 
+/** 填了却不是四位数：toSubcorpus 会当成没填，要提示出来，不然以为按年份筛了 */
+const badYear = (s: string) => s.trim() !== "" && !/^\d{4}$/.test(s.trim());
+const hasBadYear = (side: SideState) => badYear(side.yearFrom) || badYear(side.yearTo);
+
 function SidePicker({
   label,
   side,
@@ -214,12 +257,14 @@ function SidePicker({
   onError: (m: string) => void;
 }) {
   const saved = useSubcorpora(onError);
+  const labelId = useId();
   return (
-    <div className="compare-side">
-      <span className="muted small compare-label">{label}</span>
+    <div className="compare-side" role="group" aria-labelledby={labelId}>
+      <span id={labelId} className="scope-label">{label}</span>
       {saved.length > 0 && (
         <select
           className="rate subcorpus-picker"
+          aria-label={tr("{label}子语料", { label })}
           value={side.saved?.id ?? ""}
           onChange={(e) => {
             const pick = saved.find((x) => String(x.id) === e.target.value);
@@ -242,19 +287,25 @@ function SidePicker({
       />
       <span className="year-range">
         <input
+          type="text"
           className="year-input"
           inputMode="numeric"
+          maxLength={4}
           placeholder={tr("年份")}
           aria-label={tr("{label}起始年份", { label })}
+          aria-invalid={badYear(side.yearFrom) || undefined}
           value={side.yearFrom}
           onChange={(e) => onChange({ ...side, yearFrom: e.target.value })}
         />
         –
         <input
+          type="text"
           className="year-input"
           inputMode="numeric"
+          maxLength={4}
           placeholder={tr("年份")}
           aria-label={tr("{label}结束年份", { label })}
+          aria-invalid={badYear(side.yearTo) || undefined}
           value={side.yearTo}
           onChange={(e) => onChange({ ...side, yearTo: e.target.value })}
         />
@@ -263,13 +314,24 @@ function SidePicker({
   );
 }
 
-function KeyTable({ title, items, onSearchWord }: { title: string; items: KeyItem[]; onSearchWord: (l: string) => void }) {
+function KeyTable({
+  title,
+  items,
+  stale,
+  onSearchWord,
+}: {
+  title: string;
+  items: KeyItem[];
+  /** 表单改过、结果还是上次条件算的 */
+  stale: boolean;
+  onSearchWord: (l: string) => void;
+}) {
   return (
     <div className="key-col">
       <h3>{title}</h3>
-      {items.length === 0 && <p className="muted small">{tr("没有显著的词")}</p>}
+      {items.length === 0 && <p className={`muted small${stale ? " stale" : ""}`}>{tr("没有显著的词")}</p>}
       {items.length > 0 && (
-        <table className="data">
+        <table className={`data${stale ? " stale" : ""}`}>
           <thead>
             <tr>
               <th>{tr("词元")}</th>
@@ -278,7 +340,7 @@ function KeyTable({ title, items, onSearchWord }: { title: string; items: KeyIte
               <th className="num" title={tr("对数似然（显著性）")}>LL</th>
               <th className="num" title={tr("Log Ratio（效应量）：log₂(目标相对频率 ÷ 参照相对频率)。差 1 就是相差一倍")}>LR</th>
               <th className="num" title={tr("未校正的 p 值")}>p</th>
-              <th />
+              <th><span className="sr-only">{tr("操作")}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -287,8 +349,8 @@ function KeyTable({ title, items, onSearchWord }: { title: string; items: KeyIte
                 key={`${k.lemma}:${k.pos}`}
                 title={tr("{v} · 目标 {targetFreq} 次 / 参照 {referenceFreq} 次 · %DIFF {diff} · BIC {bic}", {
                   v: POS_LABELS[k.pos] ?? k.pos,
-                  targetFreq: k.targetFreq,
-                  referenceFreq: k.referenceFreq,
+                  targetFreq: pyGrouped(k.targetFreq),
+                  referenceFreq: pyGrouped(k.referenceFreq),
                   diff: k.percentDiff === null ? "∞" : `${k.percentDiff.toFixed(0)}%`,
                   bic: k.bic.toFixed(1),
                 })}
@@ -338,24 +400,33 @@ export function KeynessCard({
   const [lastQuery, setLastQuery] = useState<KeynessQuery | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const buildQuery = (): KeynessQuery => ({
+    target: toSubcorpus(target),
+    reference: isEmpty(reference) ? null : toSubcorpus(reference),
+    unit,
+    jpOnly,
+    minFreq: 5,
+    // 多取一些：按 Log Ratio 排时要从全部显著的词里挑，不是从对数似然前 25 个里挑
+    limit: 1000,
+    maxP: significance === "none" ? null : Number(significance),
+    bonferroni: significance !== "none" && bonferroni,
+  });
+  const badYears = hasBadYear(target) || hasBadYear(reference);
+  // 表单和上次算的条件不一样了：结果变暗，存档也不能点（存的会是旧条件）
+  const dirty = !!lastQuery && (badYears || JSON.stringify(buildQuery()) !== JSON.stringify(lastQuery));
+
   const run = async () => {
+    if (badYears) {
+      onError(tr("年份要写四位数"));
+      return;
+    }
     if (isEmpty(target)) {
       onError(tr("先给「目标」选一个范围（歌手或年份）"));
       return;
     }
     setBusy(true);
     try {
-      const query: KeynessQuery = {
-        target: toSubcorpus(target),
-        reference: isEmpty(reference) ? null : toSubcorpus(reference),
-        unit,
-        jpOnly,
-        minFreq: 5,
-        // 多取一些：按 Log Ratio 排时要从全部显著的词里挑，不是从对数似然前 25 个里挑
-        limit: 1000,
-        maxP: significance === "none" ? null : Number(significance),
-        bonferroni: significance !== "none" && bonferroni,
-      };
+      const query = buildQuery();
       setResult(await api.keyness(query));
       setLastQuery(query);
     } catch (e) {
@@ -370,63 +441,94 @@ export function KeynessCard({
       <div className="card-head">
         <h2>{tr("子语料对比")}</h2>
         <div className="card-tools">
-          {result && lastQuery && <ArchiveButton spec={{ kind: "keyness", query: lastQuery }} label={tr("子语料对比")} onError={onError} />}
+          {result && lastQuery && (
+            <ArchiveButton
+              spec={{ kind: "keyness", query: lastQuery }}
+              filter={{ performerIds: [], jpOnly: lastQuery.jpOnly ?? false }}
+              label={tr("子语料对比")}
+              disabled={dirty || busy}
+              onError={onError}
+            />
+          )}
         </div>
       </div>
       <p className="muted small">{tr("选两批歌（存过的子语料，或者按歌手、年份），看哪些词在「目标」里明显偏多、偏少。参照不选就是语料库里其余的歌。 按对数似然排序，两边合计少于 5 次的词不列出。")}{" "}{tr("先按 p 值筛掉可能只是碰巧的词，再按对数似然（差别有多确定）或 Log Ratio（差多少）排。")}</p>
-      <div className="compare-form">
+      <div className="card-filters">
         <SidePicker label={tr("目标")} side={target} onChange={setTarget} onError={onError} />
         <SidePicker label={tr("参照")} side={reference} onChange={setReference} onError={onError} />
-        <div className="compare-side">
-          <div className="segmented">
-            <button
-              className={unit === "distinctLines" ? "on" : ""}
-              onClick={() => setUnit("distinctLines")}
-              title={tr("同一首歌里重复的行只算一次")}
-            >{tr("去掉重复行")}</button>
-            <button className={unit === "tokens" ? "on" : ""} onClick={() => setUnit("tokens")} title={tr("唱几遍算几遍")}>{tr("全部词次")}</button>
-          </div>
-          <select
-            className="rate"
-            value={significance}
-            onChange={(e) => setSignificance(e.target.value as Significance)}
-            title={tr("只列差别显著的词")}
-          >
-            <option value="none">{tr("不筛显著性")}</option>
-            <option value="0.05">p &lt; 0.05</option>
-            <option value="0.01">p &lt; 0.01</option>
-            <option value="0.001">p &lt; 0.001</option>
-          </select>
-          <label className="check" title={tr("一次检验几千个词，不校正的话 p < 0.05 里会有不少是碰巧。校正 = 阈值除以检验的词数")}>
-            <input type="checkbox" checked={bonferroni} disabled={significance === "none"} onChange={(e) => setBonferroni(e.target.checked)} />
-            Bonferroni
-          </label>
-          <button className="primary" disabled={busy} onClick={() => void run()}>
-            {busy ? tr("计算中…") : tr("对比")}
-          </button>
+        <div className="segmented" role="radiogroup" aria-label={tr("计数口径")}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={unit === "distinctLines"}
+            className={unit === "distinctLines" ? "on" : ""}
+            onClick={() => setUnit("distinctLines")}
+            title={tr("同一首歌里重复的行只算一次")}
+          >{tr("去掉重复行")}</button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={unit === "tokens"}
+            className={unit === "tokens" ? "on" : ""}
+            onClick={() => setUnit("tokens")}
+            title={tr("唱几遍算几遍")}
+          >{tr("全部词次")}</button>
         </div>
+        <select
+          className="rate"
+          value={significance}
+          onChange={(e) => setSignificance(e.target.value as Significance)}
+          title={tr("只列差别显著的词")}
+          aria-label={tr("只列差别显著的词")}
+        >
+          <option value="none">{tr("不筛显著性")}</option>
+          <option value="0.05">p &lt; 0.05</option>
+          <option value="0.01">p &lt; 0.01</option>
+          <option value="0.001">p &lt; 0.001</option>
+        </select>
+        <label className="check" title={tr("一次检验几千个词，不校正的话 p < 0.05 里会有不少是碰巧。校正 = 阈值除以检验的词数")}>
+          <input type="checkbox" checked={bonferroni} disabled={significance === "none"} onChange={(e) => setBonferroni(e.target.checked)} />
+          Bonferroni
+        </label>
+        <button type="button" className="primary" disabled={busy} onClick={() => void run()}>
+          {busy ? tr("计算中…") : dirty ? tr("重新对比") : tr("对比")}
+        </button>
       </div>
       {result && (
         <>
           <div className="key-meta">
-            <span className="muted small">
-              {tr("检验了 {tested} 个词", { tested: result.tested.toLocaleString() })}
+            <span className={`muted small${dirty ? " stale" : ""}`}>
+              {tr("检验了 {tested} 个词", { tested: pyGrouped(result.tested) })}
               {result.pThreshold !== null && tr("，门槛 p ≤ {threshold}", { threshold: result.pThreshold.toPrecision(2) })}
-              {tr("；显著偏多 {over}、偏少 {under}", { over: result.over.length, under: result.under.length })}
+              {tr("；显著偏多 {over}、偏少 {under}", { over: pyGrouped(result.over.length), under: pyGrouped(result.under.length) })}
             </span>
-            <div className="segmented small-seg">
-              <button className={rankBy === "ll" ? "on" : ""} onClick={() => setRankBy("ll")} title={tr("差别有多确定")}>{tr("按 LL 排")}</button>
-              <button className={rankBy === "lr" ? "on" : ""} onClick={() => setRankBy("lr")} title={tr("差多少（效应量）")}>{tr("按 Log Ratio 排")}</button>
+            <div className="segmented" role="radiogroup" aria-label={tr("排序")}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={rankBy === "ll"}
+                className={rankBy === "ll" ? "on" : ""}
+                onClick={() => setRankBy("ll")}
+                title={tr("差别有多确定")}
+              >{tr("按 LL 排")}</button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={rankBy === "lr"}
+                className={rankBy === "lr" ? "on" : ""}
+                onClick={() => setRankBy("lr")}
+                title={tr("差多少（效应量）")}
+              >{tr("按 Log Ratio 排")}</button>
             </div>
           </div>
           <div className="key-cols">
-            <KeyTable title={tr("目标里偏多")} items={rank(result.over, rankBy)} onSearchWord={onSearchWord} />
-            <KeyTable title={tr("目标里偏少")} items={rank(result.under, rankBy)} onSearchWord={onSearchWord} />
+            <KeyTable title={tr("目标里偏多")} items={rank(result.over, rankBy)} stale={dirty} onSearchWord={onSearchWord} />
+            <KeyTable title={tr("目标里偏少")} items={rank(result.under, rankBy)} stale={dirty} onSearchWord={onSearchWord} />
           </div>
-          <p className="muted small">{tr("目标")}</p>
-          <ProvenanceLine p={result.target} />
-          <p className="muted small">{tr("参照")}</p>
-          <ProvenanceLine p={result.reference} />
+          <div className={dirty ? "stale" : undefined}>
+            <ProvenanceLine prefix={tr("目标")} p={result.target} />
+            <ProvenanceLine prefix={tr("参照")} p={result.reference} />
+          </div>
         </>
       )}
     </section>

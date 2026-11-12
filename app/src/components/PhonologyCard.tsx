@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 
 import { api, type StatsFilter, type Vowel, type VowelResult } from "../api";
 import { toSubcorpus } from "../corpusQuality";
-import { tableCsv } from "../pyFormat";
+import { pyGrouped, tableCsv } from "../pyFormat";
 import { ProvenanceLine } from "./CorpusCompare";
 import { saveCsv } from "./saveCsv";
 import { tr } from "../i18n";
@@ -25,6 +25,8 @@ const KANA: Record<Vowel, string> = { a: "ア", i: "イ", u: "ウ", e: "エ", o:
 const MIN_MORAE = [2, 3, 4] as const;
 
 const pct = (share: number) => `${(share * 100).toFixed(1)}%`;
+/** 单元音词表先列这么多行，其余点「显示全部」 */
+const PAGE_ROWS = 50;
 
 export function PhonologyCard({
   filter,
@@ -42,6 +44,10 @@ export function PhonologyCard({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const filterKey = JSON.stringify(filter);
+  // 记下展开时的筛选和段，一变就回到只列前几行
+  const pageKey = JSON.stringify([filterKey, minMorae, vowel]);
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
+  const showAll = expandedFor === pageKey;
 
   useEffect(() => {
     let cancelled = false;
@@ -77,13 +83,14 @@ export function PhonologyCard({
           <h2>{tr("元音分布")}</h2>
           <div className="card-tools">
             <span className="muted small">
-              {result ? tr("{count} 拍", { count: result.vowelMorae.toLocaleString() }) : ""}
+              {result ? tr("{count} 拍", { count: pyGrouped(result.vowelMorae) }) : ""}
             </span>
           </div>
         </div>
         <p className="muted small">
           {tr("歌词按发音拆成拍（モーラ），数每拍的元音。助词は读ワ、エイ / オウ 读长音（エーエン、トーキョー），长音拍算前一拍的元音；促音、拨音没有元音，单独列。")}
         </p>
+        {busy && !result && <p className="muted small pad">{tr("计算中…")}</p>}
         {result && result.vowelMorae > 0 && (
           <>
             <div className={`coarse-bar${busy ? " stale" : ""}`} title={result.vowels.map((v) => `${ROW_LABEL[v.vowel]} ${pct(v.share)}`).join(" · ")}>
@@ -95,17 +102,17 @@ export function PhonologyCard({
             </div>
             <p className="muted small phono-moraic">
               {tr("促音 {sokuon} 拍 · 拨音 {hatsuon} 拍 · 长音 {long} 拍", {
-                sokuon: result.sokuon.toLocaleString(),
-                hatsuon: result.hatsuon.toLocaleString(),
-                long: result.long.toLocaleString(),
+                sokuon: pyGrouped(result.sokuon),
+                hatsuon: pyGrouped(result.hatsuon),
+                long: pyGrouped(result.long),
               })}
               {" · "}
-              {tr("拆了 {words} 个词", { words: result.words.toLocaleString() })}
+              {tr("拆了 {words} 个词", { words: pyGrouped(result.words) })}
               {result.skipped > 0 && (
                 <span title={result.skippedExamples.map(([s, n]) => `${s} ×${n}`).join("\n")}>
                   {"，"}
                   {tr("{skipped} 个没有假名读音（多是英文，如 {examples}），没算", {
-                    skipped: result.skipped.toLocaleString(),
+                    skipped: pyGrouped(result.skipped),
                     examples: result.skippedExamples.slice(0, 3).map(([s]) => s).join("、"),
                   })}
                 </span>
@@ -120,8 +127,8 @@ export function PhonologyCard({
         <div className="card-head">
           <h2>{tr("单元音词")}</h2>
           <div className="card-tools">
-            <label className="muted small">
-              {tr("至少")}{" "}
+            <label className="ctl-label">
+              {tr("至少")}
               <select value={minMorae} onChange={(e) => setMinMorae(Number(e.target.value))}>
                 {MIN_MORAE.map((n) => (
                   <option key={n} value={n}>
@@ -130,29 +137,32 @@ export function PhonologyCard({
                 ))}
               </select>
             </label>
-            <button className="ghost" disabled={!result} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
+            <button type="button" disabled={!result} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
           </div>
         </div>
         <p className="muted small">
           {tr("整个词只有一个元音（あなた、永遠 エーエン）。促音、拨音不影响，拍数下限也只数带元音的拍。按段数一数，就能看出只用一个段写歌词时手里有多少词。点词看它出现在哪些歌里。")}
           {note && <span className="export-note"> {note}</span>}
         </p>
+        {busy && !result && <p className="muted small pad">{tr("计算中…")}</p>}
         {result && (
-          <div className="segmented small-seg phono-rows" role="tablist">
-            {result.univocalic.map((g) => (
-              <button key={g.vowel} role="tab" aria-selected={vowel === g.vowel} className={vowel === g.vowel ? "on" : ""} onClick={() => setVowel(g.vowel)}>
-                {ROW_LABEL[g.vowel]} <span className="muted">{g.distinctWords.toLocaleString()}</span>
-              </button>
-            ))}
+          <div className="card-filters">
+            <div className="segmented phono-rows" role="radiogroup" aria-label={tr("元音段")}>
+              {result.univocalic.map((g) => (
+                <button key={g.vowel} type="button" role="radio" aria-checked={vowel === g.vowel} className={vowel === g.vowel ? "on" : ""} onClick={() => setVowel(g.vowel)}>
+                  {ROW_LABEL[g.vowel]} <span className="muted">{pyGrouped(g.distinctWords)}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {group && (
           <>
             <p className="muted small">
               {tr("{words} 个词，一共出现 {tokens} 次；整行只有这个元音的行 {lines} 行", {
-                words: group.distinctWords.toLocaleString(),
-                tokens: group.tokens.toLocaleString(),
-                lines: group.lineCount.toLocaleString(),
+                words: pyGrouped(group.distinctWords),
+                tokens: pyGrouped(group.tokens),
+                lines: pyGrouped(group.lineCount),
               })}
             </p>
             {group.words.length > 0 ? (
@@ -161,28 +171,35 @@ export function PhonologyCard({
                   <thead>
                     <tr>
                       <th>{tr("发音")}</th>
-                      <th>{tr("写法")}</th>
+                      <th className="wrap-col">{tr("写法")}</th>
                       <th className="num">{tr("拍")}</th>
                       <th className="num">{tr("次数")}</th>
                       <th className="num">{tr("出现曲数")}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {group.words.map((w) => (
+                    {(showAll ? group.words : group.words.slice(0, PAGE_ROWS)).map((w) => (
                       <tr key={`${w.kana}\u{1f}${w.lemma}`}>
                         <td className="jp">{w.kana}</td>
-                        <td className="jp">
-                          <button className="link-btn" onClick={() => onSearchWord(w.lemma)} title={tr("「{lemma}」出现在哪些歌里", { lemma: w.lemma })}>
+                        <td className="jp wrap-col">
+                          <button type="button" className="link-btn" onClick={() => onSearchWord(w.lemma)} title={tr("「{lemma}」出现在哪些歌里", { lemma: w.lemma })}>
                             {w.surfaces.map(([s]) => s).join(" / ")}
                           </button>
                         </td>
                         <td className="num">{w.morae}</td>
-                        <td className="num">{w.freq.toLocaleString()}</td>
-                        <td className="num">{w.songs.toLocaleString()}</td>
+                        <td className="num">{pyGrouped(w.freq)}</td>
+                        <td className="num">{pyGrouped(w.songs)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                {group.words.length > PAGE_ROWS && (
+                  <p className="table-more">
+                    <button type="button" className="link-btn" onClick={() => setExpandedFor(showAll ? null : pageKey)}>
+                      {showAll ? tr("收起") : tr("显示全部 {n} 个", { n: pyGrouped(group.words.length) })}
+                    </button>
+                  </p>
+                )}
               </div>
             ) : (
               <p className="muted small pad">{tr("没有")}</p>

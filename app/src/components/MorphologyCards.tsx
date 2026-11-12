@@ -21,7 +21,7 @@ import {
   type Writing,
 } from "../api";
 import { toSubcorpus } from "../corpusQuality";
-import { tableCsv } from "../pyFormat";
+import { pyGrouped, tableCsv } from "../pyFormat";
 import { ProvenanceLine } from "./CorpusCompare";
 import { saveCsv } from "./saveCsv";
 import { tr } from "../i18n";
@@ -34,7 +34,7 @@ function Pending({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
     <p className="morph-pending small">
-      {tr("还有 {count} 个词的形态信息在后台补，补完之前这张表不全。", { count: count.toLocaleString() })}
+      {tr("还有 {count} 个词的形态信息在后台补，补完之前这张表不全。", { count: pyGrouped(count) })}
     </p>
   );
 }
@@ -97,26 +97,28 @@ export function InflectionCard({
       <div className="card-head">
         <h2>{tr("活用形")}</h2>
         <div className="card-tools">
-          <span className="muted small">{result ? tr("{total} 个有活用的词", { total: result.total.toLocaleString() }) : ""}</span>
-          <div className="segmented small-seg">
+          {/* result.total 是词次（各活用形次数之和），不是词数 */}
+          <span className="muted small">{result ? tr("{total} 词次", { total: pyGrouped(result.total) }) : ""}</span>
+          <div className="segmented" role="radiogroup" aria-label={tr("词性")}>
             {INFLECTING_POS.map((p) => (
-              <button key={p} className={pos === p ? "on" : ""} onClick={() => setPos(p)}>
+              <button key={p} type="button" role="radio" aria-checked={pos === p} className={pos === p ? "on" : ""} onClick={() => setPos(p)}>
                 {p === "" ? tr("全部") : (POS_LABELS[p] ?? p)}
               </button>
             ))}
           </div>
-          <button className="ghost" disabled={!result?.forms.length} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
+          <button type="button" disabled={!result?.forms.length} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
         </div>
       </div>
       <p className="muted small">
         {tr("动词、形容词、助动词按活用形数。歌词里命令形、意志形往往比书面语多。点例词带着这个活用形去检索。活用形的名字照 UniDic（Sudachi）的写法。")}
         {note && <span className="export-note"> {note}</span>}
       </p>
+      {busy && !result && <p className="muted small pad">{tr("计算中…")}</p>}
       {result && <Pending count={result.unannotated} />}
       {coarse.length > 0 && (
-        <div className="coarse-bar" title={coarse.map(([c, s]) => `${c} ${(s * 100).toFixed(1)}%`).join(" · ")}>
+        <div className={`coarse-bar${busy ? " stale" : ""}`} title={coarse.map(([c, s]) => `${c} ${(s * 100).toFixed(1)}%`).join(" · ")}>
           {coarse.slice(0, 8).map(([c, s], i) => (
-            <span key={c} className={`coarse-seg c${i}`} style={{ flexGrow: s }}>
+            <span key={c} className={`coarse-seg c${i}`} style={{ flexGrow: s }} title={`${c} ${(s * 100).toFixed(1)}%`}>
               {s > 0.06 && (
                 <>
                   {c} <b>{(s * 100).toFixed(0)}%</b>
@@ -128,7 +130,7 @@ export function InflectionCard({
       )}
       {result && result.forms.length > 0 && (
         <div className={`table-wrap${busy ? " stale" : ""}`}>
-          <table className="data">
+          <table className="data inflection-table">
             <thead>
               <tr>
                 <th>{tr("活用形")}</th>
@@ -143,25 +145,28 @@ export function InflectionCard({
               {result.forms.map((f) => (
                 <tr key={f.cform}>
                   <td className="cform-name">{f.cform}</td>
-                  <td className="num">{f.freq.toLocaleString()}</td>
+                  <td className="num">{pyGrouped(f.freq)}</td>
                   <td className="bar-col">
                     <span className="freq-bar">
                       <span style={{ width: `${(f.share / maxShare) * 100}%` }} />
                     </span>
                   </td>
                   <td className="num">{(f.share * 100).toFixed(1)}%</td>
-                  <td className="num">{f.songs}</td>
-                  <td className="chip-cell">
-                    {f.lemmas.map(([lemma, n]) => (
-                      <button
-                        key={lemma}
-                        className="chip link"
-                        onClick={() => onSearchInflected(lemma, f.cform)}
-                        title={tr("检索「{lemma}」的{cform}", { lemma, cform: f.cform })}
-                      >
-                        {lemma} <span className="muted">{n}</span>
-                      </button>
-                    ))}
+                  <td className="num">{pyGrouped(f.songs)}</td>
+                  <td>
+                    <div className="chip-cell">
+                      {f.lemmas.map(([lemma, n]) => (
+                        <button
+                          key={lemma}
+                          type="button"
+                          className="chip link"
+                          onClick={() => onSearchInflected(lemma, f.cform)}
+                          title={tr("检索「{lemma}」的{cform}", { lemma, cform: f.cform })}
+                        >
+                          {lemma} <span className="muted">{pyGrouped(n)}</span>
+                        </button>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -176,6 +181,9 @@ export function InflectionCard({
 }
 
 // ────────────────────────────── 表记变体 ──────────────────────────────
+
+/** 长表先列这么多行，其余点「显示全部」 */
+const PAGE_ROWS = 50;
 
 const WRITING_LABELS: Record<Writing, string> = {
   kanji: tr("汉字"),
@@ -200,6 +208,10 @@ export function OrthographyCard({
   const [mixedOnly, setMixedOnly] = useState(true);
   const [note, setNote] = useState("");
   const filterKey = JSON.stringify(filter);
+  // 记下展开时的筛选，筛选一变就回到只列前几行
+  const pageKey = JSON.stringify([filterKey, mixedOnly]);
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
+  const showAll = expandedFor === pageKey;
 
   useEffect(() => {
     let cancelled = false;
@@ -235,18 +247,19 @@ export function OrthographyCard({
       <div className="card-head">
         <h2>{tr("表记变体")}</h2>
         <div className="card-tools">
-          <span className="muted small">{result ? tr("{shown} / {total} 组", { shown: groups.length, total: result.totalGroups }) : ""}</span>
-          <div className="segmented small-seg">
-            <button className={mixedOnly ? "on" : ""} onClick={() => setMixedOnly(true)} title={tr("同一个词既写成汉字又写成假名（君 / きみ / キミ）")}>{tr("汉字与假名混用")}</button>
-            <button className={!mixedOnly ? "on" : ""} onClick={() => setMixedOnly(false)} title={tr("也列出只差用字的（会う / 逢う）")}>{tr("全部")}</button>
+          <span className="muted small">{result ? tr("{shown} / {total} 组", { shown: pyGrouped(groups.length), total: pyGrouped(result.totalGroups) }) : ""}</span>
+          <div className="segmented" role="radiogroup" aria-label={tr("写法")}>
+            <button type="button" role="radio" aria-checked={mixedOnly} className={mixedOnly ? "on" : ""} onClick={() => setMixedOnly(true)} title={tr("同一个词既写成汉字又写成假名（君 / きみ / キミ）")}>{tr("汉字与假名混用")}</button>
+            <button type="button" role="radio" aria-checked={!mixedOnly} className={!mixedOnly ? "on" : ""} onClick={() => setMixedOnly(false)} title={tr("也列出只差用字的（会う / 逢う）")}>{tr("全部")}</button>
           </div>
-          <button className="ghost" disabled={!groups.length} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
+          <button type="button" disabled={!groups.length} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
         </div>
       </div>
       <p className="muted small">
         {tr("同一个词在歌词里的不同写法，按 Sudachi 的正规化表记归组；全是假名的写法按读音并到同词性的汉字写法（只对不活用的词）。只看实词。点写法看是哪几句。")}
         {note && <span className="export-note"> {note}</span>}
       </p>
+      {busy && !result && <p className="muted small pad">{tr("计算中…")}</p>}
       {result && <Pending count={result.unannotated} />}
       <div className="script-legend small muted">
         {(["kanji", "hiragana", "katakana", "kana", "other"] as Writing[]).map((w) => (
@@ -264,19 +277,21 @@ export function OrthographyCard({
                 <th>{tr("读音")}</th>
                 <th>{tr("词性")}</th>
                 <th className="num">{tr("合计")}</th>
-                <th className="variant-col">{tr("写法（次数）")}</th>
-                <th />
+                <th className="variant-col wrap-col">{tr("写法（次数）")}</th>
+                <th>
+                  <span className="sr-only">{tr("操作")}</span>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {groups.map((g) => (
+              {(showAll ? groups : groups.slice(0, PAGE_ROWS)).map((g) => (
                 <tr key={`${g.normalized}:${g.pos}`}>
                   <td className="variant-head">{g.normalized}</td>
-                  <td className="muted">{g.reading}</td>
+                  <td className="muted">{g.reading || <span title={tr("库里没出现这个词的原形，不拿活用形猜读音")}>—</span>}</td>
                   <td className="muted">{POS_LABELS[g.pos] ?? g.pos}</td>
-                  <td className="num">{g.freq.toLocaleString()}</td>
-                  <td className="variant-col">
-                    <span className="variant-bar" title={g.forms.map((f) => `${f.lemma} ${f.freq}`).join(" · ")}>
+                  <td className="num">{pyGrouped(g.freq)}</td>
+                  <td className="variant-col wrap-col">
+                    <span className="variant-bar" title={g.forms.map((f) => `${f.lemma} ${pyGrouped(f.freq)}`).join(" · ")}>
                       {g.forms.map((f) => (
                         <i key={f.lemma} className={`w-${f.writing}`} style={{ flexGrow: f.freq }} />
                       ))}
@@ -285,19 +300,22 @@ export function OrthographyCard({
                       {g.forms.map((f) => (
                         <button
                           key={f.lemma}
+                          type="button"
                           className={`variant-form w-${f.writing}-text`}
                           onClick={() => onSearch(f.lemma, "lemma")}
-                          title={tr("{writing} · {songs} 首歌 · 检索这种写法", { writing: WRITING_LABELS[f.writing], songs: f.songs })}
+                          title={tr("{writing} · {songs} 首歌 · 检索这种写法", { writing: WRITING_LABELS[f.writing], songs: pyGrouped(f.songs) })}
                         >
                           {f.lemma}
-                          <span className="muted">{f.freq}</span>
+                          <span className="muted">{pyGrouped(f.freq)}</span>
                         </button>
                       ))}
                     </span>
                   </td>
                   <td className="row-actions">
                     <button
+                      type="button"
                       className="link-btn"
+                      aria-label={tr("检索「{w}」的各种写法", { w: g.normalized })}
                       onClick={() => onSearch(g.mergedByReading ? g.reading : g.normalized, g.mergedByReading ? "reading" : "normalized")}
                       title={g.mergedByReading ? tr("按读音检索，各种写法一起看") : tr("按正规化表记检索，各种写法一起看")}
                     >
@@ -309,6 +327,13 @@ export function OrthographyCard({
             </tbody>
           </table>
         </div>
+      )}
+      {groups.length > PAGE_ROWS && (
+        <p className="table-more">
+          <button type="button" className="link-btn" onClick={() => setExpandedFor(showAll ? null : pageKey)}>
+            {showAll ? tr("收起") : tr("显示全部 {n} 个", { n: pyGrouped(groups.length) })}
+          </button>
+        </p>
       )}
       {result && groups.length === 0 && !busy && <p className="muted">{tr("没有符合条件的词")}</p>}
       {result && <ProvenanceLine p={result.provenance} />}

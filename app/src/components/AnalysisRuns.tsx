@@ -42,6 +42,9 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
   const [label, setLabel] = useState("");
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [detail, setDetail] = useState<AnalysisRun | null>(null);
+  const [saving, setSaving] = useState<"report" | "frequency" | null>(null);
+  /** 点过一次「删除」、等第二次确认的那条 */
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
 
   const load = () => qualityApi.analyses(50).then(setRuns).catch((e) => onError(message(e)));
   useEffect(() => {
@@ -51,6 +54,24 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
     window.addEventListener(ANALYSIS_ARCHIVED, reload);
     return () => window.removeEventListener(ANALYSIS_ARCHIVED, reload);
   }, [onError]);
+
+  // 点别处（包括别的行）或按 Esc 就取消待确认的删除
+  useEffect(() => {
+    if (confirmDelete === null) return;
+    const onPointer = (e: PointerEvent) => {
+      const btn = (e.target as Element | null)?.closest?.("[data-delete-id]");
+      if (btn?.getAttribute("data-delete-id") !== String(confirmDelete)) setConfirmDelete(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmDelete(null);
+    };
+    document.addEventListener("pointerdown", onPointer, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [confirmDelete]);
 
   const busyWith = async (job: () => Promise<void>) => {
     setBusy(true);
@@ -63,27 +84,38 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
     }
   };
 
-  const save = (spec: AnalysisSpec) =>
-    busyWith(async () => {
+  const save = (spec: AnalysisSpec, which: "report" | "frequency") => {
+    setSaving(which);
+    return busyWith(async () => {
       const run = await qualityApi.runAnalysis(spec, filter, label);
       setLabel("");
       setDetail(run);
       setComparison(null);
       await load();
-    });
+    }).finally(() => setSaving(null));
+  };
 
   return (
     <section className="card analysis-runs">
       <div className="card-head">
         <h2>{tr("分析记录")}</h2>
         <div className="card-tools">
-          <input type="text" className="label-input" placeholder={tr("备注（可不填）")} value={label} onChange={(e) => setLabel(e.target.value)} />
-          <button className="ghost" disabled={busy} onClick={() => void save({ kind: "corpusReport" })}>{tr("存档报告")}</button>
+          <input
+            type="text"
+            className="label-input"
+            placeholder={tr("备注（可不填）")}
+            aria-label={tr("存档备注")}
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+          />
+          <button type="button" disabled={busy} onClick={() => void save({ kind: "corpusReport" }, "report")}>
+            {saving === "report" ? tr("存档中…") : tr("存档报告")}
+          </button>
           <button
-            className="ghost"
+            type="button"
             disabled={busy}
-            onClick={() => void save({ kind: "frequency", pos: pos || null, limit: frequencyLimit })}
-          >{tr("存档词频表")}</button>
+            onClick={() => void save({ kind: "frequency", pos: pos || null, limit: frequencyLimit }, "frequency")}
+          >{saving === "frequency" ? tr("存档中…") : tr("存档词频表")}</button>
         </div>
       </div>
       <p className="muted small">{tr("存档按上面的条件现算一次，连同筛选条件、纳入的每首歌和它的歌词版本、用过的分词器、统计口径和生成时间一起存下来。 「重跑」在现在的库上用同样的条件再算一次，并说明和原来差在哪。")}</p>
@@ -98,7 +130,7 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
               <th>{tr("范围")}</th>
               <th className="num">{tr("曲数")}</th>
               <th>{tr("时间")}</th>
-              <th />
+              <th><span className="sr-only">{tr("操作")}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -111,11 +143,13 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
                   {r.rerunOf !== null && <small className="muted"> ↻#{r.rerunOf}</small>}
                 </td>
                 <td className="small">{describeFilter(r.filter)}</td>
-                <td className="num">{r.songCount}</td>
+                <td className="num">{pyGrouped(r.songCount)}</td>
                 <td className="muted small">{when(r.createdAt)}</td>
                 <td className="row-actions">
                   <button
+                    type="button"
                     className="link-btn"
+                    disabled={busy}
                     onClick={() =>
                       void busyWith(async () => {
                         setDetail(await qualityApi.analysis(r.id));
@@ -124,6 +158,7 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
                     }
                   >{tr("详情")}</button>
                   <button
+                    type="button"
                     className="link-btn"
                     disabled={busy}
                     onClick={() =>
@@ -136,7 +171,9 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
                   >{tr("重跑对比")}</button>
                   {r.rerunOf !== null && (
                     <button
+                      type="button"
                       className="link-btn"
+                      disabled={busy}
                       onClick={() =>
                         void busyWith(async () => {
                           setComparison(await qualityApi.compare(r.rerunOf!, r.id));
@@ -145,16 +182,25 @@ export function AnalysisRuns({ filter, pos, frequencyLimit, onError }: Props) {
                       }
                     >{tr("和 #{rerunOf} 比", { rerunOf: r.rerunOf })}</button>
                   )}
+                  {/* 删除不能撤销：第一次点只变成「确认删除？」，再点一次才删 */}
                   <button
+                    type="button"
                     className="link-btn danger"
-                    onClick={() =>
+                    data-delete-id={r.id}
+                    disabled={busy}
+                    onClick={() => {
+                      if (confirmDelete !== r.id) {
+                        setConfirmDelete(r.id);
+                        return;
+                      }
+                      setConfirmDelete(null);
                       void busyWith(async () => {
                         await qualityApi.deleteAnalysis(r.id);
                         if (detail?.id === r.id) setDetail(null);
                         await load();
-                      })
-                    }
-                  >{tr("删除")}</button>
+                      });
+                    }}
+                  >{confirmDelete === r.id ? tr("确认删除？") : tr("删除")}</button>
                 </td>
               </tr>
             ))}
@@ -176,7 +222,7 @@ function RunDetail({ run, onClose }: { run: AnalysisRun; onClose: () => void }) 
           #{run.id} {KIND_LABELS[run.spec.kind]}
           {run.label && ` · ${run.label}`}
         </h3>
-        <button className="link-btn" onClick={onClose}>{tr("收起")}</button>
+        <button type="button" className="link-btn" onClick={onClose}>{tr("收起")}</button>
       </div>
       <dl>
         <dt>{tr("生成时间")}</dt>
@@ -184,14 +230,14 @@ function RunDetail({ run, onClose }: { run: AnalysisRun; onClose: () => void }) 
         <dt>{tr("条件")}</dt>
         <dd>{describeFilter(run.filter)}</dd>
         <dt>{tr("范围")}</dt>
-        <dd>{tr("{songCount} 首 / {lineCount} 行 · 指纹", { songCount: run.scope.songCount, lineCount: pyGrouped(run.scope.lineCount) })}{" "}<code>{run.scopeHash}</code>
+        <dd>{tr("{songCount} 首 / {lineCount} 行 · 指纹", { songCount: pyGrouped(run.scope.songCount), lineCount: pyGrouped(run.scope.lineCount) })}{" "}<code>{run.scopeHash}</code>
         </dd>
         <dt>{tr("分词器")}</dt>
         <dd>
           {run.tokenizers.runs.map((t) => (
-            <div key={t.id}>{tr("{t}（{lineCount} 行）", { t: tokenizerLabel(t), lineCount: t.lineCount })}</div>
+            <div key={t.id}>{tr("{t}（{lineCount} 行）", { t: tokenizerLabel(t), lineCount: pyGrouped(t.lineCount) })}</div>
           ))}
-          {run.tokenizers.unknownLines > 0 && <div className="muted">{tr("{unknownLines} 行不知道用的哪个分词器（老库导入的）", { unknownLines: run.tokenizers.unknownLines })}</div>}
+          {run.tokenizers.unknownLines > 0 && <div className="muted">{tr("{unknownLines} 行不知道用的哪个分词器（老库导入的）", { unknownLines: pyGrouped(run.tokenizers.unknownLines) })}</div>}
         </dd>
         <dt>{tr("口径")}</dt>
         <dd>
@@ -207,7 +253,7 @@ function RunDetail({ run, onClose }: { run: AnalysisRun; onClose: () => void }) 
           <>
             <dt>{tr("库指纹")}</dt>
             <dd>
-              <code>{run.snapshot.fingerprint}</code>{" "}{tr("· {songs} 首 / {tokens} 词 /{v}{corrections} 处校正", { songs: run.snapshot.songs, tokens: pyGrouped(run.snapshot.tokens), v: " ", corrections: run.snapshot.corrections })}</dd>
+              <code>{run.snapshot.fingerprint}</code>{" "}{tr("· {songs} 首 / {tokens} 词 /{v}{corrections} 处校正", { songs: pyGrouped(run.snapshot.songs), tokens: pyGrouped(run.snapshot.tokens), v: " ", corrections: pyGrouped(run.snapshot.corrections) })}</dd>
           </>
         )}
         <dt>{tr("结果指纹")}</dt>
@@ -235,12 +281,13 @@ function ComparisonView({ data, onClose }: { data: Comparison; onClose: () => vo
         <h3>
           #{data.before.id} → #{data.after.id}{tr("：")}{data.resultIdentical ? tr("结果完全一致") : tr("结果不同")}
         </h3>
-        <button className="link-btn" onClick={onClose}>{tr("收起")}</button>
+        <button type="button" className="link-btn" onClick={onClose}>{tr("收起")}</button>
       </div>
       <p>
         {flags.map(([name, same]) => (
-          <span key={name} className={`chip ${same ? "" : "on"}`}>
+          <span key={name} className={`chip${same ? "" : " chip-diff"}`}>
             {name}
+            <span className="muted" aria-hidden>{" · "}</span>
             {same ? tr("相同") : tr("不同")}
           </span>
         ))}
@@ -295,10 +342,10 @@ function ComparisonView({ data, onClose }: { data: Comparison; onClose: () => vo
                 <td>{w.lemma}</td>
                 <td className="muted">{w.pos}</td>
                 <td className="num">
-                  {w.beforeRank ?? "—"} → {w.afterRank ?? "—"}
+                  {w.beforeRank == null ? "—" : pyGrouped(w.beforeRank)} → {w.afterRank == null ? "—" : pyGrouped(w.afterRank)}
                 </td>
                 <td className="num">
-                  {w.beforeFreq ?? "—"} → {w.afterFreq ?? "—"}
+                  {w.beforeFreq == null ? "—" : pyGrouped(w.beforeFreq)} → {w.afterFreq == null ? "—" : pyGrouped(w.afterFreq)}
                 </td>
               </tr>
             ))}

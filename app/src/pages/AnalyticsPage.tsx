@@ -233,7 +233,13 @@ export function AnalyticsPage({
 
   const sortBy = (col: FreqSort) =>
     setFreqSort((s) => (s.col === col ? { col, up: !s.up } : { col, up: SORT_UP[col] }));
-  const sortMark = (col: FreqSort) => (freqSort.col === col ? (freqSort.up ? " ↑" : " ↓") : "");
+  const ariaSort = (col: FreqSort) => (freqSort.col === col ? (freqSort.up ? "ascending" : "descending") : "none");
+  /** 可排序的表头：按钮在 th 里，箭头由 CSS 按 aria-sort 画，占固定宽度 */
+  const sortTh = (col: FreqSort, label: string, title?: string) => (
+    <th className="num sortable" aria-sort={ariaSort(col)} title={title}>
+      <button type="button" className="th-sort" onClick={() => sortBy(col)}>{label}</button>
+    </th>
+  );
 
   const exportFrequency = async () => {
     if (!sortedRows) return;
@@ -271,28 +277,59 @@ export function AnalyticsPage({
 
   const filterDesc = describeFilter(filter, report?.performers ?? []);
   const show = (t: Tab) => (tab === t ? undefined : true);
+  /** 页签面板的 ARIA：和页签按钮的 id 对上 */
+  const panel = (t: Tab) => ({
+    className: "analytics-tab",
+    id: `apanel-${t}`,
+    role: "tabpanel",
+    "aria-labelledby": `atab-${t}`,
+    hidden: show(t),
+  });
+
+  // 页签条只有选中的那个进 Tab 顺序；左右方向键、Home/End 在页签间移动并切换
+  const onTabKey = (e: React.KeyboardEvent<HTMLElement>) => {
+    const i = TABS.findIndex((t) => t.key === tab);
+    const next =
+      e.key === "ArrowRight" ? (i + 1) % TABS.length
+      : e.key === "ArrowLeft" ? (i - 1 + TABS.length) % TABS.length
+      : e.key === "Home" ? 0
+      : e.key === "End" ? TABS.length - 1
+      : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    const key = TABS[next]!.key;
+    setTab(key);
+    document.getElementById(`atab-${key}`)?.focus();
+  };
 
   return (
     <WithWordPanel word={picked} onClose={() => setPicked(null)} links={wordLinks}>
     <div className="page analytics">
       <ScopeBar filter={filter} onChange={setFilter} onError={onError} />
 
-      <nav className="selector-bar" role="tablist" aria-label={tr("分析")}>
+      <nav className="selector-bar" role="tablist" aria-label={tr("分析")} onKeyDown={onTabKey}>
         {TABS.map((t) => (
           <button
             key={t.key}
+            type="button"
+            id={`atab-${t.key}`}
             role="tab"
             aria-selected={tab === t.key}
+            aria-controls={`apanel-${t.key}`}
+            tabIndex={tab === t.key ? 0 : -1}
             className={tab === t.key ? "on" : ""}
             onClick={() => setTab(t.key)}
           >
-            {t.label}
+            {/* data-label 预留加粗后的宽度，选中时页签不变宽 */}
+            <span data-label={t.label}>
+              <span>{t.label}</span>
+            </span>
           </button>
         ))}
       </nav>
 
       {visited.has("overview") && (
-        <div className="analytics-tab" hidden={show("overview")}>
+        <div {...panel("overview")}>
           <OverviewTab
             report={report}
             allWords={allWords}
@@ -311,27 +348,29 @@ export function AnalyticsPage({
       )}
 
       {visited.has("words") && (
-        <div className="analytics-tab" hidden={show("words")}>
+        <div {...panel("words")}>
           <section className="card">
             <div className="card-head">
               <h2>{tr("词频统计")}</h2>
               <div className="card-tools">
                 <span className="muted small">
-                  {loadingRows ? tr("读取中…") : rows ? tr("{length} 个词", { length: rows.length }) : ""}
+                  {loadingRows ? tr("读取中…") : rows ? tr("{length} 个词", { length: pyGrouped(rows.length) }) : ""}
                 </span>
-                <select className="rate" value={pos} onChange={(e) => setPos(e.target.value)}>
-                  {POS_FILTERS.map((p) => (
-                    <option key={p} value={p}>
-                      {p === "" ? tr("全部词性") : `${POS_LABELS[p] ?? p} ${p}`}
-                    </option>
-                  ))}
-                </select>
-                <button className="ghost" disabled={!rows?.length} onClick={() => void exportFrequency()}>{tr("导出 CSV")}</button>
+                <span className="muted small export-note" role="status">{exportNote}</span>
+                <button type="button" disabled={!rows?.length} onClick={() => void exportFrequency()}>{tr("导出 CSV")}</button>
               </div>
             </div>
-            <p className="muted small">{tr("词元 × 词性按出现次数排，前 {TABLE_LIMIT} 个，不含标点和符号。JLPT 等级来自本地缓存。 点词元看例句，点「检索」到检索页看 KWIC。", { TABLE_LIMIT })}{" "}{tr("点表头换排序。DP 越接近 0 越均匀地散在各首歌里，越接近 1 越集中在少数几首；ARF 是把扎堆出现折算掉以后「相当于均匀出现了几次」，比出现次数小得多的词多半是副歌堆出来的。")}
-              {exportNote && <span className="export-note"> {exportNote}</span>}
+            <p className="muted small">{tr("词元 × 词性按出现次数排，前 {TABLE_LIMIT} 个，不含标点和符号。JLPT 等级来自本地缓存。点词元看例句，点「出处」看出现在哪些歌里。", { TABLE_LIMIT })}{" "}{tr("点表头换排序。DP 越接近 0 越均匀地散在各首歌里，越接近 1 越集中在少数几首；ARF 是把扎堆出现折算掉以后「相当于均匀出现了几次」，比出现次数小得多的词多半是副歌堆出来的。")}
             </p>
+            <div className="card-filters">
+              <select aria-label={tr("词性")} value={pos} onChange={(e) => setPos(e.target.value)}>
+                {POS_FILTERS.map((p) => (
+                  <option key={p} value={p} title={p || undefined}>
+                    {p === "" ? tr("全部词性") : POS_LABELS[p] ?? p}
+                  </option>
+                ))}
+              </select>
+            </div>
             {sortedRows && sortedRows.length > 0 && (
               <div className={`table-wrap${loadingRows ? " stale" : ""}`}>
                 <table className="data">
@@ -341,12 +380,12 @@ export function AnalyticsPage({
                       <th>{tr("词元")}</th>
                       <th>{tr("词性")}</th>
                       <th className="mid">JLPT</th>
-                      <th className="num sortable" onClick={() => sortBy("freq")}>{tr("出现次数")}{sortMark("freq")}</th>
-                      <th className="num sortable" onClick={() => sortBy("songs")}>{tr("出现曲数")}{sortMark("songs")}</th>
-                      <th className="num sortable" onClick={() => sortBy("dp")} title={tr("Gries 的 DP：0 = 按歌的大小均匀分布，1 = 全集中在一首里")}>DP{sortMark("dp")}</th>
-                      <th className="num sortable" onClick={() => sortBy("arf")} title={tr("平均缩减频次：扎堆出现的次数折算掉之后相当于均匀出现几次")}>ARF{sortMark("arf")}</th>
-                      <th>{tr("表层形例")}</th>
-                      <th />
+                      {sortTh("freq", tr("出现次数"))}
+                      {sortTh("songs", tr("出现曲数"))}
+                      {sortTh("dp", "DP", tr("Gries 的 DP：0 = 按歌的大小均匀分布，1 = 全集中在一首里"))}
+                      {sortTh("arf", "ARF", tr("平均缩减频次：扎堆出现的次数折算掉之后相当于均匀出现几次"))}
+                      <th className="wrap-col">{tr("表层形例")}</th>
+                      <th><span className="sr-only">{tr("操作")}</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -354,9 +393,9 @@ export function AnalyticsPage({
                       const d = dispersion.get(dispersionKey(w.lemma, w.pos));
                       return (
                         <tr key={`${w.pos}:${w.lemma}`}>
-                          <td className="num muted">{i + 1}</td>
+                          <td className="num muted">{pyGrouped(i + 1)}</td>
                           <td>
-                            <button className="word-link" onClick={() => void openWord(w.lemma)}>
+                            <button type="button" className="word-link" onClick={() => void openWord(w.lemma)}>
                               {w.lemma}
                             </button>
                           </td>
@@ -373,11 +412,19 @@ export function AnalyticsPage({
                             {d ? <span className="dp-cell" style={{ ["--dp" as string]: `${d.dp * 100}%` }}>{d.dp.toFixed(2)}</span> : <span className="muted">—</span>}
                           </td>
                           <td className="num">{d ? d.arf.toFixed(1) : <span className="muted">—</span>}</td>
-                          <td title={w.surfaces.join("、")}>
+                          <td className="wrap-col" title={w.surfaces.join("、")}>
                             <span className="surfaces">{w.surfaces.slice(0, 5).join("、")}</span>
                           </td>
                           <td className="row-actions">
-                            <button className="link-btn" onClick={() => onSearchWord(w.lemma)} title={tr("出现在哪些歌里，点一首就从这个词开始放")}>{tr("出处")}</button>
+                            <button
+                              type="button"
+                              className="link-btn"
+                              onClick={() => onSearchWord(w.lemma)}
+                              title={tr("出现在哪些歌里，点一首就从这个词开始放")}
+                              aria-label={tr("{w} 的出处", { w: w.lemma })}
+                            >
+                              {tr("出处")}
+                            </button>
                           </td>
                         </tr>
                       );
@@ -392,20 +439,20 @@ export function AnalyticsPage({
       )}
 
       {visited.has("ngrams") && (
-        <div className="analytics-tab" hidden={show("ngrams")}>
+        <div {...panel("ngrams")}>
           <NgramCard filter={filter} onSearchPhrase={onSearchPhrase} onError={onError} />
         </div>
       )}
 
       {visited.has("morph") && (
-        <div className="analytics-tab" hidden={show("morph")}>
+        <div {...panel("morph")}>
           <InflectionCard filter={filter} onSearchInflected={onSearchInflected} onError={onError} />
           <OrthographyCard filter={filter} onSearch={onSearchPhrase} onError={onError} />
         </div>
       )}
 
       {visited.has("phono") && (
-        <div className="analytics-tab" hidden={show("phono")}>
+        <div {...panel("phono")}>
           <PhonologyCard filter={filter} onSearchWord={onSearchWord} onError={onError} />
           <RhymeCard
             filter={filter}
@@ -420,20 +467,20 @@ export function AnalyticsPage({
       )}
 
       {visited.has("richness") && (
-        <div className="analytics-tab" hidden={show("richness")}>
+        <div {...panel("richness")}>
           <LexicalCard filter={filter} onError={onError} />
         </div>
       )}
 
       {visited.has("compare") && (
-        <div className="analytics-tab" hidden={show("compare")}>
+        <div {...panel("compare")}>
           <KeynessCard jpOnly={filter.jpOnly} onSearchWord={onSearchWord} onError={onError} />
-          <RepeatEffectCard subcorpus={toSubcorpus(filter)} jpOnly={filter.jpOnly} onSearchWord={onSearchWord} onError={onError} />
+          <RepeatEffectCard subcorpus={toSubcorpus(filter)} filter={filter} jpOnly={filter.jpOnly} onSearchWord={onSearchWord} onError={onError} />
         </div>
       )}
 
       {visited.has("report") && (
-        <div className="analytics-tab" hidden={show("report")}>
+        <div {...panel("report")}>
           <section className="card report">
             <div className="card-head">
               <h2>{tr("语料报告")}</h2>
@@ -442,21 +489,21 @@ export function AnalyticsPage({
                   {loadingReport
                     ? tr("计算中…")
                     : report
-                      ? tr("{songCount} 曲 / {tokenCount} tokens", { songCount: pyGrouped(report.report.songCount), tokenCount: pyGrouped(report.report.tokenCount) })
+                      ? tr("{songCount} 首 · {tokenCount} 词（不含标点和符号）", { songCount: pyGrouped(report.report.songCount), tokenCount: pyGrouped(report.report.tokenCount) })
                       : ""}
                 </span>
-                <button className="ghost" disabled={!report || loadingReport} onClick={() => void exportReport()}>{tr("导出 TXT")}</button>
+                <span className="muted small export-note" role="status">{exportNote}</span>
+                <button type="button" disabled={!report || loadingReport} onClick={() => void exportReport()}>{tr("导出 TXT")}</button>
               </div>
             </div>
-            <p className="muted small">{tr("TTR、STTR、Hapax、词性分布、高频词覆盖率。导出的 TXT 和 PyQt 版格式相同。")}{exportNote && <span className="export-note"> {exportNote}</span>}
-            </p>
+            <p className="muted small">{tr("TTR、STTR、Hapax、词性分布、高频词覆盖率。导出的 TXT 和 PyQt 版格式相同。")}</p>
             {report && <ReportBody data={report} filterDesc={filterDesc} stale={loadingReport} onWord={openWord} />}
           </section>
         </div>
       )}
 
       {visited.has("runs") && (
-        <div className="analytics-tab" hidden={show("runs")}>
+        <div {...panel("runs")}>
           <AnalysisRuns filter={filter} pos={pos} frequencyLimit={TABLE_LIMIT} onError={onError} />
         </div>
       )}
@@ -564,7 +611,7 @@ function OverviewTab({
           ) : (
             <div className="timeline">
               {timeline.map((y) => (
-                <div className="year" key={y.year} title={tr("{trackCount} 首 · {vocabulary} 词", { trackCount: y.trackCount, vocabulary: y.vocabulary })}>
+                <div className="year" key={y.year} title={tr("{trackCount} 首 · {vocabulary} 词", { trackCount: pyGrouped(y.trackCount), vocabulary: pyGrouped(y.vocabulary) })}>
                   <div className="year-bars">
                     <span className="bar tracks" style={{ height: `${(y.trackCount / maxTracks) * 100}%` }} />
                   </div>
@@ -579,7 +626,7 @@ function OverviewTab({
           <ol className="ov-list">
             {topContent.map((w) => (
               <li key={`${w.pos}:${w.lemma}`}>
-                <button className="ov-word" onClick={() => onSearchWord(w.lemma)} title={tr("「{lemma}」出现在哪些歌里", { lemma: w.lemma })}>
+                <button type="button" className="ov-word" onClick={() => onSearchWord(w.lemma)} title={tr("「{lemma}」出现在哪些歌里", { lemma: w.lemma })}>
                   {w.lemma}
                 </button>
                 <span className="muted small">{POS_LABELS[w.pos] ?? w.pos}</span>
@@ -597,7 +644,7 @@ function OverviewTab({
           <ol className="ov-list">
             {inflated.map((w) => (
               <li key={`${w.pos}:${w.lemma}`}>
-                <button className="ov-word" onClick={() => onSearchWord(w.lemma)} title={tr("「{lemma}」出现在哪些歌里", { lemma: w.lemma })}>
+                <button type="button" className="ov-word" onClick={() => onSearchWord(w.lemma)} title={tr("「{lemma}」出现在哪些歌里", { lemma: w.lemma })}>
                   {w.lemma}
                 </button>
                 <span className="muted small">{POS_LABELS[w.pos] ?? w.pos}</span>
@@ -605,7 +652,7 @@ function OverviewTab({
                   <span style={{ width: `${w.repeatShare * 100}%` }} />
                 </span>
                 <span className="num">{(w.repeatShare * 100).toFixed(0)}%</span>
-                <span className="num muted" title={tr("全部词次 → 重复行只算一次")}>{w.rawFreq} → {w.distinctFreq}</span>
+                <span className="num muted" title={tr("全部词次 → 重复行只算一次")}>{pyGrouped(w.rawFreq)} → {pyGrouped(w.distinctFreq)}</span>
               </li>
             ))}
           </ol>
@@ -616,7 +663,7 @@ function OverviewTab({
 
       <QualityCard onOpenSong={onOpenSong} onError={onError} />
 
-      <button className="cloud-moved" onClick={onOpenCloud}>
+      <button type="button" className="cloud-moved" onClick={onOpenCloud}>
         <span className="cloud-moved-art" aria-hidden="true">
           <b>夢</b>
           <i>君</i>
@@ -640,7 +687,7 @@ function Kpi({ label, value, hint, onClick }: { label: string; value: string; hi
     </>
   );
   return onClick ? (
-    <button className="kpi" title={hint} onClick={onClick}>
+    <button type="button" className="kpi" title={hint} onClick={onClick}>
       {body}
     </button>
   ) : (
@@ -669,7 +716,7 @@ function OvBlock({
         <h3>{title}</h3>
         {hint && <span className="muted small">{hint}</span>}
         {action && onAction && (
-          <button className="link-btn" onClick={onAction}>
+          <button type="button" className="link-btn" onClick={onAction}>
             {action}
           </button>
         )}
@@ -684,18 +731,19 @@ function LibraryBlock({ overview }: { overview: Overview | null }) {
   if (!overview) return null;
   return (
     <section className="card">
-      <div className="card-head">
+      {/* 提示跟在标题后面，和「曲库按年份」一样；右边是放按钮的地方 */}
+      <div className="card-head" style={{ justifyContent: "flex-start" }}>
         <h2>{tr("曲库")}</h2>
         <span className="muted small">{tr("整个曲库，不受范围影响")}</span>
       </div>
       <div className="overview-grid">
-        <Stat label={tr("专辑")} value={overview.albums} align="start" />
-        <Stat label={tr("人物")} value={overview.people} align="start" />
-        <Stat label={tr("演唱")} value={overview.performers} align="start" />
-        <Stat label={tr("作曲")} value={overview.composers} align="start" />
-        <Stat label={tr("作词")} value={overview.lyricists} align="start" />
-        <Stat label={tr("编曲")} value={overview.arrangers} align="start" />
-        <Stat label={tr("词汇量")} value={overview.vocabulary} align="start" />
+        <Stat label={tr("专辑")} value={pyGrouped(overview.albums)} align="start" />
+        <Stat label={tr("人物")} value={pyGrouped(overview.people)} align="start" />
+        <Stat label={tr("演唱")} value={pyGrouped(overview.performers)} align="start" />
+        <Stat label={tr("作曲")} value={pyGrouped(overview.composers)} align="start" />
+        <Stat label={tr("作词")} value={pyGrouped(overview.lyricists)} align="start" />
+        <Stat label={tr("编曲")} value={pyGrouped(overview.arrangers)} align="start" />
+        <Stat label={tr("词汇量")} value={pyGrouped(overview.vocabulary)} align="start" />
         <Stat label={tr("总时长")} value={formatLongDuration(overview.totalDurationSec)} align="start" />
       </div>
 
@@ -724,6 +772,10 @@ function Bar({ value, max }: { value: number; max: number }) {
   );
 }
 
+/** 报告里的表：文字列只占内容宽度，剩下的宽度都给条形图列，词和次数、条形图挨在一起 */
+const FIT = { width: "1%" } as const;
+const REST = { width: "auto" } as const;
+
 function ReportBody({
   data,
   filterDesc,
@@ -738,11 +790,13 @@ function ReportBody({
   const r = data.report;
   const maxPct = r.posDist[0]?.tokenPct ?? 1;
   const maxFreq = r.topWords[0]?.[1] ?? 1;
+  // 变暗只加在内容上，不加在包着表头的外层：吸顶的表头要保持不透明
+  const st = stale ? " stale" : "";
   return (
-    <div className={`report-body${stale ? " stale" : ""}`}>
-      <p className="small">{tr("筛选：{filterDesc}", { filterDesc })}</p>
+    <div className="report-body">
+      <p className={`small${st}`}>{tr("筛选：{filterDesc}", { filterDesc })}</p>
 
-      <div className="report-cards">
+      <div className={`report-cards${st}`}>
         <ReportCard label={tr("曲数")} value={pyGrouped(r.songCount)} />
         <ReportCard label={tr("歌词行数")} value={pyGrouped(r.utteranceCount)} />
         <ReportCard label={tr("Token 数")} value={pyGrouped(r.tokenCount)} note={tr("实词 token，去除标点")} />
@@ -750,12 +804,12 @@ function ReportBody({
       </div>
 
       <h3>{tr("词汇多样性")}</h3>
-      <div className="report-cards">
+      <div className={`report-cards${st}`}>
         <ReportCard label="TTR" value={pyFixed(r.ttr, 4)} note="Types / Tokens" />
         <ReportCard
           label="STTR"
           value={r.sttr === null ? "—" : pyFixed(r.sttr, 4)}
-          note={r.sttrChunk ? tr("标准化 TTR / {sttrChunk} tokens", { sttrChunk: r.sttrChunk }) : tr("标准化 TTR（词次不足 1000）")}
+          note={r.sttrChunk ? tr("标准化 TTR / {sttrChunk} tokens", { sttrChunk: pyGrouped(r.sttrChunk) }) : tr("标准化 TTR（词次不足 1000）")}
         />
         <ReportCard
           label={tr("Hapax 比率")}
@@ -767,15 +821,15 @@ function ReportBody({
       </div>
 
       <h3>{tr("词性分布")}</h3>
-      <table className="data">
+      <table className={`data${st}`}>
         <thead>
           <tr>
-            <th>{tr("词性")}</th>
-            <th>{tr("和名")}</th>
+            <th style={FIT}>{tr("词性")}</th>
+            <th style={FIT}>{tr("和名")}</th>
             <th className="num">{tr("Token 数")}</th>
             <th className="num">{tr("比率")}</th>
             <th className="num">{tr("Type 数")}</th>
-            <th className="bar-col" />
+            <th className="bar-col" style={REST} />
           </tr>
         </thead>
         <tbody>
@@ -795,7 +849,7 @@ function ReportBody({
       </table>
 
       <h3>{tr("高频词覆盖")}</h3>
-      <div className="report-cards">
+      <div className={`report-cards${st}`}>
         {r.coverage.map((c) => (
           <ReportCard key={c.n} label={`Top ${pyGrouped(c.n)}`} value={`${pyFixed(c.pct, 1)}%`}>
             <Bar value={c.pct} max={100} />
@@ -804,21 +858,21 @@ function ReportBody({
       </div>
 
       <h3>{tr("高频词元 Top 20")}</h3>
-      <table className="data">
+      <table className={`data${st}`}>
         <thead>
           <tr>
             <th className="num">{tr("排名")}</th>
-            <th>{tr("词元")}</th>
+            <th style={FIT}>{tr("词元")}</th>
             <th className="num">{tr("出现次数")}</th>
-            <th className="bar-col" />
+            <th className="bar-col" style={REST} />
           </tr>
         </thead>
         <tbody>
           {r.topWords.map(([lemma, freq], i) => (
             <tr key={lemma}>
-              <td className="num muted">{i + 1}</td>
+              <td className="num muted">{pyGrouped(i + 1)}</td>
               <td>
-                <button className="word-link" onClick={() => onWord(lemma)}>
+                <button type="button" className="word-link" onClick={() => onWord(lemma)}>
                   {lemma}
                 </button>
               </td>

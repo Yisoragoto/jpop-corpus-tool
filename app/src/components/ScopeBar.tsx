@@ -7,7 +7,7 @@
  * 条件可以起名存下来（`subcorpora` 表），下次一选就回来；存的是**整份**条件（含演唱者）。
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import type { StatsFilter } from "../api";
 import {
@@ -22,6 +22,7 @@ import {
 } from "../corpusQuality";
 import { PerformerPicker } from "./PerformerPicker";
 import { tr } from "../i18n";
+import { pyGrouped } from "../pyFormat";
 
 interface Props {
   filter: StatsFilter;
@@ -53,7 +54,19 @@ export function ScopeBar({ filter, onChange, onError }: Props) {
   const [scope, setScope] = useState<Scope | null>(null);
   const [naming, setNaming] = useState<string | null>(null);
   const [more, setMore] = useState(false);
+  const [pending, setPending] = useState(false);
+  // 年份先记在本地，失焦或回车才提交：逐键提交会让 2、20、201 各算一遍
+  const [yearFromDraft, setYearFromDraft] = useState(filter.yearFrom != null ? String(filter.yearFrom) : "");
+  const [yearToDraft, setYearToDraft] = useState(filter.yearTo != null ? String(filter.yearTo) : "");
   const previewRequest = useRef(0);
+
+  // 范围从外面变了（选子语料、整个库）时草稿跟着走
+  useEffect(() => {
+    setYearFromDraft(filter.yearFrom != null ? String(filter.yearFrom) : "");
+  }, [filter.yearFrom]);
+  useEffect(() => {
+    setYearToDraft(filter.yearTo != null ? String(filter.yearTo) : "");
+  }, [filter.yearTo]);
 
   useEffect(() => {
     qualityApi.facets().then(setFacets).catch((e) => onError(message(e)));
@@ -62,16 +75,35 @@ export function ScopeBar({ filter, onChange, onError }: Props) {
 
   useEffect(() => {
     const id = ++previewRequest.current;
+    setPending(true);
     qualityApi
       .preview(filter)
-      .then((s) => id === previewRequest.current && setScope(s))
-      .catch((e) => id === previewRequest.current && onError(message(e)));
+      .then((s) => {
+        if (id !== previewRequest.current) return;
+        setScope(s);
+        setPending(false);
+      })
+      .catch((e) => {
+        if (id !== previewRequest.current) return;
+        setPending(false);
+        onError(message(e));
+      });
   }, [filter, onError]);
 
   const set = (patch: Partial<StatsFilter>) => onChange({ ...filter, ...patch });
   const year = (value: string) => (value.trim() === "" ? null : Number.parseInt(value, 10) || null);
   const active = saved.find((s) => sameFilter(s.filter, filter));
   const extra = extraConditions(filter);
+  const commitYear = (key: "yearFrom" | "yearTo", draft: string) => {
+    const value = year(draft);
+    if (value !== (filter[key] ?? null)) set({ [key]: value });
+    // 值没变（比如输了 0）就把草稿还原成当前值
+    else if (key === "yearFrom") setYearFromDraft(value != null ? String(value) : "");
+    else setYearToDraft(value != null ? String(value) : "");
+  };
+  const onYearKey = (key: "yearFrom" | "yearTo", draft: string) => (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") commitYear(key, draft);
+  };
 
   const saveAs = async (name: string) => {
     try {
@@ -90,16 +122,19 @@ export function ScopeBar({ filter, onChange, onError }: Props) {
         <span className="scope-label">{tr("范围")}</span>
         <select
           className="rate"
-          value={active?.id ?? ""}
+          value={active ? String(active.id) : isWholeCorpus(filter) ? "" : "__unsaved"}
           onChange={(e) => {
             const pick = saved.find((s) => String(s.id) === e.target.value);
             onChange(pick ? pick.filter : { performerIds: [], jpOnly: filter.jpOnly, ...(filter.distinctLines ? { distinctLines: true } : {}) });
           }}
           title={tr("存过的子语料")}
         >
-          <option value="">{active || isWholeCorpus(filter) ? tr("整个库") : tr("（未保存的条件）")}</option>
+          <option value="">{tr("整个库")}</option>
+          {!active && !isWholeCorpus(filter) && (
+            <option value="__unsaved" disabled hidden>{tr("（未保存的条件）")}</option>
+          )}
           {saved.map((s) => (
-            <option key={s.id} value={s.id}>{tr("{name}（{songCount} 首）", { name: s.name, songCount: s.songCount })}</option>
+            <option key={s.id} value={s.id}>{tr("{name}（{songCount} 首）", { name: s.name, songCount: pyGrouped(s.songCount) })}</option>
           ))}
         </select>
         <PerformerPicker
@@ -108,6 +143,7 @@ export function ScopeBar({ filter, onChange, onError }: Props) {
           onError={onError}
         />
         <button
+          type="button"
           className={`picker-button scope-more${more ? " open" : ""}${extra > 0 ? " on" : ""}`}
           aria-expanded={more}
           onClick={() => setMore((v) => !v)}
@@ -125,39 +161,60 @@ export function ScopeBar({ filter, onChange, onError }: Props) {
           <input type="checkbox" checked={!!filter.distinctLines} onChange={(e) => set({ distinctLines: e.target.checked })} />
           {tr("副歌只算一遍")}
         </label>
-        <span className="scope-size" title={describeFilter(filter)}>
-          {scope ? tr("{songCount} 首 · {lineCount} 行", { songCount: scope.songCount.toLocaleString(), lineCount: scope.lineCount.toLocaleString() }) : "…"}
+        <span className={`scope-size${pending ? " stale" : ""}`} aria-busy={pending} title={describeFilter(filter)}>
+          {scope ? tr("{songCount} 首 · {lineCount} 行", { songCount: pyGrouped(scope.songCount), lineCount: pyGrouped(scope.lineCount) }) : "…"}
         </span>
       </div>
 
       {more && (
         <div className="scope-row scope-extra">
-          <label className="year-range" title={tr("发行年份（含两端）。设了年份时，年份不明的歌不算进来")}>
+          <span
+            className="year-range"
+            role="group"
+            aria-label={tr("发行年份")}
+            title={tr("发行年份（含两端）。设了年份时，年份不明的歌不算进来")}
+          >
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              aria-label={tr("起始年份")}
               placeholder={facets?.yearMin ? String(facets.yearMin) : tr("起")}
-              value={filter.yearFrom ?? ""}
-              onChange={(e) => set({ yearFrom: year(e.target.value) })}
+              value={yearFromDraft}
+              onChange={(e) => setYearFromDraft(e.target.value.replace(/\D/g, ""))}
+              onBlur={() => commitYear("yearFrom", yearFromDraft)}
+              onKeyDown={onYearKey("yearFrom", yearFromDraft)}
             />
-            <span>–</span>
+            <span aria-hidden="true">–</span>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              aria-label={tr("结束年份")}
               placeholder={facets?.yearMax ? String(facets.yearMax) : tr("止")}
-              value={filter.yearTo ?? ""}
-              onChange={(e) => set({ yearTo: year(e.target.value) })}
+              value={yearToDraft}
+              onChange={(e) => setYearToDraft(e.target.value.replace(/\D/g, ""))}
+              onBlur={() => commitYear("yearTo", yearToDraft)}
+              onKeyDown={onYearKey("yearTo", yearToDraft)}
             />
             <span className="muted small">{tr("年")}</span>
-          </label>
-          <select className="rate" value={filter.genres?.[0] ?? ""} onChange={(e) => set({ genres: e.target.value ? [e.target.value] : [] })}>
+          </span>
+          <select
+            className="rate"
+            aria-label={tr("流派")}
+            value={filter.genres?.[0] ?? ""}
+            onChange={(e) => set({ genres: e.target.value ? [e.target.value] : [] })}
+          >
             <option value="">{tr("全部流派")}</option>
             {facets?.genres.map(([g, n]) => (
               <option key={g} value={g}>
-                {g}{tr("（")}{n}{tr("）")}
+                {g}{tr("（")}{pyGrouped(n)}{tr("）")}
               </option>
             ))}
           </select>
           <select
             className="rate"
+            aria-label={tr("语言")}
             value={filter.languages?.[0] ?? ""}
             onChange={(e) => set({ languages: e.target.value ? [e.target.value] : [] })}
             title={tr("按歌词字符推断的语言，可以在歌的「来源与校验」里手动改")}
@@ -165,12 +222,13 @@ export function ScopeBar({ filter, onChange, onError }: Props) {
             <option value="">{tr("全部语言")}</option>
             {facets?.languages.map(([code, n]) => (
               <option key={code} value={code}>
-                {LANGUAGE_LABELS[code] ?? code}{tr("（")}{n}{tr("）")}
+                {LANGUAGE_LABELS[code] ?? code}{tr("（")}{pyGrouped(n)}{tr("）")}
               </option>
             ))}
           </select>
           <select
             className="rate"
+            aria-label={tr("歌词完整度")}
             value={filter.minCompleteness ?? ""}
             onChange={(e) => set({ minCompleteness: e.target.value === "" ? null : Number(e.target.value) })}
             title={tr("按歌词校验估计的完整度排除可能漏行、截断、乱码的歌")}
@@ -184,9 +242,10 @@ export function ScopeBar({ filter, onChange, onError }: Props) {
           <span className="scope-save">
             {naming === null ? (
               <>
-                <button className="link-btn" onClick={() => setNaming(active?.name ?? "")}>{tr("存为子语料…")}</button>
+                <button type="button" className="link-btn" onClick={() => setNaming(active?.name ?? "")}>{tr("存为子语料…")}</button>
                 {active && (
                   <button
+                    type="button"
                     className="link-btn danger"
                     onClick={async () => {
                       try {
