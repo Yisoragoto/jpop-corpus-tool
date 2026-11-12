@@ -568,6 +568,65 @@ export interface InflectionResult {
   provenance: Provenance;
 }
 
+/** 元音分布和单元音词（jp-corpus 的 phonology.rs） */
+export type Vowel = "a" | "i" | "u" | "e" | "o";
+
+export interface VowelQuery {
+  scope?: AnalysisScope;
+  /** 单元音词至少几拍（默认 2） */
+  minWordMorae?: number;
+  /** 单元音行至少几拍（默认 6） */
+  minLineMorae?: number;
+  /** 每个元音最多列几个词、几行（默认 300） */
+  limit?: number;
+}
+
+export interface VowelShare {
+  vowel: Vowel;
+  morae: number;
+  share: number;
+}
+
+export interface UnivocalicWord {
+  /** 按发音的片假名 */
+  kana: string;
+  lemma: string;
+  surfaces: [string, number][];
+  morae: number;
+  freq: number;
+  songs: number;
+}
+
+export interface UnivocalicLine {
+  songId: string;
+  utteranceId: number;
+  text: string;
+  kana: string;
+  morae: number;
+}
+
+export interface UnivocalicGroup {
+  vowel: Vowel;
+  distinctWords: number;
+  tokens: number;
+  words: UnivocalicWord[];
+  lineCount: number;
+  lines: UnivocalicLine[];
+}
+
+export interface VowelResult {
+  vowelMorae: number;
+  vowels: VowelShare[];
+  sokuon: number;
+  hatsuon: number;
+  long: number;
+  words: number;
+  skipped: number;
+  skippedExamples: [string, number][];
+  univocalic: UnivocalicGroup[];
+  provenance: Provenance;
+}
+
 export interface OrthographyQuery {
   scope?: AnalysisScope;
   minFreq?: number;
@@ -1015,6 +1074,7 @@ export const api = {
   kwicBreakdown: (query: BreakdownQuery) => call<BreakdownResult>("kwic_breakdown", { query }),
   collocationNetwork: (query: NetworkQuery) => call<NetworkResult>("collocation_network", { query }),
   orthography: (query: OrthographyQuery) => call<OrthographyResult>("orthography", { query }),
+  vowels: (query: VowelQuery) => call<VowelResult>("vowels", { query }),
   songProfile: (songId: string, limit?: number) => call<SongProfile>("song_profile", { songId, limit }),
   searchLyrics: (text: string, limit?: number) =>
     call<LyricHit[]>("search_lyrics", { text, limit }),

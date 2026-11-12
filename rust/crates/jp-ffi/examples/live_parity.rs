@@ -86,6 +86,7 @@ fn dump(db: &str, out: &str, lemma: &str, person: i64, album: i64, songs: &[Stri
         ("kwicBreakdown".into(), json!({ "query": { "kwic": { "keywords": [lemma], "field": "lemma" } } })),
         ("collocationNetwork".into(), json!({ "query": { "collocation": { "node": lemma, "minFreq": 1 } } })),
         ("orthography".into(), json!({ "query": {} })),
+        ("vowels".into(), json!({ "query": {} })),
         ("qualityOverview".into(), json!({ "limit": 100000 })),
         ("subcorpusFacets".into(), json!({})),
         ("subcorpusPreview".into(), json!({ "filter": {} })),

@@ -1485,6 +1485,12 @@ button.kpi:hover { background: var(--panel-2); }
   white-space: nowrap; overflow: hidden; color: var(--accent-ink);
 }
 .coarse-seg b { font-weight: 600; }
+/* 音系：五个段的切换、单元音行 */
+.phono-rows { margin: 4px 0 8px; }
+.phono-rows .muted { margin-left: 4px; font-size: 11px; }
+.phono-subhead { margin: 16px 0 6px; font-size: 14px; }
+.phono-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.phono-lines li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .coarse-seg.c0 { background: var(--script-kanji); }
 .coarse-seg.c1 { background: var(--script-hiragana); }
 .coarse-seg.c2 { background: var(--script-katakana); }

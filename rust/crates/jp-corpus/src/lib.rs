@@ -47,6 +47,7 @@ pub mod cql;
 pub mod explore;
 pub mod lexical;
 pub mod morphology;
+pub mod phonology;
 pub mod media;
 pub mod ruby;
 pub mod segments;
@@ -506,6 +507,11 @@ impl Corpus {
 
     pub fn orthography(&self, query: &morphology::OrthographyQuery) -> Result<morphology::OrthographyResult> {
         morphology::orthography(&self.conn, query)
+    }
+
+    /// 元音分布和单元音词（音系层，见 `phonology`）
+    pub fn vowels(&self, query: &phonology::VowelQuery) -> Result<phonology::VowelResult> {
+        phonology::vowels(&self.conn, query)
     }
 
     pub fn breakdown(&self, query: &explore::BreakdownQuery) -> Result<explore::BreakdownResult> {

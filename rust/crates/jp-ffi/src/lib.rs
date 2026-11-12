@@ -422,6 +422,7 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
         "kwicBreakdown" => serde_json::to_value(corpus.breakdown(&arg(&args, "query")?)?)?,
         "collocationNetwork" => serde_json::to_value(corpus.collocation_network(&arg(&args, "query")?)?)?,
         "orthography" => serde_json::to_value(corpus.orthography(&arg(&args, "query")?)?)?,
+        "vowels" => serde_json::to_value(corpus.vowels(&arg(&args, "query")?)?)?,
         "songProfile" => serde_json::to_value(
             corpus.song_profile(&arg::<String>(&args, "songId")?, arg_or(&args, "limit", 12)?)?,
         )?,
