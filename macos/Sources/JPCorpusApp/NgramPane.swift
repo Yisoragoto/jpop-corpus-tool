@@ -70,7 +70,7 @@ struct NgramPane: View {
     }
 
     private var containsField: some View {
-        TextField("只看含某个词的（回车）", text: $containsDraft)
+        TextField("含某个词…", text: $containsDraft)
             .textFieldStyle(.roundedBorder).frame(minWidth: 180, maxWidth: 280)
             .onSubmit { contains = containsDraft }
             .onChange(of: containsDraft) { _, value in if value.isEmpty { contains = "" } }

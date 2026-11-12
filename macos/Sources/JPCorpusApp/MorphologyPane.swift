@@ -57,7 +57,7 @@ private struct InflectionSection: View {
         HStack(spacing: 12) {
             Text("活用形").font(.app(.title2).bold())
             if busy { ProgressView().controlSize(.small) }
-            if let result { Text("\(grouped(result.total)) 个有活用的词").font(.app(.caption)).foregroundStyle(.secondary) }
+            if let result { Text("\(grouped(result.total)) 词次").font(.app(.caption)).foregroundStyle(.secondary) }
             Spacer()
             Picker("词性", selection: $pos) {
                 Text("全部").tag("")
@@ -249,7 +249,14 @@ private struct OrthographyRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text(group.normalized).fontWeight(.medium).frame(width: 110, alignment: .leading)
-            Text(group.reading).foregroundStyle(.secondary).frame(width: 85, alignment: .leading)
+            Group {
+                if group.reading.isEmpty {
+                    Text(verbatim: "—").help("库里没出现这个词的原形，不拿活用形猜读音")
+                } else {
+                    Text(verbatim: group.reading)
+                }
+            }
+            .foregroundStyle(.secondary).frame(width: 85, alignment: .leading)
             Text(posLabels[group.pos] ?? group.pos).foregroundStyle(.secondary).frame(width: 55, alignment: .leading)
             Text(String(group.freq)).monospacedDigit().frame(width: 55, alignment: .trailing)
             VStack(alignment: .leading, spacing: 8) {

@@ -13,11 +13,11 @@ struct AnalysisView: View {
     private var scopeName: String { SubcorpusScope.describeFilter(filter) }
     /// 主分页跟 Windows 同序；旧 tag 保留，避免改掉已存的选择。
     private static let tabs: [(tag: Int, title: String)] = [
-        (5, "概览"), (0, "词表"), (7, "词簇"), (8, "活用·写法"), (9, "丰富度"),
+        (5, "概览"), (0, "词表"), (7, "词簇"), (8, "活用·写法"), (10, "音系"), (9, "丰富度"),
         (1, "对比"), (6, "报告"), (2, "记录"), (4, "副歌效应"), (3, "质量"),
     ]
     /// 跟着上面范围走的分页
-    private var scoped: Bool { [5, 0, 7, 8, 9, 1, 4, 6].contains(tab) }
+    private var scoped: Bool { [5, 0, 7, 8, 10, 9, 1, 4, 6].contains(tab) }
     private var analysisScope: AnalysisScope {
         AnalysisScope(subcorpus: scope, unit: filter.distinctLines ? .distinctLines : .tokens, jpOnly: filter.jpOnly)
     }
@@ -44,6 +44,7 @@ struct AnalysisView: View {
                 case 6: StatsReportPane(filter: filter)
                 case 7: NgramPane(scope: analysisScope)
                 case 8: MorphologyPane(scope: analysisScope)
+                case 10: PhonologyPane(scope: analysisScope)
                 case 9: RichnessPane(scope: analysisScope)
                 default: QualityPane()
                 }
