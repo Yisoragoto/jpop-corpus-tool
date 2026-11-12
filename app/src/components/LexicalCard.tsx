@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { api, type LexicalGroup, type LexicalResult, type LexicalRow, type StatsFilter } from "../api";
 import { toSubcorpus } from "../corpusQuality";
-import { tableCsv } from "../pyFormat";
+import { pyGrouped, tableCsv } from "../pyFormat";
 import { ProvenanceLine } from "./CorpusCompare";
 import { saveCsv } from "./saveCsv";
 import { tr } from "../i18n";
@@ -83,14 +83,16 @@ export function LexicalCard({ filter, onError }: Props) {
     return [...result.rows].sort((a, b) => sign * (value(a, sort.col) - value(b, sort.col)) || b.tokens - a.tokens);
   }, [result, sort]);
 
+  // 箭头由 CSS 按 aria-sort 画在固定宽度的槽里，换排序列时表格不跳
   const head = (col: Col, label: string, title?: string) => (
-    <th
-      className="num sortable"
-      title={title}
-      onClick={() => setSort((s) => (s.col === col ? { col, up: !s.up } : { col, up: col === "yuleK" }))}
-    >
-      {label}
-      {sort.col === col ? (sort.up ? " ↑" : " ↓") : ""}
+    <th className="num sortable" title={title} aria-sort={sort.col === col ? (sort.up ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        className="th-sort"
+        onClick={() => setSort((s) => (s.col === col ? { col, up: !s.up } : { col, up: col === "yuleK" }))}
+      >
+        {label}
+      </button>
     </th>
   );
 
@@ -123,12 +125,22 @@ export function LexicalCard({ filter, onError }: Props) {
       <div className="card-head">
         <h2>{tr("词汇丰富度与文字")}</h2>
         <div className="card-tools">
-          <div className="segmented">
-            <button className={group === "whole" ? "on" : ""} onClick={() => setGroup("whole")}>{tr("整体")}</button>
-            <button className={group === "performer" ? "on" : ""} onClick={() => setGroup("performer")}>{tr("按演唱者")}</button>
-            <button className={group === "song" ? "on" : ""} onClick={() => setGroup("song")}>{tr("按歌")}</button>
+          {busy && <span className="muted small">{tr("计算中…")}</span>}
+          <div className="segmented" role="radiogroup" aria-label={tr("分组")}>
+            {(
+              [
+                ["whole", tr("整体")],
+                ["performer", tr("按演唱者")],
+                ["song", tr("按歌")],
+              ] as const
+            ).map(([g, label]) => (
+              <button key={g} type="button" role="radio" aria-checked={group === g} className={group === g ? "on" : ""} onClick={() => setGroup(g)}>
+                {label}
+              </button>
+            ))}
           </div>
-          <button className="ghost" disabled={!rows.length} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
+          {/* 算新分组时旧行还在，这时导出会把旧内容存成新分组的文件名 */}
+          <button disabled={!rows.length || busy} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
         </div>
       </div>
       <p className="muted small">
@@ -143,12 +155,13 @@ export function LexicalCard({ filter, onError }: Props) {
           </span>
         ))}
       </div>
+      {!result && busy && <p className="muted small">{tr("计算中…")}</p>}
       {rows.length > 0 && (
         <div className={`table-wrap${busy ? " stale" : ""}`}>
           <table className="data">
             <thead>
               <tr>
-                <th>{group === "song" ? tr("歌") : group === "performer" ? tr("演唱者") : ""}</th>
+                <th>{group === "song" ? tr("歌") : group === "performer" ? tr("演唱者") : tr("范围")}</th>
                 {head("songs", tr("曲数"))}
                 {head("tokens", tr("词次"))}
                 {head("ttr", "TTR")}
@@ -167,8 +180,8 @@ export function LexicalCard({ filter, onError }: Props) {
                   <td className="lexical-name" title={r.label}>
                     {r.label || tr("整个范围")}
                   </td>
-                  <td className="num">{r.songs}</td>
-                  <td className="num">{r.tokens.toLocaleString()}</td>
+                  <td className="num">{pyGrouped(r.songs)}</td>
+                  <td className="num">{pyGrouped(r.tokens)}</td>
                   <td className="num">{r.ttr.toFixed(3)}</td>
                   <td className="num">{fixed(r.mattr, 3)}</td>
                   <td className="num">{fixed(r.mtld, 1)}</td>

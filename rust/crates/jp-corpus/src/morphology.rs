@@ -219,6 +219,13 @@ pub struct OrthographyResult {
     pub provenance: Provenance,
 }
 
+/// 終止形。写成转义：界面文案检查会把源码里只有汉字的字符串当成要翻译的中文
+const DICTIONARY_FORM: &str = "\u{7d42}\u{6b62}\u{5f62}";
+/// 連体形-一般。口语的动词、形容词，连体形和终止形读音相同（輝く星、寂しい夜）
+const ATTRIBUTIVE_FORM: &str = "\u{9023}\u{4f53}\u{5f62}-\u{4e00}\u{822c}";
+/// 文語。文语活用的连体形和终止形不同（あり／ある），不能拿来补
+const CLASSICAL: &str = "\u{6587}\u{8a9e}";
+
 pub fn orthography(conn: &Connection, query: &OrthographyQuery) -> Result<OrthographyResult> {
     let lines = analysis::load_lines(conn, &query.scope)?;
 
@@ -232,6 +239,8 @@ pub fn orthography(conn: &Connection, query: &OrthographyQuery) -> Result<Orthog
     struct Group {
         forms: HashMap<String, Form>,
         readings: HashMap<String, i64>,
+        /// 没有终止形时退而求其次：口语活用的連体形-一般（だ 的连体形是 ナ，所以只在没有终止形时用）
+        attributive: HashMap<String, i64>,
         inflecting: bool,
     }
     // 键：（正规化表记，UPOS）。同一个写法当名词和当动词不是一回事。
@@ -245,7 +254,13 @@ pub fn orthography(conn: &Connection, query: &OrthographyQuery) -> Result<Orthog
             let key_pos = if tok.ctype.is_empty() { tok.pos.clone() } else { format!("{}\u{1f}{}", tok.pos, tok.ctype) };
             let g = groups.entry((tok.normalized.clone(), key_pos)).or_default();
             g.inflecting |= !tok.ctype.is_empty();
-            *g.readings.entry(tok.reading.clone()).or_default() += 1;
+            // 活用的词只拿原形（終止形）的读音：按所有词次取众数，居る 会读成 イ（居て）、言う 读成 イワ（言わ）。
+            // 没有终止形就用读音相同的口语连体形；两样都没有的组不给读音，不拿别的活用形去猜
+            if tok.ctype.is_empty() || tok.cform.starts_with(DICTIONARY_FORM) {
+                *g.readings.entry(tok.reading.clone()).or_default() += 1;
+            } else if tok.cform == ATTRIBUTIVE_FORM && !tok.ctype.starts_with(CLASSICAL) {
+                *g.attributive.entry(tok.reading.clone()).or_default() += 1;
+            }
             let f = g.forms.entry(tok.lemma.clone()).or_default();
             f.freq += 1;
             f.songs.insert(line.song_id.clone());
@@ -255,7 +270,8 @@ pub fn orthography(conn: &Connection, query: &OrthographyQuery) -> Result<Orthog
         }
     }
     let main_reading = |g: &Group| {
-        g.readings.iter().max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0))).map(|(r, _)| r.clone()).unwrap_or_default()
+        let readings = if g.readings.is_empty() { &g.attributive } else { &g.readings };
+        readings.iter().max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0))).map(|(r, _)| r.clone()).unwrap_or_default()
     };
 
     // 全假名、不活用的组：读音和词性只对得上唯一一个带汉字的组时并过去
@@ -394,5 +410,50 @@ mod tests {
         assert_eq!(forms, vec![("君", 4), ("きみ", 2), ("キミ", 2)]);
         assert!(kimi.merged_by_reading);
         assert!(!res.groups.iter().any(|g| g.normalized == "きみ"), "きみ 并进去了，不再单列");
+    }
+
+    #[test]
+    fn inflecting_words_take_the_reading_of_the_dictionary_form() {
+        let corpus = annotated_corpus();
+        let conn = corpus.connection();
+        // 居る：三次 居て（イ）、一次 居る（イル），另有两次写成 いる。读音该是原形的 イル，不是次数多的 イ
+        conn.execute_batch(
+            "UPDATE tokens SET reading = 'イ', normalized = '居る', pos = 'VERB', lemma = '居る', surface = '居', ctype = '上一段-ア行', cform = '連用形-一般'
+               WHERE id IN (SELECT id FROM tokens ORDER BY id LIMIT 3);
+             UPDATE tokens SET reading = 'イル', normalized = '居る', pos = 'VERB', lemma = '居る', surface = '居る', ctype = '上一段-ア行', cform = '終止形-一般'
+               WHERE id IN (SELECT id FROM tokens ORDER BY id LIMIT 1 OFFSET 3);
+             UPDATE tokens SET reading = 'イ', normalized = '居る', pos = 'VERB', lemma = 'いる', surface = 'い', ctype = '上一段-ア行', cform = '連用形-一般'
+               WHERE id IN (SELECT id FROM tokens ORDER BY id LIMIT 2 OFFSET 4);",
+        )
+        .unwrap();
+        let res = orthography(conn, &OrthographyQuery { min_freq: 1, ..Default::default() }).unwrap();
+        let iru = res.groups.iter().find(|g| g.normalized == "居る").expect("居る 这一组");
+        assert_eq!(iru.reading, "イル");
+        // 合成库里别的动词全是連用形：没有原形就不给读音
+        assert!(res.groups.iter().filter(|g| g.pos == "VERB" && g.normalized != "居る").all(|g| g.reading.is_empty()));
+    }
+
+    #[test]
+    fn without_a_dictionary_form_the_colloquial_attributive_supplies_the_reading() {
+        let corpus = annotated_corpus();
+        let conn = corpus.connection();
+        // 輝く：只出现过 輝い（連用形）和 輝く星（連体形），连体形读音就是原形的。
+        // 在り（文语）：连体形 ある 和终止形 あり 不同，不能拿来补
+        conn.execute_batch(
+            "UPDATE tokens SET reading = 'カガヤイ', normalized = '輝く', pos = 'VERB', lemma = '輝く', surface = '輝い', ctype = '五段-カ行', cform = '連用形-イ音便'
+               WHERE id IN (SELECT id FROM tokens ORDER BY id LIMIT 3);
+             UPDATE tokens SET reading = 'カガヤク', normalized = '輝く', pos = 'VERB', lemma = 'かがやく', surface = 'かがやく', ctype = '五段-カ行', cform = '連体形-一般'
+               WHERE id IN (SELECT id FROM tokens ORDER BY id LIMIT 1 OFFSET 3);
+             UPDATE tokens SET reading = 'アル', normalized = '在り', pos = 'VERB', lemma = '在り', surface = '在る', ctype = '文語ラ行変格', cform = '連体形-一般'
+               WHERE id IN (SELECT id FROM tokens ORDER BY id LIMIT 2 OFFSET 4);
+             UPDATE tokens SET reading = 'アル', normalized = '在り', pos = 'VERB', lemma = 'あり', surface = 'ある', ctype = '文語ラ行変格', cform = '連体形-一般'
+               WHERE id IN (SELECT id FROM tokens ORDER BY id LIMIT 1 OFFSET 6);",
+        )
+        .unwrap();
+        let res = orthography(conn, &OrthographyQuery { min_freq: 1, ..Default::default() }).unwrap();
+        let kagayaku = res.groups.iter().find(|g| g.normalized == "輝く").expect("輝く 这一组");
+        assert_eq!(kagayaku.reading, "カガヤク");
+        let ari = res.groups.iter().find(|g| g.normalized == "在り").expect("在り 这一组");
+        assert_eq!(ari.reading, "");
     }
 }
