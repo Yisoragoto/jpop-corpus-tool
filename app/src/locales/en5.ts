@@ -918,4 +918,12 @@ export const en5: Record<string, string> = {
   "词元 × 词性按出现次数排，前 {TABLE_LIMIT} 个，不含标点和符号。JLPT 等级来自本地缓存。点词元看例句，点「出处」看出现在哪些歌里。": "Lemma × part of speech, by number of occurrences: the top {TABLE_LIMIT}, without punctuation or symbols. JLPT levels come from the local cache. Click a lemma for examples, or “Where” to see which songs it appears in.",
   "{w} 的出处": "Where {w} appears",
   "{songCount} 首 · {tokenCount} 词（不含标点和符号）": "{songCount} {songCount|song|songs} · {tokenCount} {tokenCount|word|words} (without punctuation or symbols)",
+  // 分段按钮的读屏标签（界面上不显示）
+  "左栏列什么": "What the sidebar lists",
+  "时间轴方向": "Timeline direction",
+  "检索方式": "Search mode",
+  "按什么匹配": "Match by",
+  "结果怎么看": "Results view",
+  "搭配强度怎么算": "Collocation measure",
+  "查词栏显示什么": "Lookup panel shows",
 };

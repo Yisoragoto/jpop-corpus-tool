@@ -1,3 +1,5 @@
+import { useDismiss } from "../dismiss";
+import { Segmented } from "../components/Segmented";
 import { useMenuFocus } from "../menuFocus";
 import { Icon } from "../components/Icon";
 /**
@@ -751,19 +753,7 @@ export function LibraryPage({
   const menuRef = useRef<HTMLDivElement>(null);
   useMenuFocus(menuRef, menuOpen, () => setMenuOpen(false));
   useEffect(() => setMenuOpen(false), [selected?.id]);
-  useEffect(() => {
-    if (!menuOpen) return;
-    const away = (e: PointerEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
-    document.addEventListener("pointerdown", away);
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("pointerdown", away);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [menuOpen]);
+  useDismiss(menuRef, menuOpen, () => setMenuOpen(false));
 
   /** 打开一首歌：封面从点的地方飞到歌词栏的标题旁（共享元素过渡） */
   const openWithMorph = (track: Track, button: HTMLElement) => {
@@ -1003,11 +993,16 @@ export function LibraryPage({
 
       {(word !== null || lookup !== null) && !wordLoading && (
         <>
-          <div className="segmented corpus-tabs">
-            <button className={corpusTab === "dict" ? "on" : ""} onClick={() => pickTab("dict")}>{tr("词典")}</button>
-            <button className={corpusTab === "examples" ? "on" : ""} onClick={() => pickTab("examples")}>{tr("例句")}{word ? ` ${word.examples.length}` : ""}
-            </button>
-          </div>
+          <Segmented
+            className="corpus-tabs"
+            label={tr("查词栏显示什么")}
+            value={corpusTab}
+            onChange={pickTab}
+            options={[
+              { value: "dict", label: tr("词典") },
+              { value: "examples", label: <>{tr("例句")}{word ? ` ${word.examples.length}` : ""}</> },
+            ]}
+          />
           {corpusTab === "dict"
             ? dictionarySection || <p className="muted pad">{tr("这次没有查词典（点歌词里的词会查）")}</p>
             : examplesSection || <p className="muted pad">{tr("没有例句")}</p>}

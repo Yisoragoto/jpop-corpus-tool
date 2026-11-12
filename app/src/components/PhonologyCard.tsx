@@ -6,6 +6,7 @@
  * 读音里有假名以外的字的词（多是英文）拆不了，不算在里面，表上写出来有多少。
  */
 
+import { Segmented } from "./Segmented";
 import { useEffect, useState } from "react";
 
 import { api, type StatsFilter, type Vowel, type VowelResult } from "../api";
@@ -147,13 +148,13 @@ export function PhonologyCard({
         {busy && !result && <p className="muted small pad">{tr("计算中…")}</p>}
         {result && (
           <div className="card-filters">
-            <div className="segmented phono-rows" role="radiogroup" aria-label={tr("元音段")}>
-              {result.univocalic.map((g) => (
-                <button key={g.vowel} type="button" role="radio" aria-checked={vowel === g.vowel} className={vowel === g.vowel ? "on" : ""} onClick={() => setVowel(g.vowel)}>
-                  {ROW_LABEL[g.vowel]} <span className="muted">{pyGrouped(g.distinctWords)}</span>
-                </button>
-              ))}
-            </div>
+            <Segmented
+              className="phono-rows"
+              label={tr("元音段")}
+              value={vowel}
+              onChange={setVowel}
+              options={result.univocalic.map((g) => ({ value: g.vowel, label: <>{ROW_LABEL[g.vowel]} <span className="muted">{pyGrouped(g.distinctWords)}</span></> }))}
+            />
           </div>
         )}
         {group && (

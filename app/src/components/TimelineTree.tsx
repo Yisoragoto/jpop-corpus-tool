@@ -1,3 +1,4 @@
+import { Segmented } from "./Segmented";
 import { Icon } from "./Icon";
 /**
  * 时间轴放大后：一位音乐人的「时间树」。竖着看（年份是树干上的节，专辑左右交替长出来，歌是小枝），
@@ -104,11 +105,17 @@ export function TimelineTree({
           <span>/</span>
           <b>{entry?.name ?? ""}</b>
         </div>
-        <div className="segmented seg-slide tree-orient" style={{ ["--seg-i" as string]: orient === "vertical" ? 0 : 1, ["--seg-n" as string]: 2 }}>
-          <span className="seg-thumb" aria-hidden="true" />
-          <button className={orient === "vertical" ? "on" : ""} onClick={() => onOrient("vertical")}>{tr("竖向")}</button>
-          <button className={orient === "horizontal" ? "on" : ""} onClick={() => onOrient("horizontal")}>{tr("横向")}</button>
-        </div>
+        <Segmented
+          slide
+          className="tree-orient"
+          label={tr("时间轴方向")}
+          value={orient}
+          onChange={onOrient}
+          options={[
+            { value: "vertical", label: tr("竖向") },
+            { value: "horizontal", label: tr("横向") },
+          ]}
+        />
         <div className="timeline-legend muted small" aria-hidden="true">
           <span><i className="tl-node" />{isBand ? tr("乐队时期") : tr("发行")}</span>
           {parts !== null && parts.length > 1 && <span><i className="tl-node solo" />{tr("解散后单飞")}</span>}

@@ -6,7 +6,8 @@
  * 报告里的「筛选」一行也就按这个顺序写名字。
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDismiss } from "../dismiss";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { api, type PersonSummary } from "../api";
 import { tr } from "../i18n";
@@ -87,20 +88,16 @@ export function PerformerPicker({ selected, onChange, onError }: Props) {
     };
   }, [onError]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
+  useDismiss(root, open, () => setOpen(false));
+  // 按钮靠窗口右边时，面板往左展开：原来固定从按钮左边起、宽 260px，会伸到窗口外面，
+  // 一聚焦里面的筛选框，整页还会被横着顶过去一截
+  const [alignRight, setAlignRight] = useState(false);
+  useLayoutEffect(() => {
+    if (!open || root.current === null) return;
+    const pop = root.current.querySelector<HTMLElement>(".picker-pop");
+    if (pop === null) return;
+    const left = root.current.getBoundingClientRect().left;
+    setAlignRight(left + pop.offsetWidth > document.documentElement.clientWidth - 8);
   }, [open]);
 
   const chosen = useMemo(() => new Set(selected), [selected]);
@@ -140,7 +137,7 @@ export function PerformerPicker({ selected, onChange, onError }: Props) {
         <span>{label}</span>
       </button>
       {open && (
-        <div className="picker-pop" role="dialog" aria-label={tr("演唱者")}>
+        <div className={`picker-pop${alignRight ? " right" : ""}`} role="dialog" aria-label={tr("演唱者")}>
           <div className="picker-head">
             <input
               className="search"

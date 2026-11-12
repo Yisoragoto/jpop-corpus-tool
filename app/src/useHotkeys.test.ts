@@ -42,6 +42,12 @@ describe("keepsKey", () => {
     expect(keepsKey(custom, "Space", mouse)).toBe(false);
   });
 
+  it("分段按钮（单选组）：用键盘移过去才拿方向键，鼠标点过的仍是全局快捷键", () => {
+    const radio = make('<div role="radiogroup"><button role="radio" data-target>KWIC</button></div>');
+    expect(keepsKey(radio, "ArrowRight", keyboard)).toBe(true);
+    expect(keepsKey(radio, "ArrowRight", mouse)).toBe(false);
+  });
+
   it("页面空白处：全部是全局快捷键", () => {
     expect(keepsKey(make("<div data-target></div>"), "Space", keyboard)).toBe(false);
     expect(keepsKey(null, "Space", keyboard)).toBe(false);

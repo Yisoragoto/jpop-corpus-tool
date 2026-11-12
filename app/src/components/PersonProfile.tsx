@@ -1,3 +1,5 @@
+import { useDismiss } from "../dismiss";
+import { Segmented } from "./Segmented";
 import { useMenuFocus } from "../menuFocus";
 import { Icon } from "./Icon";
 /**
@@ -266,19 +268,7 @@ export function PersonProfile({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   useMenuFocus(menuRef, menuOpen, () => setMenuOpen(false));
-  useEffect(() => {
-    if (!menuOpen) return;
-    const close = (e: PointerEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc);
-    return () => {
-      window.removeEventListener("pointerdown", close);
-      window.removeEventListener("keydown", esc);
-    };
-  }, [menuOpen]);
+  useDismiss(menuRef, menuOpen, () => setMenuOpen(false));
 
   // 换照片：刮削有时把专辑封面当成了歌手照片。换的这张刮削不再覆盖
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -491,14 +481,17 @@ export function PersonProfile({
                 <div className="overview-head">
                   <h2>{tr("单曲")}</h2>
                   <span className="muted small">{tr("{n} 首 · 最新在前 · 点一下就播放", { n: songs.length })}</span>
-                  <span className="view-switch" role="group" aria-label={tr("显示方式")}>
-                    <button className={singlesView === "rows" ? "on" : ""} aria-pressed={singlesView === "rows"} title={tr("横条")} aria-label={tr("横条")} onClick={() => setSinglesView("rows")}>
-                      <Icon name="list" />
-                    </button>
-                    <button className={singlesView === "rows" ? "" : "on"} aria-pressed={singlesView !== "rows"} title={tr("大封面")} aria-label={tr("大封面")} onClick={() => setSinglesView("covers")}>
-                      <Icon name="grid" />
-                    </button>
-                  </span>
+                  <Segmented
+                    bare
+                    className="view-switch"
+                    label={tr("显示方式")}
+                    value={singlesView === "rows" ? "rows" : "covers"}
+                    onChange={setSinglesView}
+                    options={[
+                      { value: "rows", label: <Icon name="list" />, title: tr("横条"), ariaLabel: tr("横条") },
+                      { value: "covers", label: <Icon name="grid" />, title: tr("大封面"), ariaLabel: tr("大封面") },
+                    ]}
+                  />
                 </div>
                 <div className={singlesView === "rows" ? "release-rows" : "cover-grid"}>
                   {songs.map((t, i) => {

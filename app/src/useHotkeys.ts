@@ -82,7 +82,7 @@ export function keyboardFocused(element: Element): boolean {
  * 这个键该不该留给焦点所在的元素，而不是当全局快捷键。
  *
  * - 输入框里打字：所有键都留给它（空格是打字、方向键是移动光标）；
- * - 滑块、列表这类自己用方向键的控件：方向键留给它；
+ * - 滑块、列表这类自己用方向键的控件：方向键留给它（分段按钮例外：只有用键盘移过去时才留）；
  * - 按钮这类会被空格「按下」的：只有**用键盘移过去**时才把空格留给它——
  *   BUG-0001 是用 Tab 移到「导入」上按空格没反应。用鼠标点过的按钮焦点也停在上面，
  *   这时空格还是播放 / 暂停，方向键还是快进快退、音量，否则点一下播放键快捷键就全失灵了。
@@ -91,7 +91,13 @@ export function keepsKey(target: EventTarget | null, code: string, byKeyboard: (
   if (typeof Element === "undefined" || !(target instanceof Element)) return false;
   if (target instanceof HTMLElement && target.isContentEditable) return true;
   if (target.closest(TYPING) !== null) return true;
-  if (code.startsWith("Arrow")) return target.closest(ARROW_OWNERS) !== null;
+  if (code.startsWith("Arrow")) {
+    const owner = target.closest(ARROW_OWNERS);
+    if (owner === null) return false;
+    // 分段按钮（单选组）和普通按钮一样：鼠标点过之后焦点留在上面，方向键还是快进快退、音量；
+    // 用键盘移过去的才拿方向键在选项之间走
+    return owner.matches('[role="radio"]') ? byKeyboard(owner) : true;
+  }
   if (code === "Space" || code === "Enter") {
     const control = target.closest(ACTIVATABLE);
     return control !== null && byKeyboard(control);

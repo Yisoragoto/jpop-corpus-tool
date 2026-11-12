@@ -6,6 +6,7 @@
  * 点「检索」把整个词组当多词表达（A+B+C）送到 KWIC，回到具体的句子。
  */
 
+import { Segmented } from "./Segmented";
 import { useEffect, useState } from "react";
 
 import { api, POS_LABELS, type MatchField, type NgramResult, type StatsFilter } from "../api";
@@ -91,17 +92,16 @@ export function NgramCard({ filter, onSearchPhrase, onError }: Props) {
         {note && <span className="export-note"> {note}</span>}
       </p>
       <div className="card-filters">
-        <div className="segmented" role="radiogroup" aria-label={tr("词数")}>
-          {[2, 3, 4, 5].map((k) => (
-            <button key={k} type="button" role="radio" aria-checked={n === k} className={n === k ? "on" : ""} onClick={() => setN(k)}>
-              {tr("{k} 词", { k })}
-            </button>
-          ))}
-        </div>
-        <div className="segmented" role="radiogroup" aria-label={tr("按词元/表层")}>
-          <button type="button" role="radio" aria-checked={field === "lemma"} className={field === "lemma" ? "on" : ""} onClick={() => setField("lemma")} title={tr("按辞书形组合，「消えた」「消えて」算同一个")}>{tr("词元")}</button>
-          <button type="button" role="radio" aria-checked={field === "surface"} className={field === "surface" ? "on" : ""} onClick={() => setField("surface")} title={tr("按歌词里的实际写法组合")}>{tr("表层")}</button>
-        </div>
+        <Segmented label={tr("词数")} value={n} onChange={setN} options={[2, 3, 4, 5].map((k) => ({ value: k, label: tr("{k} 词", { k }) }))} />
+        <Segmented
+          label={tr("按词元/表层")}
+          value={field}
+          onChange={setField}
+          options={[
+            { value: "lemma", label: tr("词元"), title: tr("按辞书形组合，「消えた」「消えて」算同一个") },
+            { value: "surface", label: tr("表层"), title: tr("按歌词里的实际写法组合") },
+          ]}
+        />
         <label className="ctl-label">
           {tr("至少")}
           <input

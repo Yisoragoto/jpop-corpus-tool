@@ -5,6 +5,7 @@
  * 点开是数量列表，每项跳到处理它的地方。什么都不缺时整个不显示。
  */
 
+import { useDismiss } from "../dismiss";
 import { useEffect, useRef, useState } from "react";
 
 import { command } from "../api";
@@ -39,19 +40,7 @@ export function CorpusStatus({ version, newSongs, onNewSongs, onSources, onCorpu
     };
   }, [version]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!box.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useDismiss(box, open, () => setOpen(false));
 
   const items = [
     { key: "new", n: newSongs, label: tr("{n} 首新歌", { n: newSongs }), go: onNewSongs },

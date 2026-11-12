@@ -311,7 +311,8 @@
 /* 盖在封面、照片上的东西（全屏、卡拉 OK、歌手大图、首页「继续听」、封面角标）：
    底色来自图片，不跟浅色主题走，一律用深色那套。color 也要在这里重设，
    不然文字继承的是页面那一层算好的颜色（浅色主题下是黑字压在深色封面上） */
-:is(.stage, .ktv, .wc-stage, .artist-hero, .home-hero, .home-badge),
+/* 没有照片的歌手顶栏不算：它后面就是页面底色，浅色主题下用深色那套会是白字压白底 */
+:is(.stage, .ktv, .wc-stage, .artist-hero:not(.no-photo), .home-hero, .home-badge),
 /* 全屏 / 卡拉 OK 开着时，播放条盖在它上面、和虚化封面是一个面，也得是深色 */
 .app:has(.stage, .ktv) footer.player {
   color: var(--fg);
@@ -1635,6 +1636,8 @@ table.data .bar-col .freq-bar { display: block; }
   background-image: var(--select-arrow);
   background-repeat: no-repeat; background-position: right 10px center; background-size: 12px 12px;
 }
+/* 工具栏里那条「没标类的按钮」规则更具体，会把右边留给箭头的空位盖回 11px，箭头就压在名字的最后一个字上 */
+.picker > .picker-button { padding-right: 30px !important; }
 .picker-button > span { overflow: hidden; text-overflow: ellipsis; }
 /* 分析页的范围条和对比表单里和下拉并排，字号跟下拉一样 */
 .scope-bar .picker-button, .compare-side .picker-button { font-size: 14px; }
@@ -1645,6 +1648,7 @@ table.data .bar-col .freq-bar { display: block; }
   border: 1px solid var(--line-strong); border-radius: 10px;
   box-shadow: var(--elevation-flyout);
 }
+.picker-pop.right { left: auto; right: 0; }
 .picker-head { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
 .picker-head .search { flex: 1; margin: 0; min-width: 0; }
 .picker-list { max-height: 320px; overflow-y: auto; padding: 4px; }
@@ -1703,7 +1707,8 @@ table.data .bar-col .freq-bar { display: block; }
 /* 继续听：底色取自封面 */
 .home-hero {
   display: flex; gap: 22px; padding: 18px; border-radius: 12px;
-  background: var(--accent-soft); transition: background 300ms;
+  /* 没有封面（取不到主色）时退回中性深色：这一块的字始终是浅色的，底不能跟着浅色主题变浅 */
+  background: color-mix(in srgb, var(--sys-accent-dark1) 28%, var(--scene-1a1a20)); transition: background 300ms;
 }
 .home-hero-cover { flex: 0 0 auto; border-radius: 10px; }
 .home-hero-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
@@ -3565,6 +3570,10 @@ input[aria-invalid="true"], input[aria-invalid="true"]:focus { border-bottom-col
   background: linear-gradient(0deg, var(--hero-scrim), transparent 60%), linear-gradient(90deg, var(--hero-scrim-side), transparent 50%);
 }
 .artist-hero.no-photo .artist-hero-art::after { display: none; }
+.artist-hero.no-photo .artist-hero-text h1 { text-shadow: none; }
+/* 角色标签的颜色是给深色底配的浅色（「乐队」干脆是白的）：压在页面底色上时往正文色靠一半，浅色主题下才看得清 */
+.artist-hero.no-photo .role-tag { color: color-mix(in srgb, var(--role, var(--fg)) 50%, var(--fg)); }
+.artist-hero.no-photo .role-tag.band { --role: var(--fg); }
 .artist-hero-initial { position: absolute; right: 56px; top: 50%; transform: translateY(-50%); opacity: .85; }
 .artist-hero-initial .avatar-text { font-size: 56px !important; }
 .artist-hero-text { position: relative; display: grid; gap: 10px; justify-items: start; max-width: min(680px, 72%); animation: rise-in 520ms var(--scene-ease-out) backwards; }

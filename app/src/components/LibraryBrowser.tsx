@@ -1,3 +1,4 @@
+import { Segmented } from "./Segmented";
 import { Icon } from "./Icon";
 /**
  * 资料库左栏：四种找法——音乐人、幕后、专辑、歌曲。
@@ -168,7 +169,6 @@ export function LibraryBrowser({
     [data, personId],
   );
 
-  const modeIndex = MODES.findIndex((m) => m.key === mode);
   const placeholder =
     mode === "albums" ? tr("筛选专辑 / 歌手") : mode === "songs" ? tr("筛选歌名 / 歌手") : tr("筛选名字");
 
@@ -180,18 +180,11 @@ export function LibraryBrowser({
         </button>
         <input className="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
-      <div className="segmented seg-slide browse-modes" style={{ ["--seg-i" as string]: modeIndex, ["--seg-n" as string]: MODES.length }}>
-        <span className="seg-thumb" aria-hidden="true" />
-        {MODES.map((m) => (
-          <button key={m.key} className={mode === m.key ? "on" : ""} onClick={() => setMode(m.key)}>
-            {m.label}
-          </button>
-        ))}
-      </div>
+      <Segmented slide className="browse-modes" label={tr("左栏列什么")} value={mode} onChange={setMode} options={MODES.map((m) => ({ value: m.key, label: m.label }))} />
       {mode === "behind" && (
         <div className="role-chips">
           {BEHIND_ROLES.map((r) => (
-            <button key={r.key} className={`chip ${role === r.key ? "on" : ""}`} onClick={() => setRole(r.key)}>
+            <button key={r.key} className={`chip ${role === r.key ? "on" : ""}`} aria-pressed={role === r.key} onClick={() => setRole(r.key)}>
               {r.key !== "all" && <i style={{ background: ROLE_COLORS[r.key] }} />}
               {r.label}
             </button>

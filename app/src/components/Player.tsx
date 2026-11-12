@@ -1,3 +1,5 @@
+import { Segmented } from "./Segmented";
+import { useDismiss } from "../dismiss";
 import { Icon } from "./Icon";
 /**
  * 播放条。只订阅状态、只发命令，自己不持有任何播放状态。
@@ -304,24 +306,7 @@ function TunePanel({
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [open]);
+  useDismiss(root, open, () => setOpen(false));
 
   const rateLabel = (r: number) => `${r.toFixed(2).replace(/0$/, "")}×`;
   const changed = state.rate !== 1 || state.pitchSemitones !== 0;
@@ -350,24 +335,26 @@ function TunePanel({
             <b>{tr("速度")}</b>
             <span>{tr("不改变音高")}</span>
           </div>
-          <div className="tune-chips">
-            {RATE_STEPS.map((r) => (
-              <button key={r} className={r === state.rate ? "on" : ""} onClick={() => r !== state.rate && void api.audioSetRate(r)}>
-                {rateLabel(r)}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            bare
+            className="tune-chips"
+            label={tr("速度")}
+            value={state.rate}
+            onChange={(r) => r !== state.rate && void api.audioSetRate(r)}
+            options={RATE_STEPS.map((r) => ({ value: r, label: rateLabel(r) }))}
+          />
           <div className="tune-head">
             <b>{tr("音调")}</b>
             <span>{tr("没用过的调要先生成几秒，之后有缓存")}</span>
           </div>
-          <div className="tune-chips pitch">
-            {PITCH_STEPS.map((n) => (
-              <button key={n} className={n === state.pitchSemitones ? "on" : ""} onClick={() => n !== state.pitchSemitones && setPitch(n)}>
-                {n === 0 ? tr("原调") : `${n > 0 ? "+" : ""}${n}`}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            bare
+            className="tune-chips pitch"
+            label={tr("音调")}
+            value={state.pitchSemitones}
+            onChange={(n) => n !== state.pitchSemitones && setPitch(n)}
+            options={PITCH_STEPS.map((n) => ({ value: n, label: n === 0 ? tr("原调") : `${n > 0 ? "+" : ""}${n}` }))}
+          />
           {changed && (
             <button
               className="tune-reset"

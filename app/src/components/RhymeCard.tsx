@@ -6,6 +6,7 @@
  * `jp-corpus/src/phonology.rs` 的「押韵」一节。
  */
 
+import { Segmented } from "./Segmented";
 import { useEffect, useRef, useState } from "react";
 
 import { api, type RhymePosition, type RhymeResult, type RhymeStatsResult, type StatsFilter } from "../api";
@@ -133,19 +134,16 @@ export function RhymeCard({
             onKeyDown={(e) => e.key === "Enter" && setPattern(draft)}
             onBlur={() => draft !== pattern && setPattern(draft)}
           />
-          <div className="segmented" role="radiogroup" aria-label={tr("押韵位置")}>
-            {(
-              [
-                ["end", tr("行尾（脚韵）")],
-                ["start", tr("行首（头韵）")],
-                ["any", tr("任意位置")],
-              ] as const
-            ).map(([k, label]) => (
-              <button key={k} type="button" role="radio" aria-checked={position === k} className={position === k ? "on" : ""} onClick={() => setPosition(k)}>
-                {label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label={tr("押韵位置")}
+            value={position}
+            onChange={setPosition}
+            options={[
+              { value: "end", label: tr("行尾（脚韵）") },
+              { value: "start", label: tr("行首（头韵）") },
+              { value: "any", label: tr("任意位置") },
+            ]}
+          />
           <label className="check">
             <input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} />
             {tr("ン、ッ 也要对上")}
@@ -197,10 +195,15 @@ export function RhymeCard({
         <div className="card-head">
           <h2>{tr("相邻行押韵")}</h2>
           <div className="card-tools">
-            <div className="segmented" role="radiogroup" aria-label={tr("押韵位置")}>
-              <button type="button" role="radio" aria-checked={statsSide === "end"} className={statsSide === "end" ? "on" : ""} onClick={() => setStatsSide("end")}>{tr("行尾")}</button>
-              <button type="button" role="radio" aria-checked={statsSide === "start"} className={statsSide === "start" ? "on" : ""} onClick={() => setStatsSide("start")}>{tr("行首")}</button>
-            </div>
+            <Segmented
+              label={tr("押韵位置")}
+              value={statsSide}
+              onChange={setStatsSide}
+              options={[
+                { value: "end", label: tr("行尾") },
+                { value: "start", label: tr("行首") },
+              ]}
+            />
             <label className="ctl-label">
               {tr("韵脚")}
               <select value={tail} onChange={(e) => setTail(Number(e.target.value))}>
