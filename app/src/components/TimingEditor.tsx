@@ -289,9 +289,9 @@ export function TimingEditor(props: Props) {
     <div className="te">
       <div className="te-toolbar">
         <div className="te-group" role="radiogroup" aria-label={tr("打点方式")}>
-          <button className={`ktv-btn ${prefs.mode === "hold" ? "on" : ""}`} onClick={() => setPrefs({ ...prefs, mode: "hold" })}
+          <button role="radio" aria-checked={prefs.mode === "hold"} className={`ktv-btn ${prefs.mode === "hold" ? "on" : ""}`} onClick={() => setPrefs({ ...prefs, mode: "hold" })}
             title={tr("按下空格 = 开始唱，松开 = 唱完")}>{tr("按住")}</button>
-          <button className={`ktv-btn ${prefs.mode === "tap" ? "on" : ""}`} onClick={() => setPrefs({ ...prefs, mode: "tap" })}
+          <button role="radio" aria-checked={prefs.mode === "tap"} className={`ktv-btn ${prefs.mode === "tap" ? "on" : ""}`} onClick={() => setPrefs({ ...prefs, mode: "tap" })}
             title={tr("每个字按一下空格；一行最后一个字按住、松开记结尾")}>{tr("点按")}</button>
         </div>
         <div className="te-group" aria-label={tr("播放速度")}>

@@ -1,3 +1,5 @@
+import { useDismiss } from "../dismiss";
+import { Segmented } from "./Segmented";
 import { Icon } from "./Icon";
 /**
  * 资料库里的词云：占中栏和右栏。卡片头上一行是常用的筛选（歌手、子语料、词性、年份），
@@ -145,32 +147,16 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
   // 「设置」弹层：点外面或按 Esc 关
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!optionsOpen) return;
-    const close = (e: PointerEvent) => {
-      if (!optionsRef.current?.contains(e.target as Node)) setOptionsOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      setOptionsOpen(false);
-    };
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc, true);
-    return () => {
-      window.removeEventListener("pointerdown", close);
-      window.removeEventListener("keydown", esc, true);
-    };
-  }, [optionsOpen]);
+  useDismiss(optionsRef, optionsOpen, () => setOptionsOpen(false));
 
   const toolbar = (
     <div className="wc-filters">
       <PerformerPicker selected={performerIds} onChange={setPerformerIds} onError={onError} />
       <SubcorpusPicker onError={onError} />
       <div className="segmented wc-pos" role="group" aria-label={tr("词性")}>
-        <button className={pos.length === 0 ? "on" : ""} onClick={() => togglePos("")}>{tr("全部")}</button>
+        <button className={pos.length === 0 ? "on" : ""} aria-pressed={pos.length === 0} onClick={() => togglePos("")}>{tr("全部")}</button>
         {CLOUD_POS.map((p) => (
-          <button key={p} className={pos.includes(p) ? "on" : ""} onClick={() => togglePos(p)}>
+          <button key={p} className={pos.includes(p) ? "on" : ""} aria-pressed={pos.includes(p)} onClick={() => togglePos(p)}>
             {POS_LABELS[p] ?? p}
           </button>
         ))}
@@ -263,13 +249,7 @@ export function CloudView({ playing, nowLine, onPlayLine, covered, coverOf, onSe
             </div>
             <div className="wc-field">
               <span className="wc-field-label">{tr("云里放多少个词")}</span>
-              <div className="segmented" role="group" aria-label={tr("云里放多少个词")}>
-                {COUNTS.map((n) => (
-                  <button key={n} className={count === n ? "on" : ""} onClick={() => updateSettings({ wordCloudCount: n })}>
-                    {n}
-                  </button>
-                ))}
-              </div>
+              <Segmented label={tr("云里放多少个词")} value={count} onChange={(n) => updateSettings({ wordCloudCount: n })} options={COUNTS.map((n) => ({ value: n, label: n }))} />
             </div>
             <label className="check" title={tr("名词、动词、形容词……各一种颜色，云下面有图例")}>
               <input

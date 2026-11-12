@@ -12,6 +12,7 @@
  * 对数似然只说明「有没有差别」，Log Ratio 才说明「差多少」（差 1 = 相对频率差一倍）。
  */
 
+import { Segmented } from "./Segmented";
 import { useEffect, useId, useMemo, useState } from "react";
 
 import {
@@ -456,24 +457,15 @@ export function KeynessCard({
       <div className="card-filters">
         <SidePicker label={tr("目标")} side={target} onChange={setTarget} onError={onError} />
         <SidePicker label={tr("参照")} side={reference} onChange={setReference} onError={onError} />
-        <div className="segmented" role="radiogroup" aria-label={tr("计数口径")}>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={unit === "distinctLines"}
-            className={unit === "distinctLines" ? "on" : ""}
-            onClick={() => setUnit("distinctLines")}
-            title={tr("同一首歌里重复的行只算一次")}
-          >{tr("去掉重复行")}</button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={unit === "tokens"}
-            className={unit === "tokens" ? "on" : ""}
-            onClick={() => setUnit("tokens")}
-            title={tr("唱几遍算几遍")}
-          >{tr("全部词次")}</button>
-        </div>
+        <Segmented
+          label={tr("计数口径")}
+          value={unit}
+          onChange={setUnit}
+          options={[
+            { value: "distinctLines", label: tr("去掉重复行"), title: tr("同一首歌里重复的行只算一次") },
+            { value: "tokens", label: tr("全部词次"), title: tr("唱几遍算几遍") },
+          ]}
+        />
         <select
           className="rate"
           value={significance}
@@ -502,24 +494,15 @@ export function KeynessCard({
               {result.pThreshold !== null && tr("，门槛 p ≤ {threshold}", { threshold: result.pThreshold.toPrecision(2) })}
               {tr("；显著偏多 {over}、偏少 {under}", { over: pyGrouped(result.over.length), under: pyGrouped(result.under.length) })}
             </span>
-            <div className="segmented" role="radiogroup" aria-label={tr("排序")}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={rankBy === "ll"}
-                className={rankBy === "ll" ? "on" : ""}
-                onClick={() => setRankBy("ll")}
-                title={tr("差别有多确定")}
-              >{tr("按 LL 排")}</button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={rankBy === "lr"}
-                className={rankBy === "lr" ? "on" : ""}
-                onClick={() => setRankBy("lr")}
-                title={tr("差多少（效应量）")}
-              >{tr("按 Log Ratio 排")}</button>
-            </div>
+            <Segmented
+              label={tr("排序")}
+              value={rankBy}
+              onChange={setRankBy}
+              options={[
+                { value: "ll", label: tr("按 LL 排"), title: tr("差别有多确定") },
+                { value: "lr", label: tr("按 Log Ratio 排"), title: tr("差多少（效应量）") },
+              ]}
+            />
           </div>
           <div className="key-cols">
             <KeyTable title={tr("目标里偏多")} items={rank(result.over, rankBy)} stale={dirty} onSearchWord={onSearchWord} />

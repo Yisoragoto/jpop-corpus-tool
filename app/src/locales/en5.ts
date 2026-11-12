@@ -918,4 +918,23 @@ export const en5: Record<string, string> = {
   "词元 × 词性按出现次数排，前 {TABLE_LIMIT} 个，不含标点和符号。JLPT 等级来自本地缓存。点词元看例句，点「出处」看出现在哪些歌里。": "Lemma × part of speech, by number of occurrences: the top {TABLE_LIMIT}, without punctuation or symbols. JLPT levels come from the local cache. Click a lemma for examples, or “Where” to see which songs it appears in.",
   "{w} 的出处": "Where {w} appears",
   "{songCount} 首 · {tokenCount} 词（不含标点和符号）": "{songCount} {songCount|song|songs} · {tokenCount} {tokenCount|word|words} (without punctuation or symbols)",
+  // 分段按钮的读屏标签（界面上不显示）
+  "左栏列什么": "What the sidebar lists",
+  "时间轴方向": "Timeline direction",
+  "检索方式": "Search mode",
+  "按什么匹配": "Match by",
+  "结果怎么看": "Results view",
+  "搭配强度怎么算": "Collocation measure",
+  "查词栏显示什么": "Lookup panel shows",
+  "在第几个字后面拆开": "Split after which character",
+  // 曲库：看和放分开、播放队列
+  "看《{title}》的歌词（双击播放）": "Show lyrics of “{title}” (double-click to play)",
+  "看《{title}》的歌词": "Show lyrics of “{title}”",
+  "上一首（放了几秒以上时先回到开头）": "Previous (restarts the song if it has played for a few seconds)",
+  "上一首": "Previous",
+  "下一首：{title}": "Next: {title}",
+  "没有下一首（在曲库里按「播放」放一整张专辑或一位歌手的歌）": "Nothing up next (press Play on an album or artist in the library to play all their songs)",
+  "下一首": "Next",
+  "暂停「{title}」": "Pause “{title}”",
+  "《{title}》没有音频文件": "“{title}” has no audio file",
 };

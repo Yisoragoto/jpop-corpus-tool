@@ -9,6 +9,7 @@
  * 确认放在按钮上点第二下，不弹窗。
  */
 
+import { NumberInput } from "./NumberInput";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, POS_LABELS, UPOS_TAGS, type CorrectionView, type TokenEdit } from "../api";
@@ -183,14 +184,14 @@ export function TokenCorrectionDialog({ utteranceId, onClose, onChanged, onError
         <div className="tc-actions">
           <button className="tc-btn" disabled={!canMerge || busy} onClick={merge}>{tr("合并选中的词")}</button>
           <span className="muted small">{tr("在第")}</span>
-          <input
-            type="number"
+          <NumberInput
             className="tc-split"
             min={1}
             max={Math.max(1, singleLen - 1)}
             value={splitAt}
             disabled={!canSplit}
-            onChange={(e) => setSplitAt(Number(e.target.value) || 1)}
+            onCommit={setSplitAt}
+            ariaLabel={tr("在第几个字后面拆开")}
           />
           <span className="muted small">{tr("个字后")}</span>
           <button

@@ -55,6 +55,8 @@ import asset_volumeOff from "@fluentui/svg-icons/icons/speaker_mute_20_regular.s
 import asset_volumeLow from "@fluentui/svg-icons/icons/speaker_0_20_regular.svg?raw";
 import asset_skipBack from "@fluentui/svg-icons/icons/arrow_counterclockwise_20_regular.svg?raw";
 import asset_skipForward from "@fluentui/svg-icons/icons/arrow_clockwise_20_regular.svg?raw";
+import asset_previous from "@fluentui/svg-icons/icons/previous_20_filled.svg?raw";
+import asset_next from "@fluentui/svg-icons/icons/next_20_filled.svg?raw";
 import asset_list from "@fluentui/svg-icons/icons/text_bullet_list_20_regular.svg?raw";
 import asset_person from "@fluentui/svg-icons/icons/person_20_regular.svg?raw";
 import asset_group from "@fluentui/svg-icons/icons/people_20_regular.svg?raw";
@@ -118,6 +120,8 @@ const icons = {
   "volumeLow": asset_volumeLow,
   "skipBack": asset_skipBack,
   "skipForward": asset_skipForward,
+  "previous": asset_previous,
+  "next": asset_next,
   "list": asset_list,
   "person": asset_person,
   "group": asset_group,

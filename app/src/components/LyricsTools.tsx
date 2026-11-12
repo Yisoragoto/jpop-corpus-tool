@@ -3,6 +3,8 @@
  * 改了立刻生效、自动记住，没有「确定」按钮；点面板外面或按 Esc 收起。
  */
 
+import { useDismiss } from "../dismiss";
+import { Segmented } from "./Segmented";
 import { useEffect, useRef, useState } from "react";
 
 import { lyricFontStack, pickFontFiles, useFontOptions, type FontOption } from "../fonts";
@@ -35,21 +37,7 @@ export function LyricsTools({ display, onError, onExpand, onKaraoke }: Props) {
   // 刚导入的文件：字体列表刷新后把它设成主字体
   const [justImported, setJustImported] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useDismiss(ref, open, () => setOpen(false));
 
   useEffect(() => {
     if (justImported.length === 0 || fonts.options === null) return;
@@ -153,18 +141,16 @@ export function LyricsTools({ display, onError, onExpand, onKaraoke }: Props) {
           />
           <div className="display-row">
             <span className="display-label">{tr("注音方式")}</span>
-            <div className="segmented">
-              {(Object.keys(FURIGANA_MODE_LABELS) as FuriganaMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  className={display.furiganaMode === mode ? "on" : ""}
-                  onClick={() => updateLyricsDisplay({ furiganaMode: mode, furigana: true })}
-                  title={mode === "kanji" ? tr("例：{sample}", { sample: "思(おも)い出(だ)す" }) : tr("例：{sample}", { sample: "思い出す(おもいだす)" })}
-                >
-                  {FURIGANA_MODE_LABELS[mode]}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label={tr("注音方式")}
+              value={display.furiganaMode}
+              onChange={(mode) => updateLyricsDisplay({ furiganaMode: mode, furigana: true })}
+              options={(Object.keys(FURIGANA_MODE_LABELS) as FuriganaMode[]).map((mode) => ({
+                value: mode,
+                label: FURIGANA_MODE_LABELS[mode],
+                title: mode === "kanji" ? tr("例：{sample}", { sample: "思(おも)い出(だ)す" }) : tr("例：{sample}", { sample: "思い出す(おもいだす)" }),
+              }))}
+            />
           </div>
           <div className="display-foot">
             <button className="link-btn" onClick={resetLyricsDisplay}>{tr("恢复默认")}</button>

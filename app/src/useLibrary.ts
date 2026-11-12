@@ -9,9 +9,9 @@
  * 播放状态不在这里——那在 Rust 引擎里，`usePlayback` 只做订阅。
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
-import { api, type Credit, type LyricLine, type Track, type WordInCorpus } from "./api";
+import { api, type Credit, type LyricLine, type PlaybackState, type Track, type WordInCorpus } from "./api";
 import { getActiveScope, mergeSubcorpus } from "./subcorpusScope";
 import type { WordJump } from "./wordCloud";
 
@@ -38,7 +38,13 @@ export interface LibraryState {
 
 export interface LibraryActions {
   setTracks: (tracks: Track[]) => void;
-  /** 打开曲目。autoPlay 为真且引擎可用时同时开播。 */
+  /**
+   * 打开曲目：歌词栏换成这首。**看和放是两件事**——
+   *
+   * - `autoPlay` 不是 false：同时从头（或 `seekTo`）开播；
+   * - `autoPlay: false`：只是看。播放条里已经有别的歌（在放、或者放到一半暂停着）就不动它；
+   *   播放条空着、放完了、或者里面只是上一首「看过没放」的歌时，把这首备上（不开播），按空格就能放。
+   */
   openTrack: (
     track: Track,
     opts?: { scrollTo?: number; seekTo?: number | null; autoPlay?: boolean },
@@ -48,6 +54,10 @@ export interface LibraryActions {
     songId: string,
     opts?: { scrollTo?: number; seekTo?: number | null; autoPlay?: boolean },
   ) => Promise<boolean>;
+  /** 只放不看：播放条换成这首并开播，歌词栏、中栏停在原处。队列、试听、时间轴里点歌都走这个 */
+  playTrack: (track: Track, opts?: { seekTo?: number | null }) => Promise<boolean>;
+  /** 同上，按 id；曲目不在当前列表里时会去查 */
+  playTrackById: (songId: string, opts?: { seekTo?: number | null }) => Promise<boolean>;
   /** 查一个词的例句。`jump` 是从词云来时带的范围；不给就是整个库 */
   openWord: (lemma: string, jump?: WordJump | null) => Promise<void>;
   /** 把曲库列表限定到某张专辑。传 null 清除。 */
@@ -60,9 +70,20 @@ export interface LibraryActions {
   reloadLyrics: () => Promise<void>;
 }
 
+/**
+ * 「只是看」的时候能不能把这首备进播放条：播放条空着、放完了，或者里面是上一首备上之后一直没放的歌。
+ * 在放的、放到一半暂停的，都不能动——那是用户正在听的。
+ */
+export function canCue(now: Pick<PlaybackState, "songId" | "playState" | "positionSec">, cuedId: string | null): boolean {
+  if (now.playState === "empty" || now.playState === "ended") return true;
+  return now.playState === "paused" && cuedId !== null && now.songId === cuedId && now.positionSec < 0.5;
+}
+
 export function useLibrary(
   audioReady: boolean,
   onError: (message: string) => void,
+  /** 现在播放条里是什么。只在打开曲目的那一刻读一次，所以给函数而不是值 */
+  getPlayback: () => PlaybackState,
 ): [LibraryState, LibraryActions] {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [selected, setSelected] = useState<Track | null>(null);
@@ -76,6 +97,8 @@ export function useLibrary(
   const [pendingScrollUtterance, setPendingScroll] = useState<number | null>(null);
   const [albumFilter, setAlbumFilterState] =
     useState<LibraryState["albumFilter"]>(null);
+  /** 「只是看」时备进播放条、还没放过的那首。下一次看别的歌可以把它换掉 */
+  const cued = useRef<string | null>(null);
 
   const openTrack = useCallback<LibraryActions["openTrack"]>(
     async (track, opts = {}) => {
@@ -98,11 +121,33 @@ export function useLibrary(
       }
 
       if (!audioReady || !track.audioPath) return;
+      const play = opts.autoPlay !== false;
+      if (!play && !canCue(getPlayback(), cued.current)) return;
       try {
-        await api.audioLoad(track.id, { positionSec: opts.seekTo ?? null, autoplay: opts.autoPlay !== false });
+        await api.audioLoad(track.id, { positionSec: opts.seekTo ?? null, autoplay: play });
+        cued.current = play ? null : track.id;
       } catch (err) {
         // 音频出问题不该挡住歌词浏览，只提示
         onError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [audioReady, onError, getPlayback],
+  );
+
+  const playTrack = useCallback<LibraryActions["playTrack"]>(
+    async (track, opts = {}) => {
+      if (!audioReady) return false;
+      if (!track.audioPath) {
+        onError(tr("《{title}》没有音频文件", { title: track.title }));
+        return false;
+      }
+      try {
+        await api.audioLoad(track.id, { positionSec: opts.seekTo ?? null, autoplay: true });
+        cued.current = null;
+        return true;
+      } catch (err) {
+        onError(err instanceof Error ? err.message : String(err));
+        return false;
       }
     },
     [audioReady, onError],
@@ -120,6 +165,19 @@ export function useLibrary(
       return true;
     },
     [tracks, openTrack, onError],
+  );
+
+  const playTrackById = useCallback<LibraryActions["playTrackById"]>(
+    async (songId, opts = {}) => {
+      const known = tracks.find((t) => t.id === songId) ?? (selected?.id === songId ? selected : undefined);
+      const track = known ?? (await api.getTrack(songId).catch(() => null));
+      if (!track) {
+        onError(tr("找不到曲目 {songId}", { songId }));
+        return false;
+      }
+      return playTrack(track, opts);
+    },
+    [tracks, selected, playTrack, onError],
   );
 
   const openWord = useCallback(
@@ -225,6 +283,8 @@ export function useLibrary(
       setTracks,
       openTrack,
       openTrackById,
+      playTrack,
+      playTrackById,
       openWord,
       clearWord,
       consumeScroll,

@@ -1,3 +1,5 @@
+import { YearInput } from "../components/YearInput";
+import { Segmented } from "../components/Segmented";
 import { Icon } from "../components/Icon";
 /**
  * KWIC 检索页。
@@ -26,7 +28,7 @@ import { Icon } from "../components/Icon";
  * 还能按年份 / 演唱者分解（每万词），单个关键词时能看搭配网络（`KwicExplore.tsx`）。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import {
@@ -147,6 +149,16 @@ export function parseKeywords(raw: string): string[] {
     .filter(Boolean);
 }
 
+/** 一次 KWIC 检索里「筛选条件」那部分（不含关键词和附近词）。两次的结果一样，条件就没变 */
+export function kwicFilterKey(q: Pick<KwicQuery, "field" | "pos" | "cform" | "crossLine" | "dedup" | "jpOnly" | "subcorpus">): string {
+  return JSON.stringify([q.field, q.pos ?? null, q.cform ?? null, q.crossLine ?? false, q.dedup ?? false, q.jpOnly ?? false, q.subcorpus ?? null]);
+}
+
+/** CQL 检索的筛选条件 */
+export function cqlFilterKey(q: Pick<CqlQuery, "subcorpus" | "dedup" | "crossLine">): string {
+  return JSON.stringify([q.crossLine ?? false, q.dedup ?? false, q.subcorpus ?? null]);
+}
+
 /** 年份输入框里的字符串 → 子语料。空的、不是四位数的都当没填 */
 export function yearSubcorpus(from: string, to: string, performerIds: number[]): Subcorpus {
   const year = (s: string) => (/^\d{4}$/.test(s.trim()) ? Number(s.trim()) : null);
@@ -206,6 +218,8 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
     () => mergeSubcorpus(yearSubcorpus(yearFrom, yearTo, personIds), scope),
     [yearFrom, yearTo, personIds, scope],
   );
+  /** 上一次检索（KWIC / CQL）用的词和筛选条件。筛选条件变了就拿它重查 */
+  const ran = useRef<{ mode: "kwic" | "cql"; query: string; filters: string } | null>(null);
   /** 上一次 KWIC 查的是什么。搭配面板跟着它走，而不是跟着输入框里正在打的字 */
   const [searched, setSearched] = useState<{ query: string; field: MatchField } | null>(null);
 
@@ -219,22 +233,24 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
     ) => {
       const keywords = parseKeywords(query);
       if (!keywords.length) return;
+      const q: KwicQuery = {
+        keywords,
+        field: matchField,
+        pos: (given ? given.pos : pos) || null,
+        cform: (given ? given.cform : cform) || null,
+        crossLine,
+        dedup,
+        jpOnly,
+        limit: KWIC_LIMIT,
+        subcorpus: given?.subcorpus ?? subcorpus,
+        near: nearFilter,
+      };
+      // 查之前就记下：查失败了也算查过这组条件，不然下面的「条件变了就重查」会一直重试
+      ran.current = { mode: "kwic", query, filters: kwicFilterKey(q) };
       setBusy(true);
       setExportNote("");
       try {
         setTextHits(null);
-        const q: KwicQuery = {
-          keywords,
-          field: matchField,
-          pos: (given ? given.pos : pos) || null,
-          cform: (given ? given.cform : cform) || null,
-          crossLine,
-          dedup,
-          jpOnly,
-          limit: KWIC_LIMIT,
-          subcorpus: given?.subcorpus ?? subcorpus,
-          near: nearFilter,
-        };
         setKwicHits(await api.kwic(q));
         setLastSearch({ kind: "kwic", query: q });
         setSearched({ query, field: matchField });
@@ -249,11 +265,12 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
 
   const runCql = useCallback(
     async (query: string) => {
+      const q: CqlQuery = { query, subcorpus, dedup, crossLine, limit: KWIC_LIMIT };
+      ran.current = { mode: "cql", query, filters: cqlFilterKey(q) };
       setBusy(true);
       setExportNote("");
       try {
         setTextHits(null);
-        const q: CqlQuery = { query, subcorpus, dedup, crossLine, limit: KWIC_LIMIT };
         setKwicHits(await api.cqlSearch(q));
         setLastSearch({ kind: "cql", query: q });
         // 搭配、网络都要一个单独的节点词，CQL 没有
@@ -289,6 +306,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
   const search = useCallback(async () => {
     const query = text.trim();
     if (!query) return;
+    if (mode === "fulltext") ran.current = null;
     if (mode === "kwic") {
       await runKwic(query, field);
       return;
@@ -309,6 +327,18 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
       setBusy(false);
     }
   }, [mode, text, field, runKwic, runCql, onError]);
+
+  // 查过之后再改筛选条件（匹配方式、词性、活用形、歌手、年份、跨行、去重……）：按上次的词马上重查。
+  // 原来结果停在旧条件上，工具栏显示的却是新条件，看不出哪些命中其实不符合现在的筛选
+  const kwicKey = kwicFilterKey({ field, pos: pos || null, cform: cform || null, crossLine, dedup, jpOnly, subcorpus });
+  const cqlKey = cqlFilterKey({ subcorpus, dedup, crossLine });
+  useEffect(() => {
+    const last = ran.current;
+    // 正在查的那一趟回来之后（busy 变回 false）再比一次，不叠着发
+    if (last === null || busy || last.mode !== mode) return;
+    if (mode === "kwic" && last.filters !== kwicKey) void runKwic(last.query, field);
+    else if (mode === "cql" && last.filters !== cqlKey) void runCql(last.query);
+  }, [mode, busy, kwicKey, cqlKey, field, runKwic, runCql]);
 
   useEffect(() => {
     api
@@ -452,23 +482,16 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
   return (
     <div className="page kwic-page">
       <div className="toolbar">
-        <div className="segmented">
-          <button className={mode === "kwic" ? "on" : ""} onClick={() => setMode("kwic")}>
-            KWIC
-          </button>
-          <button
-            className={mode === "cql" ? "on" : ""}
-            onClick={() => setMode("cql")}
-            title='[lemma="君"] [pos="ADP"]'
-          >
-            CQL
-          </button>
-          <button
-            className={mode === "fulltext" ? "on" : ""}
-            onClick={() => setMode("fulltext")}
-            title={tr("对歌词原文做全文检索（FTS5）")}
-          >{tr("全文")}</button>
-        </div>
+        <Segmented
+          label={tr("检索方式")}
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "kwic", label: "KWIC" },
+            { value: "cql", label: "CQL", title: '[lemma="君"] [pos="ADP"]' },
+            { value: "fulltext", label: tr("全文"), title: tr("对歌词原文做全文检索（FTS5）") },
+          ]}
+        />
 
         <input
           className="search grow"
@@ -496,14 +519,8 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           <>
             {mode === "kwic" && (
             <>
-            <div className="segmented">
-              {FIELDS.map((f) => (
-                <button key={f.value} className={field === f.value ? "on" : ""} onClick={() => setField(f.value)} title={f.title}>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <select className="rate" value={pos} onChange={(e) => setPos(e.target.value)}>
+            <Segmented label={tr("按什么匹配")} value={field} onChange={setField} options={FIELDS} />
+            <select className="rate" value={pos} onChange={(e) => setPos(e.target.value)} aria-label={tr("词性")}>
               {POS_FILTERS.map((p) => (
                 <option key={p} value={p}>
                   {p === "" ? tr("全部词性") : (POS_LABELS[p] ?? p)}
@@ -514,6 +531,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
               className="rate"
               value={cform}
               onChange={(e) => setCform(e.target.value)}
+              aria-label={tr("活用形")}
               title={tr("只看这种活用形（含细类）")}
             >
               {CFORMS.map((c) => (
@@ -527,23 +545,9 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
             <PerformerPicker selected={personIds} onChange={setPersonIds} onError={onError} />
             <SubcorpusPicker onError={onError} />
             <span className="year-range" title={tr("按发行年份筛选，含两端")}>
-              <input
-                className="year-input"
-                inputMode="numeric"
-                placeholder={tr("年份")}
-                aria-label={tr("起始年份")}
-                value={yearFrom}
-                onChange={(e) => setYearFrom(e.target.value)}
-              />
+              <YearInput value={yearFrom} onCommit={setYearFrom} ariaLabel={tr("起始年份")} />
               –
-              <input
-                className="year-input"
-                inputMode="numeric"
-                placeholder={tr("年份")}
-                aria-label={tr("结束年份")}
-                value={yearTo}
-                onChange={(e) => setYearTo(e.target.value)}
-              />
+              <YearInput value={yearTo} onCommit={setYearTo} ariaLabel={tr("结束年份")} />
             </span>
             <label className="check" title={tr("把命中行上下各一行拼进语境")}>
               <input
@@ -585,26 +589,18 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
           )}
           {kwicHits && kwicHits.length > 0 && (
             <>
-              <div className="segmented small-seg">
-                <button className={view === "list" ? "on" : ""} onClick={() => setView("list")}>{tr("列表")}</button>
-                <button
-                  className={view === "plot" ? "on" : ""}
-                  onClick={() => setView("plot")}
-                  title={tr("命中在每首歌里的位置")}
-                >{tr("分布图")}</button>
-                <button
-                  className={view === "breakdown" ? "on" : ""}
-                  onClick={() => setView("breakdown")}
-                  title={tr("按年份、歌手，每万词")}
-                >{tr("年份·歌手")}</button>
-                {node && (
-                  <button
-                    className={view === "network" ? "on" : ""}
-                    onClick={() => setView("network")}
-                    title={tr("关键词和搭配词的共现网")}
-                  >{tr("网络")}</button>
-                )}
-              </div>
+              <Segmented
+                className="small-seg"
+                label={tr("结果怎么看")}
+                value={view}
+                onChange={setView}
+                options={[
+                  { value: "list" as const, label: tr("列表") },
+                  { value: "plot" as const, label: tr("分布图"), title: tr("命中在每首歌里的位置") },
+                  { value: "breakdown" as const, label: tr("年份·歌手"), title: tr("按年份、歌手，每万词") },
+                  ...(node ? [{ value: "network" as const, label: tr("网络"), title: tr("关键词和搭配词的共现网") }] : []),
+                ]}
+              />
               {view === "list" && (
                 <label className="kwic-sort" title={tr("按左右第几个词排序")}>
                   {tr("排序")}
@@ -835,18 +831,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
               <span className="muted small">{tr("左右 3 词 · 不跨行")}</span>
             </div>
             <div className="colloc-controls">
-              <div className="segmented">
-                {MEASURES.map((m) => (
-                  <button
-                    key={m.value}
-                    className={measure === m.value ? "on" : ""}
-                    onClick={() => setMeasure(m.value)}
-                    title={m.title}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
+              <Segmented label={tr("搭配强度怎么算")} value={measure} onChange={setMeasure} options={MEASURES} />
               <label className="check" title={tr("去掉助词、助动词、连词")}>
                 <input type="checkbox" checked={contentOnly} onChange={(e) => setContentOnly(e.target.checked)} />{tr("只看实词")}</label>
             </div>

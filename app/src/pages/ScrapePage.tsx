@@ -1,3 +1,4 @@
+import { useDismiss } from "../dismiss";
 import { Icon } from "../components/Icon";
 /**
  * 刮削页 = 库的完整度。
@@ -258,14 +259,7 @@ export function ScrapePage({ onError, onChanged }: Props) {
 
   // 菜单：点到外面就收起
   const menuRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [menuOpen]);
+  useDismiss(menuRef, menuOpen, () => setMenuOpen(false));
 
   if (summary === null || complete === null) return <div className="page muted pad">{tr("加载中…")}</div>;
 

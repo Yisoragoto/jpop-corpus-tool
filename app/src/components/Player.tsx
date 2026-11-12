@@ -1,3 +1,5 @@
+import { Segmented } from "./Segmented";
+import { useDismiss } from "../dismiss";
 import { Icon } from "./Icon";
 /**
  * 播放条。只订阅状态、只发命令，自己不持有任何播放状态。
@@ -39,6 +41,11 @@ interface Props {
   showSpectrum: boolean;
   /** 点左下角这首歌：进全屏歌词。没有选中曲目时传 null，卡片就不可点 */
   onOpenStage: (() => void) | null;
+  /** 播放队列：没有上一首 / 下一首时是 null，按钮禁用 */
+  onPrevious: (() => void) | null;
+  onNext: (() => void) | null;
+  /** 下一首的歌名（下一首按钮的提示） */
+  upNext: string | null;
   onError: (message: string) => void;
 }
 
@@ -50,6 +57,9 @@ export function Player({
   disabled,
   showSpectrum,
   onOpenStage,
+  onPrevious,
+  onNext,
+  upNext,
   onError,
 }: Props) {
   const [scrubbing, setScrubbing] = useState<number | null>(null);
@@ -191,6 +201,15 @@ export function Player({
         {/* 走带：照 Apple Music，只有图标没有底框；鼠标移上去才浮出一圈玻璃 */}
         <div className="transport">
           <button
+            className="glyph-btn small queue-btn"
+            onClick={() => onPrevious?.()}
+            disabled={disabled || onPrevious === null}
+            title={tr("上一首（放了几秒以上时先回到开头）")}
+            aria-label={tr("上一首")}
+          >
+            <Icon name="previous" size={20} />
+          </button>
+          <button
             className="glyph-btn nudge-back"
             onClick={() => step(-STEP_SEC)}
             disabled={disabled || idle}
@@ -223,6 +242,15 @@ export function Player({
             aria-label={tr("前进 {STEP_SEC} 秒", { STEP_SEC })}
           >
             <IconSkip />
+          </button>
+          <button
+            className="glyph-btn small queue-btn"
+            onClick={() => onNext?.()}
+            disabled={disabled || onNext === null}
+            title={upNext !== null ? tr("下一首：{title}", { title: upNext }) : tr("没有下一首（在曲库里按「播放」放一整张专辑或一位歌手的歌）")}
+            aria-label={tr("下一首")}
+          >
+            <Icon name="next" size={20} />
           </button>
         </div>
 
@@ -304,24 +332,7 @@ function TunePanel({
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [open]);
+  useDismiss(root, open, () => setOpen(false));
 
   const rateLabel = (r: number) => `${r.toFixed(2).replace(/0$/, "")}×`;
   const changed = state.rate !== 1 || state.pitchSemitones !== 0;
@@ -350,24 +361,26 @@ function TunePanel({
             <b>{tr("速度")}</b>
             <span>{tr("不改变音高")}</span>
           </div>
-          <div className="tune-chips">
-            {RATE_STEPS.map((r) => (
-              <button key={r} className={r === state.rate ? "on" : ""} onClick={() => r !== state.rate && void api.audioSetRate(r)}>
-                {rateLabel(r)}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            bare
+            className="tune-chips"
+            label={tr("速度")}
+            value={state.rate}
+            onChange={(r) => r !== state.rate && void api.audioSetRate(r)}
+            options={RATE_STEPS.map((r) => ({ value: r, label: rateLabel(r) }))}
+          />
           <div className="tune-head">
             <b>{tr("音调")}</b>
             <span>{tr("没用过的调要先生成几秒，之后有缓存")}</span>
           </div>
-          <div className="tune-chips pitch">
-            {PITCH_STEPS.map((n) => (
-              <button key={n} className={n === state.pitchSemitones ? "on" : ""} onClick={() => n !== state.pitchSemitones && setPitch(n)}>
-                {n === 0 ? tr("原调") : `${n > 0 ? "+" : ""}${n}`}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            bare
+            className="tune-chips pitch"
+            label={tr("音调")}
+            value={state.pitchSemitones}
+            onChange={(n) => n !== state.pitchSemitones && setPitch(n)}
+            options={PITCH_STEPS.map((n) => ({ value: n, label: n === 0 ? tr("原调") : `${n > 0 ? "+" : ""}${n}` }))}
+          />
           {changed && (
             <button
               className="tune-reset"

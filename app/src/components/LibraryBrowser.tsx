@@ -1,3 +1,6 @@
+import { TrackPlayButton } from "./TrackPlayButton";
+import { listArrowKeys } from "../listKeys";
+import { Segmented } from "./Segmented";
 import { Icon } from "./Icon";
 /**
  * 资料库左栏：四种找法——音乐人、幕后、专辑、歌曲。
@@ -109,6 +112,13 @@ interface Props {
   onOpenPerson: (id: number, from?: HTMLElement) => void;
   onOpenAlbum: (album: Album) => void;
   onOpenTrack: (track: Track, from: HTMLElement) => void;
+  /** 歌曲列表里双击：从这首起按列表往下放 */
+  onPlayList: (tracks: Track[], start: number) => void;
+  /** 正在看的那首歌属于谁、哪张专辑：看歌词时左栏也标出它在哪 */
+  songContext: { personIds: number[]; albumId: number | null } | null;
+  /** 播放条里是哪首、在不在走：歌曲列表上的播放钮用 */
+  playingSongId: string;
+  playingNow: boolean;
   onOpenGraph: () => void;
   /** 没给就不显示时间轴按钮 */
   onOpenTimeline?: () => void;
@@ -126,6 +136,10 @@ export function LibraryBrowser({
   onOpenPerson,
   onOpenAlbum,
   onOpenTrack,
+  onPlayList,
+  songContext,
+  playingSongId,
+  playingNow,
   onOpenGraph,
   onOpenTimeline,
   onOpenCloud,
@@ -161,14 +175,20 @@ export function LibraryBrowser({
     });
   }, []);
 
-  const personId = view.kind === "person" ? view.id : null;
+  // 看一首歌时，左栏标出它的演唱者（专辑模式下标出它的专辑）：不然看歌词时不知道自己在哪
+  const personId = view.kind === "person" ? view.id : view.kind === "song" ? (songContext?.personIds[0] ?? null) : null;
+  const albumId = view.kind === "song" ? (songContext?.albumId ?? null) : null;
+  // 标出来的那一项滚进视野（从别处跳过来时它可能在列表很下面）
+  useEffect(() => {
+    const on = listRef.current?.querySelector<HTMLElement>('.browse-item[aria-current="true"]');
+    on?.scrollIntoView?.({ block: "nearest" });
+  }, [personId, albumId, selectedSongId, mode, data]);
   // 看着某位成员时，他的乐队自动展开——不然左栏上找不到高亮在哪
   const viewingBands = useMemo(
     () => new Set((personId !== null ? data?.dir.bandsOf.get(personId) : undefined)?.map((m) => m.bandId) ?? []),
     [data, personId],
   );
 
-  const modeIndex = MODES.findIndex((m) => m.key === mode);
   const placeholder =
     mode === "albums" ? tr("筛选专辑 / 歌手") : mode === "songs" ? tr("筛选歌名 / 歌手") : tr("筛选名字");
 
@@ -180,18 +200,11 @@ export function LibraryBrowser({
         </button>
         <input className="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
-      <div className="segmented seg-slide browse-modes" style={{ ["--seg-i" as string]: modeIndex, ["--seg-n" as string]: MODES.length }}>
-        <span className="seg-thumb" aria-hidden="true" />
-        {MODES.map((m) => (
-          <button key={m.key} className={mode === m.key ? "on" : ""} onClick={() => setMode(m.key)}>
-            {m.label}
-          </button>
-        ))}
-      </div>
+      <Segmented slide className="browse-modes" label={tr("左栏列什么")} value={mode} onChange={setMode} options={MODES.map((m) => ({ value: m.key, label: m.label }))} />
       {mode === "behind" && (
         <div className="role-chips">
           {BEHIND_ROLES.map((r) => (
-            <button key={r.key} className={`chip ${role === r.key ? "on" : ""}`} onClick={() => setRole(r.key)}>
+            <button key={r.key} className={`chip ${role === r.key ? "on" : ""}`} aria-pressed={role === r.key} onClick={() => setRole(r.key)}>
               {r.key !== "all" && <i style={{ background: ROLE_COLORS[r.key] }} />}
               {r.label}
             </button>
@@ -199,7 +212,7 @@ export function LibraryBrowser({
         </div>
       )}
 
-      <div className="list browse-list" ref={listRef} key={mode}>
+      <div className="list browse-list" ref={listRef} key={mode} onKeyDown={(e) => listArrowKeys(e, ".browse-item")}>
         {data === null && mode !== "songs" && <p className="muted pad">{tr("加载中…")}</p>}
         {data !== null && mode === "artists" && (
           <ArtistItems
@@ -216,10 +229,10 @@ export function LibraryBrowser({
           <BehindItems entries={filterBehind(data.dir.behind, role, query)} role={role} personId={personId} onOpen={onOpenPerson} />
         )}
         {data !== null && mode === "albums" && (
-          <AlbumItems albums={data.albums} query={query} view={view} onOpen={onOpenAlbum} />
+          <AlbumItems albums={data.albums} query={query} view={view} songAlbumId={albumId} onOpen={onOpenAlbum} />
         )}
         {mode === "songs" && (
-          <SongItems tracks={tracks} query={query} selectedSongId={view.kind === "song" ? selectedSongId : null} missingIds={missingIds} onOpen={onOpenTrack} />
+          <SongItems tracks={tracks} query={query} selectedSongId={view.kind === "song" ? selectedSongId : null} missingIds={missingIds} onOpen={onOpenTrack} onPlay={onPlayList} playingSongId={playingSongId} playingNow={playingNow} />
         )}
       </div>
 
@@ -276,6 +289,7 @@ function ArtistItems({
           <div className="browse-group" key={id}>
             <button
               className={`browse-item ${personId === id ? "on" : ""} ${row.members.length > 0 ? "has-toggle" : ""}`}
+              aria-current={personId === id ? "true" : undefined}
               style={stagger(i)}
               onClick={(e) => onOpen(id, e.currentTarget)}
             >
@@ -299,6 +313,7 @@ function ArtistItems({
                 <button
                   key={m.membership.memberId}
                   className={`browse-item member ${m.former ? "former" : ""} ${personId === m.membership.memberId ? "on" : ""}`}
+                  aria-current={personId === m.membership.memberId ? "true" : undefined}
                   style={stagger(j)}
                   onClick={(e) => onOpen(m.membership.memberId, e.currentTarget)}
                 >
@@ -331,7 +346,7 @@ function BehindItems({
   return (
     <>
       {entries.map((e, i) => (
-        <button key={e.id} className={`browse-item ${personId === e.id ? "on" : ""}`} style={stagger(i)} onClick={(ev) => onOpen(e.id, ev.currentTarget)}>
+        <button key={e.id} className={`browse-item ${personId === e.id ? "on" : ""}`} aria-current={personId === e.id ? "true" : undefined} style={stagger(i)} onClick={(ev) => onOpen(e.id, ev.currentTarget)}>
           <Avatar path={e.imagePath} name={e.name} size={34} />
           <span className="browse-text">
             <b>{e.name}</b>
@@ -357,11 +372,14 @@ function AlbumItems({
   albums,
   query,
   view,
+  songAlbumId,
   onOpen,
 }: {
   albums: Album[];
   query: string;
   view: LibraryView;
+  /** 正在看的那首歌在哪张专辑上 */
+  songAlbumId: number | null;
   onOpen: (album: Album) => void;
 }) {
   const q = query.trim().toLowerCase();
@@ -370,11 +388,11 @@ function AlbumItems({
     .sort((a, b) => b.year.localeCompare(a.year) || a.title.localeCompare(b.title, "ja"));
   if (list.length === 0) return <p className="muted pad">{q ? tr("没有匹配的专辑") : tr("还没有专辑信息")}</p>;
   const current =
-    view.kind === "album" ? view.albumId : view.kind === "person" ? (view.albumId ?? null) : null;
+    view.kind === "album" ? view.albumId : view.kind === "person" ? (view.albumId ?? null) : songAlbumId;
   return (
     <>
       {list.map((a, i) => (
-        <button key={a.id} className={`browse-item ${current === a.id ? "on" : ""}`} style={stagger(i)} onClick={() => onOpen(a)}>
+        <button key={a.id} className={`browse-item ${current === a.id ? "on" : ""}`} aria-current={current === a.id ? "true" : undefined} style={stagger(i)} onClick={() => onOpen(a)}>
           <Cover path={a.artworkPath} size={34} rounded={6} />
           <span className="browse-text">
             <b>{a.title || tr("（无题）")}</b>
@@ -396,12 +414,18 @@ function SongItems({
   selectedSongId,
   missingIds,
   onOpen,
+  onPlay,
+  playingSongId,
+  playingNow,
 }: {
   tracks: Track[];
   query: string;
   selectedSongId: string | null;
   missingIds: Set<string>;
   onOpen: (track: Track, from: HTMLElement) => void;
+  onPlay: (tracks: Track[], start: number) => void;
+  playingSongId: string;
+  playingNow: boolean;
 }) {
   const q = query.trim().toLowerCase();
   const list = useMemo(
@@ -415,11 +439,14 @@ function SongItems({
   return (
     <>
       {list.map((t, i) => (
+        <div key={t.id} className="track-line song-line">
         <button
-          key={t.id}
           className={`browse-item song ${selectedSongId === t.id ? "on" : ""}`}
+          aria-current={selectedSongId === t.id ? "true" : undefined}
           style={stagger(i)}
           onClick={(e) => onOpen(t, e.currentTarget)}
+          onDoubleClick={() => onPlay(list, i)}
+          title={tr("看《{title}》的歌词（双击播放）", { title: t.title })}
         >
           <Cover path={t.coverPath} size={34} rounded={6} />
           <span className="browse-text">
@@ -432,6 +459,10 @@ function SongItems({
           </span>
           <em className="browse-count">{t.durationSec !== null ? formatDuration(t.durationSec) : ""}</em>
         </button>
+        {t.audioPath !== "" && (
+          <TrackPlayButton className="on-cover" title={t.title} current={playingSongId === t.id} playing={playingSongId === t.id && playingNow} onPlay={() => onPlay(list, i)} />
+        )}
+        </div>
       ))}
     </>
   );

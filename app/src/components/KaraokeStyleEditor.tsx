@@ -3,6 +3,7 @@
  * 设置页「歌词」里一份，卡拉 OK 右上角「字幕样式」面板里一份，改的是同一个存储（`karaokeStyle.ts`）。
  */
 
+import { Segmented } from "./Segmented";
 import type { CSSProperties } from "react";
 
 import { lyricFontStack, useFontOptions, useLyricFontFiles } from "../fonts";
@@ -74,14 +75,13 @@ export function KaraokeStyleEditor({ onError, compact = false }: { onError: (mes
     <div className={`ktv-style-editor ${compact ? "compact" : ""}`}>
       <SettingGroup title={tr("卡拉 OK 字幕")}>
         <SettingCard title={tr("预设")} description={tr("换预设只换颜色、描边、发光和阴影，字体和字号留着")}>
-          <span className="segmented ktv-presets" role="radiogroup" aria-label={tr("预设")}>
-            {(Object.keys(PRESET_LABELS) as KaraokePresetId[]).map((id) => (
-              <button key={id} type="button" role="radio" aria-checked={preset === id}
-                className={preset === id ? "on" : ""} onClick={() => updateKaraokeStyle(applyPreset(style, id))}>
-                {PRESET_LABELS[id]}
-              </button>
-            ))}
-          </span>
+          <Segmented
+            className="ktv-presets"
+            label={tr("预设")}
+            value={preset ?? ""}
+            onChange={(id) => id !== "" && updateKaraokeStyle(applyPreset(style, id))}
+            options={(Object.keys(PRESET_LABELS) as KaraokePresetId[]).map((id) => ({ value: id, label: PRESET_LABELS[id] }))}
+          />
         </SettingCard>
         <SettingCard title={tr("预览")} description={<KaraokeStylePreview style={style} />} />
         <SettingCard

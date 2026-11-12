@@ -7,6 +7,7 @@
  *   点一个词：回到列表，只看附近有它的行。画法是固定的放射布局，不用力导向——每次打开位置都一样，好比较。
  */
 
+import { Segmented } from "./Segmented";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -67,10 +68,16 @@ export function KwicBreakdown({ search, onError }: { search: SearchSpec; onError
   return (
     <div className="kwic-explore">
       <div className="explore-head">
-        <div className="segmented small-seg">
-          <button className={by === "year" ? "on" : ""} onClick={() => setBy("year")}>{tr("按年份")}</button>
-          <button className={by === "performer" ? "on" : ""} onClick={() => setBy("performer")}>{tr("按演唱者")}</button>
-        </div>
+        <Segmented
+          className="small-seg"
+          label={tr("分组")}
+          value={by}
+          onChange={setBy}
+          options={[
+            { value: "year", label: tr("按年份") },
+            { value: "performer", label: tr("按演唱者") },
+          ]}
+        />
         {result && (
           <span className="muted small">
             {tr("{hits} 次 · 整体每万词 {per10k}（不去重，分母不含标点）", { hits: result.hits.toLocaleString(), per10k: result.per10k.toFixed(2) })}

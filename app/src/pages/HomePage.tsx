@@ -1,3 +1,4 @@
+import { useDismiss } from "../dismiss";
 import { Icon } from "../components/Icon";
 /**
  * 首页 = 打开就能接着干的地方。
@@ -149,15 +150,8 @@ function HomeSearch({ onPickHit }: { onPickHit: (hit: QuickHit) => void | Promis
 
   useEffect(() => setActive(0), [hits]);
 
-  // 点到外面就收起
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [open]);
+  // 点到外面、Tab 走开、按 Esc 都收起（Esc 之后焦点留在框里，接着打字又会展开）
+  useDismiss(boxRef, open, () => setOpen(false));
 
   const pick = (index: number) => {
     const hit = hits[index];
@@ -168,10 +162,7 @@ function HomeSearch({ onPickHit }: { onPickHit: (hit: QuickHit) => void | Promis
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      setOpen(false);
-      (e.target as HTMLInputElement).blur();
-    } else if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((i) => (hits.length === 0 ? 0 : (i + 1) % hits.length));
     } else if (e.key === "ArrowUp") {
@@ -199,13 +190,23 @@ function HomeSearch({ onPickHit }: { onPickHit: (hit: QuickHit) => void | Promis
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
         aria-label={tr("搜索全库")}
+        role="combobox"
+        aria-expanded={showList}
+        aria-controls="home-search-list"
+        aria-autocomplete="list"
+        aria-activedescendant={showList && hits[active] ? `home-hit-${active}` : undefined}
       />
       <kbd>Ctrl K</kbd>
       {showList && (
-        <div className="home-search-list palette-list" role="listbox">
+        <div className="home-search-list palette-list" role="listbox" id="home-search-list" aria-label={tr("搜索全库")}>
           {hits.map((hit, i) => (
             <button
               key={hitKey(hit)}
+              id={`home-hit-${i}`}
+              role="option"
+              aria-selected={i === active}
+              // ↑↓ 和 Enter 在输入框上选，结果行不再各占一个 Tab 位
+              tabIndex={-1}
               className="palette-row"
               data-active={i === active}
               onMouseEnter={() => setActive(i)}

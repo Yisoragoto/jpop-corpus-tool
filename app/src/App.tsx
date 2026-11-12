@@ -51,6 +51,33 @@ import { useCurrentLine, usePlaybackState } from "./usePlayback";
 import { validLyricTime } from "./wordTiming";
 import { tr } from "./i18n";
 import { installHooks } from "./e2e";
+import { usePlayQueue } from "./playQueue";
+import type { Track } from "./api";
+
+/**
+ * 正在放的那首歌的信息（播放条要显示）。先在手边的列表里找，找不到再去后端查一次。
+ * 引擎只报 id；歌名、封面得自己找。
+ */
+function usePlayingTrack(songId: string, selected: Track | null, tracks: Track[], queued: Track[]): Track | null {
+  const [fetched, setFetched] = useState<Track | null>(null);
+  const known = !songId
+    ? null
+    : selected?.id === songId
+      ? selected
+      : (queued.find((t) => t.id === songId) ?? tracks.find((t) => t.id === songId) ?? null);
+  useEffect(() => {
+    if (!songId || known !== null || fetched?.id === songId) return;
+    let alive = true;
+    void api
+      .getTrack(songId)
+      .then((t) => alive && setFetched(t))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [songId, known, fetched?.id]);
+  return known ?? (fetched?.id === songId ? fetched : null);
+}
 
 /** 和 styles.css「窗口宽窄」那一节的断点一致 */
 const NARROW_WINDOW = "(max-width: 1100px)";
@@ -229,7 +256,23 @@ export default function App() {
     window.addEventListener("unhandledrejection", onRejection);
     return () => window.removeEventListener("unhandledrejection", onRejection);
   }, []);
-  const [library, actions] = useLibrary(audioReady, onError);
+  const playbackRef = useRef(playback);
+  playbackRef.current = playback;
+  const getPlayback = useCallback(() => playbackRef.current, []);
+  const [library, actions] = useLibrary(audioReady, onError, getPlayback);
+  // 播放队列：按了哪个列表的「播放」就顺着往下放，放完一首自动接下一首
+  const queue = usePlayQueue(playback, audioReady, onError);
+  // 播放条上显示的是**正在放的**那首，不是曲库里正在看的那首（两者可以不同）
+  const playingTrack = usePlayingTrack(playback.songId, library.selected, library.tracks, queue.queue.tracks);
+  /** 点播放条左下角：进正在放的那首的全屏歌词。正在看的是别的歌时，先把歌词换成它（只是看，不重新加载音频） */
+  const openPlayingStage = useCallback(async () => {
+    const playingId = playbackRef.current.songId;
+    if (playingId && playingId !== library.selected?.id) {
+      const opened = await actions.openTrackById(playingId, { autoPlay: false });
+      if (!opened) return;
+    }
+    openStage();
+  }, [actions, library.selected?.id, openStage]);
 
   /**
    * 「词的去处」里点一首歌：从那个词开始放，人留在当前页面。
@@ -626,6 +669,7 @@ export default function App() {
             onLibraryReload={onImported}
             toolWanted={libraryTool}
             onToolConsumed={consumeLibraryTool}
+            onPlayList={queue.playList}
           />
         )}
         {route === "anki" && <AnkiPage onError={onError} />}
@@ -691,13 +735,16 @@ export default function App() {
 
       <Player
         state={playback}
-        title={library.selected?.title ?? ""}
-        artist={library.selected?.artist ?? ""}
-        coverPath={library.selected?.coverPath}
+        title={playingTrack?.title ?? ""}
+        artist={playingTrack?.artist ?? ""}
+        coverPath={playingTrack?.coverPath}
         disabled={!audioReady}
         showSpectrum={settings.spectrum}
         // 没选中曲目时没有歌词可全屏，卡片就不可点
-        onOpenStage={library.selected ? openStage : null}
+        onOpenStage={playingTrack !== null || library.selected !== null ? () => void openPlayingStage() : null}
+        onPrevious={queue.previous}
+        onNext={queue.next}
+        upNext={queue.upNext?.title ?? null}
         onError={onError}
       />
     </div>

@@ -9,6 +9,7 @@
  * 补完之前表上会提示还有多少词没标。
  */
 
+import { Segmented } from "./Segmented";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -99,13 +100,7 @@ export function InflectionCard({
         <div className="card-tools">
           {/* result.total 是词次（各活用形次数之和），不是词数 */}
           <span className="muted small">{result ? tr("{total} 词次", { total: pyGrouped(result.total) }) : ""}</span>
-          <div className="segmented" role="radiogroup" aria-label={tr("词性")}>
-            {INFLECTING_POS.map((p) => (
-              <button key={p} type="button" role="radio" aria-checked={pos === p} className={pos === p ? "on" : ""} onClick={() => setPos(p)}>
-                {p === "" ? tr("全部") : (POS_LABELS[p] ?? p)}
-              </button>
-            ))}
-          </div>
+          <Segmented label={tr("词性")} value={pos} onChange={setPos} options={INFLECTING_POS.map((p) => ({ value: p, label: p === "" ? tr("全部") : (POS_LABELS[p] ?? p) }))} />
           <button type="button" disabled={!result?.forms.length} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
         </div>
       </div>
@@ -248,10 +243,15 @@ export function OrthographyCard({
         <h2>{tr("表记变体")}</h2>
         <div className="card-tools">
           <span className="muted small">{result ? tr("{shown} / {total} 组", { shown: pyGrouped(groups.length), total: pyGrouped(result.totalGroups) }) : ""}</span>
-          <div className="segmented" role="radiogroup" aria-label={tr("写法")}>
-            <button type="button" role="radio" aria-checked={mixedOnly} className={mixedOnly ? "on" : ""} onClick={() => setMixedOnly(true)} title={tr("同一个词既写成汉字又写成假名（君 / きみ / キミ）")}>{tr("汉字与假名混用")}</button>
-            <button type="button" role="radio" aria-checked={!mixedOnly} className={!mixedOnly ? "on" : ""} onClick={() => setMixedOnly(false)} title={tr("也列出只差用字的（会う / 逢う）")}>{tr("全部")}</button>
-          </div>
+          <Segmented
+            label={tr("写法")}
+            value={mixedOnly ? "mixed" : "all"}
+            onChange={(v) => setMixedOnly(v === "mixed")}
+            options={[
+              { value: "mixed", label: tr("汉字与假名混用"), title: tr("同一个词既写成汉字又写成假名（君 / きみ / キミ）") },
+              { value: "all", label: tr("全部"), title: tr("也列出只差用字的（会う / 逢う）") },
+            ]}
+          />
           <button type="button" disabled={!groups.length} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
         </div>
       </div>

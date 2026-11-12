@@ -7,6 +7,7 @@
  * 计算在 Rust（`jp-corpus/src/lexical.rs`），定义也写在那里。
  */
 
+import { Segmented } from "./Segmented";
 import { useEffect, useMemo, useState } from "react";
 
 import { api, type LexicalGroup, type LexicalResult, type LexicalRow, type StatsFilter } from "../api";
@@ -126,19 +127,16 @@ export function LexicalCard({ filter, onError }: Props) {
         <h2>{tr("词汇丰富度与文字")}</h2>
         <div className="card-tools">
           {busy && <span className="muted small">{tr("计算中…")}</span>}
-          <div className="segmented" role="radiogroup" aria-label={tr("分组")}>
-            {(
-              [
-                ["whole", tr("整体")],
-                ["performer", tr("按演唱者")],
-                ["song", tr("按歌")],
-              ] as const
-            ).map(([g, label]) => (
-              <button key={g} type="button" role="radio" aria-checked={group === g} className={group === g ? "on" : ""} onClick={() => setGroup(g)}>
-                {label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label={tr("分组")}
+            value={group}
+            onChange={setGroup}
+            options={[
+              { value: "whole", label: tr("整体") },
+              { value: "performer", label: tr("按演唱者") },
+              { value: "song", label: tr("按歌") },
+            ]}
+          />
           {/* 算新分组时旧行还在，这时导出会把旧内容存成新分组的文件名 */}
           <button disabled={!rows.length || busy} onClick={() => void exportCsv()}>{tr("导出 CSV")}</button>
         </div>
