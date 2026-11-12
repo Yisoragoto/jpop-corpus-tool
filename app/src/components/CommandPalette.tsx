@@ -185,13 +185,24 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
             setActive(0);
           }}
           onKeyDown={onKeyDown}
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="palette-list"
+          aria-autocomplete="list"
+          aria-activedescendant={(commandMode ? visibleCommands.length : hits.length) > active ? `palette-row-${active}` : undefined}
+          aria-label={commandMode ? tr("命令面板") : tr("全局搜索")}
         />
 
-        <div className="palette-list" ref={listRef}>
+        <div className="palette-list" ref={listRef} role="listbox" id="palette-list" aria-label={commandMode ? tr("命令面板") : tr("全局搜索")}>
           {commandMode &&
             visibleCommands.map((c, i) => (
               <button
                 key={c.id}
+                id={`palette-row-${i}`}
+                role="option"
+                aria-selected={i === active}
+                // ↑↓ 和 Enter 在输入框上选，行不再各占一个 Tab 位
+                tabIndex={-1}
                 className={`palette-row ${c.disabled ? "off" : ""}`}
                 data-active={i === active}
                 onMouseEnter={() => setActive(i)}
@@ -207,6 +218,10 @@ export function CommandPalette({ mode: initialMode, commands, onClose, onPickHit
             hits.map((hit, i) => (
               <button
                 key={hitKey(hit)}
+                id={`palette-row-${i}`}
+                role="option"
+                aria-selected={i === active}
+                tabIndex={-1}
                 className="palette-row"
                 data-active={i === active}
                 onMouseEnter={() => setActive(i)}

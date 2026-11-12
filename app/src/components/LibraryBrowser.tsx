@@ -1,3 +1,4 @@
+import { listArrowKeys } from "../listKeys";
 import { Segmented } from "./Segmented";
 import { Icon } from "./Icon";
 /**
@@ -192,7 +193,7 @@ export function LibraryBrowser({
         </div>
       )}
 
-      <div className="list browse-list" ref={listRef} key={mode}>
+      <div className="list browse-list" ref={listRef} key={mode} onKeyDown={(e) => listArrowKeys(e, ".browse-item")}>
         {data === null && mode !== "songs" && <p className="muted pad">{tr("加载中…")}</p>}
         {data !== null && mode === "artists" && (
           <ArtistItems
@@ -269,6 +270,7 @@ function ArtistItems({
           <div className="browse-group" key={id}>
             <button
               className={`browse-item ${personId === id ? "on" : ""} ${row.members.length > 0 ? "has-toggle" : ""}`}
+              aria-current={personId === id ? "true" : undefined}
               style={stagger(i)}
               onClick={(e) => onOpen(id, e.currentTarget)}
             >
@@ -292,6 +294,7 @@ function ArtistItems({
                 <button
                   key={m.membership.memberId}
                   className={`browse-item member ${m.former ? "former" : ""} ${personId === m.membership.memberId ? "on" : ""}`}
+                  aria-current={personId === m.membership.memberId ? "true" : undefined}
                   style={stagger(j)}
                   onClick={(e) => onOpen(m.membership.memberId, e.currentTarget)}
                 >
@@ -324,7 +327,7 @@ function BehindItems({
   return (
     <>
       {entries.map((e, i) => (
-        <button key={e.id} className={`browse-item ${personId === e.id ? "on" : ""}`} style={stagger(i)} onClick={(ev) => onOpen(e.id, ev.currentTarget)}>
+        <button key={e.id} className={`browse-item ${personId === e.id ? "on" : ""}`} aria-current={personId === e.id ? "true" : undefined} style={stagger(i)} onClick={(ev) => onOpen(e.id, ev.currentTarget)}>
           <Avatar path={e.imagePath} name={e.name} size={34} />
           <span className="browse-text">
             <b>{e.name}</b>
@@ -367,7 +370,7 @@ function AlbumItems({
   return (
     <>
       {list.map((a, i) => (
-        <button key={a.id} className={`browse-item ${current === a.id ? "on" : ""}`} style={stagger(i)} onClick={() => onOpen(a)}>
+        <button key={a.id} className={`browse-item ${current === a.id ? "on" : ""}`} aria-current={current === a.id ? "true" : undefined} style={stagger(i)} onClick={() => onOpen(a)}>
           <Cover path={a.artworkPath} size={34} rounded={6} />
           <span className="browse-text">
             <b>{a.title || tr("（无题）")}</b>
@@ -411,6 +414,7 @@ function SongItems({
         <button
           key={t.id}
           className={`browse-item song ${selectedSongId === t.id ? "on" : ""}`}
+          aria-current={selectedSongId === t.id ? "true" : undefined}
           style={stagger(i)}
           onClick={(e) => onOpen(t, e.currentTarget)}
         >

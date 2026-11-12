@@ -1049,7 +1049,8 @@ div.track-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 1
 }
 .tune-chips button:hover { background: var(--control-hover); color: var(--fg); }
 .tune-chips button:active { transform: scale(.94); }
-.tune-chips button.on { background: var(--subtle-hover); color: var(--accent-ink); font-weight: 600; }
+/* 选中的那格：实心强调色。原来是「强调色上的字」配一层几乎透明的底，浅色主题下白字压白底、深色主题下黑字压黑底 */
+.tune-chips button.on, .tune-chips button.on:hover { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .tune-chips.pitch button:nth-child(7) { grid-column: span 1; }
 .tune-reset { justify-self: start; font-size: 12px; color: var(--muted); padding: 3px 10px; border-radius: 999px; background: var(--control); }
 .tune-reset:hover { color: var(--fg); background: var(--control-hover); }

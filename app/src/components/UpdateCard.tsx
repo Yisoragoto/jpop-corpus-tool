@@ -91,7 +91,7 @@ export function UpdateCard({ icons, onError }: Props) {
   return (
     <>
       <SettingCard icon={icons.update} title={tr("更新轨道")} description={tr("正式版手动发布；debug 随 main 每次提交滚动更新")}>
-        <select value={prefs?.channel ?? "stable"} disabled={prefs === null || checking} onChange={(e) => void switchChannel(e.target.value as UpdateChannel)}>
+        <select aria-label={tr("更新轨道")} value={prefs?.channel ?? "stable"} disabled={prefs === null || checking} onChange={(e) => void switchChannel(e.target.value as UpdateChannel)}>
           <option value="stable">{tr("正式版（stable）")}</option>
           <option value="debug">{tr("调试版（debug）")}</option>
         </select>

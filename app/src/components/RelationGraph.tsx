@@ -460,6 +460,8 @@ export function RelationGraph({ graph, focusId = null, query = "", compact = fal
       <canvas
         ref={canvasRef}
         className={`relation-graph ${className ?? ""}`}
+        // 自己处理方向键的画布：告诉读屏这里按键直接交给应用
+        role="application"
         tabIndex={0}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

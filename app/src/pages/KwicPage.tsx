@@ -520,7 +520,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
             {mode === "kwic" && (
             <>
             <Segmented label={tr("按什么匹配")} value={field} onChange={setField} options={FIELDS} />
-            <select className="rate" value={pos} onChange={(e) => setPos(e.target.value)}>
+            <select className="rate" value={pos} onChange={(e) => setPos(e.target.value)} aria-label={tr("词性")}>
               {POS_FILTERS.map((p) => (
                 <option key={p} value={p}>
                   {p === "" ? tr("全部词性") : (POS_LABELS[p] ?? p)}
@@ -531,6 +531,7 @@ export function KwicPage({ actions, playback, onNavigate, onError, request, onRe
               className="rate"
               value={cform}
               onChange={(e) => setCform(e.target.value)}
+              aria-label={tr("活用形")}
               title={tr("只看这种活用形（含细类）")}
             >
               {CFORMS.map((c) => (

@@ -133,8 +133,13 @@ const dropListener = (event, id) => {
 };
 window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: (event, id) => dropListener(event, id) };
 window.__TAURI_INTERNALS__ = {
+  // getCurrentWindow / getCurrentWebview 读这个；没有的话主题、拖放一挂上就抛错，整页白屏
+  metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
+  convertFileSrc: (path) => path,
   invoke: (cmd, args) => {
     (window.__calls ||= []).push([cmd, args]);
+    // 窗口、webview 插件（主题、缩放、全屏、拖放监听）：浏览器里没有，一律当成功
+    if (cmd.startsWith("plugin:window|") || cmd.startsWith("plugin:webview|")) return Promise.resolve(null);
     if (cmd === "plugin:event|listen") {
       const id = window.__nextListenerId++;
       (window.__listeners[args.event] ||= []).push([id, args.handler]);

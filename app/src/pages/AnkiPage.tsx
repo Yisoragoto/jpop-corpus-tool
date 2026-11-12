@@ -13,6 +13,7 @@
  * 3. **重复不是错误。** 同一个词在别的歌里又遇到了，追加例句到已有的卡上。
  */
 
+import { NumberInput } from "../components/NumberInput";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "../events";
 
@@ -338,23 +339,9 @@ export function AnkiPage({ onError }: Props) {
         <div className="toolbar">
           <CommandButton icon="check" label={tr("全选")} onClick={() => setPicked(new Set(words.map((w) => w.lemma)))} />
           <CommandButton icon="clear" label={tr("清空")} onClick={() => setPicked(new Set())} />
-          <label className="check">{tr("每张卡例句")}<input
-              type="number"
-              min={1}
-              max={8}
-              value={maxExamples}
-              onChange={(e) => setMaxExamples(Number(e.target.value))}
-              style={{ width: 52 }}
-            />
+          <label className="check">{tr("每张卡例句")}<NumberInput min={1} max={8} value={maxExamples} onCommit={setMaxExamples} style={{ width: 52 }} />
           </label>
-          <label className="check">{tr("释义取前几部词典")}<input
-              type="number"
-              min={0}
-              max={20}
-              value={maxDicts}
-              onChange={(e) => setMaxDicts(Number(e.target.value))}
-              style={{ width: 52 }}
-            />
+          <label className="check">{tr("释义取前几部词典")}<NumberInput min={0} max={20} value={maxDicts} onCommit={setMaxDicts} style={{ width: 52 }} />
           </label>
         </div>
         <p className="muted small">{tr("库里启用了 19 部词典，全上的话一个常用词的释义能到 17,000 字符， 卡片背面读不完。取前几部就够——顺序就是你在词典管理里排的优先级。")}</p>

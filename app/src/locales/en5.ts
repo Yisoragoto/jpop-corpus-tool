@@ -926,4 +926,5 @@ export const en5: Record<string, string> = {
   "结果怎么看": "Results view",
   "搭配强度怎么算": "Collocation measure",
   "查词栏显示什么": "Lookup panel shows",
+  "在第几个字后面拆开": "Split after which character",
 };
