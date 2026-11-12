@@ -605,6 +605,16 @@ export const backendEn: Record<string, string> = {
   "没有曲名，tag 和文件名都定不出": "No title; neither the tags nor the file name give one",
   "不支持 Opus：播放器没有这种格式的解码器。转成 FLAC 或 MP3 再导入": "Opus isn't supported: the player has no decoder for it. Convert to FLAC or MP3 and import again",
   "不支持 WMA：播放器没有这种格式的解码器。转成 FLAC 或 MP3 再导入": "WMA isn't supported: the player has no decoder for it. Convert to FLAC or MP3 and import again",
+  "不支持 APE：播放器没有这种格式的解码器。转成 FLAC 再导入（无损转无损，音质不变）": "APE isn't supported: the player has no decoder for it. Convert to FLAC and import again (lossless to lossless, no quality loss)",
+  "不支持 WavPack：播放器没有这种格式的解码器。转成 FLAC 再导入（无损转无损，音质不变）": "WavPack isn't supported: the player has no decoder for it. Convert to FLAC and import again (lossless to lossless, no quality loss)",
+  "不支持 TAK：播放器没有这种格式的解码器。转成 FLAC 再导入（无损转无损，音质不变）": "TAK isn't supported: the player has no decoder for it. Convert to FLAC and import again (lossless to lossless, no quality loss)",
+  "不支持 TTA：播放器没有这种格式的解码器。转成 FLAC 再导入（无损转无损，音质不变）": "TTA isn't supported: the player has no decoder for it. Convert to FLAC and import again (lossless to lossless, no quality loss)",
+  "不支持 DSD（DSF / DFF）：播放器没有这种格式的解码器。转成 FLAC 再导入": "DSD (DSF / DFF) isn't supported: the player has no decoder for it. Convert to FLAC and import again",
+  "不支持 MKA / WebM：播放器没有这种格式的解码器。转成 FLAC 或 MP3 再导入": "MKA / WebM isn't supported: the player has no decoder for it. Convert to FLAC or MP3 and import again",
+  "不支持 NCM：这是网易云音乐客户端的加密下载格式，别的播放器打不开。导入这首歌不加密的 FLAC 或 MP3": "NCM isn't supported: it is NetEase Cloud Music's encrypted download format, which other players can't open. Import an unencrypted FLAC or MP3 of the song instead",
+  "不支持 QQ 音乐的加密下载格式（qmc、mflac、mgg 等），别的播放器打不开。导入这首歌不加密的 FLAC 或 MP3": "QQ Music's encrypted download formats (qmc, mflac, mgg and so on) aren't supported; other players can't open them. Import an unencrypted FLAC or MP3 of the song instead",
+  "不支持酷狗音乐的加密下载格式（kgm、vpr），别的播放器打不开。导入这首歌不加密的 FLAC 或 MP3": "Kugou Music's encrypted download formats (kgm, vpr) aren't supported; other players can't open them. Import an unencrypted FLAC or MP3 of the song instead",
+  "不支持酷我音乐的加密下载格式（kwm），别的播放器打不开。导入这首歌不加密的 FLAC 或 MP3": "Kuwo Music's encrypted download format (kwm) isn't supported; other players can't open it. Import an unencrypted FLAC or MP3 of the song instead",
   "读不出元数据：{0}": "Couldn't read metadata: {0}",
 
   // jp-scraper

@@ -38,6 +38,22 @@
 
 路径相同优先于曲名歌手相同：路径是更硬的证据。
 
+### 认哪些格式
+
+扫描只收两种扩展名（`jp_import::scan`）：
+
+- **能导入**（`AUDIO_EXTS`）：flac、mp3、wav、m4a、ogg、aac、aif、aiff。`.m4a` 里的 AAC 和 ALAC、
+  `.wav` 里的 PCM 和 IMA / MS ADPCM 都解得开。标准是「`jp-audio` 真的解得开」：播放、切 Anki 片段、
+  算内容指纹走的是同一组解码器（rodio 的 symphonia，额外开了 ALAC、AIFF、ADPCM）。
+- **认得出、放不了**（`UNSUPPORTED_AUDIO`）：Opus、WMA、APE、WavPack、TAK、TTA、DSD、MKA/WebM，
+  以及网易云（ncm）、QQ 音乐（qmc*、mflac、mgg……）、酷狗（kgm、vpr）、酷我（kwm）的加密下载格式。
+  这些扫得到、不入库，处置是 `Skipped`，理由写明是哪种格式、该导什么。
+
+两张表以外的文件当作「不是音频」。`jp-app/tests/formats.rs` 拿每种格式的真文件去解，
+把这两张表和解码器钉在一起；前端的选择框筛选由 `app/src/audioExtensions.test.ts` 和这两张表对齐。
+
+macOS 播放走 AVAudioFile，不走这组解码器：扫描用的是同一张表，但 Mac 上 ogg 能不能放还没在真机上验证。
+
 ## 幂等
 
 重扫同一个目录不该产生任何新条目。这条在真实曲库上验过：
