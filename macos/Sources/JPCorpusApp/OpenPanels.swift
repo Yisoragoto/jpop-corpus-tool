@@ -28,6 +28,17 @@ enum OpenPanels {
         return await run(panel)
     }
 
+    /// 好几个文件夹（来源文件夹一次加几个）
+    static func chooseFolders(message: String) async -> [URL] {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.message = L10n.t(message)
+        panel.prompt = L10n.t("选择")
+        return await run(panel) == nil ? [] : panel.urls
+    }
+
     private static func run(_ panel: NSOpenPanel) async -> URL? {
         await withCheckedContinuation { continuation in
             let done: (NSApplication.ModalResponse) -> Void = { response in

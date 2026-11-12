@@ -60,6 +60,22 @@ pub(super) fn dispatch(session: &Session, method: &str, args: &Value) -> Result<
             session.lyric_sources().lock().unwrap_or_else(|e| e.into_inner()).forget(&id);
             serde_json::to_value(attached)?
         }
+        // 来源文件夹对账确认之后，「文件变了」「歌词文件变了」的歌逐首同步歌词（Tauri：library_sync_lyrics）。
+        // 一首一个事务，一首出错不影响其余
+        "librarySyncLyrics" => {
+            let ids: Vec<String> = arg(args, "songIds")?;
+            let analyzer = session.analyzer();
+            let (mut updated, mut unchanged, mut failed) = (Vec::new(), 0usize, Vec::new());
+            for id in ids {
+                let mut corpus = session.network_connection()?;
+                match jp_lyrics::sources::sync_local(corpus.connection_mut(), &dir, &id, None, analyzer.as_deref()) {
+                    Ok(Some(_)) => updated.push(id),
+                    Ok(None) => unchanged += 1,
+                    Err(err) => failed.push(json!({ "songId": id, "error": format!("{err:#}") })),
+                }
+            }
+            json!({ "updated": updated, "unchanged": unchanged, "failed": failed })
+        }
         // 歌词来源与偏移（同名的 Tauri command：lyric_source_* / lyric_offset_set）
         "lyricSourceView" | "lyricSourceAuto" => {
             let id: String = arg(args, "songId")?;

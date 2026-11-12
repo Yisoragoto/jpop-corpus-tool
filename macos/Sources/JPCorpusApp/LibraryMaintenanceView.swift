@@ -16,16 +16,18 @@ struct LibraryManageButton: View {
 struct LibraryMaintenanceView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-    @State private var tab = 0
+    /// 默认是来源文件夹（#60）：曲库从哪些文件夹读歌，是维护的起点
+    @State private var tab = 4
     private var model: LibraryModel { app.library }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text("资料库管理").font(.app(.title2).bold()); Spacer(); Button("完成") { dismiss() } }
             Picker("", selection: $tab) {
-                Text("找回音频").tag(0); Text("新歌与文件夹").tag(1); Text("维护与迁移").tag(2); Text("收听记录").tag(3)
+                Text("来源文件夹").tag(4); Text("找回音频").tag(0); Text("新歌与文件夹").tag(1); Text("维护与迁移").tag(2); Text("收听记录").tag(3)
             }.pickerStyle(.segmented)
             Group {
                 switch tab {
+                case 4: LibrarySourcesView()
                 case 0: AudioRepairView()
                 case 1: WatchedFoldersView()
                 case 2: MaintenanceJobsView()
