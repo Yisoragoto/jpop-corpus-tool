@@ -493,19 +493,28 @@ fn dispatch(session: &Session, method: &str, args: Value) -> Result<Value> {
             Value::Null
         }
 
-        // 振假名（同 Tauri 的 lyrics_furigana）：现场用 Sudachi 取读音，一行约 0.02 ms，不入库
+        // 振假名（同 Tauri 的 lyrics_furigana）：现场用 Sudachi 取读音，一行约 0.02 ms，不入库。
+        // 用户改过的读音和源文件自带的注音盖在上面（#63）；以前 macOS 这里没盖，改了读音 Mac 上看不到
         "lyricsFurigana" => {
             let song_id: String = arg(&args, "songId")?;
             let mode: jp_tokenizer::furigana::FuriganaMode = arg_or(&args, "mode", Default::default())?;
             let analyzer = session
                 .analyzer()
                 .ok_or_else(|| anyhow!(jp_setup::sudachi::no_dictionary("振假名")))?;
+            let rules = jp_corpus::ruby::rules_for_song(corpus.connection(), &song_id)?;
+            let mut sources: std::collections::HashMap<i64, Vec<jp_tokenizer::furigana::Ruby>> = Default::default();
+            for r in jp_corpus::ruby::for_song(corpus.connection(), &song_id)? {
+                sources.entry(r.utterance_id).or_default().push(jp_tokenizer::furigana::Ruby {
+                    start: r.char_start.max(0) as usize,
+                    end: r.char_end.max(0) as usize,
+                    reading: r.reading,
+                });
+            }
             let mut out = Vec::new();
             for line in corpus.lyrics(&song_id)? {
                 let tokens = analyzer.analyze(&line.text)?;
-                let segments = jp_tokenizer::furigana::furigana_segments(&line.text, &tokens, mode);
-                // 对不上原文就这一行不注音，不猜位置
-                let rubies = jp_tokenizer::furigana::ruby_spans(&line.text, &segments).unwrap_or_default();
+                let extra = sources.get(&line.utterance_id).map(Vec::as_slice).unwrap_or_default();
+                let rubies = jp_tokenizer::furigana::line_rubies(&line.text, &tokens, mode, &rules, extra);
                 out.push(json!({ "utteranceId": line.utterance_id, "rubies": rubies }));
             }
             Value::Array(out)

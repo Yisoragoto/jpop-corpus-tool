@@ -387,3 +387,42 @@ fn a_dictionary_copied_in_after_opening_is_picked_up() {
     assert_eq!(s.call("health", json!({})).unwrap()["tokenizerReady"], json!(true));
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// macOS 改了读音要看得到（#63）：FFI 的振假名和 Tauri 一样盖上用户改过的读音，清掉就回到自动注音。
+/// 以前 FFI 这里只有 Sudachi 的读音，Mac 上存了规则也不显示。
+#[test]
+fn edited_readings_show_up_in_the_ffi_furigana() {
+    let Some(source) = dictionary_source() else {
+        eprintln!("跳过：没有 Sudachi 词典（设 JP_SUDACHI_SOURCE）");
+        return;
+    };
+    let dir = temp_dir("reading-rule");
+    let db = jp_corpus::fixture::write_to(&dir).unwrap();
+    let (resources, dict) = jp_tokenizer::find_sudachipy_source(&source).unwrap();
+    let target = dir.join(jp_tokenizer::BUNDLED_DIR);
+    std::fs::create_dir_all(&target).unwrap();
+    for entry in std::fs::read_dir(&resources).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            std::fs::copy(&path, target.join(path.file_name().unwrap())).unwrap();
+        }
+    }
+    std::fs::copy(&dict, target.join("system.dic")).unwrap();
+    let s = Session::open(db.to_str().unwrap()).unwrap();
+    let readings = |s: &Session| -> Vec<String> {
+        let lines = s.call("lyricsFurigana", json!({ "songId": "004", "mode": "kanji" })).unwrap();
+        lines[0]["rubies"].as_array().unwrap().iter().map(|r| r["reading"].as_str().unwrap().to_owned()).collect()
+    };
+    assert!(readings(&s).iter().any(|r| r == "よる"), "{:?}", readings(&s));
+
+    let rule = s.call("readingRuleSet", json!({ "songId": "004", "surface": "夜", "reading": "ナイト" })).unwrap();
+    assert_eq!(rule["wholeLibrary"], json!(false));
+    assert_eq!(s.call("readingRule", json!({ "songId": "004", "surface": "夜" })).unwrap()["reading"], json!("ナイト"));
+    let edited = readings(&s);
+    assert!(edited.iter().any(|r| r == "ナイト") && !edited.iter().any(|r| r == "よる"), "{edited:?}");
+
+    s.call("readingRuleClear", json!({ "songId": "004", "surface": "夜" })).unwrap();
+    assert_eq!(s.call("readingRule", json!({ "songId": "004", "surface": "夜" })).unwrap(), json!(null));
+    assert!(readings(&s).iter().any(|r| r == "よる"));
+    std::fs::remove_dir_all(dir).ok();
+}

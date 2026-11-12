@@ -130,6 +130,30 @@ pub fn overlay_rubies(mut rubies: Vec<Ruby>, extra: &[Ruby], spans: &[(usize, us
     rubies
 }
 
+/// 一行歌词最终显示的注音：用户改过的读音（`rules`，写法 → 读音）最优先，其次是源文件自带的注音
+/// （`sources`，这一行的），两样都没有的就是 Sudachi 的自动注音。
+///
+/// Windows（Tauri 的 `lyrics_furigana`）和 macOS（FFI 的 `lyricsFurigana`）都走这里，两端注出来的一样。
+/// 词连起来对不上原文时这一行不注音，不猜位置。
+pub fn line_rubies(
+    text: &str,
+    tokens: &[Token],
+    mode: FuriganaMode,
+    rules: &std::collections::HashMap<String, String>,
+    sources: &[Ruby],
+) -> Vec<Ruby> {
+    let rule_of = |i: usize| tokens.get(i).and_then(|t| rules.get(&t.surface)).map(String::as_str);
+    let segments = furigana_segments_with(text, tokens, mode, rule_of);
+    let rubies = ruby_spans(text, &segments).unwrap_or_default();
+    match token_spans(text, tokens) {
+        Some(spans) if !sources.is_empty() => {
+            let locked: Vec<bool> = tokens.iter().map(|t| rules.contains_key(&t.surface)).collect();
+            overlay_rubies(rubies, sources, &spans, &locked)
+        }
+        _ => rubies,
+    }
+}
+
 /// `_is_kanji_char`：拆汉字段时「々」也算汉字
 fn is_kanji_char(ch: char) -> bool {
     is_kanji_re(ch) || ch == '々'
