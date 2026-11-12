@@ -585,6 +585,49 @@ extension PlayerModelTests {
         XCTAssertFalse(moved)
     }
 
+    private func region(_ first: Int64, _ last: Int64, _ start: Double, _ end: Double, startDelta: Int = 0, endDelta: Int = 0) -> String {
+        #"{"songId":"001","firstUtteranceId":\#(first),"lastUtteranceId":\#(last),"startSec":\#(start),"endSec":\#(end),"baseStartSec":2,"baseEndSec":4.6,"startDeltaMs":\#(startDelta),"endDeltaMs":\#(endDelta),"endFromWords":true}"#
+    }
+
+    /// 循环区间（#64）：起止用 Rust 算的，微调一次接一次地加，往后加一行不跳、往前加一行或挪起点才从新起点放
+    @MainActor
+    func testLoopRegionNudgeExtendAndCancel() async throws {
+        let (app, engine, corpus, _) = try await fixture()
+        let player = app.player
+        await corpus.respondToLyrics("loopRegion:1,1", json: region(1, 1, 2, 4.6))
+        await player.toggleLoop(1)
+        XCTAssertEqual(player.loop?.startSec, 2); XCTAssertEqual(player.loop?.endSec, 4.6)
+        XCTAssertEqual(player.loopedLines, [1]); XCTAssertEqual(player.loopLineCount, 1)
+        XCTAssertTrue(engine.isPlaying); XCTAssertEqual(engine.seeks.last, 2)
+
+        await corpus.respondToLyrics("loopAdjustSet:1,1,-100,0", json: region(1, 1, 1.9, 4.6, startDelta: -100))
+        await corpus.respondToLyrics("loopAdjustSet:1,1,-100,500", json: region(1, 1, 1.9, 5.1, startDelta: -100, endDelta: 500))
+        await player.nudgeLoop(startMs: -100)
+        XCTAssertEqual(player.loop?.startSec, 1.9); XCTAssertEqual(engine.seeks.last, 1.9, "挪了起点就从新起点放")
+        let seeks = engine.seeks.count
+        await player.nudgeLoop(endMs: 500)
+        XCTAssertEqual(player.loop?.endSec, 5.1); XCTAssertEqual(player.loopRegion?.endDeltaMs, 500)
+        XCTAssertEqual(engine.seeks.count, seeks, "只挪终点不跳")
+
+        await corpus.respondToLyrics("loopRegion:1,2", json: region(1, 2, 1.9, 7.5, startDelta: -100))
+        await player.extendLoop(before: false)
+        XCTAssertEqual(player.loopedLines, [1, 2]); XCTAssertEqual(player.loopLineCount, 2)
+        XCTAssertEqual(engine.seeks.count, seeks, "往后加一行不跳")
+        XCTAssertNil(player.lastError)
+
+        await player.toggleLoop(2)
+        XCTAssertNil(player.loop); XCTAssertNil(player.loopRegion); XCTAssertTrue(player.loopedLines.isEmpty, "点循环着的任何一行都是取消")
+    }
+
+    @MainActor
+    func testTooShortLoopRegionIsRefused() async throws {
+        let (app, _, corpus, _) = try await fixture()
+        await corpus.respondToLyrics("loopRegion:2,2", json: region(2, 2, 5, 5.1))
+        await app.player.toggleLoop(2)
+        XCTAssertNil(app.player.loop)
+        XCTAssertEqual(app.player.lastError, "这一句太短，无法循环")
+    }
+
     /// 循环一行到行尾：跳回行首，不算「放完了」，不能切歌
     @MainActor
     func testLoopDoesNotAdvanceQueue() async throws {

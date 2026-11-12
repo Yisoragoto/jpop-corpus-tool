@@ -34,8 +34,22 @@ public final class PlayerModel {
     public private(set) var currentIndex: Int?
     public private(set) var duration: Double = 0 { didSet { if oldValue != duration { publishNowPlaying() } } }
     public private(set) var isPlaying = false { didSet { if oldValue != isPlaying { publishNowPlaying() } } }
-    /// 正在循环的那一行
-    public private(set) var loop: LineSpan?
+    /// 正在循环的那一段：交给时钟的起止。`utteranceId` 是第一行
+    public private(set) var loop: LineSpan? {
+        didSet {
+            if loop == nil, loopRegion != nil { loopRegion = nil }
+            refreshLoopedLines()
+        }
+    }
+    /// 循环区间和记住的微调（#64），由 Rust 的 loop_region 算；和 `loop` 一起设、一起清
+    public private(set) var loopRegion: LoopRegion? { didSet { refreshLoopedLines() } }
+    /// 循环覆盖的那几行，歌词面板标循环图标用
+    public private(set) var loopedLines: Set<Int64> = []
+    /// 微调一下挪多少（毫秒）：普通 0.1 秒，按着 Option 0.5 秒，和 Windows 一样
+    public static let fineLoopStepMs = 100
+    public static let coarseLoopStepMs = 500
+    /// 连着按快捷键时一次接一次地改，后一次基于前一次的结果
+    @ObservationIgnored private var loopQueue: Task<Void, Never>?
     /// 试听一句：播到这里自动停
     public private(set) var stopAt: Double?
     /// 歌词面板要滚到的那一行（检索结果点进来时）
@@ -501,13 +515,32 @@ public final class PlayerModel {
         play()
     }
 
-    /// 循环这一行（再点一次取消）。区间用 Rust 算好的行起止：间奏前的那一句不会把整段伴奏循环进去
+    /// 循环这一行（再点一次取消；点到循环着的那几行里的任何一行也是取消）。
+    /// 区间用 Rust 算：起点是行首，终点是最后一个字唱完，再加上这一行记住的微调
     public func toggleLoop(_ utteranceId: Int64?) async {
-        if loop != nil, utteranceId == nil || loop?.utteranceId == utteranceId {
+        if loop != nil, utteranceId.map({ loopedLines.contains($0) }) ?? true {
             loop = nil
             return
         }
         guard let id = utteranceId ?? currentUtterance, var span = spans[id] else { return }
+        if let client = app?.client {
+            let songId = track?.id
+            do {
+                let region = try await client.loopRegion(first: id, last: id)
+                guard track?.id == songId else { return }
+                guard await applyLoop(region, seek: true) else {
+                    lastError = "这一句太短，无法循环"
+                    return
+                }
+                play()
+                return
+            } catch is LoopRegionUnavailable {
+                // 测试替身没有这条命令：退回按行起止
+            } catch {
+                lastError = error.localizedDescription
+                return
+            }
+        }
         if let line = lines.first(where: { $0.utteranceId == id }),
            let units = timingUnits(for: line), let end = units.last?.endSec {
             // An estimated listen window must not cut off a real timed word.
@@ -517,6 +550,97 @@ public final class PlayerModel {
         stopAt = nil
         await seek(to: span.startSec)
         play()
+    }
+
+    /// 在当前微调上再挪一点（毫秒，负数是提前）。改了起点就从新起点重放，好马上听出来
+    public func nudgeLoop(startMs: Int = 0, endMs: Int = 0) async {
+        await serialLoop { [self] in
+            guard let region = loopRegion, let client = app?.client else { return }
+            let next = try? await client.setLoopAdjust(first: region.firstUtteranceId, last: region.lastUtteranceId,
+                                                       startDeltaMs: region.startDeltaMs + startMs,
+                                                       endDeltaMs: region.endDeltaMs + endMs)
+            await finishLoopChange(next, from: region, seek: startMs != 0)
+        }
+    }
+
+    /// 这一段的微调清零
+    public func resetLoopAdjust() async {
+        await serialLoop { [self] in
+            guard let region = loopRegion, region.adjusted, let client = app?.client else { return }
+            let next = try? await client.setLoopAdjust(first: region.firstUtteranceId, last: region.lastUtteranceId,
+                                                       startDeltaMs: 0, endDeltaMs: 0)
+            await finishLoopChange(next, from: region, seek: region.startDeltaMs != 0)
+        }
+    }
+
+    /// 往前或往后多循环一行（只算有时间戳的行）。往前加时起点变了，从新起点重放
+    public func extendLoop(before: Bool) async {
+        await serialLoop { [self] in
+            guard let region = loopRegion, let client = app?.client else { return }
+            let timed = timedLineIds
+            guard let a = timed.firstIndex(of: region.firstUtteranceId), let b = timed.firstIndex(of: region.lastUtteranceId) else {
+                lastError = "这一段调不了了，可能歌词刚换过"
+                return
+            }
+            let first = before ? a - 1 : a
+            let last = before ? b : b + 1
+            guard timed.indices.contains(first), timed.indices.contains(last) else { return }
+            let next = try? await client.loopRegion(first: timed[first], last: timed[last])
+            await finishLoopChange(next, from: region, seek: before)
+        }
+    }
+
+    /// 有时间戳的行，按歌词顺序：往前 / 往后加一行用
+    public var timedLineIds: [Int64] { lines.filter { $0.timeSec != nil }.map(\.utteranceId) }
+
+    /// 循环着的是几行（调整栏的标题）
+    public var loopLineCount: Int {
+        guard let region = loopRegion else { return loop == nil ? 0 : 1 }
+        let timed = timedLineIds
+        guard let a = timed.firstIndex(of: region.firstUtteranceId), let b = timed.firstIndex(of: region.lastUtteranceId), b >= a else { return 1 }
+        return b - a + 1
+    }
+
+    private func serialLoop(_ job: @escaping @MainActor () async -> Void) async {
+        let previous = loopQueue
+        let task = Task { @MainActor in
+            await previous?.value
+            await job()
+        }
+        loopQueue = task
+        await task.value
+    }
+
+    /// 改完的区间还是这首、还在循环同一段才用；对不上（换了歌、歌词刚换过、太短）就报错不动
+    private func finishLoopChange(_ next: LoopRegion?, from region: LoopRegion, seek: Bool) async {
+        guard loopRegion == region else { return }
+        if !(await applyLoop(next, seek: seek)) { lastError = "这一段调不了了，可能歌词刚换过" }
+    }
+
+    /// 把 Rust 算好的区间交给时钟。太短的（< 0.15 秒，和 Windows 播放器同一条线）不设
+    private func applyLoop(_ region: LoopRegion?, seek: Bool) async -> Bool {
+        guard let region, region.songId == track?.id, region.endSec - region.startSec >= 0.15,
+              var span = spans[region.firstUtteranceId] else { return false }
+        span.startSec = region.startSec
+        span.endSec = region.endSec
+        loop = span
+        loopRegion = region
+        stopAt = nil
+        if seek || position < region.startSec || position >= region.endSec { await self.seek(to: region.startSec) }
+        return true
+    }
+
+    private func refreshLoopedLines() {
+        var next: Set<Int64> = []
+        if let loop {
+            next = [loop.utteranceId]
+            if let region = loopRegion,
+               let a = lines.firstIndex(where: { $0.utteranceId == region.firstUtteranceId }),
+               let b = lines.firstIndex(where: { $0.utteranceId == region.lastUtteranceId }), a <= b {
+                next = Set(lines[a...b].map(\.utteranceId))
+            }
+        }
+        if next != loopedLines { loopedLines = next }
     }
 
     /// 上一行 / 下一行
