@@ -21,6 +21,9 @@ public protocol CorpusCalling: AnyObject, Sendable {
     func lyricTimeline(_ songId: String) async throws -> [LineTimeline]
     func lineSpans(_ songId: String) async throws -> [LineSpan]
     func listenWindow(_ utteranceId: Int64, before: Int, after: Int) async throws -> ListenWindow?
+    /// 循环区间（#64）。不支持的客户端抛 `LoopRegionUnavailable`，播放器退回按行起止循环
+    func loopRegion(first: Int64, last: Int64) async throws -> LoopRegion?
+    func setLoopAdjust(first: Int64, last: Int64, startDeltaMs: Int, endDeltaMs: Int) async throws -> LoopRegion?
     func resolveMedia(_ stored: String) async throws -> String?
     func recordPlay(_ event: PlayEvent) async throws
     func kwic(_ query: KwicQuery) async throws -> [KwicHit]
@@ -36,7 +39,17 @@ public protocol CorpusCalling: AnyObject, Sendable {
 
 extension CorpusClient: CorpusCalling {}
 
+/// 客户端没有循环区间这条命令（测试替身）
+public struct LoopRegionUnavailable: Error {
+    public init() {}
+}
+
 public extension CorpusCalling {
+    func loopRegion(first: Int64, last: Int64) async throws -> LoopRegion? { throw LoopRegionUnavailable() }
+    func setLoopAdjust(first: Int64, last: Int64, startDeltaMs: Int, endDeltaMs: Int) async throws -> LoopRegion? {
+        throw LoopRegionUnavailable()
+    }
+
     /// A client without timing support safely falls back to line playback.
     func lyricTimeline(_ songId: String) async throws -> [LineTimeline] { [] }
 

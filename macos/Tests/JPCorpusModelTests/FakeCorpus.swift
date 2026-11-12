@@ -91,6 +91,15 @@ actor FakeCorpus: CorpusCalling {
         await gate("listenWindow:\(utteranceId),\(before),\(after)")
         return try lyricValue("listenWindow", arguments: [String(utteranceId), String(before), String(after)])
     }
+    /// 没给过回答时当作不支持：播放器退回按行起止循环（老测试都靠这个）
+    func loopRegion(first: Int64, last: Int64) async throws -> LoopRegion? {
+        guard lyricResponses.keys.contains(where: { $0.hasPrefix("loopRegion") }) else { throw LoopRegionUnavailable() }
+        return try lyricValue("loopRegion", arguments: [String(first), String(last)])
+    }
+    func setLoopAdjust(first: Int64, last: Int64, startDeltaMs: Int, endDeltaMs: Int) async throws -> LoopRegion? {
+        guard lyricResponses.keys.contains(where: { $0.hasPrefix("loopAdjustSet") }) else { throw LoopRegionUnavailable() }
+        return try lyricValue("loopAdjustSet", arguments: [String(first), String(last), String(startDeltaMs), String(endDeltaMs)])
+    }
     func resolveMedia(_ stored: String) async throws -> String? {
         await gate("resolveMedia:\(stored)")
         return try lyricValue("resolveMedia", arguments: [stored])

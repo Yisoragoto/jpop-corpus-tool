@@ -46,6 +46,22 @@ struct PlaybackKeyboard: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) { context.coordinator.exit = exit }
     static func dismantleNSView(_ view: NSView, coordinator: Coordinator) { coordinator.remove() }
 
+    /// 循环区间微调（#64），和 Windows 同一套键：`[` `]` 挪起点，⇧ 挪终点，按着 Option 一下 0.5 秒。
+    /// 按的是键位（keyCode 33 / 30），不看打出来的字：Option+[ 打出来是“。只在循环着一段时才占这两个键
+    static func loopChange(_ event: NSEvent) -> (startMs: Int, endMs: Int)? {
+        guard event.modifierFlags.intersection([.command, .control]).isEmpty else { return nil }
+        let sign = event.keyCode == 33 ? -1 : event.keyCode == 30 ? 1 : 0
+        guard sign != 0 else { return nil }
+        let step = sign * (event.modifierFlags.contains(.option) ? PlayerModel.coarseLoopStepMs : PlayerModel.fineLoopStepMs)
+        return event.modifierFlags.contains(.shift) ? (0, step) : (step, 0)
+    }
+
+    /// 焦点在输入框里：`[` `]` 是要打的字
+    static func typing(in window: NSWindow) -> Bool {
+        let responder = window.firstResponder
+        return (responder as? NSTextView)?.isEditable == true || responder is NSTextField
+    }
+
     static func isPlaybackKey(_ event: NSEvent) -> Bool {
         event.modifierFlags.intersection([.command, .control, .option]).isEmpty && [49, 123, 124, 125, 126].contains(event.keyCode)
     }
@@ -65,6 +81,12 @@ struct PlaybackKeyboard: NSViewRepresentable {
                     if PlaybackInputProtection.owns(event) { return event }
                     if event.keyCode == 53, let exit = self.exit { exit(); return nil }
                     if event.keyCode == 103 { window.toggleFullScreen(nil); return nil }
+                    if let change = PlaybackKeyboard.loopChange(event), self.app.player.loopRegion != nil,
+                       !PlaybackKeyboard.typing(in: window) {
+                        let player = self.app.player
+                        Task { await player.nudgeLoop(startMs: change.startMs, endMs: change.endMs) }
+                        return nil
+                    }
                     guard PlaybackKeyboard.isPlaybackKey(event) else { return event }
                     let player = self.app.player
                     switch event.keyCode {

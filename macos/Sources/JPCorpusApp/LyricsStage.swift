@@ -24,6 +24,8 @@ struct LyricsStage: View {
     @State private var colors = ArtworkColors()
     @State private var lookup: LookupRequest?
     @State private var selectionLine: LyricLine?
+    /// 右键「改读音」选中的词（#63）
+    @State private var editingReading: ReadingEdit?
     @State private var manualScroll: Date?
     @AppStorage("stage-side-width") private var sideWidth = 340.0
     @State private var sideDragStart: Double?
@@ -81,6 +83,14 @@ struct LyricsStage: View {
             }
             }
         }
+        // 循环区间的调整栏（#64）：贴在播放条上面
+        .overlay(alignment: .bottom) {
+            if app.player.loopRegion != nil {
+                LoopAdjustBar()
+                    .frame(maxWidth: 420)
+                    .padding(.bottom, Self.barHeight + 8)
+            }
+        }
         // 开着振假名却没有词典：在全屏歌词里也说清楚，并且能直接下载（以前这里什么都不提示）
         .overlay(alignment: .top) {
             FuriganaDictionaryNotice(style: .card).padding(.top, Self.topHeight + 8).padding(.horizontal, 28)
@@ -92,6 +102,7 @@ struct LyricsStage: View {
         .onAppear { karaoke = app.stageKaraoke }
         .onChange(of: karaoke) { _, value in app.stageKaraoke = value; lookup = nil }
         .onExitCommand { if selectionLine != nil { selectionLine = nil } else { close() } }
+        .sheet(item: $editingReading) { ReadingEditorView(target: $0) }
         .popover(item: $selectionLine) { line in
             LyricSelectionView(text: line.text) { selected in
                 lookup = LookupRequest(text: selected, songId: player.track?.id, utteranceId: line.utteranceId, tokenIndex: nil)
@@ -357,7 +368,7 @@ struct LyricsStage: View {
             .help(line.timeSec.map { "点词查词，点空白处从 \(formatTime($0)) 放" } ?? "点词查词（这一行没有时间戳）")
             .contextMenu {
                 Button("从这里放") { Task { await app.player.playLine(line) } }.disabled(line.timeSec == nil)
-                Button(app.player.loop?.utteranceId == line.utteranceId ? "取消循环" : "循环这一句") {
+                Button(app.player.loopedLines.contains(line.utteranceId) ? "取消循环" : "循环这一句") {
                     Task { await app.player.toggleLoop(line.utteranceId) }
                 }.disabled(app.player.spans[line.utteranceId] == nil)
                 Button("选择原文 / 查选中文本") { selectionLine = line }
@@ -373,6 +384,15 @@ struct LyricsStage: View {
                     Divider()
                     ForEach(lemmas, id: \.self) { lemma in
                         Button("检索「\(lemma)」") { app.search(lemma) }
+                    }
+                }
+                if let songId = app.player.track?.id {
+                    let edits = ReadingEdit.candidates(songId: songId, line: line, rubies: app.furigana[line.utteranceId] ?? [])
+                    if !edits.isEmpty {
+                        Divider()
+                        ForEach(edits) { edit in
+                            Button("改读音「\(edit.surface)」…") { editingReading = edit }
+                        }
                     }
                 }
             }
