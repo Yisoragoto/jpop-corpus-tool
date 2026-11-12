@@ -24,15 +24,63 @@ use crate::filename::{folder_hints, parse_filename};
 /// 这里以前还有 `opus` 和 `wma`，但依赖树里没有这两种的解码器（拿和播放同一个入口
 /// 实测，报「认不出格式」）：它们能被导进库，却放不出声、也切不出 Anki 片段。
 /// 现在放到 [`UNSUPPORTED_AUDIO`]，扫得到、计划里说明原因、不入库。
-pub const AUDIO_EXTS: &[&str] = &["flac", "mp3", "wav", "m4a", "ogg", "aac"];
+///
+/// `.m4a` 里可能是 AAC，也可能是 ALAC（苹果无损），两种都解得开；`.wav` 里的
+/// IMA / MS ADPCM 也解得开。`aif`/`aiff` 是 AIFF。每一种在 `jp-app/tests/formats.rs` 里
+/// 都有一个真文件夹具。
+pub const AUDIO_EXTS: &[&str] = &["flac", "mp3", "wav", "m4a", "ogg", "aac", "aif", "aiff"];
+
+const NO_APE: &str = "不支持 APE：播放器没有这种格式的解码器。转成 FLAC 再导入（无损转无损，音质不变）";
+const NO_WAVPACK: &str = "不支持 WavPack：播放器没有这种格式的解码器。转成 FLAC 再导入（无损转无损，音质不变）";
+const NO_TAK: &str = "不支持 TAK：播放器没有这种格式的解码器。转成 FLAC 再导入（无损转无损，音质不变）";
+const NO_TTA: &str = "不支持 TTA：播放器没有这种格式的解码器。转成 FLAC 再导入（无损转无损，音质不变）";
+const NO_DSD: &str = "不支持 DSD（DSF / DFF）：播放器没有这种格式的解码器。转成 FLAC 再导入";
+const NO_MATROSKA: &str = "不支持 MKA / WebM：播放器没有这种格式的解码器。转成 FLAC 或 MP3 再导入";
+const NCM: &str = "不支持 NCM：这是网易云音乐客户端的加密下载格式，别的播放器打不开。导入这首歌不加密的 FLAC 或 MP3";
+const QQ_MUSIC: &str = "不支持 QQ 音乐的加密下载格式（qmc、mflac、mgg 等），别的播放器打不开。导入这首歌不加密的 FLAC 或 MP3";
+const KUGOU: &str = "不支持酷狗音乐的加密下载格式（kgm、vpr），别的播放器打不开。导入这首歌不加密的 FLAC 或 MP3";
+const KUWO: &str = "不支持酷我音乐的加密下载格式（kwm），别的播放器打不开。导入这首歌不加密的 FLAC 或 MP3";
 
 /// 认得出是音频、但放不了的扩展名，和要告诉用户的话。
 ///
 /// 不直接当成「不是音频」悄悄跳过：一个文件夹里十首歌只导进去七首，
 /// 用户得知道剩下三首是格式的问题，而不是去猜是不是没扫到。
+/// 以前这里只有 opus 和 wma，网易云的 `.ncm` 之类都是悄悄跳过的——
+/// 网易云下载目录里常常一大半是 `.ncm`。
+///
+/// 加密格式只说明是哪家客户端的、该导什么，不教怎么解密。
 pub const UNSUPPORTED_AUDIO: &[(&str, &str)] = &[
     ("opus", "不支持 Opus：播放器没有这种格式的解码器。转成 FLAC 或 MP3 再导入"),
     ("wma", "不支持 WMA：播放器没有这种格式的解码器。转成 FLAC 或 MP3 再导入"),
+    ("ape", NO_APE),
+    ("wv", NO_WAVPACK),
+    ("tak", NO_TAK),
+    ("tta", NO_TTA),
+    ("dsf", NO_DSD),
+    ("dff", NO_DSD),
+    ("mka", NO_MATROSKA),
+    ("webm", NO_MATROSKA),
+    ("ncm", NCM),
+    ("qmc0", QQ_MUSIC),
+    ("qmc2", QQ_MUSIC),
+    ("qmc3", QQ_MUSIC),
+    ("qmc4", QQ_MUSIC),
+    ("qmc6", QQ_MUSIC),
+    ("qmc8", QQ_MUSIC),
+    ("qmcflac", QQ_MUSIC),
+    ("qmcogg", QQ_MUSIC),
+    ("tkm", QQ_MUSIC),
+    ("mflac", QQ_MUSIC),
+    ("mflac0", QQ_MUSIC),
+    ("mgg", QQ_MUSIC),
+    ("mgg0", QQ_MUSIC),
+    ("mgg1", QQ_MUSIC),
+    ("bkcmp3", QQ_MUSIC),
+    ("bkcflac", QQ_MUSIC),
+    ("kgm", KUGOU),
+    ("kgma", KUGOU),
+    ("vpr", KUGOU),
+    ("kwm", KUWO),
 ];
 
 fn lowercase_ext(path: &Path) -> Option<String> {
@@ -429,7 +477,7 @@ mod tests {
 
     #[test]
     fn audio_extensions_are_recognised() {
-        for name in ["a.flac", "a.mp3", "a.M4A", "a.OGG"] {
+        for name in ["a.flac", "a.mp3", "a.M4A", "a.OGG", "a.aif", "a.AIFF"] {
             assert!(is_audio_file(Path::new(name)), "{name}");
         }
         for name in ["cover.jpg", "lyrics.lrc", "notes.txt", "noext"] {
@@ -437,11 +485,11 @@ mod tests {
         }
     }
 
-    /// opus 和 wma 没有解码器：不算「能导入的音频」，但扫描要收下并带上原因，
+    /// 没有解码器的、客户端加密的：不算「能导入的音频」，但扫描要收下并带上原因，
     /// 这样导入计划里能告诉用户为什么没导，而不是让文件凭空消失。
     #[test]
-    fn opus_and_wma_are_scanned_but_marked_unsupported() {
-        for name in ["a.opus", "a.OPUS", "a.wma", "a.Wma"] {
+    fn undecodable_formats_are_scanned_but_marked_unsupported() {
+        for name in ["a.opus", "a.OPUS", "a.wma", "a.Wma", "a.ncm", "a.NCM", "a.ape", "a.dsf", "a.mflac", "a.kgm", "a.kwm"] {
             assert!(!is_audio_file(Path::new(name)), "{name} 放不了，不能算可导入");
             let reason = unsupported_reason(Path::new(name)).unwrap_or_else(|| panic!("{name} 要有原因"));
             assert!(reason.contains("不支持"), "{reason}");
@@ -453,13 +501,32 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("jp-import-unsupported-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        for name in ["one.opus", "two.wma", "three.flac", "cover.jpg"] {
+        for name in ["one.opus", "two.wma", "three.flac", "four.ncm", "cover.jpg"] {
             std::fs::write(dir.join(name), b"not really audio").unwrap();
         }
         let found = scan_dir(&dir, 4);
         let _ = std::fs::remove_dir_all(&dir);
         let seen: Vec<(&str, bool)> = found.iter().map(|t| (t.file_name.as_str(), t.unsupported.is_some())).collect();
-        assert_eq!(seen, [("one.opus", true), ("three.flac", false), ("two.wma", true)]);
+        assert_eq!(seen, [("four.ncm", true), ("one.opus", true), ("three.flac", false), ("two.wma", true)]);
+    }
+
+    /// 一个扩展名只能在一张表里，表里也不能有重复、大写或带点的写法
+    /// （`lowercase_ext` 比的是去掉点的小写）。
+    #[test]
+    fn the_two_extension_tables_do_not_overlap() {
+        let mut all: Vec<&str> = AUDIO_EXTS.to_vec();
+        all.extend(UNSUPPORTED_AUDIO.iter().map(|(ext, _)| *ext));
+        for ext in &all {
+            assert_eq!(*ext, ext.to_lowercase(), "{ext}");
+            assert!(!ext.starts_with('.') && !ext.is_empty(), "{ext}");
+        }
+        let mut sorted = all.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), all.len(), "有扩展名出现了两次");
+        for (ext, reason) in UNSUPPORTED_AUDIO {
+            assert!(reason.starts_with("不支持"), "{ext}：{reason}");
+        }
     }
 
     #[test]

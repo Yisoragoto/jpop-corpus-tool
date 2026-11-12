@@ -9,7 +9,10 @@ description = "Audio playback engine for JPOP Corpus Tool"
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
-rodio = "0.22"
+# 默认特性之外再开三个 symphonia 解码器（都是纯 Rust，不加工具链）：
+# ALAC（苹果无损，常见于 .m4a）、AIFF、ADPCM（IMA / MS 压缩的 .wav）。
+# 导入认哪些扩展名在 jp-import 的 AUDIO_EXTS，两边由 jp-app/tests/formats.rs 钉在一起。
+rodio = { version = "0.22", features = ["symphonia-alac", "symphonia-aiff", "symphonia-adpcm"] }
 rodio-wsola = "0.2"
 realfft = "3"
 

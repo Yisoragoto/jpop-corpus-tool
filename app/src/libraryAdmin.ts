@@ -5,6 +5,7 @@
 
 import { call } from "./api";
 import { tr } from "./i18n";
+import { PLAYABLE_AUDIO_EXTENSIONS } from "./dropFiles";
 
 export interface SongEdit {
   title: string;
@@ -69,8 +70,8 @@ export interface RelinkBatch {
   csv: CsvSync;
 }
 
-/** 和 jp-import 的 AUDIO_EXTS 一致：只列放得出声的。opus、wma 没有解码器，补音频时选了也会被后端拒掉 */
-export const AUDIO_EXTENSIONS = ["flac", "mp3", "wav", "m4a", "ogg", "aac"];
+/** 和 jp-import 的 AUDIO_EXTS 一致：只列放得出声的。放不了的（opus、ncm……）补音频时选了也会被后端拒掉 */
+export const AUDIO_EXTENSIONS = PLAYABLE_AUDIO_EXTENSIONS;
 
 export const FIELD_LABELS: Record<keyof SongEdit, string> = {
   title: tr("歌名"),

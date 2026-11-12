@@ -18,8 +18,9 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 jp-normalize = { path = "../jp-normalize" }
 # CQL 检索的属性值是正则（和 CQL 一样整个匹配）。已在依赖树里（jp-import 用），不多下一个包。
 regex = "1"
-# 内容身份必须解码 PCM，不能手写多格式解码器；复用已在播放依赖树里的 rodio，仅开现有格式、不启用设备。
-rodio = { version = "0.22", default-features = false, features = ["flac", "mp3", "mp4", "vorbis", "wav"] }
+# 内容身份必须解码 PCM，不能手写多格式解码器；复用已在播放依赖树里的 rodio，不启用设备。
+# 格式要和 jp-audio 开的一样：播放解得开、身份却解不开的文件会算不出指纹。
+rodio = { version = "0.22", default-features = false, features = ["flac", "mp3", "mp4", "vorbis", "wav", "symphonia-alac", "symphonia-aiff", "symphonia-adpcm"] }
 # 指纹需要标准 SHA-256，手写密码散列难以可靠验证；复用更新器已经使用的同一版本。
 sha2 = "0.10"
 # 给 jp-api 生成 TS 类型用（见 jp-api/src/ts.rs）。只有 jp-api 的测试打开 `ts` 特性，
