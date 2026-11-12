@@ -424,7 +424,16 @@ public final class AppModel {
 
     /// 读当前这首的振假名。换歌、开关、换注法时调（ContentView 里按这三样做 task 的 id）
     public func loadFurigana() async {
-        furigana = [:]
+        await loadFurigana(keepShown: false)
+    }
+
+    /// 改了读音之后重新取（#63）：旧注音先留着，新的到了再换，免得整首闪一下
+    public func refreshFurigana() async {
+        await loadFurigana(keepShown: true)
+    }
+
+    private func loadFurigana(keepShown: Bool) async {
+        if !keepShown { furigana = [:] }
         furiganaError = nil
         guard showFurigana, let songId = player.track?.id, let core else { return }
         let mode = furiganaMode

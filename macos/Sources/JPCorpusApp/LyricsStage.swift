@@ -24,6 +24,8 @@ struct LyricsStage: View {
     @State private var colors = ArtworkColors()
     @State private var lookup: LookupRequest?
     @State private var selectionLine: LyricLine?
+    /// 右键「改读音」选中的词（#63）
+    @State private var editingReading: ReadingEdit?
     @State private var manualScroll: Date?
     @AppStorage("stage-side-width") private var sideWidth = 340.0
     @State private var sideDragStart: Double?
@@ -92,6 +94,7 @@ struct LyricsStage: View {
         .onAppear { karaoke = app.stageKaraoke }
         .onChange(of: karaoke) { _, value in app.stageKaraoke = value; lookup = nil }
         .onExitCommand { if selectionLine != nil { selectionLine = nil } else { close() } }
+        .sheet(item: $editingReading) { ReadingEditorView(target: $0) }
         .popover(item: $selectionLine) { line in
             LyricSelectionView(text: line.text) { selected in
                 lookup = LookupRequest(text: selected, songId: player.track?.id, utteranceId: line.utteranceId, tokenIndex: nil)
@@ -373,6 +376,15 @@ struct LyricsStage: View {
                     Divider()
                     ForEach(lemmas, id: \.self) { lemma in
                         Button("检索「\(lemma)」") { app.search(lemma) }
+                    }
+                }
+                if let songId = app.player.track?.id {
+                    let edits = ReadingEdit.candidates(songId: songId, line: line, rubies: app.furigana[line.utteranceId] ?? [])
+                    if !edits.isEmpty {
+                        Divider()
+                        ForEach(edits) { edit in
+                            Button("改读音「\(edit.surface)」…") { editingReading = edit }
+                        }
                     }
                 }
             }

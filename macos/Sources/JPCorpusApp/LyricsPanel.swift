@@ -16,7 +16,8 @@ struct LyricsPanel: View {
     /// 自己滚过歌词：先不跟，等点「回到当前歌词」、点一行或换歌
     @State private var manualScroll = false
     /// 右键「选择原文」打开的那一行
-    @State private var correcting: Int64?
+    /// 右键打开的那个窗：分词校正，或者改读音（#63）。一个 View 只挂一个 sheet，所以合在一起
+    @State private var sheet: PanelSheet?
     @State private var selectionLine: LyricLine?
 
     private static let contentPOS: Set<String> = ["NOUN", "PROPN", "VERB", "ADJ", "ADV"]
@@ -125,8 +126,11 @@ struct LyricsPanel: View {
             }
         }
         .background { backdrop }
-        .sheet(isPresented: Binding(get: { correcting != nil }, set: { if !$0 { correcting = nil } })) {
-            if let id = correcting { TokenCorrectionView(utteranceId: id) }
+        .sheet(item: $sheet) { which in
+            switch which {
+            case .correct(let id): TokenCorrectionView(utteranceId: id)
+            case .reading(let edit): ReadingEditorView(target: edit)
+            }
         }
         .popover(item: $selectionLine) { line in
             LyricSelectionView(text: line.text) { selected in
@@ -268,7 +272,7 @@ struct LyricsPanel: View {
                 .disabled(lineTime == nil)
             Button(looping ? "取消循环" : "循环这一句") { Task { await player.toggleLoop(line.utteranceId) } }
                 .disabled(lineTime == nil)
-            Button("分词校正…") { correcting = line.utteranceId }
+            Button("分词校正…") { sheet = .correct(line.utteranceId) }
             Button("选择原文 / 查选中文本") { selectionLine = line }
             let words = line.tokens.filter { Self.contentPOS.contains($0.pos) }
             if !words.isEmpty {
@@ -284,6 +288,26 @@ struct LyricsPanel: View {
                     Button("查词「\(line.tokens[index].surface)」") { lookUp(line, token: index) }
                 }
             }
+            if let songId = player.track?.id {
+                let edits = ReadingEdit.candidates(songId: songId, line: line, rubies: app.furigana[line.utteranceId] ?? [])
+                if !edits.isEmpty {
+                    Divider()
+                    ForEach(edits) { edit in
+                        Button("改读音「\(edit.surface)」…") { sheet = .reading(edit) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private enum PanelSheet: Identifiable {
+    case correct(Int64)
+    case reading(ReadingEdit)
+    var id: String {
+        switch self {
+        case .correct(let utteranceId): return "correct|\(utteranceId)"
+        case .reading(let edit): return "reading|" + edit.id
         }
     }
 }

@@ -266,39 +266,40 @@ pub fn lyrics_furigana(
     song_id: String,
     mode: jp_tokenizer::furigana::FuriganaMode,
 ) -> CmdResult<Vec<LineFurigana>> {
-    use jp_tokenizer::furigana::{Ruby, furigana_segments_with, overlay_rubies, ruby_spans, token_spans};
     let analyzer = state
         .analyzer()
         .ok_or_else(|| anyhow::anyhow!(crate::tokenizer::no_dictionary("振假名")))?;
     let corpus = state.corpus();
     let lines = corpus.lyrics(&song_id)?;
     let rules = jp_corpus::ruby::rules_for_song(corpus.connection(), &song_id)?;
-    let mut sources: std::collections::HashMap<i64, Vec<Ruby>> = std::collections::HashMap::new();
-    for r in jp_corpus::ruby::for_song(corpus.connection(), &song_id)? {
-        sources.entry(r.utterance_id).or_default().push(Ruby {
+    let sources = source_rubies(corpus.connection(), &song_id)?;
+    drop(corpus);
+    let mut out = Vec::with_capacity(lines.len());
+    for line in lines {
+        let tokens = analyzer.analyze(&line.text)?;
+        let extra = sources.get(&line.utterance_id).map(Vec::as_slice).unwrap_or_default();
+        out.push(LineFurigana {
+            utterance_id: line.utterance_id,
+            rubies: jp_tokenizer::furigana::line_rubies(&line.text, &tokens, mode, &rules, extra),
+        });
+    }
+    Ok(out)
+}
+
+/// 源文件自带的注音（`line_ruby`），按行分好。FFI 的 `lyricsFurigana` 也用同样的做法。
+fn source_rubies(
+    conn: &rusqlite::Connection,
+    song_id: &str,
+) -> anyhow::Result<std::collections::HashMap<i64, Vec<jp_tokenizer::furigana::Ruby>>> {
+    let mut sources: std::collections::HashMap<i64, Vec<jp_tokenizer::furigana::Ruby>> = std::collections::HashMap::new();
+    for r in jp_corpus::ruby::for_song(conn, song_id)? {
+        sources.entry(r.utterance_id).or_default().push(jp_tokenizer::furigana::Ruby {
             start: r.char_start.max(0) as usize,
             end: r.char_end.max(0) as usize,
             reading: r.reading,
         });
     }
-    drop(corpus);
-    let mut out = Vec::with_capacity(lines.len());
-    for line in lines {
-        let tokens = analyzer.analyze(&line.text)?;
-        let rule_of = |i: usize| tokens.get(i).and_then(|t| rules.get(&t.surface)).map(String::as_str);
-        let segments = furigana_segments_with(&line.text, &tokens, mode, rule_of);
-        // 对不上原文就这一行不注音，不猜位置
-        let mut rubies = ruby_spans(&line.text, &segments).unwrap_or_default();
-        if let (Some(extra), Some(spans)) = (sources.get(&line.utterance_id), token_spans(&line.text, &tokens)) {
-            let locked: Vec<bool> = tokens.iter().map(|t| rules.contains_key(&t.surface)).collect();
-            rubies = overlay_rubies(rubies, extra, &spans, &locked);
-        }
-        out.push(LineFurigana {
-            utterance_id: line.utterance_id,
-            rubies,
-        });
-    }
-    Ok(out)
+    Ok(sources)
 }
 
 /// 这几行歌词的词级时间（逐字歌词、手动校准）。词云点歌「从关键词开始放」用。
