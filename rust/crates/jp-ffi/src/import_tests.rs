@@ -388,6 +388,79 @@ fn a_dictionary_copied_in_after_opening_is_picked_up() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+/// 来源文件夹（#60）在 macOS 上走的整条路：建议 → 加文件夹 → 扫描对账 → 确认 → 歌词同步 →
+/// 已移出的歌恢复 → 移除文件夹。三条只在 Tauri 有的命令（建议、移除、歌词同步）也要走得通
+#[test]
+fn library_sources_round_trip_through_the_ffi() {
+    let music = music_folder();
+    let (s, root) = fresh_library();
+    s.call("scanFolder", json!({ "path": music.to_str().unwrap() })).unwrap();
+    s.call("runImport", json!({ "tokenize": false })).unwrap();
+    assert_eq!(wait(&s, "importProgress")["result"]["imported"], 2);
+
+    let suggested = s.call("librarySourceSuggestions", json!({})).unwrap();
+    let folders = suggested["folders"].as_array().unwrap();
+    assert_eq!(folders.len(), 1, "{suggested}");
+    assert_eq!(folders[0]["songs"], 2, "{suggested}");
+
+    let path = folders[0]["path"].as_str().unwrap().to_string();
+    let sources = s.call("librarySourcesAdd", json!({ "folders": [{ "path": path, "recursive": true }] })).unwrap();
+    let id = sources[0]["id"].as_i64().unwrap();
+    assert_eq!(sources[0]["songs"], 2, "{sources}");
+    assert_eq!(sources[0]["present"], true);
+    assert_eq!(
+        s.call("librarySourceSuggestions", json!({})).unwrap()["folders"].as_array().unwrap().len(),
+        0,
+        "有了来源就不再建议"
+    );
+
+    let plan = s.call("librarySourcePlan", json!({ "id": id })).unwrap();
+    assert_eq!(plan["unchanged"], 2, "{plan}");
+    assert_eq!(plan["nothingFound"], false);
+
+    // 歌词文件改了：对账报出来，确认后由 librarySyncLyrics 挂上新的一版
+    let night_lrc = music.join("テスト歌手").join("テスト歌手 - 夜の歌.lrc");
+    std::fs::write(&night_lrc, "[00:01.00]夜の風が止んだ\n").unwrap();
+    let plan = s.call("librarySourcePlan", json!({ "id": id })).unwrap();
+    let changed = plan["lyricsChanged"].as_array().unwrap();
+    assert_eq!(changed.len(), 1, "{plan}");
+    let night = changed[0]["songId"].as_str().unwrap().to_string();
+    let synced = s.call("librarySyncLyrics", json!({ "songIds": [night.clone()] })).unwrap();
+    assert_eq!(synced["updated"], json!([night.clone()]), "{synced}");
+    assert_eq!(synced["failed"], json!([]));
+    let lines = s.call("lyrics", json!({ "songId": night })).unwrap();
+    assert_eq!(lines[0]["text"], "夜の風が止んだ", "{lines}");
+    let again = s.call("librarySyncLyrics", json!({ "songIds": [night.clone()] })).unwrap();
+    assert_eq!(again["unchanged"], 1, "没变就不再换：{again}");
+
+    // 文件不见了：确认移出，在「已移出的歌」里恢复
+    let morning = music.join("テスト歌手").join("テスト歌手 - 朝の歌.wav");
+    let kept = temp_dir("kept").join("朝の歌.wav");
+    std::fs::rename(&morning, &kept).unwrap();
+    let plan = s.call("librarySourcePlan", json!({ "id": id })).unwrap();
+    let gone: Vec<String> = plan["gone"].as_array().unwrap().iter().map(|g| g["songId"].as_str().unwrap().to_string()).collect();
+    assert_eq!(gone.len(), 1, "{plan}");
+    let applied = s.call("librarySourceApply", json!({ "id": id, "moveOut": gone })).unwrap();
+    assert_eq!(applied["movedOut"], 1, "{applied}");
+    let removed = s.call("libraryRemovedSongs", json!({})).unwrap();
+    assert_eq!(removed.as_array().unwrap().len(), 1);
+    assert_eq!(removed[0]["audioPresent"], false);
+    std::fs::rename(&kept, &morning).unwrap();
+    assert_eq!(s.call("libraryRestoreSongs", json!({ "ids": [removed[0]["id"].clone()] })).unwrap(), 1);
+    assert_eq!(s.call("tracks", json!({})).unwrap().as_array().unwrap().len(), 2);
+
+    // 移除文件夹：歌移出，可以恢复
+    let gone = s.call("librarySourceRemove", json!({ "id": id, "mode": "moveOut" })).unwrap();
+    assert_eq!(gone["movedOut"], 2, "{gone}");
+    assert_eq!(gone["sources"], json!([]));
+    assert_eq!(s.call("tracks", json!({})).unwrap().as_array().unwrap().len(), 0);
+    assert_eq!(s.call("libraryRemovedSongs", json!({})).unwrap().as_array().unwrap().len(), 2);
+
+    drop(s);
+    let _ = std::fs::remove_dir_all(root.parent().unwrap());
+    let _ = std::fs::remove_dir_all(music);
+}
+
 /// macOS 改了读音要看得到（#63）：FFI 的振假名和 Tauri 一样盖上用户改过的读音，清掉就回到自动注音。
 /// 以前 FFI 这里只有 Sudachi 的读音，Mac 上存了规则也不显示。
 #[test]

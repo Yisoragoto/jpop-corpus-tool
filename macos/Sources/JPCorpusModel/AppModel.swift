@@ -162,6 +162,8 @@ public final class AppModel {
     /// Shared with ImportView so smoke exercises the model actually displayed in the window.
     public private(set) var importer = ImportModel()
     public private(set) var library: LibraryModel
+    /// 来源文件夹（#60）
+    public private(set) var sources = LibrarySourcesModel()
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let openClient: @Sendable (URL) async throws -> any CorpusCalling
@@ -224,6 +226,7 @@ public final class AppModel {
         importedLyricFonts = defaults.stringArray(forKey: "lyrics-imported-fonts") ?? []
         if let data = defaults.data(forKey: "karaoke-style") { karaokeStyle = KaraokeStyle.decode(data) }
         player.app = self
+        sources = makeSources(client)
     }
 
     public static var defaultLibraryFolder: URL {
@@ -357,6 +360,7 @@ public final class AppModel {
             client = next
             updates.client = next as? any UpdateCalling
             library = LibraryModel(client: next as? any LibraryCalling, defaults: defaults)
+            sources = makeSources(next)
             libraryURL = folder
             databaseName = database
             importer = ImportModel()
@@ -403,6 +407,17 @@ public final class AppModel {
     public func createLibrary() async {
         await createOrOpen(folder: Self.defaultLibraryFolder)
         if errorMessage == nil { section = .importer }
+    }
+
+    /// 来源文件夹写过库之后：曲库、首页跟着重读
+    private func makeSources(_ client: (any CorpusCalling)?) -> LibrarySourcesModel {
+        let model = LibrarySourcesModel(client: client as? any LibrarySourcesCalling)
+        model.onChanged = { [weak self] in
+            guard let self else { return }
+            library.version += 1
+            await reloadTracks()
+        }
+        return model
     }
 
     public func reloadTracks() async {

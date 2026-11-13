@@ -18,6 +18,7 @@
 | 检索 | 可用 | CoreBridgeTests；smoke 检索截图 | 关键词、辞书形与写法、多词表达、附近词过滤 |
 | KWIC 定位与试听 | 可用 | CoreBridgeTests；smoke 真窗口试听；LyricTimelineTests | 行级试听；歌词面板可按经过验证的真实单位起点播放，没有单位则回退到行 |
 | 资料库管理（第 3 阶段） | 可用 | LibraryModelTests、MembersModelTests、LibraryAdminBridgeTests、TS 移植测试、jp-ffi、smoke 写库 | macOS CI 已验证编译、测试和写库 smoke（run 40107267725），详见下节 |
+| 来源文件夹（#60） | 可用 | LibrarySourcesTests、jp-ffi `library_sources_round_trip_through_the_ffi` | 资料库管理第一个分页：建议、添加（多选、拖入）、停用、扫描对账、按组确认、歌词同步、已移出的歌恢复与彻底删除、移除文件夹两步确认；扫描期间占用会话队列；界面待在 Mac 上实际点过 |
 | 首页、曲库与详情 | 可用 | LibraryBridgeTests、smoke 截图 | 首页各分区、三栏曲库、歌曲/专辑/人物详情、收藏和快速搜索已接入 |
 | 分析、分析存档、来源与语料质量 | 可用 | CoreBridgeTests、LibraryBridgeTests、smoke 分析截图 | 词频/搭配/对比/画像、保存/重跑/比较/删除分析、来源与质量面板已有原生入口 |
 | 子语料 | 可用 | SubcorpusScopeTests、VisualizationBridgeTests、Rust 完整条件往返 | 完整条件预览、同名覆盖、删除与跨检索/词云/例句的当前范围；macOS CI 已验证（run 40148251913） |
@@ -509,8 +510,18 @@ Swift `UpdateModelTests`（8 例）、`SystemBridgeTests`；SmokeRun `[step] dia
 | `library_missing_audio` | `libraryMissingAudio` | LibraryAdminClient.swift | 已接 |  |
 | `library_new_audio` | `libraryNewAudio` | LibraryAdminClient.swift | 已接 |  |
 | `library_relink_audio` | `libraryRelinkAudio` | LibraryAdminClient.swift | 已接 |  |
+| `library_removed_songs` | `libraryRemovedSongs` | LibrarySources.swift | 已接 |  |
+| `library_restore_songs` | `libraryRestoreSongs` | LibrarySources.swift | 已接 |  |
 | `library_root` | `libraryRoot` | — | 不适用 | mac 用原生选库 / 建库确认与 Application Support，不需要 Windows 的库位置设置 |
+| `library_source_apply` | `librarySourceApply` | LibrarySources.swift | 已接 |  |
+| `library_source_plan` | `librarySourcePlan` | LibrarySources.swift | 已接 |  |
+| `library_source_remove` | `librarySourceRemove` | LibrarySources.swift | 已接 | #60 起 jp-ffi 也有；正在放的歌由 Swift 先停下 |
+| `library_source_set_enabled` | `librarySourceSetEnabled` | LibrarySources.swift | 已接 |  |
+| `library_source_suggestions` | `librarySourceSuggestions` | LibrarySources.swift | 已接 | #60 起 jp-ffi 也有 |
+| `library_sources` | `librarySources` | LibrarySources.swift | 已接 |  |
+| `library_sources_add` | `librarySourcesAdd` | LibrarySources.swift | 已接 |  |
 | `library_suggest_relinks` | `librarySuggestRelinks` | LibraryAdminClient.swift | 已接 |  |
+| `library_sync_lyrics` | `librarySyncLyrics` | LibrarySources.swift | 已接 | #60 起 jp-ffi 也有 |
 | `line_spans` | `lineSpans` | CorpusCore.swift | 已接 |  |
 | `list_albums` | `albums` | LibraryClient.swift | 已接 | FFI 方法名 `albums` |
 | `list_tracks` | `tracks` | CorpusCore.swift | 已接 | FFI 方法名 `tracks` |

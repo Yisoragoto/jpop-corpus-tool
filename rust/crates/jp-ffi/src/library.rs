@@ -73,8 +73,14 @@ pub(super) fn dispatch(s: &Session, method: &str, args: &Value) -> Result<Option
             &arg_or(args, "ignoredFiles", Vec::new())?,
             s.analyzer().is_some()
         )?),
+        // 还没有来源文件夹时按库里歌的位置建议几个（同名的 Tauri command：library_source_suggestions）
+        "librarySourceSuggestions" => json!(jp_library::sources::suggestions(
+            &s.network_connection()?,
+            &s.library_root()
+        )?),
         "libraryEditSong"
         | "libraryDeleteSong"
+        | "librarySourceRemove"
         | "libraryMissingAudio"
         | "librarySuggestRelinks"
         | "libraryRelinkAudio" => {
@@ -94,6 +100,12 @@ pub(super) fn dispatch(s: &Session, method: &str, args: &Value) -> Result<Option
                 "libraryDeleteSong" => json!(jp_library::admin::delete_song(
                     &mut library,
                     &arg::<String>(args, "songId")?
+                )?),
+                // 移除来源文件夹：歌移出（可恢复）或彻底删除。正在放的歌由 Swift 先停下
+                "librarySourceRemove" => json!(jp_library::sources::remove(
+                    &mut library,
+                    arg(args, "id")?,
+                    arg(args, "mode")?
                 )?),
                 "libraryMissingAudio" => json!(jp_library::admin::missing_audio(&library)?),
                 "librarySuggestRelinks" => json!(jp_library::admin::suggest_relinks(
